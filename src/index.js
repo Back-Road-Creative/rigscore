@@ -8,6 +8,7 @@ function parseArgs(args) {
     json: false,
     badge: false,
     noColor: false,
+    noCta: false,
     checkFilter: null,
     cwd: null,
     recursive: false,
@@ -22,6 +23,8 @@ function parseArgs(args) {
       options.badge = true;
     } else if (arg === '--no-color') {
       options.noColor = true;
+    } else if (arg === '--no-cta') {
+      options.noCta = true;
     } else if (arg === '--check' && i + 1 < args.length) {
       options.checkFilter = args[++i];
     } else if (arg === '--recursive' || arg === '-r') {
@@ -76,7 +79,7 @@ export async function run(args) {
     if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else {
-      process.stdout.write(formatTerminalRecursive(result, cwd) + '\n');
+      process.stdout.write(formatTerminalRecursive(result, cwd, { noCta: options.noCta }) + '\n');
     }
 
     process.exit(result.score >= 70 ? 0 : 1);
@@ -88,7 +91,7 @@ export async function run(args) {
     } else if (options.badge) {
       process.stdout.write(formatBadge(result) + '\n');
     } else {
-      process.stdout.write(formatTerminal(result, cwd) + '\n');
+      process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta }) + '\n');
     }
 
     process.exit(result.score >= 70 ? 0 : 1);

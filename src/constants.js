@@ -28,11 +28,19 @@ export const WEIGHTS = {
 // Sentinel score for checks that find nothing to scan
 export const NOT_APPLICABLE_SCORE = -1;
 
-// Severity multipliers for score calculation
-export const SEVERITY_MULTIPLIERS = {
-  [SEVERITY.CRITICAL]: 0,
-  [SEVERITY.WARNING]: 0.5,
-  [SEVERITY.INFO]: 0.95,
-  [SEVERITY.SKIPPED]: 1,
-  [SEVERITY.PASS]: 1,
+// Severity deductions for additive score calculation
+// CRITICAL = null means zero the entire check score
+export const SEVERITY_DEDUCTIONS = {
+  [SEVERITY.CRITICAL]: null,
+  [SEVERITY.WARNING]: -15,
+  [SEVERITY.INFO]: -2,
+  [SEVERITY.SKIPPED]: 0,
+  [SEVERITY.PASS]: 0,
 };
+
+// INFO-only findings cannot push a check below this floor
+export const INFO_ONLY_FLOOR = 50;
+
+// Coverage penalty threshold — if total applicable weight is below this,
+// the overall score is scaled down proportionally
+export const COVERAGE_PENALTY_THRESHOLD = 60;

@@ -58,7 +58,7 @@ function box(lines, width = 38) {
   return [top, ...boxed, bottom].join('\n');
 }
 
-export function formatTerminal(result, cwd) {
+export function formatTerminal(result, cwd, options = {}) {
   const { score, results } = result;
   const grade = getGrade(score);
   const colorFn = getScoreColor(score);
@@ -130,13 +130,15 @@ export function formatTerminal(result, cwd) {
   }
 
   // CTA
-  lines.push(`  ${'─'.repeat(40)}`);
-  lines.push('');
-  lines.push('  Want a full audit with hardened configurations deployed?');
-  lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
-  lines.push('');
-  lines.push(`  Share your score: ${chalk.dim('npx rigscore --badge')}`);
-  lines.push('');
+  if (!options.noCta) {
+    lines.push(`  ${'─'.repeat(40)}`);
+    lines.push('');
+    lines.push('  Want a full audit with hardened configurations deployed?');
+    lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
+    lines.push('');
+    lines.push(`  Share your score: ${chalk.dim('npx rigscore --badge')}`);
+    lines.push('');
+  }
 
   return lines.join('\n');
 }
@@ -145,8 +147,8 @@ export function formatTerminal(result, cwd) {
  * Format recursive scan results for terminal output.
  * Shows per-project summary table + expanded findings for failing projects.
  */
-export function formatTerminalRecursive(result, rootDir) {
-  const { score, projects } = result;
+export function formatTerminalRecursive(result, rootDir, options = {}) {
+  const { score, projects, worstProject } = result;
   const grade = getGrade(score);
   const colorFn = getScoreColor(score);
   const lines = [];
@@ -186,6 +188,12 @@ export function formatTerminalRecursive(result, rootDir) {
   ]));
   lines.push('');
 
+  // Catastrophic project warning
+  if (worstProject && worstProject.score < 40) {
+    lines.push(`  ${chalk.red.bold('⚠ CATASTROPHIC: ')}${chalk.red(`"${worstProject.path}" scores ${worstProject.score}/100 — immediate attention required`)}`);
+    lines.push('');
+  }
+
   // Show findings only for projects with issues (score < 100)
   const failing = projects.filter((p) => p.score < 70);
   if (failing.length > 0) {
@@ -215,11 +223,13 @@ export function formatTerminalRecursive(result, rootDir) {
   }
 
   // CTA
-  lines.push(`  ${'─'.repeat(40)}`);
-  lines.push('');
-  lines.push('  Want a full audit with hardened configurations deployed?');
-  lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
-  lines.push('');
+  if (!options.noCta) {
+    lines.push(`  ${'─'.repeat(40)}`);
+    lines.push('');
+    lines.push('  Want a full audit with hardened configurations deployed?');
+    lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
+    lines.push('');
+  }
 
   return lines.join('\n');
 }

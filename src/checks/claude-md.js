@@ -32,6 +32,18 @@ const QUALITY_CHECKS = [
 
 const LENGTH_THRESHOLD = 50;
 
+const NEGATION_RE = /\b(never|not|no|don't|doesn't|isn't|without|lack|none|nothing)\b/i;
+
+/**
+ * Check whether a regex match at `matchIndex` inside `content` is negated
+ * by a preceding negation word within a 50-character lookback window.
+ */
+function isNegatedMatch(content, matchIndex) {
+  const start = Math.max(0, matchIndex - 50);
+  const window = content.slice(start, matchIndex);
+  return NEGATION_RE.test(window);
+}
+
 // All known AI client governance files (checked in cwd)
 const GOVERNANCE_FILES = [
   'CLAUDE.md',
@@ -113,9 +125,21 @@ export default {
       });
     }
 
-    // Check quality patterns against combined content
+    // Check quality patterns against combined content (with negation detection)
     for (const check of QUALITY_CHECKS) {
-      if (!check.pattern.test(combined)) {
+      // Create a global copy of the pattern so we can iterate all matches
+      const globalPattern = new RegExp(check.pattern.source, check.pattern.flags.includes('g') ? check.pattern.flags : check.pattern.flags + 'g');
+      let match;
+      let hasGenuineMatch = false;
+
+      while ((match = globalPattern.exec(combined)) !== null) {
+        if (!isNegatedMatch(combined, match.index)) {
+          hasGenuineMatch = true;
+          break;
+        }
+      }
+
+      if (!hasGenuineMatch) {
         findings.push({
           severity: 'warning',
           title: `Governance file missing: ${check.name}`,

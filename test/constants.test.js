@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WEIGHTS, SEVERITY, SEVERITY_MULTIPLIERS } from '../src/constants.js';
+import { WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD } from '../src/constants.js';
 
 describe('constants', () => {
   it('weights sum to 100', () => {
@@ -7,18 +7,37 @@ describe('constants', () => {
     expect(total).toBe(100);
   });
 
-  it('every severity has a multiplier', () => {
+  it('every severity has a deduction', () => {
     for (const sev of Object.values(SEVERITY)) {
-      expect(SEVERITY_MULTIPLIERS[sev]).toBeDefined();
-      expect(typeof SEVERITY_MULTIPLIERS[sev]).toBe('number');
+      expect(sev in SEVERITY_DEDUCTIONS).toBe(true);
     }
   });
 
-  it('CRITICAL multiplier is 0', () => {
-    expect(SEVERITY_MULTIPLIERS[SEVERITY.CRITICAL]).toBe(0);
+  it('CRITICAL deduction is null (zeros the check)', () => {
+    expect(SEVERITY_DEDUCTIONS[SEVERITY.CRITICAL]).toBeNull();
   });
 
-  it('PASS multiplier is 1', () => {
-    expect(SEVERITY_MULTIPLIERS[SEVERITY.PASS]).toBe(1);
+  it('WARNING deduction is -15', () => {
+    expect(SEVERITY_DEDUCTIONS[SEVERITY.WARNING]).toBe(-15);
+  });
+
+  it('INFO deduction is -2', () => {
+    expect(SEVERITY_DEDUCTIONS[SEVERITY.INFO]).toBe(-2);
+  });
+
+  it('PASS deduction is 0', () => {
+    expect(SEVERITY_DEDUCTIONS[SEVERITY.PASS]).toBe(0);
+  });
+
+  it('SKIPPED deduction is 0', () => {
+    expect(SEVERITY_DEDUCTIONS[SEVERITY.SKIPPED]).toBe(0);
+  });
+
+  it('INFO_ONLY_FLOOR is 50', () => {
+    expect(INFO_ONLY_FLOOR).toBe(50);
+  });
+
+  it('COVERAGE_PENALTY_THRESHOLD is 60', () => {
+    expect(COVERAGE_PENALTY_THRESHOLD).toBe(60);
   });
 });

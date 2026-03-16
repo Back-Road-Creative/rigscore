@@ -16,14 +16,25 @@ describe('CLI integration', () => {
   });
 
   it('scans a fixture directory and produces score output', async () => {
-    const { stdout } = await exec('node', [bin, fixture('claude-full')], { timeout: 10000 });
+    // Fixture may score below 70 (coverage penalty for CLAUDE.md-only project), so handle non-zero exit
+    let stdout;
+    try {
+      ({ stdout } = await exec('node', [bin, fixture('claude-full')], { timeout: 10000 }));
+    } catch (err) {
+      stdout = err.stdout;
+    }
     expect(stdout).toContain('HYGIENE SCORE');
     // Should contain a number score
     expect(stdout).toMatch(/\d+\/100/);
   });
 
   it('--json produces valid JSON to stdout', async () => {
-    const { stdout } = await exec('node', [bin, '--json', fixture('claude-full')], { timeout: 10000 });
+    let stdout;
+    try {
+      ({ stdout } = await exec('node', [bin, '--json', fixture('claude-full')], { timeout: 10000 }));
+    } catch (err) {
+      stdout = err.stdout;
+    }
     const parsed = JSON.parse(stdout);
     expect(parsed).toHaveProperty('score');
     expect(parsed).toHaveProperty('results');

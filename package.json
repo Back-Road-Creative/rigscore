@@ -20,10 +20,11 @@
   },
   "keywords": [
     "ai",
-    "security",
+    "hygiene",
     "claude",
     "mcp",
-    "scanner",
+    "checker",
+    "linter",
     "devtools"
   ],
   "license": "MIT",

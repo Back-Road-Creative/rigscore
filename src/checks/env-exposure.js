@@ -12,6 +12,15 @@ const KEY_PATTERNS = [
   /xoxp-[a-zA-Z0-9-]+/,               // Slack user token
   /sk-[a-zA-Z0-9]{20,}/,               // OpenAI-style
   /glpat-[a-zA-Z0-9_-]{20,}/,          // GitLab PAT
+  /sk_live_[a-zA-Z0-9]{24,}/,          // Stripe secret key
+  /sk_test_[a-zA-Z0-9]{24,}/,          // Stripe test secret key
+  /rk_live_[a-zA-Z0-9]{24,}/,          // Stripe restricted key
+  /pk_live_[a-zA-Z0-9]{24,}/,          // Stripe publishable key
+  /SG\.[a-zA-Z0-9_-]{22,}\.[a-zA-Z0-9_-]{22,}/, // SendGrid
+  /SK[0-9a-f]{32}/,                     // Twilio
+  /AIzaSy[a-zA-Z0-9_-]{33}/,           // Firebase/Google
+  /dop_v1_[a-f0-9]{64}/,               // DigitalOcean
+  /key-[a-f0-9]{32}/,                   // Mailgun
 ];
 
 const CONFIG_FILES = [
@@ -29,6 +38,12 @@ const CONFIG_FILES = [
   'config.js',
   'config.ts',
   'config.json',
+  'secrets.yaml',
+  'secrets.json',
+  'credentials.json',
+  'application.yml',
+  'settings.py',
+  'settings.js',
 ];
 
 const ENV_GITIGNORE_PATTERNS = [
@@ -144,14 +159,20 @@ export default {
           if (pattern.test(line)) {
             hardcodedFound = true;
             foundInFile = true;
+            const isExample = /\b(example|placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me)\b/i.test(line);
+            const severity = isComment || isExample ? 'info' : 'critical';
             findings.push({
-              severity: isComment ? 'info' : 'critical',
+              severity,
               title: isComment
                 ? `API key pattern in comment in ${configFile}`
-                : `Hardcoded API key found in ${configFile}`,
+                : isExample
+                  ? `Example/placeholder API key in ${configFile}`
+                  : `Hardcoded API key found in ${configFile}`,
               detail: isComment
                 ? `A secret pattern was found in a comment in ${configFile}. Verify it is not a real key.`
-                : `A secret matching pattern ${pattern.source.slice(0, 20)}... was found in ${configFile}.`,
+                : isExample
+                  ? `A secret pattern resembling a placeholder was found in ${configFile}. Verify it is not a real key.`
+                  : `A secret matching pattern ${pattern.source.slice(0, 20)}... was found in ${configFile}.`,
               remediation: 'Move secrets to .env and reference via environment variables.',
             });
             break;

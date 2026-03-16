@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { SEVERITY, SEVERITY_MULTIPLIERS } from '../src/constants.js';
+import { SEVERITY, SEVERITY_DEDUCTIONS } from '../src/constants.js';
 import { calculateCheckScore } from '../src/scoring.js';
 
 function makeTmpDir() {
@@ -19,13 +19,13 @@ describe('SKIPPED severity', () => {
     expect(SEVERITY.SKIPPED).toBe('skipped');
   });
 
-  it('SKIPPED severity has a multiplier defined', () => {
-    expect(SEVERITY_MULTIPLIERS[SEVERITY.SKIPPED]).toBeDefined();
-    expect(typeof SEVERITY_MULTIPLIERS[SEVERITY.SKIPPED]).toBe('number');
+  it('SKIPPED severity has a deduction defined', () => {
+    expect(SEVERITY.SKIPPED in SEVERITY_DEDUCTIONS).toBe(true);
+    expect(typeof SEVERITY_DEDUCTIONS[SEVERITY.SKIPPED]).toBe('number');
   });
 
-  it('SKIPPED severity does not reduce score (multiplier = 1)', () => {
-    expect(SEVERITY_MULTIPLIERS[SEVERITY.SKIPPED]).toBe(1);
+  it('SKIPPED severity does not reduce score (deduction = 0)', () => {
+    expect(SEVERITY_DEDUCTIONS[SEVERITY.SKIPPED]).toBe(0);
   });
 
   it('calculateCheckScore treats SKIPPED with no score impact (multiplier 1.0)', () => {

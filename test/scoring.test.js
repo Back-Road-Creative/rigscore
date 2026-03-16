@@ -19,33 +19,33 @@ describe('calculateCheckScore', () => {
     expect(calculateCheckScore(findings)).toBe(0);
   });
 
-  it('returns 50 when one finding is WARNING among passes', () => {
+  it('returns 85 when one finding is WARNING (additive -15)', () => {
     const findings = [
       { severity: SEVERITY.PASS },
       { severity: SEVERITY.WARNING },
     ];
-    expect(calculateCheckScore(findings)).toBe(50);
+    expect(calculateCheckScore(findings)).toBe(85);
   });
 
   it('returns 100 for empty findings', () => {
     expect(calculateCheckScore([])).toBe(100);
   });
 
-  it('INFO findings reduce score slightly', () => {
+  it('INFO findings reduce score by 2 each', () => {
     const findings = [
       { severity: SEVERITY.PASS },
       { severity: SEVERITY.INFO },
     ];
-    expect(calculateCheckScore(findings)).toBe(95);
+    expect(calculateCheckScore(findings)).toBe(98);
   });
 
-  it('multiple WARNINGs stack multiplicatively', () => {
+  it('multiple WARNINGs stack additively', () => {
     const findings = [
       { severity: SEVERITY.WARNING },
       { severity: SEVERITY.WARNING },
     ];
-    // 0.5 * 0.5 = 0.25 => 25
-    expect(calculateCheckScore(findings)).toBe(25);
+    // 100 - 15 - 15 = 70
+    expect(calculateCheckScore(findings)).toBe(70);
   });
 });
 

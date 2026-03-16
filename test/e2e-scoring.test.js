@@ -51,7 +51,27 @@ describe('e2e scoring', () => {
         '.gitignore': '.env\nnode_modules\n',
         '.env': 'SECRET=value',
         'package.json': '{}',
+        // Add MCP config so it's applicable (clean = pass)
+        '.mcp.json': JSON.stringify({ mcpServers: { local: { command: 'node', args: ['server.js'] } } }),
+        // Add compose file so docker check is applicable (minimal secure config)
+        'docker-compose.yml': [
+          'services:',
+          '  app:',
+          '    image: node:18',
+          '    user: "1000:1000"',
+          '    cap_drop: [ALL]',
+          '    security_opt: [no-new-privileges]',
+          '    mem_limit: 512m',
+        ].join('\n'),
+        // Add .cursorrules so skill-files check is applicable
+        '.cursorrules': 'Be helpful and follow best practices.',
       });
+
+      // Create .git dir so git-hooks check is applicable
+      fs.mkdirSync(path.join(tmpDir, '.git', 'hooks'), { recursive: true });
+      const hookPath = path.join(tmpDir, '.git', 'hooks', 'pre-commit');
+      fs.writeFileSync(hookPath, '#!/bin/sh\nnpx lint-staged');
+      fs.chmodSync(hookPath, 0o755);
 
       // Make .env user-only readable
       fs.chmodSync(path.join(tmpDir, '.env'), 0o600);

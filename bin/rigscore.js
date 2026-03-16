@@ -13,7 +13,7 @@ if (args.includes('--version')) {
 }
 
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`rigscore — AI dev environment security scanner
+  console.log(`rigscore — AI dev environment configuration hygiene checker
 
 Usage:
   rigscore [directory] [options]
@@ -22,6 +22,7 @@ Options:
   --json             Output results as JSON
   --badge            Generate a markdown badge
   --no-color         Disable colored output
+  --no-cta           Suppress promotional call-to-action
   --check <id>       Run a single check by ID
   --recursive, -r    Scan subdirectories as separate projects
   --depth <N>        Recursion depth (default: 1, implies --recursive)

@@ -15,6 +15,40 @@ const SENSITIVE_ENV_KEYS = [
 
 const DEFAULT_SAFE_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 
+const SENSITIVE_PATHS = ['/', '/home', '/etc', '/root', '/var', '/opt', '/usr'];
+
+function extractPathsFromArgs(args) {
+  const paths = [];
+  const flagPatterns = ['--directory', '--root', '--path', '--allowed-directories', '--dir'];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    // Handle --flag=value syntax
+    for (const flag of flagPatterns) {
+      if (arg.startsWith(flag + '=')) {
+        const value = arg.slice(flag.length + 1);
+        // May be comma-separated
+        paths.push(...value.split(',').map(p => p.trim()));
+      }
+    }
+
+    // Handle --flag value syntax
+    if (flagPatterns.includes(arg) && i + 1 < args.length) {
+      const value = args[i + 1];
+      // May be comma-separated
+      paths.push(...value.split(',').map(p => p.trim()));
+    }
+
+    // Standalone path args (starts with / but not --)
+    if (arg.startsWith('/') && !arg.startsWith('--')) {
+      paths.push(arg);
+    }
+  }
+
+  return paths;
+}
+
 function extractHost(urlOrTransport) {
   try {
     const url = new URL(urlOrTransport);
@@ -92,15 +126,16 @@ export default {
           }
         }
 
-        // Check for root filesystem access in args
+        // Check for sensitive filesystem access in args
         const args = server.args || [];
-        const argsStr = args.join(' ');
-        // Match standalone "/" as an arg (root filesystem access)
-        if (args.includes('/') || argsStr.includes(' / ') || argsStr.endsWith(' /')) {
+        const extractedPaths = extractPathsFromArgs(args);
+        const sensitivePaths = extractedPaths.filter(p => SENSITIVE_PATHS.includes(p));
+
+        if (sensitivePaths.length > 0) {
           findings.push({
             severity: 'critical',
-            title: `MCP server "${name}" has root filesystem access`,
-            detail: `Server can read/write the entire filesystem. Found in ${relPath}.`,
+            title: `MCP server "${name}" has broad filesystem access: ${sensitivePaths.join(', ')}`,
+            detail: `Server can access sensitive path(s). Found in ${relPath}.`,
             remediation: 'Scope filesystem access to your project directory only.',
           });
         }

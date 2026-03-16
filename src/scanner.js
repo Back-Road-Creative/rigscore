@@ -181,5 +181,10 @@ export async function scanRecursive(options = {}) {
     ? Math.round(scorable.reduce((sum, p) => sum + p.score, 0) / scorable.length)
     : 0;
 
-  return { score: avgScore, projects };
+  // Track the worst-scoring project for catastrophic warnings
+  const worstProject = projects.length > 0
+    ? projects.reduce((worst, p) => (p.score < worst.score ? p : worst), projects[0])
+    : null;
+
+  return { score: avgScore, projects, worstProject };
 }

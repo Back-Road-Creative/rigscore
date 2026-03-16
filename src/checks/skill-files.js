@@ -24,10 +24,14 @@ const SKILL_DIRS = [
 const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?previous\s+instructions/i,
   /ignore\s+(all\s+)?prior\s+instructions/i,
-  /you\s+are\s+now\s+a/i,
+  /you\s+are\s+now/i,
   /disregard\s+(all\s+)?previous/i,
   /override\s+(all\s+)?instructions/i,
   /forget\s+(all\s+)?(previous|prior)/i,
+  /your\s+new\s+system\s+prompt/i,
+  /act\s+as\s+if/i,
+  /pretend\s+you\s+are/i,
+  /from\s+now\s+on\s+you/i,
 ];
 
 const SHELL_EXEC_PATTERNS = [
@@ -41,7 +45,16 @@ const URL_PATTERN = /https?:\/\/[^\s"')\]]+/g;
 // Anchored base64 pattern — requires whitespace boundary to reduce false positives
 const BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m;
 
-const DEFENSIVE_WORDS = /\b(defend|prevent|block|guard|detect|refuse|flag)\b/i;
+const DEFENSIVE_WORDS = /\b(defend|prevent|block|guard|detect|refuse|flag|stop|reject|deny|halt|intercept|catch|disallow|prohibit|warn|alert|protect|mitigate|counter|resist)\b/i;
+
+function normalizeText(text) {
+  return text
+    .normalize('NFKC')
+    // Strip zero-width characters
+    .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF]/g, '')
+    // Strip markdown formatting chars
+    .replace(/[*_`~]/g, '');
+}
 
 export default {
   id: 'skill-files',
@@ -106,9 +119,10 @@ export default {
       // Check injection patterns — line by line with defensive word downgrade
       let injectionFound = false;
       for (const line of lines) {
+        const normalizedLine = normalizeText(line);
         for (const pattern of INJECTION_PATTERNS) {
-          if (pattern.test(line)) {
-            const isDefensive = DEFENSIVE_WORDS.test(line);
+          if (pattern.test(normalizedLine)) {
+            const isDefensive = DEFENSIVE_WORDS.test(normalizedLine);
             findings.push({
               severity: isDefensive ? 'info' : 'critical',
               title: isDefensive
@@ -126,6 +140,33 @@ export default {
           }
         }
         if (injectionFound) break; // one finding per file for injection
+      }
+
+      // Multi-line injection detection: 2-line sliding windows
+      if (!injectionFound) {
+        for (let i = 0; i < lines.length - 1; i++) {
+          const twoLines = normalizeText(lines[i] + ' ' + lines[i + 1]);
+          for (const pattern of INJECTION_PATTERNS) {
+            if (pattern.test(twoLines)) {
+              const isDefensive = DEFENSIVE_WORDS.test(twoLines);
+              findings.push({
+                severity: isDefensive ? 'info' : 'critical',
+                title: isDefensive
+                  ? `Defensive injection reference in ${file.path}`
+                  : `Injection pattern found in ${file.path}`,
+                detail: isDefensive
+                  ? 'File references injection patterns in a defensive context.'
+                  : 'File contains instruction override patterns that could hijack AI agent behavior.',
+                remediation: isDefensive
+                  ? 'No action needed — this appears to be a defensive rule.'
+                  : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
+              });
+              injectionFound = true;
+              break;
+            }
+          }
+          if (injectionFound) break;
+        }
       }
 
       // Check shell execution patterns
@@ -146,8 +187,6 @@ export default {
       if (urls && urls.length > 0) {
         const httpUrls = urls.filter((u) => u.startsWith('http://'));
         const httpsUrls = urls.filter((u) => u.startsWith('https://'));
-        const hasShellExec = SHELL_EXEC_PATTERNS.some((p) => p.test(file.content));
-
         if (httpUrls.length > 0) {
           findings.push({
             severity: 'warning',
@@ -158,7 +197,7 @@ export default {
         }
         if (httpsUrls.length > 0) {
           findings.push({
-            severity: hasShellExec ? 'warning' : 'info',
+            severity: 'info',
             title: `HTTPS URLs found in ${file.path}`,
             detail: `${httpsUrls.length} HTTPS URL(s) found.`,
             remediation: 'Verify all URLs are legitimate and necessary.',

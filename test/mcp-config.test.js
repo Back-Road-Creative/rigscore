@@ -83,7 +83,7 @@ describe('mcp-config check', () => {
     const cfg = { ...defaultConfig, paths: { mcpConfig: [path.join(externalDir, 'mcp.json')] } };
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: cfg });
-      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('root'));
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('filesystem'));
       expect(critical).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });

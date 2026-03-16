@@ -49,7 +49,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     for (const vol of volumes) {
       const volStr = typeof vol === 'string' ? vol : vol.source || '';
 
-      if (volStr.includes('/var/run/docker.sock')) {
+      if (volStr.includes('/docker.sock') || volStr.includes('/podman.sock')) {
         findings.push({
           severity: 'critical',
           title: `Container "${name}" mounts Docker socket`,
@@ -451,7 +451,7 @@ export default {
       const mounts = devcontainer.mounts || [];
       for (const mount of mounts) {
         const mountStr = typeof mount === 'string' ? mount : mount.source || '';
-        if (mountStr.includes('/var/run/docker.sock')) {
+        if (mountStr.includes('/docker.sock') || mountStr.includes('/podman.sock')) {
           findings.push({
             severity: 'critical',
             title: 'Devcontainer mounts Docker socket',

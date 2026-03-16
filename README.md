@@ -201,7 +201,14 @@ File permissions are the foundation of access control. Misconfigured permissions
 | 40-59 | D | Significant gaps |
 | 0-39 | F | Critical issues, fix immediately |
 
-Each CRITICAL finding zeroes out its sub-check. Each WARNING reduces it by 50%. INFO findings reduce it slightly (5% each). Checks that find nothing to scan are marked N/A and excluded from the score.
+Scoring uses an additive deduction model:
+
+- **CRITICAL** findings zero out their sub-check entirely
+- **WARNING** findings deduct 15 points each (1 WARNING = 85, 2 = 70, 3 = 55...)
+- **INFO** findings deduct 2 points each, with a floor of 50 when no WARNINGs are present
+- **PASS** and **SKIPPED** findings have no score impact
+
+Checks that find nothing to scan are marked N/A and excluded from the weighted average. If the total applicable check weight falls below 60%, a coverage penalty scales the overall score down proportionally — this prevents projects with minimal configuration from appearing fully secure.
 
 ## Options
 
@@ -211,6 +218,7 @@ npx rigscore /path/to/project          # Scan a specific project
 npx rigscore --json                    # JSON output for CI/scripting
 npx rigscore --badge                   # Generate a markdown badge
 npx rigscore --no-color                # Plain text output
+npx rigscore --no-cta                  # Suppress promotional CTA
 npx rigscore --check <id>              # Run a single check by ID
 npx rigscore --recursive               # Scan subdirectories as projects
 npx rigscore -r --depth 2              # Recursive scan, 2 levels deep

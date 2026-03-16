@@ -14,10 +14,42 @@ function isNoOpHook(content) {
     if (!trimmed) return false;
     if (trimmed.startsWith('#')) return false; // comments (including shebang)
     // Trivial no-op commands
-    if (/^(exit\s+0|true|:|echo\b|printf\b)/.test(trimmed)) return false;
+    if (/^(exit\s+0|true|:|echo\b|printf\b|sleep\b|date\b|ls\b|cat\s+\/dev\/null|test\s+-[fd]\b|whoami\b|pwd\b|hostname\b|uname\b|id\b)/.test(trimmed)) return false;
     return true;
   });
   return meaningful.length === 0;
+}
+
+/**
+ * Check if a hook has substantive content — recognized patterns that
+ * indicate the hook does real work (linting, secret scanning, testing, etc.)
+ */
+function hasSubstance(content) {
+  const substantivePatterns = [
+    /\bgrep\b/,
+    /\blint/i,
+    /\bsecret/i,
+    /\bscan/i,
+    /\btest\b/,
+    /\bpytest\b/,
+    /\bvitest\b/,
+    /\bjest\b/,
+    /\bpre-commit\b/,
+    /\bexit\s+1/,
+    /\bif\b.*\bthen\b/,
+    /\b(&&|\|\|)\b/,
+    /\bgitleaks\b/,
+    /\btrufflehog\b/,
+    /\bdetect-secrets\b/,
+    /\bshellcheck\b/,
+    /\beslint\b/,
+    /\bprettier\b/,
+    /\brubocop\b/,
+    /\bflake8\b/,
+    /\bmypy\b/,
+    /\bruff\b/,
+  ];
+  return substantivePatterns.some((p) => p.test(content));
 }
 
 /**
@@ -67,6 +99,17 @@ async function validateNativeHook(hookPath, hookName) {
       title: `${hookName} hook is a no-op`,
       detail: `${hookPath} exists but contains only trivial commands (exit 0, echo, etc.). It provides no protection.`,
       remediation: `Add meaningful checks to your ${hookName} hook.`,
+    });
+    return findings;
+  }
+
+  // Hook has content and passes no-op filter, but check for substance
+  if (!hasSubstance(content)) {
+    findings.push({
+      severity: 'info',
+      title: `${hookName} hook may lack substance`,
+      detail: `${hookPath} has content but no recognized linting, scanning, or testing patterns were detected.`,
+      remediation: `Verify the ${hookName} hook performs meaningful checks.`,
     });
     return findings;
   }
