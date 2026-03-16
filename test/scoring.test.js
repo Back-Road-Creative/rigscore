@@ -31,12 +31,12 @@ describe('calculateCheckScore', () => {
     expect(calculateCheckScore([])).toBe(100);
   });
 
-  it('INFO findings do not reduce score', () => {
+  it('INFO findings reduce score slightly', () => {
     const findings = [
       { severity: SEVERITY.PASS },
       { severity: SEVERITY.INFO },
     ];
-    expect(calculateCheckScore(findings)).toBe(100);
+    expect(calculateCheckScore(findings)).toBe(95);
   });
 
   it('multiple WARNINGs stack multiplicatively', () => {
@@ -58,6 +58,7 @@ describe('calculateOverallScore', () => {
       { id: 'docker-security', score: 100 },
       { id: 'git-hooks', score: 100 },
       { id: 'skill-files', score: 100 },
+      { id: 'permissions-hygiene', score: 100 },
     ];
     expect(calculateOverallScore(results)).toBe(100);
   });
@@ -70,21 +71,23 @@ describe('calculateOverallScore', () => {
       { id: 'docker-security', score: 0 },
       { id: 'git-hooks', score: 0 },
       { id: 'skill-files', score: 0 },
+      { id: 'permissions-hygiene', score: 0 },
     ];
     expect(calculateOverallScore(results)).toBe(0);
   });
 
   it('calculates weighted sum correctly', () => {
     const results = [
-      { id: 'claude-md', score: 50 },      // 50 * 20/100 = 10
-      { id: 'mcp-config', score: 80 },     // 80 * 25/100 = 20
-      { id: 'env-exposure', score: 100 },   // 100 * 20/100 = 20
-      { id: 'docker-security', score: 0 },  // 0 * 15/100 = 0
-      { id: 'git-hooks', score: 100 },      // 100 * 10/100 = 10
-      { id: 'skill-files', score: 60 },     // 60 * 10/100 = 6
+      { id: 'claude-md', score: 50 },              // 50 * 20/100 = 10
+      { id: 'mcp-config', score: 80 },             // 80 * 15/100 = 12
+      { id: 'env-exposure', score: 100 },           // 100 * 20/100 = 20
+      { id: 'docker-security', score: 0 },          // 0 * 15/100 = 0
+      { id: 'git-hooks', score: 100 },              // 100 * 10/100 = 10
+      { id: 'skill-files', score: 60 },             // 60 * 10/100 = 6
+      { id: 'permissions-hygiene', score: 100 },    // 100 * 10/100 = 10
     ];
-    // Total = 10 + 20 + 20 + 0 + 10 + 6 = 66
-    expect(calculateOverallScore(results)).toBe(66);
+    // Total = 10 + 12 + 20 + 0 + 10 + 6 + 10 = 68
+    expect(calculateOverallScore(results)).toBe(68);
   });
 
   it('rounds to integer', () => {
@@ -95,8 +98,9 @@ describe('calculateOverallScore', () => {
       { id: 'docker-security', score: 33 },
       { id: 'git-hooks', score: 33 },
       { id: 'skill-files', score: 33 },
+      { id: 'permissions-hygiene', score: 33 },
     ];
-    // 33 * (20+25+20+15+10+10)/100 = 33 * 1 = 33
+    // 33 * (20+15+20+15+10+10+10)/100 = 33 * 1 = 33
     expect(calculateOverallScore(results)).toBe(33);
   });
 });

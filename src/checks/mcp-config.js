@@ -1,15 +1,7 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-
-async function readJsonSafe(p) {
-  try {
-    const content = await fs.promises.readFile(p, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
-}
+import { NOT_APPLICABLE_SCORE } from '../constants.js';
+import { readJsonSafe } from '../utils.js';
 
 const SENSITIVE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -21,45 +13,83 @@ const SENSITIVE_ENV_KEYS = [
   'SLACK_TOKEN',
 ];
 
+const DEFAULT_SAFE_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+
+function extractHost(urlOrTransport) {
+  try {
+    const url = new URL(urlOrTransport);
+    return url.hostname;
+  } catch {
+    return null;
+  }
+}
+
 export default {
   id: 'mcp-config',
   name: 'MCP server configuration',
   category: 'supply-chain',
-  weight: 25,
+  weight: 15,
 
   async run(context) {
-    const { cwd, homedir } = context;
+    const { cwd, homedir, config } = context;
     const findings = [];
+    const safeHosts = config?.network?.safeHosts || DEFAULT_SAFE_HOSTS;
 
-    // Locations to scan for MCP config
+    // Locations to scan for MCP config — all known AI clients
     const configPaths = [
+      // Claude
       path.join(cwd, '.mcp.json'),
       path.join(cwd, '.vscode', 'mcp.json'),
       path.join(homedir, '.claude', 'claude_desktop_config.json'),
+      // Cursor
       path.join(homedir, '.cursor', 'mcp.json'),
+      // Cline
+      path.join(homedir, '.cline', 'mcp_settings.json'),
+      // Continue
+      path.join(homedir, '.continue', 'config.json'),
+      // Windsurf
+      path.join(homedir, '.windsurf', 'mcp.json'),
     ];
+
+    // Add config-specified paths
+    if (config?.paths?.mcpConfig) {
+      for (const p of config.paths.mcpConfig) {
+        configPaths.push(p);
+      }
+    }
 
     let foundAny = false;
 
     for (const configPath of configPaths) {
-      const config = await readJsonSafe(configPath);
-      if (!config) continue;
+      const mcpConfig = await readJsonSafe(configPath);
+      if (!mcpConfig) continue;
 
       foundAny = true;
-      const servers = config.mcpServers || {};
+      const servers = mcpConfig.mcpServers || {};
       const relPath = path.relative(cwd, configPath) || configPath;
 
       for (const [name, server] of Object.entries(servers)) {
         // Check transport type
         const transport = server.transport || 'stdio';
         if (transport === 'sse' || transport === 'http' || server.url) {
-          findings.push({
-            severity: 'warning',
-            title: `MCP server "${name}" uses network transport`,
-            detail: `Server uses ${transport || 'network'} transport in ${relPath}. Network-based MCP servers have a larger attack surface than stdio.`,
-            remediation: 'Prefer stdio transport for local MCP servers. If network transport is required, ensure authentication and TLS.',
-            learnMore: 'https://headlessmode.com/blog/mcp-permissions',
-          });
+          const targetUrl = server.url || '';
+          const host = extractHost(targetUrl);
+          const isLocal = host && safeHosts.includes(host);
+
+          if (isLocal) {
+            findings.push({
+              severity: 'info',
+              title: `MCP server "${name}" is a localhost server`,
+              detail: `Server uses ${transport || 'network'} transport targeting ${host} in ${relPath}.`,
+            });
+          } else {
+            findings.push({
+              severity: 'warning',
+              title: `MCP server "${name}" uses network transport`,
+              detail: `Server uses ${transport || 'network'} transport in ${relPath}. Network-based MCP servers have a larger attack surface than stdio.`,
+              remediation: 'Prefer stdio transport for local MCP servers. If network transport is required, ensure authentication and TLS.',
+            });
+          }
         }
 
         // Check for root filesystem access in args
@@ -72,7 +102,6 @@ export default {
             title: `MCP server "${name}" has root filesystem access`,
             detail: `Server can read/write the entire filesystem. Found in ${relPath}.`,
             remediation: 'Scope filesystem access to your project directory only.',
-            learnMore: 'https://headlessmode.com/blog/mcp-permissions',
           });
         }
 
@@ -86,7 +115,6 @@ export default {
             title: `MCP server "${name}" receives ${sensitiveKeys.length} sensitive env vars`,
             detail: `Sensitive environment variables (${sensitiveKeys.join(', ')}) are passed to this server.`,
             remediation: 'Only pass environment variables that the server actually needs.',
-            learnMore: 'https://headlessmode.com/blog/mcp-permissions',
           });
         } else if (sensitiveKeys.length > 0) {
           findings.push({
@@ -94,7 +122,6 @@ export default {
             title: `MCP server "${name}" receives sensitive env var(s): ${sensitiveKeys.join(', ')}`,
             detail: `Sensitive keys passed in ${relPath}.`,
             remediation: 'Verify this server needs these credentials.',
-            learnMore: 'https://headlessmode.com/blog/mcp-permissions',
           });
         }
 
@@ -106,7 +133,6 @@ export default {
               title: `MCP server "${name}" uses unpinned version (@latest)`,
               detail: 'Unpinned versions can introduce breaking changes or supply chain attacks.',
               remediation: 'Pin MCP server packages to specific versions.',
-              learnMore: 'https://headlessmode.com/blog/mcp-supply-chain',
             });
             break;
           }
@@ -122,7 +148,6 @@ export default {
               title: `MCP server "${name}" has inline credentials in command`,
               detail: 'API keys or tokens are embedded directly in the MCP server command.',
               remediation: 'Use environment variables instead of inline credentials.',
-              learnMore: 'https://headlessmode.com/blog/mcp-permissions',
             });
             break;
           }
@@ -136,7 +161,7 @@ export default {
         title: 'No MCP configuration found',
         detail: 'No MCP server configuration files detected.',
       });
-      return { score: 100, findings };
+      return { score: NOT_APPLICABLE_SCORE, findings };
     }
 
     if (findings.length === 0) {

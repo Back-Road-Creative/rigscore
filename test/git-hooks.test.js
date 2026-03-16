@@ -8,6 +8,8 @@ function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-git-'));
 }
 
+const defaultConfig = { paths: { hookDirs: [] }, network: {} };
+
 describe('git-hooks check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('git-hooks');
@@ -18,7 +20,7 @@ describe('git-hooks check', () => {
     const tmpDir = makeTmpDir();
     fs.mkdirSync(path.join(tmpDir, '.git', 'hooks'), { recursive: true });
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
       const warning = result.findings.find((f) => f.severity === 'warning');
       expect(warning).toBeDefined();
     } finally {
@@ -30,9 +32,10 @@ describe('git-hooks check', () => {
     const tmpDir = makeTmpDir();
     const hooksDir = path.join(tmpDir, '.git', 'hooks');
     fs.mkdirSync(hooksDir, { recursive: true });
-    fs.writeFileSync(path.join(hooksDir, 'pre-commit'), '#!/bin/sh\necho check');
+    fs.writeFileSync(path.join(hooksDir, 'pre-commit'), '#!/bin/sh\nnpx lint-staged');
+    fs.chmodSync(path.join(hooksDir, 'pre-commit'), 0o755);
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
       const pass = result.findings.find((f) => f.severity === 'pass');
       expect(pass).toBeDefined();
     } finally {
@@ -49,11 +52,56 @@ describe('git-hooks check', () => {
       devDependencies: { husky: '^9.0.0', 'lint-staged': '^15.0.0' },
     }));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
       const pass = result.findings.find((f) => f.severity === 'pass');
       expect(pass).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PASS when Claude Code hooks detected', async () => {
+    const tmpDir = makeTmpDir();
+    fs.mkdirSync(path.join(tmpDir, '.git', 'hooks'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.claude', 'settings.json'), JSON.stringify({
+      hooks: { PreToolUse: [{ command: 'echo test' }] },
+    }));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const pass = result.findings.find((f) => f.severity === 'pass' && f.title.includes('Claude Code hooks'));
+      expect(pass).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PASS when pushurl guard detected', async () => {
+    const tmpDir = makeTmpDir();
+    fs.mkdirSync(path.join(tmpDir, '.git', 'hooks'), { recursive: true });
+    const gitConfig = '[remote "origin"]\n\turl = git@github.com:user/repo.git\n\tpushurl = no_push\n';
+    fs.writeFileSync(path.join(tmpDir, '.git', 'config'), gitConfig);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const pass = result.findings.find((f) => f.severity === 'pass' && f.title.includes('Push URL guard'));
+      expect(pass).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PASS when external hook directory from config exists', async () => {
+    const tmpDir = makeTmpDir();
+    const hookDir = makeTmpDir();
+    fs.mkdirSync(path.join(tmpDir, '.git', 'hooks'), { recursive: true });
+    const cfg = { paths: { hookDirs: [hookDir] }, network: {} };
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: cfg });
+      const pass = result.findings.find((f) => f.severity === 'pass' && f.title.includes('External hook'));
+      expect(pass).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(hookDir, { recursive: true });
     }
   });
 });

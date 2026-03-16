@@ -1,5 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { loadChecks } from './checks/index.js';
-import { calculateCheckScore, calculateOverallScore } from './scoring.js';
+import { calculateOverallScore } from './scoring.js';
+import { NOT_APPLICABLE_SCORE } from './constants.js';
+import { loadConfig } from './config.js';
 
 /**
  * Run an array of checks against a context, collect results.
@@ -55,10 +59,11 @@ export async function runChecks(checks, context, options = {}) {
  */
 export async function scan(options = {}) {
   const checks = await loadChecks();
-  const context = {
-    cwd: options.cwd || process.cwd(),
-    homedir: options.homedir || (await import('node:os')).homedir(),
-  };
+  const cwd = options.cwd || process.cwd();
+  const homedir = options.homedir || (await import('node:os')).homedir();
+  const config = await loadConfig(cwd, homedir);
+
+  const context = { cwd, homedir, config };
 
   const results = await runChecks(checks, context, options);
 
@@ -66,11 +71,115 @@ export async function scan(options = {}) {
   // instead of weighted system (which assumes all checks are present)
   let overallScore;
   if (options.checkFilter) {
-    const avg = results.reduce((sum, r) => sum + r.score, 0) / (results.length || 1);
+    const applicable = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
+    const avg = applicable.length > 0
+      ? applicable.reduce((sum, r) => sum + r.score, 0) / applicable.length
+      : 0;
     overallScore = Math.round(avg);
   } else {
     overallScore = calculateOverallScore(results);
   }
 
   return { score: overallScore, results };
+}
+
+// Files that indicate a directory is a scannable project
+const PROJECT_MARKERS = [
+  'package.json', 'pyproject.toml', 'setup.py', 'requirements.txt',
+  'Dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
+  'compose.yml', 'compose.yaml',
+  'CLAUDE.md', '.cursorrules', '.windsurfrules', '.clinerules',
+  '.continuerules', 'AGENTS.md', '.mcp.json',
+  '.env', '.sops.yaml',
+];
+
+/**
+ * Discover project directories under rootDir up to maxDepth levels.
+ * A directory is a project if it contains any PROJECT_MARKERS file.
+ */
+export async function discoverProjects(rootDir, maxDepth = 1) {
+  const projects = [];
+
+  async function walk(dir, depth) {
+    if (depth > maxDepth) return;
+
+    let entries;
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      console.warn(`rigscore: could not read directory ${dir}: ${err.message}`);
+      return;
+    }
+
+    // Skip hidden dirs, node_modules, venv, .git
+    const subdirs = entries.filter((e) =>
+      e.isDirectory() &&
+      !e.name.startsWith('.') &&
+      e.name !== 'node_modules' &&
+      e.name !== 'venv' &&
+      e.name !== '__pycache__',
+    );
+
+    for (const sub of subdirs) {
+      const subPath = path.join(dir, sub.name);
+      let subEntries;
+      try {
+        subEntries = await fs.promises.readdir(subPath);
+      } catch (err) {
+        console.warn(`rigscore: could not read directory ${subPath}: ${err.message}`);
+        continue;
+      }
+
+      const hasMarker = PROJECT_MARKERS.some((m) => subEntries.includes(m));
+      if (hasMarker) {
+        projects.push(subPath);
+      }
+
+      // Recurse deeper
+      if (depth + 1 <= maxDepth) {
+        await walk(subPath, depth + 1);
+      }
+    }
+  }
+
+  await walk(rootDir, 1);
+  return projects.sort();
+}
+
+/**
+ * Recursive scan: discover projects under rootDir, scan each, aggregate.
+ * Returns { score, projects: [{ path, score, results }] }.
+ */
+export async function scanRecursive(options = {}) {
+  const rootDir = options.cwd || process.cwd();
+  const maxDepth = options.depth || 1;
+
+  const projectDirs = await discoverProjects(rootDir, maxDepth);
+
+  if (projectDirs.length === 0) {
+    return {
+      score: 0,
+      projects: [],
+      error: `No projects found under ${rootDir} (depth ${maxDepth})`,
+    };
+  }
+
+  const projects = [];
+  for (const dir of projectDirs) {
+    const result = await scan({ ...options, cwd: dir });
+    projects.push({
+      path: path.relative(rootDir, dir) || path.basename(dir),
+      absolutePath: dir,
+      score: result.score,
+      results: result.results,
+    });
+  }
+
+  // Overall score = average across projects (excluding all-N/A projects with score 0)
+  const scorable = projects.filter((p) => p.score > 0 || p.results.some((r) => r.score !== NOT_APPLICABLE_SCORE && r.score !== undefined));
+  const avgScore = scorable.length > 0
+    ? Math.round(scorable.reduce((sum, p) => sum + p.score, 0) / scorable.length)
+    : 0;
+
+  return { score: avgScore, projects };
 }

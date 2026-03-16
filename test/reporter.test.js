@@ -33,7 +33,6 @@ const mockResult = {
           title: '.env file found but NOT in .gitignore',
           detail: 'Your API keys will be committed.',
           remediation: 'Add .env to .gitignore.',
-          learnMore: 'https://headlessmode.com/blog/env-security',
         },
       ],
     },
@@ -68,7 +67,7 @@ describe('formatTerminal', () => {
     const output = formatTerminal(mockResult, '/home/user/project');
     const plain = stripAnsi(output);
     expect(plain).toContain('54');
-    expect(plain).toContain('RIGSCORE');
+    expect(plain).toContain('HYGIENE SCORE');
   });
 
   it('includes check sub-scores', () => {

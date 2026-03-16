@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
+import { readFileSafe, fileExists, statSafe } from '../utils.js';
 
 const KEY_PATTERNS = [
   /sk-ant-[a-zA-Z0-9_-]{10,}/,         // Anthropic
@@ -19,35 +20,38 @@ const CONFIG_FILES = [
   '.mcp.json',
   '.cursorrules',
   '.windsurfrules',
+  '.clinerules',
+  '.continuerules',
+  '.aider.conf.yml',
   'copilot-instructions.md',
+  '.github/copilot-instructions.md',
+  'AGENTS.md',
   'config.js',
   'config.ts',
   'config.json',
 ];
 
-async function fileExists(p) {
-  try {
-    await fs.promises.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readFileSafe(p) {
-  try {
-    return await fs.promises.readFile(p, 'utf-8');
-  } catch {
-    return null;
-  }
-}
+const ENV_GITIGNORE_PATTERNS = [
+  '.env',
+  '.env*',
+  '*.env',
+  '**/.env',
+  '.env.*',
+  '.env.local',
+  '.env.*.local',
+];
 
 async function isInGitignore(cwd) {
   const gitignorePath = path.join(cwd, '.gitignore');
   const content = await readFileSafe(gitignorePath);
   if (!content) return false;
   const lines = content.split('\n').map((l) => l.trim());
-  return lines.some((l) => l === '.env' || l === '.env*' || l === '*.env');
+
+  // Check for negation lines that would un-ignore .env
+  const hasNegation = lines.some((l) => l.startsWith('!') && (l.includes('.env') || l.includes('env')));
+  if (hasNegation) return false;
+
+  return lines.some((l) => ENV_GITIGNORE_PATTERNS.includes(l));
 }
 
 export default {
@@ -59,6 +63,7 @@ export default {
   async run(context) {
     const { cwd } = context;
     const findings = [];
+    const isPosix = process.platform !== 'win32';
 
     // Check for .env files
     const envFiles = [];
@@ -77,7 +82,6 @@ export default {
           title: '.env file found but NOT in .gitignore',
           detail: 'Your API keys and secrets will be committed to version control.',
           remediation: 'Add .env to .gitignore immediately.',
-          learnMore: 'https://headlessmode.com/blog/env-security',
         });
       } else {
         findings.push({
@@ -85,31 +89,79 @@ export default {
           title: '.env file properly gitignored',
         });
       }
+
+      // Check .env file permissions
+      if (isPosix) {
+        for (const envFile of envFiles) {
+          const envStat = await statSafe(path.join(cwd, envFile));
+          if (envStat) {
+            const mode = envStat.mode & 0o777;
+            // World-readable check: "others" read bit
+            if (mode & 0o004) {
+              findings.push({
+                severity: 'warning',
+                title: `${envFile} is world-readable`,
+                detail: `${envFile} has mode ${mode.toString(8)}. Secrets files should not be world-readable.`,
+                remediation: `Run: chmod 600 ${envFile}`,
+              });
+            }
+          }
+        }
+      } else {
+        findings.push({
+          severity: 'skipped',
+          title: '.env file permission checks skipped on Windows',
+          detail: 'POSIX file permission checks are not available on Windows. Consider using icacls to verify .env file permissions manually.',
+        });
+      }
     }
 
-    // Scan config files for hardcoded keys
+    // Detect SOPS
+    const sopsConfig = await fileExists(path.join(cwd, '.sops.yaml'));
+    if (sopsConfig) {
+      findings.push({
+        severity: 'pass',
+        title: 'Secrets managed by SOPS',
+        detail: '.sops.yaml found — secrets are encrypted at rest.',
+      });
+    }
+
+    // Scan config files for hardcoded keys — line by line to skip comments
+    const COMMENT_PREFIXES = ['#', '//', '<!--'];
     let hardcodedFound = false;
     for (const configFile of CONFIG_FILES) {
       const filePath = path.join(cwd, configFile);
       const content = await readFileSafe(filePath);
       if (!content) continue;
 
-      for (const pattern of KEY_PATTERNS) {
-        if (pattern.test(content)) {
-          hardcodedFound = true;
-          findings.push({
-            severity: 'critical',
-            title: `Hardcoded API key found in ${configFile}`,
-            detail: `A secret matching pattern ${pattern.source.slice(0, 20)}... was found in ${configFile}.`,
-            remediation: 'Move secrets to .env and reference via environment variables.',
-            learnMore: 'https://headlessmode.com/blog/env-security',
-          });
-          break; // one finding per file
+      const fileLines = content.split('\n');
+      let foundInFile = false;
+      for (const line of fileLines) {
+        const trimmed = line.trim();
+        const isComment = COMMENT_PREFIXES.some((p) => trimmed.startsWith(p));
+
+        for (const pattern of KEY_PATTERNS) {
+          if (pattern.test(line)) {
+            hardcodedFound = true;
+            foundInFile = true;
+            findings.push({
+              severity: isComment ? 'info' : 'critical',
+              title: isComment
+                ? `API key pattern in comment in ${configFile}`
+                : `Hardcoded API key found in ${configFile}`,
+              detail: isComment
+                ? `A secret pattern was found in a comment in ${configFile}. Verify it is not a real key.`
+                : `A secret matching pattern ${pattern.source.slice(0, 20)}... was found in ${configFile}.`,
+              remediation: 'Move secrets to .env and reference via environment variables.',
+            });
+            break;
+          }
         }
+        if (foundInFile) break; // one finding per file
       }
     }
 
-    if (envFiles.length === 0 && !hardcodedFound) {
+    if (envFiles.length === 0 && !hardcodedFound && !sopsConfig) {
       findings.push({
         severity: 'pass',
         title: 'No exposed secrets detected',

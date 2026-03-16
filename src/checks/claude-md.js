@@ -1,14 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-
-async function readFileSafe(p) {
-  try {
-    return await fs.promises.readFile(p, 'utf-8');
-  } catch {
-    return null;
-  }
-}
+import { readFileSafe } from '../utils.js';
 
 const QUALITY_CHECKS = [
   {
@@ -40,6 +32,19 @@ const QUALITY_CHECKS = [
 
 const LENGTH_THRESHOLD = 50;
 
+// All known AI client governance files (checked in cwd)
+const GOVERNANCE_FILES = [
+  'CLAUDE.md',
+  '.cursorrules',
+  '.windsurfrules',
+  '.clinerules',
+  '.continuerules',
+  'copilot-instructions.md',
+  '.github/copilot-instructions.md',
+  'AGENTS.md',
+  '.aider.conf.yml',
+];
+
 export default {
   id: 'claude-md',
   name: 'CLAUDE.md governance',
@@ -47,54 +52,75 @@ export default {
   weight: 20,
 
   async run(context) {
-    const { cwd, homedir } = context;
+    const { cwd, homedir, config } = context;
     const findings = [];
 
-    // Check project-level CLAUDE.md
-    const projectPath = path.join(cwd, 'CLAUDE.md');
-    const globalPath = path.join(homedir, '.claude', 'CLAUDE.md');
+    // Collect all candidate paths — CLAUDE.md + all known AI client governance files
+    const candidatePaths = [
+      // CLAUDE.md locations (project, homedir .claude, homedir root)
+      path.join(cwd, 'CLAUDE.md'),
+      path.join(homedir, '.claude', 'CLAUDE.md'),
+      path.join(homedir, 'CLAUDE.md'),
+      // All other AI client governance files in cwd
+      ...GOVERNANCE_FILES.filter((f) => f !== 'CLAUDE.md').map((f) => path.join(cwd, f)),
+    ];
 
-    const projectContent = await readFileSafe(projectPath);
-    const globalContent = await readFileSafe(globalPath);
+    // Add config-specified paths
+    if (config?.paths?.claudeMd) {
+      for (const p of config.paths.claudeMd) {
+        candidatePaths.push(p);
+      }
+    }
 
-    const content = projectContent || globalContent;
+    // Read all files, collect contents
+    const contents = [];
+    for (const p of candidatePaths) {
+      const content = await readFileSafe(p);
+      if (content) {
+        contents.push(content);
+      }
+    }
 
-    if (!content) {
+    if (contents.length === 0) {
       findings.push({
         severity: 'critical',
-        title: 'No CLAUDE.md found',
-        detail: 'Without a CLAUDE.md governance file, AI agents operate without explicit boundaries or rules.',
-        remediation: 'Create a CLAUDE.md with execution boundaries, forbidden actions, and approval gates.',
-        learnMore: 'https://headlessmode.com/blog/why-claude-md-matters',
+        title: 'No governance file found',
+        detail: 'No CLAUDE.md, .cursorrules, .windsurfrules, .continuerules, AGENTS.md, or other AI governance file found. AI agents operate without explicit boundaries.',
+        remediation: 'Create a governance file (CLAUDE.md, .cursorrules, etc.) with execution boundaries, forbidden actions, and approval gates.',
       });
       return { score: calculateCheckScore(findings), findings };
     }
 
-    const lines = content.split('\n');
+    // Union content for quality checks
+    const combined = contents.join('\n');
+    const longestContent = contents.reduce((a, b) => (a.length > b.length ? a : b));
+    const lines = longestContent.split('\n');
 
-    // Check content length
-    if (lines.length < LENGTH_THRESHOLD) {
+    if (contents.length > 1) {
       findings.push({
-        severity: 'warning',
-        title: 'CLAUDE.md is short (under 50 lines)',
-        detail: 'A short governance file may not provide sufficient boundaries for AI agent behavior.',
-        remediation: 'Add forbidden actions, approval gates, path restrictions, and anti-injection rules.',
-        learnMore: 'https://headlessmode.com/blog/why-claude-md-matters',
+        severity: 'pass',
+        title: 'Multiple governance layers detected',
       });
     }
 
-    // Check quality patterns
-    let qualityScore = 0;
+    // Check content length (based on longest file)
+    if (lines.length < LENGTH_THRESHOLD) {
+      findings.push({
+        severity: 'warning',
+        title: 'Governance file is short (under 50 lines)',
+        detail: 'A short governance file may not provide sufficient boundaries for AI agent behavior.',
+        remediation: 'Add forbidden actions, approval gates, path restrictions, and anti-injection rules.',
+      });
+    }
+
+    // Check quality patterns against combined content
     for (const check of QUALITY_CHECKS) {
-      if (check.pattern.test(content)) {
-        qualityScore += check.points;
-      } else {
+      if (!check.pattern.test(combined)) {
         findings.push({
           severity: 'warning',
-          title: `CLAUDE.md missing: ${check.name}`,
-          detail: `No ${check.name} rules detected in your governance file.`,
-          remediation: `Add ${check.name} instructions to your CLAUDE.md.`,
-          learnMore: 'https://headlessmode.com/blog/claude-md-hardening',
+          title: `Governance file missing: ${check.name}`,
+          detail: `No ${check.name} rules detected in your governance file(s).`,
+          remediation: `Add ${check.name} instructions to your governance file.`,
         });
       }
     }
@@ -102,7 +128,7 @@ export default {
     if (findings.length === 0) {
       findings.push({
         severity: 'pass',
-        title: 'CLAUDE.md contains comprehensive governance rules',
+        title: 'Governance file contains comprehensive rules',
       });
     }
 

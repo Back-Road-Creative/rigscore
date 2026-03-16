@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { NOT_APPLICABLE_SCORE } from './constants.js';
 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
@@ -27,6 +28,7 @@ function getSeverityColor(severity) {
     case 'critical': return chalk.red;
     case 'warning': return chalk.yellow;
     case 'info': return chalk.blue;
+    case 'skipped': return chalk.dim;
     case 'pass': return chalk.green;
     default: return chalk.white;
   }
@@ -37,6 +39,7 @@ function getSeverityIcon(severity) {
     case 'critical': return '\u2717';
     case 'warning': return '\u26A0';
     case 'info': return '\u2139';
+    case 'skipped': return '\u21B7';
     case 'pass': return '\u2713';
     default: return ' ';
   }
@@ -66,7 +69,7 @@ export function formatTerminal(result, cwd) {
   lines.push(box([
     '',
     `${'       '}rigscore v0.1.0`,
-    '  AI Dev Environment Security Scan',
+    '  AI Dev Environment Hygiene Check',
     '',
   ]));
   lines.push('');
@@ -75,16 +78,22 @@ export function formatTerminal(result, cwd) {
 
   // Check scores
   for (const r of results) {
-    const checkScore = Math.round((r.score / 100) * r.weight);
-    const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.red('\u2717');
-    const name = r.name.padEnd(30, '.');
-    lines.push(`  ${icon} ${name} ${checkScore}/${r.weight}`);
+    if (r.score === NOT_APPLICABLE_SCORE) {
+      const icon = chalk.dim('\u21B7');
+      const name = r.name.padEnd(30, '.');
+      lines.push(`  ${icon} ${name} N/A`);
+    } else {
+      const checkScore = Math.round((r.score / 100) * r.weight);
+      const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.red('\u2717');
+      const name = r.name.padEnd(30, '.');
+      lines.push(`  ${icon} ${name} ${checkScore}/${r.weight}`);
+    }
   }
 
   lines.push('');
 
   // Score box
-  const scoreStr = colorFn(`YOUR RIGSCORE: ${score}/100`);
+  const scoreStr = colorFn(`HYGIENE SCORE: ${score}/100`);
   const gradeStr = colorFn(`Grade: ${grade}`);
   lines.push(box([
     '',
@@ -94,12 +103,12 @@ export function formatTerminal(result, cwd) {
   ]));
   lines.push('');
 
-  // Findings by severity
+  // Findings by severity (including skipped)
   const allFindings = results.flatMap((r) =>
     r.findings.map((f) => ({ ...f, checkName: r.name })),
   );
 
-  for (const severity of ['critical', 'warning', 'info']) {
+  for (const severity of ['critical', 'warning', 'info', 'skipped']) {
     const items = allFindings.filter((f) => f.severity === severity);
     if (items.length === 0) continue;
 
@@ -116,9 +125,6 @@ export function formatTerminal(result, cwd) {
       if (item.remediation) {
         lines.push(`    ${chalk.dim('\u2192')} Fix: ${item.remediation}`);
       }
-      if (item.learnMore) {
-        lines.push(`    ${chalk.dim('\u2192')} Learn more: ${item.learnMore}`);
-      }
       lines.push('');
     }
   }
@@ -130,6 +136,89 @@ export function formatTerminal(result, cwd) {
   lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
   lines.push('');
   lines.push(`  Share your score: ${chalk.dim('npx rigscore --badge')}`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Format recursive scan results for terminal output.
+ * Shows per-project summary table + expanded findings for failing projects.
+ */
+export function formatTerminalRecursive(result, rootDir) {
+  const { score, projects } = result;
+  const grade = getGrade(score);
+  const colorFn = getScoreColor(score);
+  const lines = [];
+
+  // Header
+  lines.push('');
+  lines.push(box([
+    '',
+    `${'       '}rigscore v0.1.0`,
+    '  AI Dev Environment Hygiene Check',
+    `${'     '}Recursive Mode`,
+    '',
+  ]));
+  lines.push('');
+  lines.push(`  Scanning ${rootDir} (${projects.length} projects found)`);
+  lines.push('');
+
+  // Per-project summary
+  for (const project of projects) {
+    const pGrade = getGrade(project.score);
+    const pColor = getScoreColor(project.score);
+    const icon = project.score >= 70 ? chalk.green('\u2713') : chalk.red('\u2717');
+    const name = project.path.padEnd(40, '.');
+    lines.push(`  ${icon} ${name} ${pColor(`${project.score}/100 (${pGrade})`)}`);
+  }
+
+  lines.push('');
+
+  // Overall score box
+  const scoreStr = colorFn(`OVERALL HYGIENE SCORE: ${score}/100`);
+  const gradeStr = colorFn(`Grade: ${grade} (average)`);
+  lines.push(box([
+    '',
+    `      ${scoreStr}`,
+    `      ${gradeStr}`,
+    '',
+  ]));
+  lines.push('');
+
+  // Show findings only for projects with issues (score < 100)
+  const failing = projects.filter((p) => p.score < 70);
+  if (failing.length > 0) {
+    lines.push(`  ${chalk.yellow('Projects needing attention:')}`);
+    lines.push('');
+
+    for (const project of failing) {
+      lines.push(`  ${chalk.bold(project.path)} (${project.score}/100)`);
+      const allFindings = project.results.flatMap((r) =>
+        r.findings.map((f) => ({ ...f, checkName: r.name })),
+      );
+
+      for (const severity of ['critical', 'warning']) {
+        const items = allFindings.filter((f) => f.severity === severity);
+        if (items.length === 0) continue;
+        const color = getSeverityColor(severity);
+        for (const item of items) {
+          const icon = getSeverityIcon(severity);
+          lines.push(`    ${color(icon)} ${item.title}`);
+          if (item.remediation) {
+            lines.push(`      ${chalk.dim('\u2192')} Fix: ${item.remediation}`);
+          }
+        }
+      }
+      lines.push('');
+    }
+  }
+
+  // CTA
+  lines.push(`  ${'─'.repeat(40)}`);
+  lines.push('');
+  lines.push('  Want a full audit with hardened configurations deployed?');
+  lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
   lines.push('');
 
   return lines.join('\n');

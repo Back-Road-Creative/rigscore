@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
-import { scan } from './scanner.js';
-import { formatTerminal, formatJson, formatBadge } from './reporter.js';
+import { scan, scanRecursive } from './scanner.js';
+import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 
 function parseArgs(args) {
   const options = {
@@ -10,6 +10,8 @@ function parseArgs(args) {
     noColor: false,
     checkFilter: null,
     cwd: null,
+    recursive: false,
+    depth: 1,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -22,6 +24,11 @@ function parseArgs(args) {
       options.noColor = true;
     } else if (arg === '--check' && i + 1 < args.length) {
       options.checkFilter = args[++i];
+    } else if (arg === '--recursive' || arg === '-r') {
+      options.recursive = true;
+    } else if (arg === '--depth' && i + 1 < args.length) {
+      options.depth = parseInt(args[++i], 10) || 1;
+      options.recursive = true; // --depth implies --recursive
     } else if (!arg.startsWith('-')) {
       options.cwd = arg;
     }
@@ -58,15 +65,32 @@ export async function run(args) {
     checkFilter: options.checkFilter,
   };
 
-  const result = await scan(scanOptions);
+  if (options.recursive) {
+    const result = await scanRecursive({ ...scanOptions, depth: options.depth });
 
-  if (options.json) {
-    process.stdout.write(formatJson(result) + '\n');
-  } else if (options.badge) {
-    process.stdout.write(formatBadge(result) + '\n');
+    if (result.error) {
+      process.stderr.write(`Error: ${result.error}\n`);
+      process.exit(1);
+    }
+
+    if (options.json) {
+      process.stdout.write(formatJson(result) + '\n');
+    } else {
+      process.stdout.write(formatTerminalRecursive(result, cwd) + '\n');
+    }
+
+    process.exit(result.score >= 70 ? 0 : 1);
   } else {
-    process.stdout.write(formatTerminal(result, cwd) + '\n');
-  }
+    const result = await scan(scanOptions);
 
-  process.exit(result.score >= 70 ? 0 : 1);
+    if (options.json) {
+      process.stdout.write(formatJson(result) + '\n');
+    } else if (options.badge) {
+      process.stdout.write(formatBadge(result) + '\n');
+    } else {
+      process.stdout.write(formatTerminal(result, cwd) + '\n');
+    }
+
+    process.exit(result.score >= 70 ? 0 : 1);
+  }
 }

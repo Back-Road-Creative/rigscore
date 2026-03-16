@@ -1,18 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
+import { NOT_APPLICABLE_SCORE } from '../constants.js';
+import { readFileSafe, statSafe } from '../utils.js';
 
-async function readFileSafe(p) {
-  try {
-    return await fs.promises.readFile(p, 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
+// All known AI client skill/instruction files
 const SKILL_FILE_PATHS = [
   '.cursorrules',
   '.windsurfrules',
+  '.clinerules',
+  '.continuerules',
+  '.aider.conf.yml',
   'copilot-instructions.md',
   '.github/copilot-instructions.md',
   'AGENTS.md',
@@ -40,7 +38,10 @@ const SHELL_EXEC_PATTERNS = [
 ];
 
 const URL_PATTERN = /https?:\/\/[^\s"')\]]+/g;
-const BASE64_PATTERN = /[A-Za-z0-9+/]{50,}={0,2}/;
+// Anchored base64 pattern — requires whitespace boundary to reduce false positives
+const BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m;
+
+const DEFENSIVE_WORDS = /\b(defend|prevent|block|guard|detect|refuse|flag)\b/i;
 
 export default {
   id: 'skill-files',
@@ -49,7 +50,7 @@ export default {
   weight: 10,
 
   async run(context) {
-    const { cwd } = context;
+    const { cwd, config } = context;
     const findings = [];
     const filesToScan = [];
 
@@ -58,7 +59,17 @@ export default {
       const fullPath = path.join(cwd, relPath);
       const content = await readFileSafe(fullPath);
       if (content) {
-        filesToScan.push({ path: relPath, content });
+        filesToScan.push({ path: relPath, fullPath, content });
+      }
+    }
+
+    // Add config-specified skill files
+    if (config?.paths?.skillFiles) {
+      for (const p of config.paths.skillFiles) {
+        const content = await readFileSafe(p);
+        if (content) {
+          filesToScan.push({ path: p, fullPath: p, content });
+        }
       }
     }
 
@@ -72,7 +83,7 @@ export default {
           const fullPath = path.join(dirPath, entry);
           const content = await readFileSafe(fullPath);
           if (content) {
-            filesToScan.push({ path: path.join(dir, entry), content });
+            filesToScan.push({ path: path.join(dir, entry), fullPath, content });
           }
         }
       } catch {
@@ -86,22 +97,35 @@ export default {
         title: 'No skill files found',
         detail: 'No AI agent instruction files detected.',
       });
-      return { score: 100, findings };
+      return { score: NOT_APPLICABLE_SCORE, findings };
     }
 
     for (const file of filesToScan) {
-      // Check injection patterns
-      for (const pattern of INJECTION_PATTERNS) {
-        if (pattern.test(file.content)) {
-          findings.push({
-            severity: 'critical',
-            title: `Injection pattern found in ${file.path}`,
-            detail: 'File contains instruction override patterns that could hijack AI agent behavior.',
-            remediation: 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
-            learnMore: 'https://headlessmode.com/blog/skill-file-injection',
-          });
-          break; // one finding per file for injection
+      const lines = file.content.split('\n');
+
+      // Check injection patterns — line by line with defensive word downgrade
+      let injectionFound = false;
+      for (const line of lines) {
+        for (const pattern of INJECTION_PATTERNS) {
+          if (pattern.test(line)) {
+            const isDefensive = DEFENSIVE_WORDS.test(line);
+            findings.push({
+              severity: isDefensive ? 'info' : 'critical',
+              title: isDefensive
+                ? `Defensive injection reference in ${file.path}`
+                : `Injection pattern found in ${file.path}`,
+              detail: isDefensive
+                ? 'File references injection patterns in a defensive context.'
+                : 'File contains instruction override patterns that could hijack AI agent behavior.',
+              remediation: isDefensive
+                ? 'No action needed — this appears to be a defensive rule.'
+                : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
+            });
+            injectionFound = true;
+            break;
+          }
         }
+        if (injectionFound) break; // one finding per file for injection
       }
 
       // Check shell execution patterns
@@ -112,22 +136,34 @@ export default {
             title: `Shell execution instructions in ${file.path}`,
             detail: 'File contains instructions to execute shell commands.',
             remediation: 'Review shell execution instructions carefully for security.',
-            learnMore: 'https://headlessmode.com/blog/skill-file-injection',
           });
           break;
         }
       }
 
-      // Check external URLs
+      // Check external URLs — only WARNING for HTTP (non-TLS)
       const urls = file.content.match(URL_PATTERN);
       if (urls && urls.length > 0) {
-        findings.push({
-          severity: 'warning',
-          title: `External URLs found in ${file.path}`,
-          detail: `${urls.length} external URL(s) found. These could be used for data exfiltration.`,
-          remediation: 'Verify all URLs are legitimate and necessary.',
-          learnMore: 'https://headlessmode.com/blog/skill-file-injection',
-        });
+        const httpUrls = urls.filter((u) => u.startsWith('http://'));
+        const httpsUrls = urls.filter((u) => u.startsWith('https://'));
+        const hasShellExec = SHELL_EXEC_PATTERNS.some((p) => p.test(file.content));
+
+        if (httpUrls.length > 0) {
+          findings.push({
+            severity: 'warning',
+            title: `Non-TLS URLs found in ${file.path}`,
+            detail: `${httpUrls.length} HTTP URL(s) found. Non-TLS URLs could be intercepted.`,
+            remediation: 'Use HTTPS for all external URLs.',
+          });
+        }
+        if (httpsUrls.length > 0) {
+          findings.push({
+            severity: hasShellExec ? 'warning' : 'info',
+            title: `HTTPS URLs found in ${file.path}`,
+            detail: `${httpsUrls.length} HTTPS URL(s) found.`,
+            remediation: 'Verify all URLs are legitimate and necessary.',
+          });
+        }
       }
 
       // Check base64 content
@@ -137,8 +173,24 @@ export default {
           title: `Possible encoded content in ${file.path}`,
           detail: 'File contains what appears to be base64-encoded content.',
           remediation: 'Decode and review the content. Remove if not needed.',
-          learnMore: 'https://headlessmode.com/blog/skill-file-injection',
         });
+      }
+
+      // Check file permissions (Linux only)
+      if (process.platform !== 'win32') {
+        const fileStat = await statSafe(file.fullPath);
+        if (fileStat) {
+          const mode = fileStat.mode & 0o777;
+          // World-writable check: "others" write bit
+          if (mode & 0o002) {
+            findings.push({
+              severity: 'warning',
+              title: `Skill file ${file.path} is world-writable`,
+              detail: `${file.path} has mode ${mode.toString(8)}. World-writable skill files can be tampered with.`,
+              remediation: `Run: chmod 644 ${file.path}`,
+            });
+          }
+        }
       }
     }
 
