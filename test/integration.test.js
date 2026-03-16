@@ -17,7 +17,7 @@ describe('CLI integration', () => {
 
   it('scans a fixture directory and produces score output', async () => {
     const { stdout } = await exec('node', [bin, fixture('claude-full')], { timeout: 10000 });
-    expect(stdout).toContain('RIGSCORE');
+    expect(stdout).toContain('HYGIENE SCORE');
     // Should contain a number score
     expect(stdout).toMatch(/\d+\/100/);
   });
@@ -44,5 +44,24 @@ describe('CLI integration', () => {
     } catch (err) {
       expect(err.stderr || err.stdout).toContain('not a valid directory');
     }
+  });
+});
+
+describe('CLI --help', () => {
+  it('--help prints usage info', async () => {
+    const { stdout } = await exec('node', [bin, '--help']);
+    expect(stdout).toContain('Usage:');
+    expect(stdout).toContain('--recursive');
+    expect(stdout).toContain('--depth');
+    expect(stdout).toContain('--json');
+    expect(stdout).toContain('--check');
+    expect(stdout).toContain('claude-md');
+    expect(stdout).toContain('docker-security');
+    expect(stdout).toContain('permissions-hygiene');
+  });
+
+  it('-h is an alias for --help', async () => {
+    const { stdout } = await exec('node', [bin, '-h']);
+    expect(stdout).toContain('Usage:');
   });
 });
