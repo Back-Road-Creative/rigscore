@@ -106,4 +106,36 @@ describe('MCP filesystem scope evasion', () => {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
+
+  it('detects ../../../ traversal in --directory flag', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        fs: { command: 'npx', args: ['server-fs', '--directory=../../../'] },
+      },
+    }));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('traversal'));
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects ../ in standalone relative path arg', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        fs: { command: 'npx', args: ['server-fs', '../../../etc'] },
+      },
+    }));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('traversal'));
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });

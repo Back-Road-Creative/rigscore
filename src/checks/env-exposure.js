@@ -21,6 +21,11 @@ const KEY_PATTERNS = [
   /AIzaSy[a-zA-Z0-9_-]{33}/,           // Firebase/Google
   /dop_v1_[a-f0-9]{64}/,               // DigitalOcean
   /key-[a-f0-9]{32}/,                   // Mailgun
+  /npm_[a-zA-Z0-9]{36}/,                // npm access token
+  /pypi-[a-zA-Z0-9_-]{16,}/,            // PyPI API token
+  /hf_[a-zA-Z0-9]{34}/,                 // Hugging Face token
+  /mongodb\+srv:\/\/[^\s"']+/,          // MongoDB connection string
+  /vercel_[a-zA-Z0-9_-]{24,}/,          // Vercel token
 ];
 
 const CONFIG_FILES = [

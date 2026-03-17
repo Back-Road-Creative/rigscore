@@ -100,7 +100,7 @@ rigscore recognizes governance files for all major AI coding clients: CLAUDE.md,
 - Does it restrict network and API access?
 - Does it include anti-injection instructions?
 
-**A good CLAUDE.md is not a wishlist.** It's mechanical enforcement. "Don't do X" is behavioral — the agent might ignore it. File permissions, hook scripts, and gated approvals are mechanical — they work regardless of what the agent tries. {#claude-md-hardening}
+**A good CLAUDE.md is not a wishlist** — it should define specific, enforceable boundaries. rigscore checks that your governance file documents key security dimensions; enforcement depends on your tooling (hooks, permissions, container isolation). {#claude-md-hardening}
 
 **What to fix:** Create a governance file with explicit execution boundaries, forbidden actions, file access restrictions, and approval gates. Be specific — "don't access sensitive files" is too vague. List the exact directories and operations that are off-limits.
 
@@ -209,6 +209,15 @@ Scoring uses an additive deduction model:
 - **PASS** and **SKIPPED** findings have no score impact
 
 Checks that find nothing to scan are marked N/A and excluded from the weighted average. If the total applicable check weight falls below 60%, a coverage penalty scales the overall score down proportionally — this prevents projects with minimal configuration from appearing fully secure.
+
+## Limitations
+
+rigscore is a configuration presence checker, not a security enforcement tool. Understanding its scope helps you use it effectively:
+
+- **Governance checks verify keyword presence, not semantic intent.** rigscore checks that your governance file mentions concepts like "forbidden actions" and "path restrictions." It cannot verify that those boundaries are actually enforced.
+- **Injection detection is pattern-based.** The 10 injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
+- **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). It does not recursively scan source files. For deep secret scanning, use gitleaks or trufflehog.
+- **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` for CI pipeline integration.
 
 ## Options
 

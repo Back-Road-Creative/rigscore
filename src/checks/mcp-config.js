@@ -140,6 +140,17 @@ export default {
           });
         }
 
+        // Check for relative path traversal in args
+        const hasTraversal = args.some(a => typeof a === 'string' && a.includes('../'));
+        if (hasTraversal) {
+          findings.push({
+            severity: 'warning',
+            title: `MCP server "${name}" uses relative path traversal`,
+            detail: `Arguments contain "../" which may escape project scope. Found in ${relPath}.`,
+            remediation: 'Use absolute paths scoped to your project directory.',
+          });
+        }
+
         // Check for sensitive env passthrough
         const env = server.env || {};
         const envKeys = Object.keys(env);
