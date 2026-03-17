@@ -4,6 +4,7 @@ import { loadChecks } from '../src/checks/index.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import os from 'node:os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -76,5 +77,21 @@ describe('runChecks', () => {
     const results = await runChecks([checkA, checkB], context, { checkFilter: 'alpha' });
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe('alpha');
+  });
+});
+
+describe('scan with invalid --check filter', () => {
+  it('returns error with available check IDs for unknown filter', async () => {
+    const { scan } = await import('../src/scanner.js');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-scan-'));
+    try {
+      const result = await scan({ cwd: tmpDir, checkFilter: 'nonexistent' });
+      expect(result.error).toBeDefined();
+      expect(result.error).toContain('nonexistent');
+      expect(result.error).toContain('Available');
+      expect(result.error).toContain('claude-md');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
   });
 });

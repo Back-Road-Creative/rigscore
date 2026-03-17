@@ -28,14 +28,15 @@ describe('loadConfig', () => {
 
   it('loads .rigscorerc.json from cwd', async () => {
     const tmpDir = makeTmpDir();
+    const localPath = './extra/CLAUDE.md';
     const rc = {
-      paths: { claudeMd: ['/extra/CLAUDE.md'] },
+      paths: { claudeMd: [localPath] },
       network: { safeHosts: ['127.0.0.1', 'localhost', '::1', '10.0.0.5'] },
     };
     fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
     try {
       const config = await loadConfig(tmpDir, '/tmp/nonexistent');
-      expect(config.paths.claudeMd).toEqual(['/extra/CLAUDE.md']);
+      expect(config.paths.claudeMd).toEqual([localPath]);
       expect(config.network.safeHosts).toEqual(['127.0.0.1', 'localhost', '::1', '10.0.0.5']);
       expect(config.paths.dockerCompose).toEqual([]);
     } finally {
@@ -46,11 +47,11 @@ describe('loadConfig', () => {
   it('loads .rigscorerc.json from homedir when not in cwd', async () => {
     const cwdDir = makeTmpDir();
     const homeDir = makeTmpDir();
-    const rc = { paths: { hookDirs: ['/opt/hooks'] } };
+    const rc = { paths: { hookDirs: ['./hooks'] } };
     fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify(rc));
     try {
       const config = await loadConfig(cwdDir, homeDir);
-      expect(config.paths.hookDirs).toEqual(['/opt/hooks']);
+      expect(config.paths.hookDirs).toEqual(['./hooks']);
     } finally {
       fs.rmSync(cwdDir, { recursive: true });
       fs.rmSync(homeDir, { recursive: true });
@@ -60,11 +61,11 @@ describe('loadConfig', () => {
   it('cwd config takes precedence over homedir config', async () => {
     const cwdDir = makeTmpDir();
     const homeDir = makeTmpDir();
-    fs.writeFileSync(path.join(cwdDir, '.rigscorerc.json'), JSON.stringify({ paths: { claudeMd: ['/cwd/CLAUDE.md'] } }));
-    fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify({ paths: { claudeMd: ['/home/CLAUDE.md'] } }));
+    fs.writeFileSync(path.join(cwdDir, '.rigscorerc.json'), JSON.stringify({ paths: { claudeMd: ['./cwd/CLAUDE.md'] } }));
+    fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify({ paths: { claudeMd: ['./home/CLAUDE.md'] } }));
     try {
       const config = await loadConfig(cwdDir, homeDir);
-      expect(config.paths.claudeMd).toEqual(['/cwd/CLAUDE.md']);
+      expect(config.paths.claudeMd).toEqual(['./cwd/CLAUDE.md']);
     } finally {
       fs.rmSync(cwdDir, { recursive: true });
       fs.rmSync(homeDir, { recursive: true });
@@ -88,7 +89,44 @@ describe('loadConfig', () => {
     fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
     try {
       const config = await loadConfig(tmpDir, '/tmp/nonexistent');
-      expect(config.paths.claudeMd).toEqual(['/a']);
+      // '/a' is absolute and outside tmpDir, so it gets filtered out
+      expect(config.paths.claudeMd).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('filters out absolute path traversal (/etc/passwd)', async () => {
+    const tmpDir = makeTmpDir();
+    const rc = { paths: { claudeMd: ['/etc/passwd'] } };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      expect(config.paths.claudeMd).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('filters out relative path traversal (../../../etc/passwd)', async () => {
+    const tmpDir = makeTmpDir();
+    const rc = { paths: { claudeMd: ['../../../etc/passwd'] } };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      expect(config.paths.claudeMd).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('keeps local paths (./local/CLAUDE.md)', async () => {
+    const tmpDir = makeTmpDir();
+    const rc = { paths: { claudeMd: ['./local/CLAUDE.md'] } };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      expect(config.paths.claudeMd).toEqual(['./local/CLAUDE.md']);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

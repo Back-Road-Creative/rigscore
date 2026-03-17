@@ -134,7 +134,7 @@ export function formatTerminal(result, cwd, options = {}) {
     lines.push(`  ${'─'.repeat(40)}`);
     lines.push('');
     lines.push('  Want a full audit with hardened configurations deployed?');
-    lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
+    lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-dev-hygiene-audit`);
     lines.push('');
     lines.push(`  Share your score: ${chalk.dim('npx rigscore --badge')}`);
     lines.push('');
@@ -227,7 +227,7 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
     lines.push(`  ${'─'.repeat(40)}`);
     lines.push('');
     lines.push('  Want a full audit with hardened configurations deployed?');
-    lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
+    lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-dev-hygiene-audit`);
     lines.push('');
   }
 

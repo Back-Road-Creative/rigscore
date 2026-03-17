@@ -108,4 +108,29 @@ describe('permissions-hygiene check', () => {
       fs.rmSync(tmpHome, { recursive: true });
     }
   });
+
+  it('emits SKIPPED finding on Windows (mocked)', async () => {
+    const origPlatform = process.platform;
+    const tmpDir = makeTmpDir();
+    const tmpHome = makeTmpDir();
+    // Create SSH key with bad perms to verify it's NOT flagged on Windows
+    const sshDir = path.join(tmpHome, '.ssh');
+    fs.mkdirSync(sshDir, { mode: 0o755 });
+    const keyFile = path.join(sshDir, 'id_rsa');
+    fs.writeFileSync(keyFile, 'fake key');
+    fs.chmodSync(keyFile, 0o644);
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', writable: true });
+      const result = await check.run({ cwd: tmpDir, homedir: tmpHome, config: { paths: {}, network: {} } });
+      const skipped = result.findings.find((f) => f.severity === 'skipped' && f.title.includes('Windows'));
+      expect(skipped).toBeDefined();
+      // No CRITICAL or WARNING findings — permission checks were skipped
+      const issues = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning');
+      expect(issues).toHaveLength(0);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: origPlatform, writable: true });
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(tmpHome, { recursive: true });
+    }
+  });
 });

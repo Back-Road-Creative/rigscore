@@ -20,12 +20,28 @@ const DEFAULTS = {
  */
 export async function loadConfig(cwd, homedir) {
   const cwdConfig = await readJsonSafe(path.join(cwd, '.rigscorerc.json'));
-  if (cwdConfig) return mergeConfig(cwdConfig);
+  if (cwdConfig) return sanitizePaths(mergeConfig(cwdConfig), cwd);
 
   const homeConfig = await readJsonSafe(path.join(homedir, '.rigscorerc.json'));
-  if (homeConfig) return mergeConfig(homeConfig);
+  if (homeConfig) return sanitizePaths(mergeConfig(homeConfig), cwd);
 
   return structuredClone(DEFAULTS);
+}
+
+/**
+ * Reject any config paths that resolve outside of cwd (path traversal defense).
+ */
+function sanitizePaths(config, cwd) {
+  const prefix = cwd + path.sep;
+  for (const key of Object.keys(config.paths)) {
+    if (Array.isArray(config.paths[key])) {
+      config.paths[key] = config.paths[key].filter((p) => {
+        const resolved = path.resolve(cwd, p);
+        return resolved === cwd || resolved.startsWith(prefix);
+      });
+    }
+  }
+  return config;
 }
 
 function mergeConfig(userConfig) {

@@ -86,6 +86,11 @@ export async function run(args) {
   } else {
     const result = await scan(scanOptions);
 
+    if (result.error) {
+      process.stderr.write(`Error: ${result.error}\n`);
+      process.exit(1);
+    }
+
     if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else if (options.badge) {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD } from '../src/constants.js';
+import { WEIGHTS, SEVERITY, CATEGORY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD, NOT_APPLICABLE_SCORE } from '../src/constants.js';
+import { loadChecks } from '../src/checks/index.js';
 
 describe('constants', () => {
   it('weights sum to 100', () => {
@@ -39,5 +40,49 @@ describe('constants', () => {
 
   it('COVERAGE_PENALTY_THRESHOLD is 60', () => {
     expect(COVERAGE_PENALTY_THRESHOLD).toBe(60);
+  });
+
+  it('NOT_APPLICABLE_SCORE is -1', () => {
+    expect(NOT_APPLICABLE_SCORE).toBe(-1);
+  });
+});
+
+describe('CATEGORY string values', () => {
+  it('GOVERNANCE === "governance"', () => {
+    expect(CATEGORY.GOVERNANCE).toBe('governance');
+  });
+
+  it('SUPPLY_CHAIN === "supply-chain"', () => {
+    expect(CATEGORY.SUPPLY_CHAIN).toBe('supply-chain');
+  });
+
+  it('SECRETS === "secrets"', () => {
+    expect(CATEGORY.SECRETS).toBe('secrets');
+  });
+
+  it('ISOLATION === "isolation"', () => {
+    expect(CATEGORY.ISOLATION).toBe('isolation');
+  });
+
+  it('PROCESS === "process"', () => {
+    expect(CATEGORY.PROCESS).toBe('process');
+  });
+});
+
+describe('check categories match CATEGORY constants', () => {
+  it('every check.category is a valid CATEGORY value', async () => {
+    const checks = await loadChecks();
+    const validCategories = Object.values(CATEGORY);
+    for (const check of checks) {
+      expect(validCategories).toContain(check.category);
+    }
+  });
+
+  it('every check.id has a matching WEIGHTS entry', async () => {
+    const checks = await loadChecks();
+    for (const check of checks) {
+      expect(WEIGHTS[check.id]).toBeDefined();
+      expect(WEIGHTS[check.id]).toBe(check.weight);
+    }
   });
 });

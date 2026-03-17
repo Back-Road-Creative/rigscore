@@ -82,9 +82,10 @@ describe('formatTerminal', () => {
     expect(plain).toContain('.env file found but NOT in .gitignore');
   });
 
-  it('includes CTA link', () => {
+  it('includes CTA link with hygiene-audit slug', () => {
     const plain = stripAnsi(formatTerminal(mockResult, '/home/user/project'));
-    expect(plain).toContain('backroadcreative.com');
+    expect(plain).toContain('backroadcreative.com/ai-dev-hygiene-audit');
+    expect(plain).not.toContain('security-audit');
   });
 });
 

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-import { readFileSafe } from '../utils.js';
+import { readFileSafe, readFileWithError } from '../utils.js';
 
 const QUALITY_CHECKS = [
   {
@@ -31,6 +31,28 @@ const QUALITY_CHECKS = [
 ];
 
 const LENGTH_THRESHOLD = 50;
+
+const INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?previous\s+instructions/i,
+  /ignore\s+(all\s+)?prior\s+instructions/i,
+  /you\s+are\s+now/i,
+  /disregard\s+(all\s+)?previous/i,
+  /override\s+(all\s+)?instructions/i,
+  /forget\s+(all\s+)?(previous|prior)/i,
+  /your\s+new\s+system\s+prompt/i,
+  /act\s+as\s+if/i,
+  /pretend\s+you\s+are/i,
+  /from\s+now\s+on\s+you/i,
+];
+
+const DEFENSIVE_WORDS = /\b(defend|prevent|block|guard|detect|refuse|flag|stop|reject|deny|halt|intercept|catch|disallow|prohibit|warn|alert|protect|mitigate|counter|resist)\b/i;
+
+function normalizeText(text) {
+  return text
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF]/g, '')
+    .replace(/[*_`~]/g, '');
+}
 
 const NEGATION_RE = /\b(never|not|no|don't|doesn't|isn't|without|lack|none|nothing)\b/i;
 
@@ -87,9 +109,16 @@ export default {
     // Read all files, collect contents
     const contents = [];
     for (const p of candidatePaths) {
-      const content = await readFileSafe(p);
+      const { content, error } = await readFileWithError(p);
       if (content) {
         contents.push(content);
+      } else if (error) {
+        findings.push({
+          severity: 'warning',
+          title: 'Governance file exists but is unreadable',
+          detail: `${p} exists but could not be read (${error}). Check file permissions.`,
+          remediation: `Run: chmod 644 ${p}`,
+        });
       }
     }
 
@@ -131,21 +160,86 @@ export default {
       const globalPattern = new RegExp(check.pattern.source, check.pattern.flags.includes('g') ? check.pattern.flags : check.pattern.flags + 'g');
       let match;
       let hasGenuineMatch = false;
+      let hasNegatedMatch = false;
 
       while ((match = globalPattern.exec(combined)) !== null) {
-        if (!isNegatedMatch(combined, match.index)) {
+        if (isNegatedMatch(combined, match.index)) {
+          hasNegatedMatch = true;
+        } else {
           hasGenuineMatch = true;
           break;
         }
       }
 
       if (!hasGenuineMatch) {
-        findings.push({
-          severity: 'warning',
-          title: `Governance file missing: ${check.name}`,
-          detail: `No ${check.name} rules detected in your governance file(s).`,
-          remediation: `Add ${check.name} instructions to your governance file.`,
-        });
+        if (hasNegatedMatch) {
+          findings.push({
+            severity: 'warning',
+            title: `Governance explicitly contradicts: ${check.name}`,
+            detail: `Your governance file(s) mention ${check.name} only in a negated context (e.g. "no ${check.name}"). This weakens the governance posture.`,
+            remediation: `Rewrite the ${check.name} section to set positive boundaries instead of negating them.`,
+          });
+        } else {
+          findings.push({
+            severity: 'warning',
+            title: `Governance file missing: ${check.name}`,
+            detail: `No ${check.name} rules detected in your governance file(s).`,
+            remediation: `Add ${check.name} instructions to your governance file.`,
+          });
+        }
+      }
+    }
+
+    // Multi-line injection detection: 2-line sliding window across all governance content
+    const combinedLines = combined.split('\n');
+    let injectionFound = false;
+    for (let i = 0; i < combinedLines.length - 1; i++) {
+      const twoLines = normalizeText(combinedLines[i] + ' ' + combinedLines[i + 1]);
+      for (const pattern of INJECTION_PATTERNS) {
+        if (pattern.test(twoLines)) {
+          const isDefensive = DEFENSIVE_WORDS.test(twoLines);
+          findings.push({
+            severity: isDefensive ? 'info' : 'warning',
+            title: isDefensive
+              ? 'Defensive injection reference in governance file'
+              : 'Injection pattern detected in governance file',
+            detail: isDefensive
+              ? 'Governance file references injection patterns in a defensive context.'
+              : 'Governance file contains instruction override patterns that could indicate tampering.',
+            remediation: isDefensive
+              ? 'No action needed — this appears to be a defensive rule.'
+              : 'Review and remove suspicious instruction override patterns from governance file.',
+          });
+          injectionFound = true;
+          break;
+        }
+      }
+      if (injectionFound) break;
+    }
+    // Also check single lines
+    if (!injectionFound) {
+      for (const line of combinedLines) {
+        const normalizedLine = normalizeText(line);
+        for (const pattern of INJECTION_PATTERNS) {
+          if (pattern.test(normalizedLine)) {
+            const isDefensive = DEFENSIVE_WORDS.test(normalizedLine);
+            findings.push({
+              severity: isDefensive ? 'info' : 'warning',
+              title: isDefensive
+                ? 'Defensive injection reference in governance file'
+                : 'Injection pattern detected in governance file',
+              detail: isDefensive
+                ? 'Governance file references injection patterns in a defensive context.'
+                : 'Governance file contains instruction override patterns that could indicate tampering.',
+              remediation: isDefensive
+                ? 'No action needed — this appears to be a defensive rule.'
+                : 'Review and remove suspicious instruction override patterns from governance file.',
+            });
+            injectionFound = true;
+            break;
+          }
+        }
+        if (injectionFound) break;
       }
     }
 

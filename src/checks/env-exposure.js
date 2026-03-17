@@ -187,7 +187,42 @@ export default {
       }
     }
 
-    if (envFiles.length === 0 && !hardcodedFound && !sopsConfig) {
+    // Base64-encoded secret detection — second pass over config files
+    const BASE64_RE = /[A-Za-z0-9+/]{40,}={0,2}/g;
+    let base64Found = false;
+    for (const configFile of CONFIG_FILES) {
+      if (base64Found) break;
+      const filePath = path.join(cwd, configFile);
+      const content = await readFileSafe(filePath);
+      if (!content) continue;
+
+      const candidates = content.match(BASE64_RE) || [];
+      for (const candidate of candidates) {
+        let decoded;
+        try {
+          decoded = Buffer.from(candidate, 'base64').toString('utf-8');
+        } catch {
+          continue;
+        }
+        // Only check decoded strings that look like printable text
+        if (!/^[\x20-\x7e]+$/.test(decoded)) continue;
+        for (const pattern of KEY_PATTERNS) {
+          if (pattern.test(decoded)) {
+            findings.push({
+              severity: 'warning',
+              title: `Base64-encoded secret detected in ${configFile}`,
+              detail: `A base64-encoded string in ${configFile} decodes to a value matching pattern ${pattern.source.slice(0, 20)}...`,
+              remediation: 'Remove the base64-encoded secret and move it to .env or a secrets manager.',
+            });
+            base64Found = true;
+            break;
+          }
+        }
+        if (base64Found) break;
+      }
+    }
+
+    if (envFiles.length === 0 && !hardcodedFound && !base64Found && !sopsConfig) {
       findings.push({
         severity: 'pass',
         title: 'No exposed secrets detected',

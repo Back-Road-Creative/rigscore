@@ -168,4 +168,218 @@ describe('expanded secret patterns', () => {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
+
+  // --- Missing KEY_PATTERN tests for mutation coverage ---
+
+  it('detects Anthropic API key (sk-ant-)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'sk-ant-' + 'abcDEF12345_' + 'x'.repeat(10);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects AWS access key (AKIA)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'AKIA' + 'ABCDEFGHIJ123456';
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects GitHub PAT (ghp_)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'ghp_' + 'a'.repeat(36);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects GitHub OAuth token (gho_)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'gho_' + 'b'.repeat(36);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Slack bot token (xoxb-)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'xoxb-' + '1234567890-abcdef';
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Slack user token (xoxp-)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'xoxp-' + '9876543210-abcdef';
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects OpenAI-style key (sk-)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'sk-' + 'a'.repeat(48);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects GitLab PAT (glpat-)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'glpat-' + 'abcDEF_123456789012345';
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Stripe test secret key (sk_test_)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = ['sk', 'test', 'a'.repeat(24)].join('_');
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Stripe restricted key (rk_live_)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = ['rk', 'live', 'a'.repeat(24)].join('_');
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Stripe publishable key (pk_live_)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = ['pk', 'live', 'a'.repeat(24)].join('_');
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Twilio key (SK + 32 hex)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'SK' + 'a1b2c3d4e5f6'.repeat(3).slice(0, 32);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects DigitalOcean token (dop_v1_)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'dop_v1_' + 'a'.repeat(64);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Mailgun key (key-)', async () => {
+    const tmpDir = makeTmpDir();
+    const key = 'key-' + 'abcdef0123456789'.repeat(2);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  // --- Comment prefix detection ---
+
+  it('downgrades key after # comment to INFO', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), `# api_key: ${fakeFirebaseKey}`);
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeUndefined();
+      const info = result.findings.find((f) => f.severity === 'info' && f.title.includes('comment'));
+      expect(info).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('downgrades key after <!-- comment to INFO', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), `<!-- token: ${fakeFirebaseKey} -->`);
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeUndefined();
+      const info = result.findings.find((f) => f.severity === 'info' && f.title.includes('comment'));
+      expect(info).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });

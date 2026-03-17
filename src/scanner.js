@@ -67,6 +67,16 @@ export async function scan(options = {}) {
 
   const results = await runChecks(checks, context, options);
 
+  // If filter was applied but nothing matched, return helpful error
+  if (options.checkFilter && results.length === 0) {
+    const availableIds = checks.map((c) => c.id).join(', ');
+    return {
+      score: 0,
+      results: [],
+      error: `Unknown check '${options.checkFilter}'. Available: ${availableIds}`,
+    };
+  }
+
   // When filtering to specific checks, use average of their scores
   // instead of weighted system (which assumes all checks are present)
   let overallScore;
