@@ -103,4 +103,69 @@ describe('expanded secret patterns', () => {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
+
+  it('detects npm access token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeNpmToken = 'npm_' + 'a'.repeat(36);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeNpmToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects PyPI API token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakePypiToken = 'pypi-' + 'a'.repeat(16);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakePypiToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Hugging Face token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeHfToken = 'hf_' + 'a'.repeat(34);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeHfToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects MongoDB connection string', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeMongoUri = 'mongodb+srv://user:pass@cluster0.mongodb.net/db';
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeMongoUri }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Vercel token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeVercelToken = 'vercel_' + 'a'.repeat(24);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeVercelToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });

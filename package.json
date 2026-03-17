@@ -28,6 +28,10 @@
     "devtools"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backroadcreative/rigscore.git"
+  },
   "dependencies": {
     "chalk": "^5.3.0",
     "yaml": "^2.7.0"

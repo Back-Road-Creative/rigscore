@@ -102,4 +102,28 @@ describe('expanded hook validation', () => {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
+
+  it('INFO when hook only chains unrecognized commands with &&', async () => {
+    const tmpDir = makeTmpDir();
+    setupHook(tmpDir, '#!/bin/sh\ncustom_tool_v1 && custom_tool_v2');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const info = result.findings.find((f) => f.severity === 'info' && f.title.includes('substance'));
+      expect(info).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PASS when hook chains substantive commands', async () => {
+    const tmpDir = makeTmpDir();
+    setupHook(tmpDir, '#!/bin/sh\nnpm run lint && npm test');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const pass = result.findings.find((f) => f.severity === 'pass' && f.title.includes('Pre-commit'));
+      expect(pass).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });

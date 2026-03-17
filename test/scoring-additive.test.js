@@ -123,5 +123,56 @@ describe('additive scoring model', () => {
       ];
       expect(calculateOverallScore(results)).toBe(20);
     });
+
+    it('penalty applies at weight 55 (just below threshold)', () => {
+      // claude-md:20 + docker:15 + git-hooks:10 + permissions:10 = 55
+      const results = [
+        { id: 'claude-md', score: 100 },
+        { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
+        { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
+        { id: 'docker-security', score: 100 },
+        { id: 'git-hooks', score: 100 },
+        { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
+        { id: 'permissions-hygiene', score: 100 },
+      ];
+      expect(calculateOverallScore(results)).toBe(55);
+    });
+
+    it('no penalty at weight 60 (exact threshold boundary)', () => {
+      // claude-md:20 + mcp:15 + docker:15 + permissions:10 = 60
+      const results = [
+        { id: 'claude-md', score: 100 },
+        { id: 'mcp-config', score: 100 },
+        { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
+        { id: 'docker-security', score: 100 },
+        { id: 'git-hooks', score: NOT_APPLICABLE_SCORE },
+        { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
+        { id: 'permissions-hygiene', score: 100 },
+      ];
+      expect(calculateOverallScore(results)).toBe(100);
+    });
+
+    it('penalty applies at weight 45', () => {
+      // claude-md:20 + mcp:15 + permissions:10 = 45
+      const results = [
+        { id: 'claude-md', score: 100 },
+        { id: 'mcp-config', score: 100 },
+        { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
+        { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
+        { id: 'git-hooks', score: NOT_APPLICABLE_SCORE },
+        { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
+        { id: 'permissions-hygiene', score: 100 },
+      ];
+      expect(calculateOverallScore(results)).toBe(45);
+    });
+  });
+
+  describe('recursive average masking (known limitation)', () => {
+    it('average of 9×95 + 1×10 = 87, Grade B, despite catastrophic project', () => {
+      const scores = [...Array(9).fill(95), 10];
+      const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+      expect(avg).toBe(87);
+      expect(avg).toBeGreaterThanOrEqual(75); // Grade B threshold
+    });
   });
 });

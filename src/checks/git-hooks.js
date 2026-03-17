@@ -37,7 +37,6 @@ function hasSubstance(content) {
     /\bpre-commit\b/,
     /\bexit\s+1/,
     /\bif\b.*\bthen\b/,
-    /\b(&&|\|\|)\b/,
     /\bgitleaks\b/,
     /\btrufflehog\b/,
     /\bdetect-secrets\b/,
