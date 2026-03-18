@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
-import { NOT_APPLICABLE_SCORE } from '../constants.js';
+import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readFileSafe, readJsonSafe } from '../utils.js';
 
 const SENSITIVE_MOUNTS = ['/', '/etc', '/root', '/home'];
@@ -341,7 +341,7 @@ export default {
   id: 'docker-security',
   name: 'Docker security',
   category: 'isolation',
-  weight: 15,
+  weight: 10,
 
   async run(context) {
     const { cwd, config } = context;
@@ -355,17 +355,16 @@ export default {
       }
     }
 
-    // Find first compose file
-    let composeContent = null;
-    let composeFile = null;
-    let composeDir = null;
+    // Collect all compose files found
+    const composeFiles = [];
     for (const candidate of composeCandidates) {
       const content = await readFileSafe(candidate);
       if (content) {
-        composeContent = content;
-        composeFile = path.basename(candidate);
-        composeDir = path.dirname(candidate);
-        break;
+        composeFiles.push({
+          content,
+          file: path.basename(candidate),
+          dir: path.dirname(candidate),
+        });
       }
     }
 
@@ -380,7 +379,7 @@ export default {
     // Scan for Kubernetes manifests
     const hasK8s = await scanK8sManifests(cwd, findings);
 
-    if (!composeContent && dockerfiles.length === 0 && !devcontainer && !hasK8s) {
+    if (composeFiles.length === 0 && dockerfiles.length === 0 && !devcontainer && !hasK8s) {
       findings.push({
         severity: 'info',
         title: 'No container configuration found',
@@ -389,36 +388,160 @@ export default {
       return { score: NOT_APPLICABLE_SCORE, findings };
     }
 
-    // Analyze compose file
-    if (composeContent) {
+    // Analyze all compose files
+    for (const cf of composeFiles) {
       let compose;
       try {
-        compose = YAML.parse(composeContent);
+        compose = YAML.parse(cf.content);
       } catch {
         findings.push({
           severity: 'warning',
-          title: `Failed to parse ${composeFile}`,
+          title: `Failed to parse ${cf.file}`,
           detail: 'The compose file has invalid YAML syntax.',
         });
-        return { score: calculateCheckScore(findings), findings };
+        continue;
       }
 
       const services = compose?.services || {};
-      analyzeComposeServices(services, findings, composeFile);
+      analyzeComposeServices(services, findings, cf.file);
 
       // Resolve and analyze included compose files
-      await resolveComposeIncludes(compose, composeDir, findings);
+      await resolveComposeIncludes(compose, cf.dir, findings);
     }
 
-    // Check Dockerfiles for USER directive
+    // Check Dockerfiles for security issues
     for (const df of dockerfiles) {
       const content = await readFileSafe(path.join(cwd, df));
-      if (content && !/^USER\s+/m.test(content)) {
+      if (!content) continue;
+
+      // No USER directive — container runs as root
+      if (!/^USER\s+/m.test(content)) {
         findings.push({
           severity: 'warning',
           title: `${df} has no USER directive`,
           detail: 'Container will run as root by default.',
           remediation: 'Add a USER directive to run as a non-root user.',
+        });
+      }
+
+      // Unpinned base images (FROM image:latest or FROM image without tag/digest)
+      const fromLines = content.match(/^FROM\s+\S+/gm) || [];
+      for (const fromLine of fromLines) {
+        const image = fromLine.replace(/^FROM\s+/, '').trim();
+        // Skip build args (FROM $VAR) and scratch
+        if (image.startsWith('$') || image === 'scratch') continue;
+        // Pinned = has @sha256: digest or a tag that isn't "latest"
+        const hasDigest = image.includes('@sha256:');
+        const hasTag = image.includes(':');
+        const isLatest = image.endsWith(':latest');
+        if (!hasDigest && (!hasTag || isLatest)) {
+          findings.push({
+            severity: 'warning',
+            title: `${df}: unpinned base image "${image}"`,
+            detail: 'Unpinned or :latest base images can change unexpectedly and introduce vulnerabilities.',
+            remediation: 'Pin base images to a specific version tag or sha256 digest.',
+          });
+        }
+      }
+
+      // ADD with remote URL (should use COPY or curl+verify)
+      const addLines = content.match(/^ADD\s+https?:\/\//gm) || [];
+      if (addLines.length > 0) {
+        findings.push({
+          severity: 'warning',
+          title: `${df}: ADD with remote URL`,
+          detail: 'ADD with remote URLs can fetch unverified content. Use COPY with explicit download and checksum verification.',
+          remediation: 'Replace ADD <url> with RUN curl/wget + checksum verification + COPY.',
+        });
+      }
+
+      // Multi-stage build running as root in final stage
+      const stages = content.split(/^FROM\s+/m);
+      if (stages.length > 2) {
+        // Last stage is stages[stages.length - 1]
+        const finalStage = stages[stages.length - 1];
+        if (!/^USER\s+/m.test(finalStage)) {
+          // Only add if we haven't already flagged missing USER for the whole file
+          const alreadyFlagged = findings.some((f) => f.title === `${df} has no USER directive`);
+          if (!alreadyFlagged) {
+            findings.push({
+              severity: 'warning',
+              title: `${df}: multi-stage build runs as root in final stage`,
+              detail: 'The final stage of a multi-stage Dockerfile has no USER directive.',
+              remediation: 'Add USER directive to the final stage to run as non-root.',
+            });
+          }
+        }
+      }
+
+      // --- RUN instruction analysis ---
+
+      // Join backslash-continuation lines for RUN analysis
+      const normalizedContent = content.replace(/\\\s*\n\s*/g, ' ');
+      const runLines = normalizedContent.match(/^RUN\s+.+$/gm) || [];
+
+      for (const runLine of runLines) {
+        // Pipe-to-shell
+        if (/\b(curl|wget)\b.*\|\s*(ba)?sh\b/.test(runLine)) {
+          findings.push({
+            severity: 'warning',
+            title: `${df}: pipe-to-shell in RUN instruction`,
+            detail: 'Piping curl/wget output directly to a shell executes unverified remote code.',
+            remediation: 'Download the script first, verify its checksum, then execute it.',
+          });
+        }
+
+        // Secrets in RUN instruction
+        for (const pattern of KEY_PATTERNS) {
+          if (pattern.test(runLine)) {
+            findings.push({
+              severity: 'critical',
+              title: `${df}: secret in RUN instruction`,
+              detail: 'A secret or API key pattern was detected in a RUN instruction. This will be baked into the image layer.',
+              remediation: 'Use build secrets (--mount=type=secret) or environment variables instead of hardcoding secrets.',
+            });
+            break;
+          }
+        }
+
+        // chmod 777
+        if (/\bchmod\s+(-R\s+)?777\b/.test(runLine)) {
+          findings.push({
+            severity: 'warning',
+            title: `${df}: chmod 777 in RUN instruction`,
+            detail: 'chmod 777 grants read/write/execute to all users, which is overly permissive.',
+            remediation: 'Use more restrictive permissions (e.g., chmod 755 or chmod 700).',
+          });
+        }
+
+        // apt-get install without --no-install-recommends
+        if (/\bapt-get\s+install\b/.test(runLine) && !/--no-install-recommends/.test(runLine)) {
+          findings.push({
+            severity: 'info',
+            title: `${df}: apt-get install without --no-install-recommends`,
+            detail: 'Installing recommended packages increases image size and attack surface.',
+            remediation: 'Add --no-install-recommends to apt-get install commands.',
+          });
+        }
+
+        // apk add without --no-cache
+        if (/\bapk\s+add\b/.test(runLine) && !/--no-cache/.test(runLine)) {
+          findings.push({
+            severity: 'info',
+            title: `${df}: apk add without --no-cache`,
+            detail: 'Without --no-cache, apk stores the package index in the image, increasing its size.',
+            remediation: 'Add --no-cache to apk add commands.',
+          });
+        }
+      }
+
+      // EXPOSE 22 (SSH port) — check original content
+      if (/^EXPOSE\s+.*\b22\b/m.test(content)) {
+        findings.push({
+          severity: 'warning',
+          title: `${df}: exposes SSH port (22)`,
+          detail: 'Exposing SSH port in a container is generally unnecessary and increases attack surface.',
+          remediation: 'Remove EXPOSE 22 and use docker exec or kubectl exec for container access.',
         });
       }
     }
@@ -469,9 +592,14 @@ export default {
       });
     }
 
+    const hasPrivilegedContainer = findings.some(
+      (f) => f.severity === 'critical' && f.title.includes('privileged'),
+    );
+
     return {
       score: calculateCheckScore(findings),
       findings,
+      data: { hasPrivilegedContainer },
     };
   },
 };

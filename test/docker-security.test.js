@@ -17,7 +17,7 @@ const defaultConfig = { paths: { dockerCompose: [] }, network: {} };
 describe('docker-security check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('docker-security');
-    expect(check.weight).toBe(15);
+    expect(check.weight).toBe(10);
   });
 
   it('CRITICAL when socket mounted and privileged', async () => {
@@ -78,6 +78,23 @@ describe('docker-security check', () => {
     }
   });
 
+  it('CRITICAL when privileged service in override compose file', async () => {
+    const tmpDir = makeTmpDir();
+    const base = `services:\n  app:\n    image: node:18\n`;
+    const override = `services:\n  app:\n    privileged: true\n`;
+    fs.writeFileSync(path.join(tmpDir, 'docker-compose.yml'), base);
+    const overridePath = path.join(tmpDir, 'docker-compose.override.yml');
+    fs.writeFileSync(overridePath, override);
+    const cfg = { paths: { dockerCompose: [overridePath] }, network: {} };
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: cfg });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('privileged'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('reads additional compose paths from config', async () => {
     const tmpDir = makeTmpDir();
     const externalDir = makeTmpDir();
@@ -92,5 +109,47 @@ describe('docker-security check', () => {
       fs.rmSync(tmpDir, { recursive: true });
       fs.rmSync(externalDir, { recursive: true });
     }
+  });
+
+  it('WARNING for pipe-to-shell in RUN instruction', async () => {
+    const result = await check.run({ cwd: fixture('docker-run-unsafe'), homedir: '/tmp', config: defaultConfig });
+    const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('pipe-to-shell'));
+    expect(warning).toBeDefined();
+  });
+
+  it('WARNING for chmod 777 in RUN instruction', async () => {
+    const result = await check.run({ cwd: fixture('docker-run-unsafe'), homedir: '/tmp', config: defaultConfig });
+    const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('chmod 777'));
+    expect(warning).toBeDefined();
+  });
+
+  it('WARNING for EXPOSE 22', async () => {
+    const result = await check.run({ cwd: fixture('docker-run-unsafe'), homedir: '/tmp', config: defaultConfig });
+    const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('SSH port'));
+    expect(warning).toBeDefined();
+  });
+
+  it('INFO for apt-get without --no-install-recommends', async () => {
+    const result = await check.run({ cwd: fixture('docker-run-unsafe'), homedir: '/tmp', config: defaultConfig });
+    const info = result.findings.find((f) => f.severity === 'info' && f.title.includes('no-install-recommends'));
+    expect(info).toBeDefined();
+  });
+
+  it('INFO for apk add without --no-cache', async () => {
+    const result = await check.run({ cwd: fixture('docker-run-unsafe'), homedir: '/tmp', config: defaultConfig });
+    const info = result.findings.find((f) => f.severity === 'info' && f.title.includes('no-cache'));
+    expect(info).toBeDefined();
+  });
+
+  it('returns data.hasPrivilegedContainer', async () => {
+    const result = await check.run({ cwd: fixture('docker-socket'), homedir: '/tmp', config: defaultConfig });
+    expect(result.data).toBeDefined();
+    expect(result.data.hasPrivilegedContainer).toBe(true);
+  });
+
+  it('data.hasPrivilegedContainer is false for clean config', async () => {
+    const result = await check.run({ cwd: fixture('docker-clean'), homedir: '/tmp', config: defaultConfig });
+    expect(result.data).toBeDefined();
+    expect(result.data.hasPrivilegedContainer).toBe(false);
   });
 });

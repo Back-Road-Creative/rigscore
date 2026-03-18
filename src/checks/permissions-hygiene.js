@@ -1,23 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
+import { AI_CONFIG_FILES } from '../constants.js';
 import { statSafe } from '../utils.js';
 
 const SENSITIVE_PATTERNS = ['*.pem', '*.key', '*credentials*'];
 
-// All governance files checked for ownership consistency
-const GOVERNANCE_FILES = [
-  'CLAUDE.md',
-  '.claude/settings.json',
-  '.mcp.json',
-  '.cursorrules',
-  '.windsurfrules',
-  '.clinerules',
-  '.continuerules',
-  'AGENTS.md',
-  '.aider.conf.yml',
-  'copilot-instructions.md',
-];
+// Use the centralized config files list for ownership checks
+const GOVERNANCE_FILES = AI_CONFIG_FILES;
 
 // Naive glob matching — only handles `*foo*`, `*.ext`, and exact match.
 // Current patterns (*.pem, *.key, *credentials*) all work with this logic.
@@ -36,7 +26,7 @@ export default {
   id: 'permissions-hygiene',
   name: 'Permissions hygiene',
   category: 'process',
-  weight: 10,
+  weight: 7,
 
   async run(context) {
     const { cwd, homedir } = context;
