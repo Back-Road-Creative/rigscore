@@ -78,15 +78,16 @@ describe('calculateOverallScore', () => {
 
   it('calculates weighted sum correctly', () => {
     const results = [
-      { id: 'claude-md', score: 50 },              // 50 * 20/100 = 10
-      { id: 'mcp-config', score: 80 },             // 80 * 15/100 = 12
-      { id: 'env-exposure', score: 100 },           // 100 * 20/100 = 20
-      { id: 'docker-security', score: 0 },          // 0 * 15/100 = 0
-      { id: 'git-hooks', score: 100 },              // 100 * 10/100 = 10
-      { id: 'skill-files', score: 60 },             // 60 * 10/100 = 6
-      { id: 'permissions-hygiene', score: 100 },    // 100 * 10/100 = 10
+      { id: 'claude-md', score: 50 },              // 50 * 15/73
+      { id: 'mcp-config', score: 80 },             // 80 * 12/73
+      { id: 'env-exposure', score: 100 },           // 100 * 13/73
+      { id: 'docker-security', score: 0 },          // 0 * 10/73
+      { id: 'git-hooks', score: 100 },              // 100 * 8/73
+      { id: 'skill-files', score: 60 },             // 60 * 8/73
+      { id: 'permissions-hygiene', score: 100 },    // 100 * 7/73
     ];
-    // Total = 10 + 12 + 20 + 0 + 10 + 6 + 10 = 68
+    // totalApplicableWeight = 73 >= 60, no penalty
+    // (750+960+1300+0+800+480+700)/73 = 4990/73 = 68.36 → 68
     expect(calculateOverallScore(results)).toBe(68);
   });
 
@@ -100,7 +101,7 @@ describe('calculateOverallScore', () => {
       { id: 'skill-files', score: 33 },
       { id: 'permissions-hygiene', score: 33 },
     ];
-    // 33 * (20+15+20+15+10+10+10)/100 = 33 * 1 = 33
+    // 33 * (15+12+13+10+8+8+7)/73 = 33 * 73/73 = 33
     expect(calculateOverallScore(results)).toBe(33);
   });
 });

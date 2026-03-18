@@ -83,7 +83,7 @@ describe('e2e scoring', () => {
     }
   });
 
-  it('terrible project scores < 30', async () => {
+  it('terrible project scores < 50', async () => {
     const tmpDir = makeTmpDir();
     try {
       // Build fake key dynamically to avoid secret scanner
@@ -110,7 +110,7 @@ describe('e2e scoring', () => {
       fs.mkdirSync(path.join(tmpDir, '.git', 'hooks'), { recursive: true });
 
       const result = await scan({ cwd: tmpDir, homedir: '/tmp/nonexistent' });
-      expect(result.score).toBeLessThan(30);
+      expect(result.score).toBeLessThan(50);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

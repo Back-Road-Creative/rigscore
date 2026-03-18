@@ -63,5 +63,14 @@ export function calculateOverallScore(results) {
     score = Math.round(score * (totalApplicableWeight / 100));
   }
 
+  // Compound risk penalty: coherence CRITICAL findings indicate systemic failure
+  const coherenceResult = results.find((r) => r.id === 'coherence');
+  if (coherenceResult && coherenceResult.findings) {
+    const hasCritical = coherenceResult.findings.some((f) => f.severity === 'critical');
+    if (hasCritical) {
+      score = Math.max(0, score - 10);
+    }
+  }
+
   return score;
 }
