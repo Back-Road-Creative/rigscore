@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-import { readFileSafe } from '../utils.js';
+import { GOVERNANCE_FILES } from '../constants.js';
+import { readFileSafe, execSafe } from '../utils.js';
 
 const QUALITY_CHECKS = [
   {
@@ -36,32 +37,27 @@ const NEGATION_RE = /\b(never|not|no|don't|doesn't|isn't|without|lack|none|nothi
 
 /**
  * Check whether a regex match at `matchIndex` inside `content` is negated
- * by a preceding negation word within a 50-character lookback window.
+ * by a preceding negation word within the same sentence, up to 150 chars back.
  */
 function isNegatedMatch(content, matchIndex) {
-  const start = Math.max(0, matchIndex - 50);
-  const window = content.slice(start, matchIndex);
-  return NEGATION_RE.test(window);
+  const start = Math.max(0, matchIndex - 150);
+  const region = content.slice(start, matchIndex);
+  // Find last sentence boundary to scope negation check to current sentence
+  const sentenceBreak = Math.max(
+    region.lastIndexOf('.'),
+    region.lastIndexOf('!'),
+    region.lastIndexOf('?'),
+    region.lastIndexOf('\n'),
+  );
+  const sentence = sentenceBreak >= 0 ? region.slice(sentenceBreak + 1) : region;
+  return NEGATION_RE.test(sentence);
 }
-
-// All known AI client governance files (checked in cwd)
-const GOVERNANCE_FILES = [
-  'CLAUDE.md',
-  '.cursorrules',
-  '.windsurfrules',
-  '.clinerules',
-  '.continuerules',
-  'copilot-instructions.md',
-  '.github/copilot-instructions.md',
-  'AGENTS.md',
-  '.aider.conf.yml',
-];
 
 export default {
   id: 'claude-md',
   name: 'CLAUDE.md governance',
   category: 'governance',
-  weight: 20,
+  weight: 15,
 
   async run(context) {
     const { cwd, homedir, config } = context;
@@ -126,6 +122,7 @@ export default {
     }
 
     // Check quality patterns against combined content (with negation detection)
+    const matchedPatterns = [];
     for (const check of QUALITY_CHECKS) {
       // Create a global copy of the pattern so we can iterate all matches
       const globalPattern = new RegExp(check.pattern.source, check.pattern.flags.includes('g') ? check.pattern.flags : check.pattern.flags + 'g');
@@ -139,13 +136,60 @@ export default {
         }
       }
 
-      if (!hasGenuineMatch) {
+      if (hasGenuineMatch) {
+        matchedPatterns.push(check.name);
+      } else {
         findings.push({
           severity: 'warning',
           title: `Governance file missing: ${check.name}`,
           detail: `No ${check.name} rules detected in your governance file(s).`,
           remediation: `Add ${check.name} instructions to your governance file.`,
         });
+      }
+    }
+
+    // Check governance file git tracking status
+    const gitDir = path.join(cwd, '.git');
+    const gitignorePath = path.join(cwd, '.gitignore');
+    const gitignoreContent = await readFileSafe(gitignorePath);
+
+    // Check if governance file is in .gitignore
+    if (gitignoreContent) {
+      const gitignoreLines = gitignoreContent.split('\n').map(l => l.trim());
+      for (const govFile of GOVERNANCE_FILES) {
+        const govPath = path.join(cwd, govFile);
+        const govContent = await readFileSafe(govPath);
+        if (!govContent) continue;
+
+        if (gitignoreLines.includes(govFile)) {
+          findings.push({
+            severity: 'critical',
+            title: `Governance file ${govFile} is in .gitignore`,
+            detail: 'Gitignored governance files are ephemeral — they leave no audit trail and can be silently modified.',
+            remediation: `Remove ${govFile} from .gitignore and commit it to version control.`,
+          });
+        }
+      }
+    }
+
+    // Check if governance files are tracked by git
+    const hasGit = await import('node:fs').then(fs => fs.promises.access(gitDir).then(() => true).catch(() => false));
+    if (hasGit) {
+      for (const govFile of GOVERNANCE_FILES) {
+        const govPath = path.join(cwd, govFile);
+        const govContent = await readFileSafe(govPath);
+        if (!govContent) continue;
+
+        const tracked = await execSafe('git', ['ls-files', govFile], { cwd });
+        if (tracked !== null && tracked.trim() === '') {
+          // File exists but is not tracked
+          findings.push({
+            severity: 'warning',
+            title: `Governance file ${govFile} is not tracked in git`,
+            detail: 'Untracked governance files can be silently modified without audit trail.',
+            remediation: `Run: git add ${govFile}`,
+          });
+        }
       }
     }
 
@@ -159,6 +203,7 @@ export default {
     return {
       score: calculateCheckScore(findings),
       findings,
+      data: { matchedPatterns },
     };
   },
 };

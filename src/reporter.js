@@ -1,5 +1,9 @@
+import { createRequire } from 'node:module';
 import chalk from 'chalk';
-import { NOT_APPLICABLE_SCORE } from './constants.js';
+import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
@@ -13,6 +17,24 @@ function getGrade(score) {
   if (score >= 60) return 'C';
   if (score >= 40) return 'D';
   return 'F';
+}
+
+function getRiskProfile(results) {
+  const applicable = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
+  const applicableCount = applicable.length;
+  const passingCount = applicable.filter((r) => r.score >= 70).length;
+
+  if (applicableCount >= 7 && passingCount === applicableCount) return 'Hardened';
+  if (applicableCount >= 4 && passingCount >= applicableCount * 0.7) return 'Standard';
+  return 'Minimal';
+}
+
+function getRiskColor(profile) {
+  switch (profile) {
+    case 'Hardened': return chalk.greenBright;
+    case 'Standard': return chalk.blue;
+    default: return chalk.yellow;
+  }
 }
 
 function getScoreColor(score) {
@@ -68,7 +90,7 @@ export function formatTerminal(result, cwd, options = {}) {
   lines.push('');
   lines.push(box([
     '',
-    `${'       '}rigscore v0.1.0`,
+    `${'       '}rigscore v${version}`,
     '  AI Dev Environment Hygiene Check',
     '',
   ]));
@@ -95,20 +117,39 @@ export function formatTerminal(result, cwd, options = {}) {
   // Score box
   const scoreStr = colorFn(`HYGIENE SCORE: ${score}/100`);
   const gradeStr = colorFn(`Grade: ${grade}`);
+  // Risk profile
+  const riskProfile = getRiskProfile(results);
+  const riskColor = getRiskColor(riskProfile);
+  const riskStr = riskColor(`Risk: ${riskProfile}`);
+
   lines.push(box([
     '',
     `        ${scoreStr}`,
     `        ${gradeStr}`,
+    `        ${riskStr}`,
     '',
   ]));
   lines.push('');
+
+  // Coverage messaging
+  const applicableResults = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
+  const totalResults = results.length;
+  const applicableWeight = applicableResults.reduce((sum, r) => sum + (WEIGHTS[r.id] || 0), 0);
+  const totalWeight = Object.values(WEIGHTS).reduce((sum, w) => sum + w, 0);
+  if (applicableResults.length < totalResults) {
+    lines.push(`  ${chalk.dim(`Coverage: ${applicableResults.length} of ${totalResults} checks applicable (weight ${applicableWeight}/${totalWeight})${applicableWeight < 60 ? ' — score scaled down' : ''}`)}`);
+    lines.push('');
+  }
 
   // Findings by severity (including skipped)
   const allFindings = results.flatMap((r) =>
     r.findings.map((f) => ({ ...f, checkName: r.name })),
   );
 
-  for (const severity of ['critical', 'warning', 'info', 'skipped']) {
+  const severities = options.verbose
+    ? ['critical', 'warning', 'info', 'skipped', 'pass']
+    : ['critical', 'warning', 'info', 'skipped'];
+  for (const severity of severities) {
     const items = allFindings.filter((f) => f.severity === severity);
     if (items.length === 0) continue;
 
@@ -157,7 +198,7 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
   lines.push('');
   lines.push(box([
     '',
-    `${'       '}rigscore v0.1.0`,
+    `${'       '}rigscore v${version}`,
     '  AI Dev Environment Hygiene Check',
     `${'     '}Recursive Mode`,
     '',

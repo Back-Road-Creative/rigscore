@@ -26,6 +26,8 @@ Options:
   --check <id>       Run a single check by ID
   --recursive, -r    Scan subdirectories as separate projects
   --depth <N>        Recursion depth (default: 1, implies --recursive)
+  --deep             Enable deep source secret scanning
+  --online           Enable online MCP supply chain verification
   --version          Show version
   --help, -h         Show this help
 
@@ -37,6 +39,8 @@ Checks:
   git-hooks           Git hooks (10 pts)
   skill-files         Skill file safety (10 pts)
   permissions-hygiene File permissions hygiene (10 pts)
+  deep-secrets        Deep source secret scanning (--deep, 12 pts)
+  coherence           Cross-config coherence (15 pts)
 
 Examples:
   rigscore                          Scan current directory

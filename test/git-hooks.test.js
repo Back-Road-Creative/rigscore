@@ -13,7 +13,7 @@ const defaultConfig = { paths: { hookDirs: [] }, network: {} };
 describe('git-hooks check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('git-hooks');
-    expect(check.weight).toBe(10);
+    expect(check.weight).toBe(8);
   });
 
   it('WARNING when no hooks exist', async () => {
@@ -85,6 +85,37 @@ describe('git-hooks check', () => {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
       const pass = result.findings.find((f) => f.severity === 'pass' && f.title.includes('Push URL guard'));
       expect(pass).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING when hooks exist but lack secret scanning', async () => {
+    const tmpDir = makeTmpDir();
+    const hooksDir = path.join(tmpDir, '.git', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    // Hook with lint but no secret scanning
+    fs.writeFileSync(path.join(hooksDir, 'pre-commit'), '#!/bin/sh\nnpx eslint .');
+    fs.chmodSync(path.join(hooksDir, 'pre-commit'), 0o755);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('secret scanning'));
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('no secret scanning WARNING when gitleaks is in hook', async () => {
+    const tmpDir = makeTmpDir();
+    const hooksDir = path.join(tmpDir, '.git', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, 'pre-commit'), '#!/bin/sh\ngitleaks protect --staged');
+    fs.chmodSync(path.join(hooksDir, 'pre-commit'), 0o755);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('secret scanning'));
+      expect(warning).toBeUndefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

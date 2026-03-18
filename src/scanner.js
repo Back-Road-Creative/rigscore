@@ -27,6 +27,7 @@ export async function runChecks(checks, context, options = {}) {
         weight: check.weight,
         score: result.score,
         findings: result.findings,
+        ...(result.data !== undefined && { data: result.data }),
       };
     }),
   );
@@ -63,9 +64,21 @@ export async function scan(options = {}) {
   const homedir = options.homedir || (await import('node:os')).homedir();
   const config = await loadConfig(cwd, homedir);
 
-  const context = { cwd, homedir, config };
+  const context = { cwd, homedir, config, deep: options.deep || false, online: options.online || false };
 
-  const results = await runChecks(checks, context, options);
+  // Split checks into regular and coherence (two-pass)
+  const regularChecks = checks.filter(c => c.id !== 'coherence');
+  const coherenceCheck = checks.find(c => c.id === 'coherence');
+
+  // Pass 1: Run all regular checks
+  const results = await runChecks(regularChecks, context, options);
+
+  // Pass 2: Run coherence check with prior results
+  if (coherenceCheck && (!options.checkFilter || options.checkFilter === 'coherence')) {
+    const coherenceContext = { ...context, priorResults: results };
+    const coherenceResults = await runChecks([coherenceCheck], coherenceContext, {});
+    results.push(...coherenceResults);
+  }
 
   // When filtering to specific checks, use average of their scores
   // instead of weighted system (which assumes all checks are present)
@@ -140,6 +153,17 @@ export async function discoverProjects(rootDir, maxDepth = 1) {
         await walk(subPath, depth + 1);
       }
     }
+  }
+
+  // Check if rootDir itself is a project
+  try {
+    const rootEntries = await fs.promises.readdir(rootDir);
+    const rootHasMarker = PROJECT_MARKERS.some((m) => rootEntries.includes(m));
+    if (rootHasMarker) {
+      projects.push(rootDir);
+    }
+  } catch {
+    // Can't read root — skip
   }
 
   await walk(rootDir, 1);

@@ -95,8 +95,8 @@ describe('additive scoring model', () => {
     });
 
     it('penalty applies when applicable weight < 60', () => {
-      // Only claude-md (20) + env-exposure (20) = 40 applicable weight
-      // Internal = 100, penalty: 100 * 0.4 = 40
+      // Only claude-md (15) + env-exposure (13) = 28 applicable weight
+      // Internal = 100, penalty: 100 * 0.28 = 28
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -106,12 +106,12 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: NOT_APPLICABLE_SCORE },
       ];
-      expect(calculateOverallScore(results)).toBe(40);
+      expect(calculateOverallScore(results)).toBe(28);
     });
 
-    it('CLAUDE.md-only project scoring 100 internally gets penalized to 10', () => {
-      // Only claude-md (20) applicable = weight 20
-      // Internal = 100, penalty: 100 * 0.2 = 20
+    it('CLAUDE.md-only project scoring 100 internally gets penalized to 15', () => {
+      // Only claude-md (15) applicable = weight 15
+      // Internal = 100, penalty: 100 * 0.15 = 15
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -121,11 +121,12 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: NOT_APPLICABLE_SCORE },
       ];
-      expect(calculateOverallScore(results)).toBe(20);
+      expect(calculateOverallScore(results)).toBe(15);
     });
 
-    it('penalty applies at weight 55 (just below threshold)', () => {
-      // claude-md:20 + docker:15 + git-hooks:10 + permissions:10 = 55
+    it('penalty applies at weight 40 (just below threshold)', () => {
+      // claude-md:15 + docker:10 + git-hooks:8 + permissions:7 = 40
+      // Internal = 100, penalty: 100 * 0.40 = 40
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -135,30 +136,33 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: 100 },
       ];
-      expect(calculateOverallScore(results)).toBe(55);
+      expect(calculateOverallScore(results)).toBe(40);
     });
 
     it('no penalty at weight 60 (exact threshold boundary)', () => {
-      // claude-md:20 + mcp:15 + docker:15 + permissions:10 = 60
+      // claude-md:15 + mcp:12 + env:13 + deep-secrets:12 + git-hooks:8 = 60
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: 100 },
-        { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
-        { id: 'docker-security', score: 100 },
-        { id: 'git-hooks', score: NOT_APPLICABLE_SCORE },
+        { id: 'env-exposure', score: 100 },
+        { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
+        { id: 'git-hooks', score: 100 },
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
-        { id: 'permissions-hygiene', score: 100 },
+        { id: 'permissions-hygiene', score: NOT_APPLICABLE_SCORE },
+        { id: 'coherence', score: NOT_APPLICABLE_SCORE },
+        { id: 'deep-secrets', score: 100 },
       ];
       expect(calculateOverallScore(results)).toBe(100);
     });
 
     it('penalty applies at weight 45', () => {
-      // claude-md:20 + mcp:15 + permissions:10 = 45
+      // claude-md:15 + env:13 + docker:10 + permissions:7 = 45
+      // Internal = 100, penalty: 100 * 0.45 = 45
       const results = [
         { id: 'claude-md', score: 100 },
-        { id: 'mcp-config', score: 100 },
-        { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
-        { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
+        { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
+        { id: 'env-exposure', score: 100 },
+        { id: 'docker-security', score: 100 },
         { id: 'git-hooks', score: NOT_APPLICABLE_SCORE },
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: 100 },

@@ -1,7 +1,9 @@
 import path from 'node:path';
+import https from 'node:https';
 import { calculateCheckScore } from '../scoring.js';
-import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readJsonSafe } from '../utils.js';
+import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
+import { readJsonSafe, readFileSafe } from '../utils.js';
+import { KNOWN_MCP_SERVERS, findTyposquatMatch } from '../known-mcp-servers.js';
 
 const SENSITIVE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -58,11 +60,70 @@ function extractHost(urlOrTransport) {
   }
 }
 
+function checkNpmRegistry(packageName) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(null), 5000);
+
+    const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}`;
+    const req = https.get(url, { timeout: 5000 }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        clearTimeout(timeout);
+        try {
+          if (res.statusCode === 404) {
+            resolve({
+              severity: 'critical',
+              title: `MCP package "${packageName}" not found on npm`,
+              detail: 'This package does not exist on the npm registry. It may be a private package or a typo.',
+              remediation: 'Verify the package name and source.',
+            });
+            return;
+          }
+          if (res.statusCode !== 200) {
+            resolve(null);
+            return;
+          }
+          const pkg = JSON.parse(data);
+          const created = new Date(pkg.time?.created);
+          const now = new Date();
+          const daysSinceCreated = (now - created) / (1000 * 60 * 60 * 24);
+
+          if (daysSinceCreated < 30) {
+            resolve({
+              severity: 'warning',
+              title: `MCP package "${packageName}" is very new (${Math.round(daysSinceCreated)} days old)`,
+              detail: 'New packages have less community vetting and could be malicious.',
+              remediation: 'Review the package source code and maintainer reputation before using.',
+            });
+            return;
+          }
+
+          resolve(null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', () => {
+      clearTimeout(timeout);
+      resolve(null);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      clearTimeout(timeout);
+      resolve(null);
+    });
+  });
+}
+
 export default {
   id: 'mcp-config',
   name: 'MCP server configuration',
   category: 'supply-chain',
-  weight: 15,
+  weight: 12,
 
   async run(context) {
     const { cwd, homedir, config } = context;
@@ -93,10 +154,24 @@ export default {
     }
 
     let foundAny = false;
+    let hasNetworkTransport = false;
+    let hasBroadFilesystemAccess = false;
 
     for (const configPath of configPaths) {
       const mcpConfig = await readJsonSafe(configPath);
       if (!mcpConfig) continue;
+
+      // Read raw text to detect wildcard env passthrough (e.g. ...process.env)
+      const rawText = await readFileSafe(configPath);
+      if (rawText && /process\.env\b/.test(rawText)) {
+        const relPath = path.relative(cwd, configPath) || configPath;
+        findings.push({
+          severity: 'warning',
+          title: `Wildcard env passthrough detected in ${relPath}`,
+          detail: 'Config references process.env which may pass all environment variables to MCP servers.',
+          remediation: 'Pass only the specific environment variables each server needs.',
+        });
+      }
 
       foundAny = true;
       const servers = mcpConfig.mcpServers || {};
@@ -117,6 +192,7 @@ export default {
               detail: `Server uses ${transport || 'network'} transport targeting ${host} in ${relPath}.`,
             });
           } else {
+            hasNetworkTransport = true;
             findings.push({
               severity: 'warning',
               title: `MCP server "${name}" uses network transport`,
@@ -132,6 +208,7 @@ export default {
         const sensitivePaths = extractedPaths.filter(p => SENSITIVE_PATHS.includes(p));
 
         if (sensitivePaths.length > 0) {
+          hasBroadFilesystemAccess = true;
           findings.push({
             severity: 'critical',
             title: `MCP server "${name}" has broad filesystem access: ${sensitivePaths.join(', ')}`,
@@ -186,8 +263,7 @@ export default {
 
         // Check for inline credentials in args or command
         const fullCommand = [server.command || '', ...args].join(' ');
-        const keyPatterns = [/sk-ant-/, /AKIA/, /ghp_/, /xoxb-/];
-        for (const pattern of keyPatterns) {
+        for (const pattern of KEY_PATTERNS) {
           if (pattern.test(fullCommand)) {
             findings.push({
               severity: 'critical',
@@ -196,6 +272,52 @@ export default {
               remediation: 'Use environment variables instead of inline credentials.',
             });
             break;
+          }
+        }
+
+        // Extract package name from args for supply chain checks
+        let packageName = null;
+        for (const arg of args) {
+          // Skip flags
+          if (arg.startsWith('-')) continue;
+          // Package names: @scope/name or name (may have @version suffix)
+          if (/^(@[a-z0-9-]+\/)?[a-z0-9-]+(@.+)?$/.test(arg)) {
+            // Strip version suffix (@1.0.0, @latest) while preserving scoped @
+            if (arg.startsWith('@')) {
+              const slashIdx = arg.indexOf('/');
+              if (slashIdx !== -1) {
+                const afterSlash = arg.slice(slashIdx + 1);
+                const atIdx = afterSlash.indexOf('@');
+                packageName = atIdx !== -1 ? arg.slice(0, slashIdx + 1 + atIdx) : arg;
+              } else {
+                packageName = arg;
+              }
+            } else {
+              const atIdx = arg.indexOf('@');
+              packageName = atIdx !== -1 ? arg.slice(0, atIdx) : arg;
+            }
+            break;
+          }
+        }
+
+        // Typosquatting detection (offline)
+        if (packageName && !KNOWN_MCP_SERVERS.includes(packageName)) {
+          const match = findTyposquatMatch(packageName);
+          if (match) {
+            findings.push({
+              severity: 'warning',
+              title: `MCP server "${name}": package "${packageName}" is similar to known "${match}"`,
+              detail: `Levenshtein distance 1-2 from an official MCP server package. This could be a typosquat.`,
+              remediation: `Verify the package name is correct. Did you mean "${match}"?`,
+            });
+          }
+        }
+
+        // Online npm registry check (--online flag)
+        if (packageName && context.online) {
+          const registryResult = await checkNpmRegistry(packageName);
+          if (registryResult) {
+            findings.push(registryResult);
           }
         }
       }
@@ -207,7 +329,7 @@ export default {
         title: 'No MCP configuration found',
         detail: 'No MCP server configuration files detected.',
       });
-      return { score: NOT_APPLICABLE_SCORE, findings };
+      return { score: NOT_APPLICABLE_SCORE, findings, data: { hasNetworkTransport: false, hasBroadFilesystemAccess: false } };
     }
 
     if (findings.length === 0) {
@@ -220,6 +342,7 @@ export default {
     return {
       score: calculateCheckScore(findings),
       findings,
+      data: { hasNetworkTransport, hasBroadFilesystemAccess },
     };
   },
 };

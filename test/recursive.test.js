@@ -37,6 +37,18 @@ describe('discoverProjects', () => {
     }
   });
 
+  it('includes root directory itself when it has a marker file', async () => {
+    const root = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(root, 'package.json'), '{}');
+
+      const projects = await discoverProjects(root, 1);
+      expect(projects).toContain(root);
+    } finally {
+      fs.rmSync(root, { recursive: true });
+    }
+  });
+
   it('respects depth limit', async () => {
     const root = makeTmpDir();
     try {

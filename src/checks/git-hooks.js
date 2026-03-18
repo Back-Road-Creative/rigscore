@@ -125,7 +125,7 @@ export default {
   id: 'git-hooks',
   name: 'Git hooks',
   category: 'process',
-  weight: 10,
+  weight: 8,
 
   async run(context) {
     const { cwd, homedir, config } = context;
@@ -240,6 +240,39 @@ export default {
         detail: 'Without commit hooks, secrets and governance file changes can be committed unchecked.',
         remediation: 'Install pre-commit hooks with Husky or lefthook to enforce checks before commits.',
       });
+    }
+
+    // Check if any hooks contain secret scanning patterns
+    if (hasHooks) {
+      const secretScanPatterns = [/\bgitleaks\b/, /\btrufflehog\b/, /\bdetect-secrets\b/];
+      let hasSecretScanning = false;
+
+      // Check native hooks
+      for (const hookPath of [preCommit, prePush]) {
+        const content = await readFileSafe(hookPath);
+        if (content && secretScanPatterns.some(p => p.test(content))) {
+          hasSecretScanning = true;
+          break;
+        }
+      }
+
+      // Check husky hooks
+      if (!hasSecretScanning) {
+        const huskyPreCommit = path.join(cwd, '.husky', 'pre-commit');
+        const huskyContent = await readFileSafe(huskyPreCommit);
+        if (huskyContent && secretScanPatterns.some(p => p.test(huskyContent))) {
+          hasSecretScanning = true;
+        }
+      }
+
+      if (!hasSecretScanning) {
+        findings.push({
+          severity: 'warning',
+          title: 'Pre-commit hooks lack secret scanning',
+          detail: 'No gitleaks, trufflehog, or detect-secrets integration detected in hooks.',
+          remediation: 'Add a secret scanning step to your pre-commit hooks (e.g., gitleaks, trufflehog, detect-secrets).',
+        });
+      }
     }
 
     return {

@@ -17,7 +17,7 @@ const defaultConfig = { paths: { mcpConfig: [] }, network: { safeHosts: ['127.0.
 describe('mcp-config check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('mcp-config');
-    expect(check.weight).toBe(15);
+    expect(check.weight).toBe(12);
   });
 
   it('PASS with clean stdio config', async () => {
@@ -63,6 +63,19 @@ describe('mcp-config check', () => {
       expect(info).toBeDefined();
       const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('network transport'));
       expect(warning).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING when wildcard env passthrough via process.env', async () => {
+    const tmpDir = makeTmpDir();
+    const raw = '{"mcpServers": {"test": {"command": "node", "args": [], "env": {"ALL": "...process.env"}}}}';
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), raw);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('Wildcard env'));
+      expect(warning).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

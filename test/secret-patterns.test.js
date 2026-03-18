@@ -104,6 +104,31 @@ describe('expanded secret patterns', () => {
     }
   });
 
+  it('does NOT flag generic sk- prefix as CRITICAL', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: 'sk-abcdefghij1234567890abc' }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects sk-proj- prefixed OpenAI key as CRITICAL', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeOpenAIKey = 'sk-proj-abcdefghij1234567890abc';
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeOpenAIKey }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('detects npm access token', async () => {
     const tmpDir = makeTmpDir();
     const fakeNpmToken = 'npm_' + 'a'.repeat(36);

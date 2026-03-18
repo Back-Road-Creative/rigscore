@@ -9,10 +9,13 @@ function parseArgs(args) {
     badge: false,
     noColor: false,
     noCta: false,
+    verbose: false,
     checkFilter: null,
     cwd: null,
     recursive: false,
     depth: 1,
+    deep: false,
+    online: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -27,11 +30,17 @@ function parseArgs(args) {
       options.noCta = true;
     } else if (arg === '--check' && i + 1 < args.length) {
       options.checkFilter = args[++i];
+    } else if (arg === '--verbose' || arg === '-v') {
+      options.verbose = true;
     } else if (arg === '--recursive' || arg === '-r') {
       options.recursive = true;
     } else if (arg === '--depth' && i + 1 < args.length) {
       options.depth = parseInt(args[++i], 10) || 1;
       options.recursive = true; // --depth implies --recursive
+    } else if (arg === '--deep') {
+      options.deep = true;
+    } else if (arg === '--online') {
+      options.online = true;
     } else if (!arg.startsWith('-')) {
       options.cwd = arg;
     }
@@ -66,6 +75,8 @@ export async function run(args) {
     cwd,
     homedir: os.homedir(),
     checkFilter: options.checkFilter,
+    deep: options.deep,
+    online: options.online,
   };
 
   if (options.recursive) {
@@ -91,7 +102,7 @@ export async function run(args) {
     } else if (options.badge) {
       process.stdout.write(formatBadge(result) + '\n');
     } else {
-      process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta }) + '\n');
+      process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }
 
     process.exit(result.score >= 70 ? 0 : 1);

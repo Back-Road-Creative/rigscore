@@ -1,20 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-import { NOT_APPLICABLE_SCORE } from '../constants.js';
+import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
 import { readFileSafe, statSafe } from '../utils.js';
 
-// All known AI client skill/instruction files
-const SKILL_FILE_PATHS = [
-  '.cursorrules',
-  '.windsurfrules',
-  '.clinerules',
-  '.continuerules',
-  '.aider.conf.yml',
-  'copilot-instructions.md',
-  '.github/copilot-instructions.md',
-  'AGENTS.md',
-];
+// Skill file paths = governance files minus CLAUDE.md (handled by claude-md check)
+const SKILL_FILE_PATHS = GOVERNANCE_FILES.filter((f) => f !== 'CLAUDE.md');
 
 const SKILL_DIRS = [
   '.claude/commands',
@@ -29,7 +20,7 @@ const INJECTION_PATTERNS = [
   /override\s+(all\s+)?instructions/i,
   /forget\s+(all\s+)?(previous|prior)/i,
   /your\s+new\s+system\s+prompt/i,
-  /act\s+as\s+if/i,
+  /act\s+as\s+if\s+you\s+(?:are|were|have|had|can)/i,
   /pretend\s+you\s+are/i,
   /from\s+now\s+on\s+you/i,
 ];
@@ -60,7 +51,7 @@ export default {
   id: 'skill-files',
   name: 'Skill file safety',
   category: 'supply-chain',
-  weight: 10,
+  weight: 8,
 
   async run(context) {
     const { cwd, config } = context;

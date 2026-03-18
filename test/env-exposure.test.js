@@ -15,7 +15,7 @@ function makeTmpDir() {
 describe('env-exposure check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('env-exposure');
-    expect(check.weight).toBe(20);
+    expect(check.weight).toBe(13);
     expect(typeof check.run).toBe('function');
   });
 
@@ -61,6 +61,46 @@ describe('env-exposure check', () => {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
       const sopsPass = result.findings.find((f) => f.severity === 'pass' && f.title.includes('SOPS'));
       expect(sopsPass).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL trumps comment INFO when same key appears in comment and real code', async () => {
+    const tmpDir = makeTmpDir();
+    const prefix = ['sk', 'live'].join('_');
+    const suffix = 'abcdefghijklmnopqrstuvwx';
+    const key = `${prefix}_${suffix}`;
+    const lines = [
+      `// const old = "${key}"`,
+      '',
+      '',
+      '',
+      `const key = "${key}";`,
+    ];
+    fs.writeFileSync(path.join(tmpDir, 'config.js'), lines.join('\n') + '\n');
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PASS when .env is gitignored despite negation for .env.example', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, '.env'), 'SECRET=foo\n');
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n!.env.example\n');
+
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const pass = result.findings.find((f) => f.severity === 'pass' && f.title.includes('gitignored'));
+      expect(pass).toBeDefined();
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('.env'));
+      expect(critical).toBeUndefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
