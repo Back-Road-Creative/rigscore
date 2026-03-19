@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { scan, scanRecursive } from './scanner.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
+import { formatSarif } from './sarif.js';
 
-function parseArgs(args) {
+export function parseArgs(args) {
   const options = {
     json: false,
     badge: false,
+    sarif: false,
     noColor: false,
     noCta: false,
     verbose: false,
@@ -16,6 +18,8 @@ function parseArgs(args) {
     depth: 1,
     deep: false,
     online: false,
+    failUnder: 70,
+    profile: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -24,6 +28,8 @@ function parseArgs(args) {
       options.json = true;
     } else if (arg === '--badge') {
       options.badge = true;
+    } else if (arg === '--sarif') {
+      options.sarif = true;
     } else if (arg === '--no-color') {
       options.noColor = true;
     } else if (arg === '--no-cta') {
@@ -41,6 +47,14 @@ function parseArgs(args) {
       options.deep = true;
     } else if (arg === '--online') {
       options.online = true;
+    } else if (arg === '--fail-under' && i + 1 < args.length) {
+      options.failUnder = Math.max(0, Math.min(100, parseInt(args[++i], 10) || 70));
+    } else if (arg === '--profile' && i + 1 < args.length) {
+      options.profile = args[++i];
+    } else if (arg === '--ci') {
+      options.sarif = true;
+      options.noColor = true;
+      options.noCta = true;
     } else if (!arg.startsWith('-')) {
       options.cwd = arg;
     }
@@ -77,6 +91,7 @@ export async function run(args) {
     checkFilter: options.checkFilter,
     deep: options.deep,
     online: options.online,
+    profile: options.profile,
   };
 
   if (options.recursive) {
@@ -87,17 +102,22 @@ export async function run(args) {
       process.exit(1);
     }
 
-    if (options.json) {
+    if (options.sarif) {
+      // SARIF for recursive: use first project's results or aggregate
+      process.stdout.write(JSON.stringify(formatSarif(result.projects[0] || { results: [] }), null, 2) + '\n');
+    } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else {
       process.stdout.write(formatTerminalRecursive(result, cwd, { noCta: options.noCta }) + '\n');
     }
 
-    process.exit(result.score >= 70 ? 0 : 1);
+    process.exit(result.score >= options.failUnder ? 0 : 1);
   } else {
     const result = await scan(scanOptions);
 
-    if (options.json) {
+    if (options.sarif) {
+      process.stdout.write(JSON.stringify(formatSarif(result), null, 2) + '\n');
+    } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else if (options.badge) {
       process.stdout.write(formatBadge(result) + '\n');
@@ -105,6 +125,6 @@ export async function run(args) {
       process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }
 
-    process.exit(result.score >= 70 ? 0 : 1);
+    process.exit(result.score >= options.failUnder ? 0 : 1);
   }
 }

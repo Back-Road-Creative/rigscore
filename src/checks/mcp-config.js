@@ -19,6 +19,11 @@ const DEFAULT_SAFE_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 
 const SENSITIVE_PATHS = ['/', '/home', '/etc', '/root', '/var', '/opt', '/usr'];
 
+const UNSAFE_PERMISSION_FLAGS = [
+  '--allow-all', '--no-sandbox', '--unsafe', '--allow-tools', '--disable-security',
+  '--privileged', '--unrestricted',
+];
+
 function extractPathsFromArgs(args) {
   const paths = [];
   const flagPatterns = ['--directory', '--root', '--path', '--allowed-directories', '--dir'];
@@ -123,7 +128,7 @@ export default {
   id: 'mcp-config',
   name: 'MCP server configuration',
   category: 'supply-chain',
-  weight: 12,
+  weight: 18,
 
   async run(context) {
     const { cwd, homedir, config } = context;
@@ -156,6 +161,12 @@ export default {
     let foundAny = false;
     let hasNetworkTransport = false;
     let hasBroadFilesystemAccess = false;
+    let driftDetected = false;
+    let serverCount = 0;
+    let clientCount = 0;
+
+    // Collect all servers per config file for cross-client drift detection
+    const clientServers = new Map(); // configPath → { name → server }
 
     for (const configPath of configPaths) {
       const mcpConfig = await readJsonSafe(configPath);
@@ -176,6 +187,9 @@ export default {
       foundAny = true;
       const servers = mcpConfig.mcpServers || {};
       const relPath = path.relative(cwd, configPath) || configPath;
+      clientServers.set(relPath, servers);
+      clientCount++;
+      serverCount += Object.keys(servers).length;
 
       for (const [name, server] of Object.entries(servers)) {
         // Check transport type
@@ -226,6 +240,20 @@ export default {
             detail: `Arguments contain "../" which may escape project scope. Found in ${relPath}.`,
             remediation: 'Use absolute paths scoped to your project directory.',
           });
+        }
+
+        // Check for overly broad permission flags
+        for (const arg of args) {
+          const lowerArg = typeof arg === 'string' ? arg.toLowerCase() : '';
+          if (UNSAFE_PERMISSION_FLAGS.some(flag => lowerArg.startsWith(flag))) {
+            findings.push({
+              severity: 'warning',
+              title: `MCP server "${name}" uses unsafe permission flag: ${arg}`,
+              detail: `Overly broad permissions detected in ${relPath}.`,
+              remediation: 'Use granular permission flags instead of blanket allow-all.',
+            });
+            break;
+          }
         }
 
         // Check for sensitive env passthrough
@@ -329,7 +357,51 @@ export default {
         title: 'No MCP configuration found',
         detail: 'No MCP server configuration files detected.',
       });
-      return { score: NOT_APPLICABLE_SCORE, findings, data: { hasNetworkTransport: false, hasBroadFilesystemAccess: false } };
+      return { score: NOT_APPLICABLE_SCORE, findings, data: { hasNetworkTransport: false, hasBroadFilesystemAccess: false, serverCount: 0, clientCount: 0, driftDetected: false } };
+    }
+
+    // Cross-client drift detection
+    if (clientServers.size >= 2) {
+      const allServerNames = new Set();
+      for (const servers of clientServers.values()) {
+        for (const name of Object.keys(servers)) {
+          allServerNames.add(name);
+        }
+      }
+
+      for (const serverName of allServerNames) {
+        const configs = [];
+        for (const [clientPath, servers] of clientServers.entries()) {
+          if (servers[serverName]) {
+            configs.push({ clientPath, server: servers[serverName] });
+          }
+        }
+
+        if (configs.length >= 2) {
+          // Check for divergent args/env/transport
+          const signatures = configs.map(c => JSON.stringify({
+            args: c.server.args || [],
+            env: Object.keys(c.server.env || {}).sort(),
+            transport: c.server.transport || 'stdio',
+          }));
+          const unique = new Set(signatures);
+          if (unique.size > 1) {
+            driftDetected = true;
+            findings.push({
+              severity: 'warning',
+              title: `Cross-client drift: "${serverName}" configured differently across clients`,
+              detail: `Server "${serverName}" has divergent configurations in: ${configs.map(c => c.clientPath).join(', ')}.`,
+              remediation: 'Align MCP server configurations across all AI clients.',
+            });
+          }
+        } else if (configs.length === 1) {
+          findings.push({
+            severity: 'info',
+            title: `MCP server "${serverName}" only configured in ${configs[0].clientPath}`,
+            detail: 'This server is not configured in all detected AI clients.',
+          });
+        }
+      }
     }
 
     if (findings.length === 0) {
@@ -342,7 +414,7 @@ export default {
     return {
       score: calculateCheckScore(findings),
       findings,
-      data: { hasNetworkTransport, hasBroadFilesystemAccess },
+      data: { hasNetworkTransport, hasBroadFilesystemAccess, serverCount, clientCount, driftDetected },
     };
   },
 };

@@ -39,7 +39,7 @@ export default {
   id: 'env-exposure',
   name: 'Secret exposure',
   category: 'secrets',
-  weight: 13,
+  weight: 10,
 
   async run(context) {
     const { cwd } = context;

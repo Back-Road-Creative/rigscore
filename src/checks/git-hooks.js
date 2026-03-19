@@ -125,7 +125,7 @@ export default {
   id: 'git-hooks',
   name: 'Git hooks',
   category: 'process',
-  weight: 8,
+  weight: 6,
 
   async run(context) {
     const { cwd, homedir, config } = context;

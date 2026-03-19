@@ -78,17 +78,17 @@ describe('calculateOverallScore', () => {
 
   it('calculates weighted sum correctly', () => {
     const results = [
-      { id: 'claude-md', score: 50 },              // 50 * 15/73
-      { id: 'mcp-config', score: 80 },             // 80 * 12/73
-      { id: 'env-exposure', score: 100 },           // 100 * 13/73
-      { id: 'docker-security', score: 0 },          // 0 * 10/73
-      { id: 'git-hooks', score: 100 },              // 100 * 8/73
-      { id: 'skill-files', score: 60 },             // 60 * 8/73
-      { id: 'permissions-hygiene', score: 100 },    // 100 * 7/73
+      { id: 'claude-md', score: 50 },              // 50 * 12/72
+      { id: 'mcp-config', score: 80 },             // 80 * 18/72
+      { id: 'env-exposure', score: 100 },           // 100 * 10/72
+      { id: 'docker-security', score: 0 },          // 0 * 8/72
+      { id: 'git-hooks', score: 100 },              // 100 * 6/72
+      { id: 'skill-files', score: 60 },             // 60 * 12/72
+      { id: 'permissions-hygiene', score: 100 },    // 100 * 6/72
     ];
-    // totalApplicableWeight = 73 >= 60, no penalty
-    // (750+960+1300+0+800+480+700)/73 = 4990/73 = 68.36 → 68
-    expect(calculateOverallScore(results)).toBe(68);
+    // totalApplicableWeight = 12+18+10+8+6+12+6 = 72 >= 60, no penalty
+    // (50*12+80*18+100*10+0*8+100*6+60*12+100*6)/72 = (600+1440+1000+0+600+720+600)/72 = 4960/72 = 68.89 → 69
+    expect(calculateOverallScore(results)).toBe(69);
   });
 
   it('rounds to integer', () => {
@@ -101,7 +101,20 @@ describe('calculateOverallScore', () => {
       { id: 'skill-files', score: 33 },
       { id: 'permissions-hygiene', score: 33 },
     ];
-    // 33 * (15+12+13+10+8+8+7)/73 = 33 * 73/73 = 33
+    // 33 * (12+18+10+8+6+12+6)/72 = 33 * 72/72 = 33
     expect(calculateOverallScore(results)).toBe(33);
+  });
+
+  it('accepts custom weights parameter', () => {
+    const customWeights = {
+      'claude-md': 50,
+      'mcp-config': 50,
+    };
+    const results = [
+      { id: 'claude-md', score: 100 },
+      { id: 'mcp-config', score: 0 },
+    ];
+    // (100*50 + 0*50)/100 = 50
+    expect(calculateOverallScore(results, customWeights)).toBe(50);
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "rigscore",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Configuration hygiene checker for AI dev environments. Scans locally, no external calls.",
   "type": "module",
   "bin": {
@@ -30,7 +30,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/backroadcreative/rigscore.git"
+    "url": "https://github.com/joepetjr/rigscore.git"
   },
   "dependencies": {
     "chalk": "^5.3.0",

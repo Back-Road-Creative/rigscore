@@ -3,6 +3,7 @@
  * Used for typosquatting detection.
  */
 export const KNOWN_MCP_SERVERS = [
+  '@anthropic-ai/mcp-proxy',
   '@modelcontextprotocol/server-memory',
   '@modelcontextprotocol/server-filesystem',
   '@modelcontextprotocol/server-brave-search',

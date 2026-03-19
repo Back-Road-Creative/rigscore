@@ -60,7 +60,7 @@ export default {
   id: 'deep-secrets',
   name: 'Deep source secrets',
   category: 'secrets',
-  weight: 12,
+  weight: 10,
 
   async run(context) {
     const { cwd, deep, config } = context;

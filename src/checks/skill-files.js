@@ -25,6 +25,51 @@ const INJECTION_PATTERNS = [
   /from\s+now\s+on\s+you/i,
 ];
 
+const EXFILTRATION_PATTERNS = [
+  /\bsend\s+.*\s+to\s+https?/i,
+  /\bpost\s+.*\s+to\s+https?/i,
+  /\bupload\s+.*\s+to\b/i,
+  /\bcurl\s+.*-d\b/i,
+  /\bcurl\s+.*--data\b/i,
+  /\bpipe\s+.*\s+to\s+external/i,
+  /\bredirect\s+.*output\s+.*to\b/i,
+];
+
+const ESCALATION_PATTERNS = [
+  /\bsudo\b/,
+  /\brun\s+as\s+root\b/i,
+  /\brun\s+as\s+admin\b/i,
+  /\belevat(?:e|ed)\s+privileg/i,
+  /\bchmod\s+777\b/,
+  /\bchmod\s+\+x\b/,
+  /\bchmod\s+.*a\+/,
+  /\bdisable\s+.*security\b/i,
+  /\bturn\s+off\s+.*firewall\b/i,
+  /\bdisable\s+.*antivirus\b/i,
+];
+
+const PERSISTENCE_PATTERNS = [
+  /\bcrontab\b/i,
+  /\bsystemctl\s+enable\b/i,
+  /\bstartup\s+script\b/i,
+  /\bboot\s+.*script\b/i,
+  /\badd\s+.*to\s+.*PATH\b/i,
+  /\bmodify\s+.*bashrc\b/i,
+  /\bmodify\s+.*profile\b/i,
+  /\bwrite\s+.*to\s+.*rc\b/i,
+  /\binstall\s+.*globally\b/i,
+  /\bnpm\s+.*-g\b/,
+];
+
+const INDIRECT_INJECTION_PATTERNS = [
+  /\bread\s+.*from\s+.*url\s+.*and\s+.*execute\b/i,
+  /\bfetch\s+.*and\s+.*run\b/i,
+  /\beval\s*\(/,
+  /\bnew\s+Function\s*\(/,
+  /\bdownload\s+.*and\s+.*run\b/i,
+  /\bdownload\s+.*and\s+.*execute\b/i,
+];
+
 const SHELL_EXEC_PATTERNS = [
   /\brun\s+`[^`]*`/i,
   /\bexecute\s+(the\s+)?(shell|bash|command)/i,
@@ -38,6 +83,9 @@ const BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m;
 
 const DEFENSIVE_WORDS = /\b(defend|prevent|block|guard|detect|refuse|flag|stop|reject|deny|halt|intercept|catch|disallow|prohibit|warn|alert|protect|mitigate|counter|resist)\b/i;
 
+// Cyrillic characters that look like Latin — check AFTER NFKC normalization
+const HOMOGLYPH_RE = /[\u0400-\u04FF\u0500-\u052F]/;
+
 function normalizeText(text) {
   return text
     .normalize('NFKC')
@@ -47,11 +95,15 @@ function normalizeText(text) {
     .replace(/[*_`~]/g, '');
 }
 
+function hasHomoglyphs(text) {
+  return HOMOGLYPH_RE.test(text.normalize('NFKC'));
+}
+
 export default {
   id: 'skill-files',
   name: 'Skill file safety',
   category: 'supply-chain',
-  weight: 8,
+  weight: 12,
 
   async run(context) {
     const { cwd, config } = context;
@@ -101,7 +153,7 @@ export default {
         title: 'No skill files found',
         detail: 'No AI agent instruction files detected.',
       });
-      return { score: NOT_APPLICABLE_SCORE, findings };
+      return { score: NOT_APPLICABLE_SCORE, findings, data: { filesScanned: 0, injectionFindings: 0, exfiltrationFindings: 0 } };
     }
 
     for (const file of filesToScan) {
@@ -173,6 +225,80 @@ export default {
         }
       }
 
+      // Check exfiltration patterns
+      for (const pattern of EXFILTRATION_PATTERNS) {
+        if (pattern.test(file.content)) {
+          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          if (!isDefensive) {
+            findings.push({
+              severity: 'warning',
+              title: `Data exfiltration pattern in ${file.path}`,
+              detail: 'File contains instructions that could exfiltrate data to external services.',
+              remediation: 'Remove or restrict data transfer instructions.',
+            });
+          }
+          break;
+        }
+      }
+
+      // Check privilege escalation patterns
+      for (const pattern of ESCALATION_PATTERNS) {
+        if (pattern.test(file.content)) {
+          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          if (!isDefensive) {
+            findings.push({
+              severity: 'warning',
+              title: `Privilege escalation pattern in ${file.path}`,
+              detail: 'File contains instructions that could escalate privileges.',
+              remediation: 'Remove privilege escalation instructions from skill files.',
+            });
+          }
+          break;
+        }
+      }
+
+      // Check persistence patterns
+      for (const pattern of PERSISTENCE_PATTERNS) {
+        if (pattern.test(file.content)) {
+          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          if (!isDefensive) {
+            findings.push({
+              severity: 'warning',
+              title: `Persistence pattern in ${file.path}`,
+              detail: 'File contains instructions that could establish persistent access.',
+              remediation: 'Remove persistence instructions from skill files.',
+            });
+          }
+          break;
+        }
+      }
+
+      // Check indirect injection patterns (CRITICAL severity)
+      for (const pattern of INDIRECT_INJECTION_PATTERNS) {
+        if (pattern.test(file.content)) {
+          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          if (!isDefensive) {
+            findings.push({
+              severity: 'critical',
+              title: `Indirect injection pattern in ${file.path}`,
+              detail: 'File contains instructions to fetch and execute remote code.',
+              remediation: 'Remove dynamic code execution instructions.',
+            });
+          }
+          break;
+        }
+      }
+
+      // Homoglyph detection
+      if (hasHomoglyphs(file.content)) {
+        findings.push({
+          severity: 'warning',
+          title: `Homoglyph characters detected in ${file.path}`,
+          detail: 'File contains characters from non-Latin scripts that visually resemble Latin letters. This could be used to disguise malicious instructions.',
+          remediation: 'Replace homoglyph characters with their ASCII equivalents.',
+        });
+      }
+
       // Check external URLs — only WARNING for HTTP (non-TLS)
       const urls = file.content.match(URL_PATTERN);
       if (urls && urls.length > 0) {
@@ -231,9 +357,17 @@ export default {
       });
     }
 
+    const injectionFindings = findings.filter(f =>
+      f.title?.includes('Injection') || f.title?.includes('injection') || f.title?.includes('Indirect injection'),
+    ).length;
+    const exfiltrationFindings = findings.filter(f =>
+      f.title?.includes('exfiltration') || f.title?.includes('Exfiltration'),
+    ).length;
+
     return {
       score: calculateCheckScore(findings),
       findings,
+      data: { filesScanned: filesToScan.length, injectionFindings, exfiltrationFindings },
     };
   },
 };

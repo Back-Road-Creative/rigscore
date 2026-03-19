@@ -341,7 +341,7 @@ export default {
   id: 'docker-security',
   name: 'Docker security',
   category: 'isolation',
-  weight: 10,
+  weight: 8,
 
   async run(context) {
     const { cwd, config } = context;

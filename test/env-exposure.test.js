@@ -15,7 +15,7 @@ function makeTmpDir() {
 describe('env-exposure check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('env-exposure');
-    expect(check.weight).toBe(13);
+    expect(check.weight).toBe(10);
     expect(typeof check.run).toBe('function');
   });
 

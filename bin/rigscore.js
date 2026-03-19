@@ -20,7 +20,11 @@ Usage:
 
 Options:
   --json             Output results as JSON
+  --sarif            Output SARIF v2.1.0 for GitHub Advanced Security
   --badge            Generate a markdown badge
+  --ci               CI mode (--sarif --no-color --no-cta)
+  --fail-under <N>   Exit code 1 if score < N (default: 70)
+  --profile <name>   Scoring profile (default, minimal, ci)
   --no-color         Disable colored output
   --no-cta           Suppress promotional call-to-action
   --check <id>       Run a single check by ID
@@ -31,21 +35,22 @@ Options:
   --version          Show version
   --help, -h         Show this help
 
-Checks:
-  claude-md           CLAUDE.md governance (20 pts)
-  mcp-config          MCP server configuration (15 pts)
-  env-exposure        Secret exposure (20 pts)
-  docker-security     Docker/K8s/Podman security (15 pts)
-  git-hooks           Git hooks (10 pts)
-  skill-files         Skill file safety (10 pts)
-  permissions-hygiene File permissions hygiene (10 pts)
-  deep-secrets        Deep source secret scanning (--deep, 12 pts)
-  coherence           Cross-config coherence (15 pts)
+Checks (moat-heavy weighting):
+  mcp-config          MCP server configuration (18 pts)
+  coherence           Cross-config coherence (18 pts)
+  skill-files         Skill file safety (12 pts)
+  claude-md           CLAUDE.md governance (12 pts)
+  deep-secrets        Deep source secret scanning (--deep, 10 pts)
+  env-exposure        Secret exposure (10 pts)
+  docker-security     Docker/K8s/Podman security (8 pts)
+  git-hooks           Git hooks (6 pts)
+  permissions-hygiene File permissions hygiene (6 pts)
 
 Examples:
   rigscore                          Scan current directory
   rigscore /path/to/project         Scan a specific project
   rigscore --json                   JSON output for CI
+  rigscore --ci --fail-under 80     CI with strict threshold
   rigscore . -r --depth 2           Scan monorepo (2 levels deep)
   rigscore --check docker-security  Run only Docker/K8s check`);
   process.exit(0);

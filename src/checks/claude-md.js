@@ -57,7 +57,7 @@ export default {
   id: 'claude-md',
   name: 'CLAUDE.md governance',
   category: 'governance',
-  weight: 15,
+  weight: 12,
 
   async run(context) {
     const { cwd, homedir, config } = context;

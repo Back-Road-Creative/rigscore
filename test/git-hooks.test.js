@@ -13,7 +13,7 @@ const defaultConfig = { paths: { hookDirs: [] }, network: {} };
 describe('git-hooks check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('git-hooks');
-    expect(check.weight).toBe(8);
+    expect(check.weight).toBe(6);
   });
 
   it('WARNING when no hooks exist', async () => {

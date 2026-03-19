@@ -13,7 +13,7 @@ const defaultConfig = {};
 describe('deep-secrets check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('deep-secrets');
-    expect(check.weight).toBe(12);
+    expect(check.weight).toBe(10);
     expect(typeof check.run).toBe('function');
   });
 

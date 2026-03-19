@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadChecks } from './checks/index.js';
 import { calculateOverallScore } from './scoring.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
-import { loadConfig } from './config.js';
+import { loadConfig, resolveWeights } from './config.js';
 
 /**
  * Run an array of checks against a context, collect results.
@@ -64,6 +64,11 @@ export async function scan(options = {}) {
   const homedir = options.homedir || (await import('node:os')).homedir();
   const config = await loadConfig(cwd, homedir);
 
+  // Merge CLI profile into config
+  if (options.profile) {
+    config.profile = options.profile;
+  }
+
   const context = { cwd, homedir, config, deep: options.deep || false, online: options.online || false };
 
   // Split checks into regular and coherence (two-pass)
@@ -90,7 +95,8 @@ export async function scan(options = {}) {
       : 0;
     overallScore = Math.round(avg);
   } else {
-    overallScore = calculateOverallScore(results);
+    const weights = resolveWeights(config);
+    overallScore = calculateOverallScore(results, weights);
   }
 
   return { score: overallScore, results };

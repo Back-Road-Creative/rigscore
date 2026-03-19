@@ -41,16 +41,17 @@ export function calculateCheckScore(findings) {
  * Coverage penalty: if total applicable weight < COVERAGE_PENALTY_THRESHOLD,
  * the score is scaled down by (totalApplicableWeight / 100).
  */
-export function calculateOverallScore(results) {
+export function calculateOverallScore(results, customWeights) {
+  const w = customWeights || WEIGHTS;
   const applicable = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
   if (applicable.length === 0) return 0;
 
-  const totalApplicableWeight = applicable.reduce((sum, r) => sum + (WEIGHTS[r.id] || 0), 0);
+  const totalApplicableWeight = applicable.reduce((sum, r) => sum + (w[r.id] || 0), 0);
   if (totalApplicableWeight === 0) return 0;
 
   let total = 0;
   for (const result of applicable) {
-    const weight = WEIGHTS[result.id] || 0;
+    const weight = w[result.id] || 0;
     // Scale weight proportionally so applicable weights sum to 100
     const scaledWeight = (weight / totalApplicableWeight) * 100;
     total += (result.score / 100) * scaledWeight;

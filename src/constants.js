@@ -14,17 +14,17 @@ export const CATEGORY = {
   PROCESS: 'process',
 };
 
-// Weights must sum to 100
+// Weights must sum to 100 — moat-heavy: AI-specific checks get ~63%
 export const WEIGHTS = {
-  'claude-md': 15,
-  'mcp-config': 12,
-  'env-exposure': 13,
-  'docker-security': 10,
-  'git-hooks': 8,
-  'skill-files': 8,
-  'permissions-hygiene': 7,
-  'coherence': 15,
-  'deep-secrets': 12,
+  'mcp-config': 18,
+  'coherence': 18,
+  'skill-files': 12,
+  'claude-md': 12,
+  'deep-secrets': 10,
+  'env-exposure': 10,
+  'docker-security': 8,
+  'git-hooks': 6,
+  'permissions-hygiene': 6,
 };
 
 // Sentinel score for checks that find nothing to scan
