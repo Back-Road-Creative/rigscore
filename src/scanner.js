@@ -59,8 +59,8 @@ export async function runChecks(checks, context, options = {}) {
  * Full scan: load checks, run them, calculate scores.
  */
 export async function scan(options = {}) {
-  const checks = await loadChecks();
   const cwd = options.cwd || process.cwd();
+  const checks = await loadChecks({ cwd });
   const homedir = options.homedir || (await import('node:os')).homedir();
   const config = await loadConfig(cwd, homedir);
 

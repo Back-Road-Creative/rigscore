@@ -34,6 +34,8 @@ Options:
   --online           Enable online MCP supply chain verification
   --fix              Show auto-fixable issues (dry run)
   --fix --yes        Apply safe auto-remediations
+  --watch            Watch for changes and re-run automatically
+  --init-hook        Install a pre-commit hook that runs rigscore
   --version          Show version
   --help, -h         Show this help
 

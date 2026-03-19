@@ -37,7 +37,7 @@ describe('constants', () => {
     expect(INFO_ONLY_FLOOR).toBe(50);
   });
 
-  it('COVERAGE_PENALTY_THRESHOLD is 60', () => {
-    expect(COVERAGE_PENALTY_THRESHOLD).toBe(60);
+  it('COVERAGE_PENALTY_THRESHOLD is 50', () => {
+    expect(COVERAGE_PENALTY_THRESHOLD).toBe(50);
   });
 });

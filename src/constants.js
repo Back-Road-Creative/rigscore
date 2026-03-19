@@ -25,6 +25,7 @@ export const WEIGHTS = {
   'docker-security': 8,
   'git-hooks': 6,
   'permissions-hygiene': 6,
+  'windows-security': 0,
 };
 
 // Sentinel score for checks that find nothing to scan
@@ -45,7 +46,7 @@ export const INFO_ONLY_FLOOR = 50;
 
 // Coverage penalty threshold — if total applicable weight is below this,
 // the overall score is scaled down proportionally
-export const COVERAGE_PENALTY_THRESHOLD = 60;
+export const COVERAGE_PENALTY_THRESHOLD = 50;
 
 // All known AI client governance/instruction files
 export const GOVERNANCE_FILES = [
