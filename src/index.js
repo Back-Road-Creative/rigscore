@@ -2,13 +2,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { scan, scanRecursive } from './scanner.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
-import { formatSarif } from './sarif.js';
+import { formatSarif, formatSarifMulti } from './sarif.js';
+import { findApplicableFixes, applyFixes } from './fixer.js';
 
 export function parseArgs(args) {
   const options = {
     json: false,
     badge: false,
     sarif: false,
+    fix: false,
+    yes: false,
     noColor: false,
     noCta: false,
     verbose: false,
@@ -51,6 +54,10 @@ export function parseArgs(args) {
       options.failUnder = Math.max(0, Math.min(100, parseInt(args[++i], 10) || 70));
     } else if (arg === '--profile' && i + 1 < args.length) {
       options.profile = args[++i];
+    } else if (arg === '--fix') {
+      options.fix = true;
+    } else if (arg === '--yes' || arg === '-y') {
+      options.yes = true;
     } else if (arg === '--ci') {
       options.sarif = true;
       options.noColor = true;
@@ -103,8 +110,8 @@ export async function run(args) {
     }
 
     if (options.sarif) {
-      // SARIF for recursive: use first project's results or aggregate
-      process.stdout.write(JSON.stringify(formatSarif(result.projects[0] || { results: [] }), null, 2) + '\n');
+      // SARIF for recursive: one run per project
+      process.stdout.write(JSON.stringify(formatSarifMulti(result.projects), null, 2) + '\n');
     } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else {
@@ -123,6 +130,36 @@ export async function run(args) {
       process.stdout.write(formatBadge(result) + '\n');
     } else {
       process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
+    }
+
+    // --fix mode: find and apply safe auto-remediations
+    if (options.fix) {
+      const fixes = findApplicableFixes(result.results);
+      if (fixes.length === 0) {
+        process.stderr.write('No auto-fixable issues found.\n');
+      } else if (!options.yes) {
+        // Dry-run: show what would be fixed
+        process.stderr.write('\nAuto-fixable issues (dry run):\n');
+        for (const fix of fixes) {
+          process.stderr.write(`  - ${fix.description}\n`);
+        }
+        process.stderr.write('\nRun with --fix --yes to apply.\n');
+      } else {
+        // Apply fixes
+        const { applied, skipped } = await applyFixes(fixes, cwd, os.homedir());
+        if (applied.length > 0) {
+          process.stderr.write('\nFixed:\n');
+          for (const a of applied) {
+            process.stderr.write(`  \u2713 ${a}\n`);
+          }
+        }
+        if (skipped.length > 0) {
+          process.stderr.write('\nSkipped:\n');
+          for (const s of skipped) {
+            process.stderr.write(`  - ${s}\n`);
+          }
+        }
+      }
     }
 
     process.exit(result.score >= options.failUnder ? 0 : 1);

@@ -10,7 +10,6 @@ export default {
   id: 'coherence',
   name: 'Cross-config coherence',
   category: 'governance',
-  weight: 18,
 
   async run(context) {
     const { priorResults } = context;
@@ -97,32 +96,32 @@ export default {
       });
     }
 
-    // Check: governance file in .gitignore (CRITICAL)
-    // This is detected by the claude-md check — look for the finding
+    // Check: governance file in .gitignore — already scored by claude-md,
+    // so emit as info here to avoid double-counting the deduction.
     if (claudeMdResult) {
       const gitignoreFinding = claudeMdResult.findings?.find(
         f => f.severity === 'critical' && f.title?.includes('.gitignore')
       );
       if (gitignoreFinding) {
         findings.push({
-          severity: 'critical',
+          severity: 'info',
           title: 'Governance file is gitignored — ephemeral governance',
-          detail: 'A governance file listed in .gitignore has no audit trail and can be silently modified or removed.',
+          detail: 'A governance file listed in .gitignore has no audit trail and can be silently modified or removed. (Scored by claude-md check.)',
           remediation: 'Remove governance files from .gitignore and commit them to version control.',
         });
       }
     }
 
-    // Check: governance file not tracked in git (WARNING)
+    // Check: governance file not tracked in git — already scored by claude-md
     if (claudeMdResult) {
       const untrackedFinding = claudeMdResult.findings?.find(
         f => f.severity === 'warning' && f.title?.includes('not tracked in git')
       );
       if (untrackedFinding) {
         findings.push({
-          severity: 'warning',
+          severity: 'info',
           title: 'Governance file exists but is not version-controlled',
-          detail: 'Untracked governance files can be silently modified without an audit trail.',
+          detail: 'Untracked governance files can be silently modified without an audit trail. (Scored by claude-md check.)',
           remediation: 'Track governance files in git for change history.',
         });
       }

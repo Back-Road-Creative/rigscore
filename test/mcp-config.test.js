@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/mcp-config.js';
+import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => path.join(__dirname, 'fixtures', name);
@@ -17,7 +18,7 @@ const defaultConfig = { paths: { mcpConfig: [] }, network: { safeHosts: ['127.0.
 describe('mcp-config check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('mcp-config');
-    expect(check.weight).toBe(18);
+    expect(WEIGHTS[check.id]).toBe(18);
   });
 
   it('PASS with clean stdio config', async () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runChecks } from '../src/scanner.js';
 import { loadChecks } from '../src/checks/index.js';
+import { WEIGHTS } from '../src/constants.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
@@ -19,12 +20,11 @@ describe('loadChecks', () => {
       expect(check).toHaveProperty('id');
       expect(check).toHaveProperty('name');
       expect(check).toHaveProperty('category');
-      expect(check).toHaveProperty('weight');
       expect(check).toHaveProperty('run');
       expect(typeof check.id).toBe('string');
       expect(typeof check.name).toBe('string');
       expect(typeof check.run).toBe('function');
-      expect(typeof check.weight).toBe('number');
+      expect(typeof WEIGHTS[check.id]).toBe('number');
     }
   });
 });

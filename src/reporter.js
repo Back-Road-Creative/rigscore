@@ -166,6 +166,9 @@ export function formatTerminal(result, cwd, options = {}) {
       if (item.remediation) {
         lines.push(`    ${chalk.dim('\u2192')} Fix: ${item.remediation}`);
       }
+      if (item.learnMore) {
+        lines.push(`    ${chalk.dim('\u2192')} Learn more: ${chalk.cyan(item.learnMore)}`);
+      }
       lines.push('');
     }
   }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/env-exposure.js';
+import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => path.join(__dirname, 'fixtures', name);
@@ -15,7 +16,7 @@ function makeTmpDir() {
 describe('env-exposure check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('env-exposure');
-    expect(check.weight).toBe(10);
+    expect(WEIGHTS[check.id]).toBe(10);
     expect(typeof check.run).toBe('function');
   });
 

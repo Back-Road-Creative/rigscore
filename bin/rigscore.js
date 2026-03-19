@@ -32,6 +32,8 @@ Options:
   --depth <N>        Recursion depth (default: 1, implies --recursive)
   --deep             Enable deep source secret scanning
   --online           Enable online MCP supply chain verification
+  --fix              Show auto-fixable issues (dry run)
+  --fix --yes        Apply safe auto-remediations
   --version          Show version
   --help, -h         Show this help
 

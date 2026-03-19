@@ -82,6 +82,25 @@ describe('loadConfig', () => {
     }
   });
 
+  it('concatenates and deduplicates network.safeHosts', async () => {
+    const tmpDir = makeTmpDir();
+    const rc = { network: { safeHosts: ['10.0.0.5', 'localhost'] } };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      // Should have defaults + user-specified, deduplicated
+      expect(config.network.safeHosts).toContain('127.0.0.1');
+      expect(config.network.safeHosts).toContain('::1');
+      expect(config.network.safeHosts).toContain('10.0.0.5');
+      expect(config.network.safeHosts).toContain('localhost');
+      // No duplicates
+      const unique = new Set(config.network.safeHosts);
+      expect(unique.size).toBe(config.network.safeHosts.length);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('ignores unknown keys gracefully', async () => {
     const tmpDir = makeTmpDir();
     const rc = { paths: { claudeMd: ['/a'], unknownKey: 'value' }, extra: true };

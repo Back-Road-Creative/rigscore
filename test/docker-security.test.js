@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/docker-security.js';
+import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => path.join(__dirname, 'fixtures', name);
@@ -17,7 +18,7 @@ const defaultConfig = { paths: { dockerCompose: [] }, network: {} };
 describe('docker-security check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('docker-security');
-    expect(check.weight).toBe(8);
+    expect(WEIGHTS[check.id]).toBe(8);
   });
 
   it('CRITICAL when socket mounted and privileged', async () => {

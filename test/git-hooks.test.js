@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import check from '../src/checks/git-hooks.js';
+import { WEIGHTS } from '../src/constants.js';
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-git-'));
@@ -13,7 +14,7 @@ const defaultConfig = { paths: { hookDirs: [] }, network: {} };
 describe('git-hooks check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('git-hooks');
-    expect(check.weight).toBe(6);
+    expect(WEIGHTS[check.id]).toBe(6);
   });
 
   it('WARNING when no hooks exist', async () => {

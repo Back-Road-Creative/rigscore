@@ -39,7 +39,6 @@ export default {
   id: 'env-exposure',
   name: 'Secret exposure',
   category: 'secrets',
-  weight: 10,
 
   async run(context) {
     const { cwd } = context;
@@ -63,6 +62,7 @@ export default {
           title: '.env file found but NOT in .gitignore',
           detail: 'Your API keys and secrets will be committed to version control.',
           remediation: 'Add .env to .gitignore immediately.',
+          learnMore: 'https://headlessmode.com/tools/rigscore/#env-security',
         });
       } else {
         findings.push({
