@@ -103,7 +103,6 @@ export default {
   id: 'skill-files',
   name: 'Skill file safety',
   category: 'supply-chain',
-  weight: 12,
 
   async run(context) {
     const { cwd, config } = context;

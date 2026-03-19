@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadChecks } from './checks/index.js';
 import { calculateOverallScore } from './scoring.js';
-import { NOT_APPLICABLE_SCORE } from './constants.js';
+import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
 
 /**
@@ -24,7 +24,7 @@ export async function runChecks(checks, context, options = {}) {
         id: check.id,
         name: check.name,
         category: check.category,
-        weight: check.weight,
+        weight: WEIGHTS[check.id] || check.weight || 0,
         score: result.score,
         findings: result.findings,
         ...(result.data !== undefined && { data: result.data }),
@@ -42,7 +42,7 @@ export async function runChecks(checks, context, options = {}) {
       id: check.id,
       name: check.name,
       category: check.category,
-      weight: check.weight,
+      weight: WEIGHTS[check.id] || check.weight || 0,
       score: 0,
       findings: [
         {
@@ -194,15 +194,23 @@ export async function scanRecursive(options = {}) {
     };
   }
 
+  // Scan projects concurrently with a limit of 4
+  const CONCURRENCY = 4;
   const projects = [];
-  for (const dir of projectDirs) {
-    const result = await scan({ ...options, cwd: dir });
-    projects.push({
-      path: path.relative(rootDir, dir) || path.basename(dir),
-      absolutePath: dir,
-      score: result.score,
-      results: result.results,
-    });
+  for (let i = 0; i < projectDirs.length; i += CONCURRENCY) {
+    const batch = projectDirs.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map(async (dir) => {
+        const result = await scan({ ...options, cwd: dir });
+        return {
+          path: path.relative(rootDir, dir) || path.basename(dir),
+          absolutePath: dir,
+          score: result.score,
+          results: result.results,
+        };
+      }),
+    );
+    projects.push(...batchResults);
   }
 
   // Overall score = average across projects (excluding all-N/A projects with score 0)

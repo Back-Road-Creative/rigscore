@@ -91,14 +91,16 @@ function mergeConfig(userConfig) {
   if (userConfig.paths) {
     for (const key of Object.keys(result.paths)) {
       if (Array.isArray(userConfig.paths[key])) {
-        result.paths[key] = userConfig.paths[key];
+        // Concatenate and deduplicate arrays instead of replacing
+        result.paths[key] = [...new Set([...result.paths[key], ...userConfig.paths[key]])];
       }
     }
   }
 
   if (userConfig.network) {
     if (Array.isArray(userConfig.network.safeHosts)) {
-      result.network.safeHosts = userConfig.network.safeHosts;
+      // Concatenate and deduplicate
+      result.network.safeHosts = [...new Set([...result.network.safeHosts, ...userConfig.network.safeHosts])];
     }
   }
 

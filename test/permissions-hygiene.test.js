@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import check from '../src/checks/permissions-hygiene.js';
+import { WEIGHTS } from '../src/constants.js';
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-perms-'));
@@ -13,7 +14,7 @@ describe('permissions-hygiene check', () => {
     expect(check.id).toBe('permissions-hygiene');
     expect(check.name).toBe('Permissions hygiene');
     expect(check.category).toBe('process');
-    expect(check.weight).toBe(6);
+    expect(WEIGHTS[check.id]).toBe(6);
     expect(typeof check.run).toBe('function');
   });
 
