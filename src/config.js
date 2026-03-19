@@ -34,8 +34,6 @@ export const PROFILES = {
   ci: { ...WEIGHTS },
 };
 
-const VALID_CHECK_IDS = new Set(Object.keys(WEIGHTS));
-
 /**
  * Resolve final weights from config: profile → overrides → disabled checks.
  */
@@ -48,12 +46,9 @@ export function resolveWeights(config) {
 
   const resolved = { ...profile };
 
-  // Apply weight overrides
+  // Apply weight overrides (including plugin weights)
   if (config?.weights) {
     for (const [key, value] of Object.entries(config.weights)) {
-      if (!VALID_CHECK_IDS.has(key)) {
-        throw new Error(`Invalid check ID in weights: "${key}". Valid IDs: ${[...VALID_CHECK_IDS].join(', ')}`);
-      }
       resolved[key] = value;
     }
   }
@@ -61,9 +56,6 @@ export function resolveWeights(config) {
   // Zero out disabled checks
   if (config?.checks?.disabled) {
     for (const id of config.checks.disabled) {
-      if (!VALID_CHECK_IDS.has(id)) {
-        throw new Error(`Invalid check ID in disabled: "${id}". Valid IDs: ${[...VALID_CHECK_IDS].join(', ')}`);
-      }
       resolved[id] = 0;
     }
   }

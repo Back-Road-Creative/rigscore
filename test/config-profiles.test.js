@@ -58,11 +58,13 @@ describe('resolveWeights', () => {
     expect(() => resolveWeights({ profile: 'nonexistent' })).toThrow('Unknown profile');
   });
 
-  it('throws for invalid check ID in weights', () => {
-    expect(() => resolveWeights({ weights: { 'fake-check': 10 } })).toThrow('Invalid check ID');
+  it('accepts unknown check IDs in weights (for plugins)', () => {
+    const resolved = resolveWeights({ weights: { 'fake-check': 10 } });
+    expect(resolved['fake-check']).toBe(10);
   });
 
-  it('throws for invalid check ID in disabled', () => {
-    expect(() => resolveWeights({ checks: { disabled: ['fake-check'] } })).toThrow('Invalid check ID');
+  it('accepts unknown check IDs in disabled (for plugins)', () => {
+    const resolved = resolveWeights({ checks: { disabled: ['fake-check'] } });
+    expect(resolved['fake-check']).toBe(0);
   });
 });
