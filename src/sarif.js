@@ -71,3 +71,26 @@ export function formatSarif(result) {
     ],
   };
 }
+
+/**
+ * Convert recursive scan results to SARIF v2.1.0 with one run per project.
+ */
+export function formatSarifMulti(projects) {
+  if (!projects || projects.length === 0) {
+    return formatSarif({ results: [] });
+  }
+
+  const runs = projects.map((project) => {
+    const single = formatSarif({ results: project.results });
+    const run = single.runs[0];
+    // Tag the run with the project path
+    run.automationDetails = { id: project.path };
+    return run;
+  });
+
+  return {
+    $schema: 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json',
+    version: '2.1.0',
+    runs,
+  };
+}

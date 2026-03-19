@@ -26,7 +26,6 @@ export default {
   id: 'permissions-hygiene',
   name: 'Permissions hygiene',
   category: 'process',
-  weight: 6,
 
   async run(context) {
     const { cwd, homedir } = context;

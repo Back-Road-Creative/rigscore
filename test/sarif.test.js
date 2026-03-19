@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatSarif } from '../src/sarif.js';
+import { formatSarif, formatSarifMulti } from '../src/sarif.js';
 
 describe('SARIF output', () => {
   const mockResult = {
@@ -69,5 +69,21 @@ describe('SARIF output', () => {
     const sarif = formatSarif(mockResult);
     const result = sarif.runs[0].results[0];
     expect(result.locations[0].logicalLocations[0].name).toBeDefined();
+  });
+
+  it('formatSarifMulti creates one run per project', () => {
+    const projects = [
+      { path: 'project-a', results: mockResult.results },
+      { path: 'project-b', results: mockResult.results },
+    ];
+    const sarif = formatSarifMulti(projects);
+    expect(sarif.runs).toHaveLength(2);
+    expect(sarif.runs[0].automationDetails.id).toBe('project-a');
+    expect(sarif.runs[1].automationDetails.id).toBe('project-b');
+  });
+
+  it('formatSarifMulti handles empty projects', () => {
+    const sarif = formatSarifMulti([]);
+    expect(sarif.runs).toHaveLength(1); // falls back to single empty run
   });
 });

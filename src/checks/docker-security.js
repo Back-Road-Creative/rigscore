@@ -55,6 +55,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
           title: `Container "${name}" mounts Docker socket`,
           detail: `Docker socket access allows container escape and full host control. Found in ${sourceLabel}.`,
           remediation: 'Remove the Docker socket mount. Use Docker-in-Docker or rootless alternatives.',
+          learnMore: 'https://headlessmode.com/tools/rigscore/#docker-socket-risk',
         });
       }
 
@@ -341,7 +342,6 @@ export default {
   id: 'docker-security',
   name: 'Docker security',
   category: 'isolation',
-  weight: 8,
 
   async run(context) {
     const { cwd, config } = context;

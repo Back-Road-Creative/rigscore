@@ -128,7 +128,6 @@ export default {
   id: 'mcp-config',
   name: 'MCP server configuration',
   category: 'supply-chain',
-  weight: 18,
 
   async run(context) {
     const { cwd, homedir, config } = context;
@@ -149,6 +148,10 @@ export default {
       path.join(homedir, '.continue', 'config.json'),
       // Windsurf
       path.join(homedir, '.windsurf', 'mcp.json'),
+      // Zed
+      path.join(homedir, '.config', 'zed', 'settings.json'),
+      // Amp
+      path.join(homedir, '.amp', 'mcp.json'),
     ];
 
     // Add config-specified paths
@@ -212,6 +215,7 @@ export default {
               title: `MCP server "${name}" uses network transport`,
               detail: `Server uses ${transport || 'network'} transport in ${relPath}. Network-based MCP servers have a larger attack surface than stdio.`,
               remediation: 'Prefer stdio transport for local MCP servers. If network transport is required, ensure authentication and TLS.',
+              learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
             });
           }
         }
@@ -228,6 +232,7 @@ export default {
             title: `MCP server "${name}" has broad filesystem access: ${sensitivePaths.join(', ')}`,
             detail: `Server can access sensitive path(s). Found in ${relPath}.`,
             remediation: 'Scope filesystem access to your project directory only.',
+            learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
           });
         }
 
@@ -284,6 +289,7 @@ export default {
               title: `MCP server "${name}" uses unpinned version (@latest)`,
               detail: 'Unpinned versions can introduce breaking changes or supply chain attacks.',
               remediation: 'Pin MCP server packages to specific versions.',
+              learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
             });
             break;
           }

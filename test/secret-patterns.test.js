@@ -181,6 +181,84 @@ describe('expanded secret patterns', () => {
     }
   });
 
+  it('detects Cloudflare API token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeToken = 'cf_' + 'a'.repeat(37);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Railway token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeToken = 'railway_' + 'a'.repeat(24);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects PlanetScale token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeToken = 'pscale_tkn_' + 'a'.repeat(30);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Neon API key', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeToken = 'neon_' + 'a'.repeat(30);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Linear API key', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeToken = 'lin_api_' + 'a'.repeat(40);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Replicate API token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeToken = 'r8_' + 'a'.repeat(37);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('detects Vercel token', async () => {
     const tmpDir = makeTmpDir();
     const fakeVercelToken = 'vercel_' + 'a'.repeat(24);
