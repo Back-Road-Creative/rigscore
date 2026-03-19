@@ -25,10 +25,17 @@ export default {
     const mcpResult = priorResults.find(r => r.id === 'mcp-config');
     const dockerResult = priorResults.find(r => r.id === 'docker-security');
 
+    const skillResult = priorResults.find(r => r.id === 'skill-files');
+    const envResult = priorResults.find(r => r.id === 'env-exposure');
+
     const matchedPatterns = claudeMdResult?.data?.matchedPatterns || [];
     const hasNetworkTransport = mcpResult?.data?.hasNetworkTransport || false;
     const hasBroadFilesystemAccess = mcpResult?.data?.hasBroadFilesystemAccess || false;
     const hasPrivilegedContainer = dockerResult?.data?.hasPrivilegedContainer || false;
+    const driftDetected = mcpResult?.data?.driftDetected || false;
+    const mcpClientCount = mcpResult?.data?.clientCount || 0;
+    const skillInjectionFindings = skillResult?.data?.injectionFindings || 0;
+    const skillExfiltrationFindings = skillResult?.data?.exfiltrationFindings || 0;
 
     // Check: governance claims "no external network" but MCP uses network transport
     if (matchedPatterns.includes('network restrictions') && hasNetworkTransport) {
@@ -57,6 +64,36 @@ export default {
         title: 'Governance claims forbidden actions but Docker container is privileged',
         detail: 'Your governance file defines forbidden actions, but a container runs in privileged mode with full host access.',
         remediation: 'Remove privileged: true from container configuration.',
+      });
+    }
+
+    // Check: multi-client MCP drift detected — governance should mention multi-client management
+    if (driftDetected && mcpClientCount >= 2) {
+      findings.push({
+        severity: 'warning',
+        title: 'MCP configuration drifts across AI clients without governance guidance',
+        detail: `${mcpClientCount} AI clients have divergent MCP configs, but governance does not address multi-client alignment.`,
+        remediation: 'Add multi-client MCP management rules to your governance file, or align configurations.',
+      });
+    }
+
+    // Check: governance claims anti-injection but skill files have injection findings
+    if (matchedPatterns.includes('anti-injection') && skillInjectionFindings > 0) {
+      findings.push({
+        severity: 'critical',
+        title: 'Governance claims anti-injection rules but skill files contain injection patterns',
+        detail: `Governance file includes anti-injection rules, but ${skillInjectionFindings} injection pattern(s) were found in skill files.`,
+        remediation: 'Remove injection patterns from skill files or review for false positives.',
+      });
+    }
+
+    // Check: skill files have exfiltration patterns — escalate if broad filesystem also
+    if (skillExfiltrationFindings > 0 && hasBroadFilesystemAccess) {
+      findings.push({
+        severity: 'critical',
+        title: 'Compound risk: data exfiltration patterns + broad filesystem access',
+        detail: 'Skill files contain data exfiltration instructions AND MCP servers have broad filesystem access — a high-risk combination.',
+        remediation: 'Remove exfiltration patterns from skill files and scope MCP filesystem access.',
       });
     }
 
@@ -95,7 +132,8 @@ export default {
       // No contradictions found — but only if we had enough data to check
       const hasGovernance = claudeMdResult && claudeMdResult.score !== NOT_APPLICABLE_SCORE;
       const hasConfig = (mcpResult && mcpResult.score !== NOT_APPLICABLE_SCORE) ||
-                       (dockerResult && dockerResult.score !== NOT_APPLICABLE_SCORE);
+                       (dockerResult && dockerResult.score !== NOT_APPLICABLE_SCORE) ||
+                       (skillResult && skillResult.score !== NOT_APPLICABLE_SCORE);
 
       if (!hasGovernance || !hasConfig) {
         return { score: NOT_APPLICABLE_SCORE, findings: [] };
