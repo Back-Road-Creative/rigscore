@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 9 checks. A hygiene score out of 100. Know where you stand before something breaks.
+One command. 10 checks. A hygiene score out of 100. Know where you stand before something breaks.
 
 ```bash
 npx rigscore
@@ -11,7 +11,7 @@ npx rigscore
 ```
   ╭────────────────────────────────────────╮
   │                                        │
-  │        rigscore v0.3.0                 │
+  │        rigscore v0.4.0                 │
   │   AI Dev Environment Hygiene Check     │
   │                                        │
   ╰────────────────────────────────────────╯
@@ -103,6 +103,12 @@ npx rigscore --fix --yes
 
 # Use a scoring profile
 npx rigscore --profile minimal
+
+# Watch mode — re-run on config changes
+npx rigscore --watch
+
+# Install a pre-commit hook
+npx rigscore --init-hook
 ```
 
 ## What it checks
@@ -240,6 +246,18 @@ File permissions are the foundation of access control. Misconfigured permissions
 
 **Platform note:** Permission checks are POSIX-only. On Windows, rigscore reports a SKIPPED finding and recommends manual verification with `icacls`.
 
+### 10. Windows/WSL security (advisory, 0 points) {#windows-security}
+
+On Windows, rigscore checks for WSL-specific security risks. This is an advisory check — it doesn't affect the score but surfaces important configuration issues.
+
+**What rigscore looks for:**
+- WSL interop settings — warns if Windows PATH leaks into WSL (`appendWindowsPath=true`)
+- `.wslconfig` firewall and networking mode
+- Windows Defender exclusions that include project directories or `node_modules`
+- NTFS permissions advisory for sensitive files
+
+**Platform note:** Returns N/A on non-Windows systems. Weight 0 means it never affects the score.
+
 ## Scoring
 
 | Score | Grade | Meaning |
@@ -263,6 +281,7 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 | Docker security | 8 | isolation |
 | Git hooks | 6 | process |
 | Permissions hygiene | 6 | process |
+| Windows/WSL security | 0 | isolation (advisory) |
 
 - **CRITICAL** findings zero out their sub-check entirely
 - **WARNING** findings deduct 15 points each (1 WARNING = 85, 2 = 70, 3 = 55...)
@@ -271,7 +290,7 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 
 **Compound risk penalty:** When the coherence check finds a CRITICAL contradiction, 10 additional points are deducted from the overall score — reflecting the systemic nature of governance failures.
 
-**Coverage penalty:** Checks that find nothing to scan are marked N/A and excluded from the weighted average. If the total applicable check weight falls below 60%, the overall score is scaled down proportionally — this prevents projects with minimal configuration from appearing fully secure.
+**Coverage penalty:** Checks that find nothing to scan are marked N/A and excluded from the weighted average. If the total applicable check weight falls below 50%, the overall score is scaled down proportionally — this prevents projects with minimal configuration from appearing fully secure.
 
 **Scoring profiles:** Use `--profile minimal` to focus only on AI-specific checks, or `--profile ci` for CI pipelines. Custom weights can be set in `.rigscorerc.json`.
 
@@ -303,9 +322,30 @@ npx rigscore -r --depth 2              # Recursive scan, 2 levels deep
 npx rigscore --deep                    # Deep source secret scanning
 npx rigscore --fix                     # Show auto-fixable issues (dry run)
 npx rigscore --fix --yes               # Apply safe auto-remediations
+npx rigscore --watch                   # Watch for changes, re-run automatically
+npx rigscore --init-hook               # Install pre-commit hook
 npx rigscore --version                 # Version info
 npx rigscore --help                    # Show help
 ```
+
+### Watch mode
+
+`--watch` re-runs rigscore automatically when relevant files change. It monitors governance files, MCP configs, `.env`, Docker Compose files, git hooks, and `.rigscorerc.json`. Changes are debounced (500ms) to avoid rapid re-scans.
+
+```bash
+npx rigscore --watch
+npx rigscore --watch --verbose
+```
+
+### Pre-commit hook
+
+`--init-hook` installs a git pre-commit hook that runs rigscore before each commit:
+
+```bash
+npx rigscore --init-hook
+```
+
+This creates (or appends to) `.git/hooks/pre-commit` with `npx rigscore --fail-under 70 --no-cta || exit 1`. If the hook already contains rigscore, it skips installation.
 
 ### Recursive mode
 
@@ -346,6 +386,39 @@ npx rigscore --fix --yes
 - `chmod 600` on SSH private keys
 
 rigscore never modifies governance file content.
+
+### Plugins
+
+rigscore auto-discovers `rigscore-check-*` packages from `node_modules`. Plugins extend rigscore with custom checks without modifying the core.
+
+**Creating a plugin:**
+
+```javascript
+// rigscore-check-my-custom/index.js
+export default {
+  id: 'my-custom',
+  name: 'My Custom Check',
+  category: 'governance',  // governance | secrets | isolation | supply-chain | process
+  async run(context) {
+    const findings = [];
+    // Your check logic here
+    // context.cwd, context.homedir, context.config available
+    return { score: 100, findings };
+  },
+};
+```
+
+**Plugin weights:** By default, plugin checks have weight 0 (advisory). Set custom weights in `.rigscorerc.json`:
+
+```json
+{
+  "weights": {
+    "my-custom": 5
+  }
+}
+```
+
+Plugins must export `id`, `name`, `category` (strings), and `run` (async function). Invalid plugins produce a warning to stderr but don't crash the scan. Scoped packages (`@org/rigscore-check-*`) are also discovered.
 
 ## CI Integration
 
