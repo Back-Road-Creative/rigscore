@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/skill-files.js';
+import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => path.join(__dirname, 'fixtures', name);
@@ -17,7 +18,7 @@ const defaultConfig = { paths: { skillFiles: [] }, network: {} };
 describe('skill-files check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('skill-files');
-    expect(check.weight).toBe(12);
+    expect(WEIGHTS[check.id]).toBe(12);
   });
 
   it('CRITICAL when injection pattern found', async () => {

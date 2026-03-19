@@ -100,4 +100,14 @@ export const KEY_PATTERNS = [
   /hf_[a-zA-Z0-9]{34}/,                 // Hugging Face token
   /mongodb\+srv:\/\/[^\s"']+/,          // MongoDB connection string
   /vercel_[a-zA-Z0-9_-]{24,}/,          // Vercel token
+  /sbp_[a-f0-9]{40}/,                    // Supabase service role key
+  /eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[a-zA-Z0-9_-]{50,}/, // Supabase JWT (anon/service)
+  /cf_[a-zA-Z0-9_-]{37,}/,              // Cloudflare API token
+  /railway_[a-zA-Z0-9_-]{24,}/,         // Railway token
+  /pscale_tkn_[a-zA-Z0-9_-]{30,}/,      // PlanetScale token
+  /neon_[a-zA-Z0-9_-]{30,}/,            // Neon API key
+  /lin_api_[a-zA-Z0-9]{40,}/,           // Linear API key
+  /r8_[a-zA-Z0-9]{37,}/,               // Replicate API token
+  /tvly-[a-zA-Z0-9]{32,}/,             // Tavily API key
+  /whsec_[a-zA-Z0-9_-]{24,}/,           // Webhook signing secret (Svix/Clerk)
 ];

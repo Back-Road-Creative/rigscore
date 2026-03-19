@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import check from '../src/checks/deep-secrets.js';
+import { WEIGHTS } from '../src/constants.js';
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-deep-'));
@@ -13,7 +14,7 @@ const defaultConfig = {};
 describe('deep-secrets check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('deep-secrets');
-    expect(check.weight).toBe(10);
+    expect(WEIGHTS[check.id]).toBe(10);
     expect(typeof check.run).toBe('function');
   });
 
