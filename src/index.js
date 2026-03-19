@@ -23,6 +23,8 @@ export function parseArgs(args) {
     online: false,
     failUnder: 70,
     profile: null,
+    initHook: false,
+    watch: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -58,6 +60,10 @@ export function parseArgs(args) {
       options.fix = true;
     } else if (arg === '--yes' || arg === '-y') {
       options.yes = true;
+    } else if (arg === '--init-hook') {
+      options.initHook = true;
+    } else if (arg === '--watch') {
+      options.watch = true;
     } else if (arg === '--ci') {
       options.sarif = true;
       options.noColor = true;
@@ -85,6 +91,45 @@ export async function run(args) {
   } catch {
     process.stderr.write(`Error: ${cwd} is not a valid directory\n`);
     process.exit(1);
+  }
+
+  if (options.initHook) {
+    const path = await import('node:path');
+    const hooksDir = path.default.join(cwd, '.git', 'hooks');
+    const hookPath = path.default.join(hooksDir, 'pre-commit');
+
+    // Check if .git exists
+    try {
+      fs.statSync(path.default.join(cwd, '.git'));
+    } catch {
+      process.stderr.write('Error: No .git directory found. Run git init first.\n');
+      process.exit(1);
+    }
+
+    // Check if hook already has rigscore
+    let existing = '';
+    try { existing = fs.readFileSync(hookPath, 'utf8'); } catch {}
+
+    if (existing.includes('rigscore')) {
+      process.stderr.write('rigscore hook already installed in .git/hooks/pre-commit\n');
+      process.exit(0);
+    }
+
+    // Create hooks dir if needed
+    fs.mkdirSync(hooksDir, { recursive: true });
+
+    const hookContent = '#!/bin/sh\nnpx rigscore --fail-under 70 --no-cta || exit 1\n';
+
+    if (existing) {
+      // Append to existing hook
+      fs.appendFileSync(hookPath, '\n# rigscore hygiene check\n' + 'npx rigscore --fail-under 70 --no-cta || exit 1\n');
+    } else {
+      fs.writeFileSync(hookPath, hookContent);
+    }
+
+    fs.chmodSync(hookPath, 0o755);
+    process.stderr.write('Installed rigscore pre-commit hook in .git/hooks/pre-commit\n');
+    process.exit(0);
   }
 
   if (options.noColor) {
@@ -162,6 +207,11 @@ export async function run(args) {
       }
     }
 
-    process.exit(result.score >= options.failUnder ? 0 : 1);
+    if (options.watch) {
+      const { startWatching } = await import('./watcher.js');
+      await startWatching(cwd, args, options);
+    } else {
+      process.exit(result.score >= options.failUnder ? 0 : 1);
+    }
   }
 }
