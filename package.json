@@ -30,7 +30,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/joepetjr/rigscore.git"
+    "url": "https://github.com/Back-Road-Creative/rigscore.git"
   },
   "dependencies": {
     "chalk": "^5.3.0",

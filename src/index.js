@@ -53,7 +53,8 @@ export function parseArgs(args) {
     } else if (arg === '--online') {
       options.online = true;
     } else if (arg === '--fail-under' && i + 1 < args.length) {
-      options.failUnder = Math.max(0, Math.min(100, parseInt(args[++i], 10) || 70));
+      const parsed = parseInt(args[++i], 10);
+      options.failUnder = Math.max(0, Math.min(100, Number.isNaN(parsed) ? 70 : parsed));
     } else if (arg === '--profile' && i + 1 < args.length) {
       options.profile = args[++i];
     } else if (arg === '--fix') {
