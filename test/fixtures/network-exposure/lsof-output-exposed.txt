@@ -1,0 +1,3 @@
+COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+lmstudio 1234 user   3u  IPv4 12345      0t0  TCP *:1234 (LISTEN)
+ollama   5678 user   4u  IPv4 12346      0t0  TCP 127.0.0.1:11434 (LISTEN)
