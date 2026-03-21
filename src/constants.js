@@ -26,6 +26,7 @@ export const WEIGHTS = {
   'git-hooks': 6,
   'permissions-hygiene': 6,
   'windows-security': 0,
+  'network-exposure': 0,
 };
 
 // Sentinel score for checks that find nothing to scan
@@ -76,6 +77,23 @@ export const AI_CONFIG_FILES = [
   'settings.py',
   'settings.js',
 ];
+
+// AI service ports — known defaults for local AI tools
+export const AI_SERVICE_PORTS = new Map([
+  [11434, 'Ollama'],
+  [1234, 'LM Studio'],
+  [1235, 'LM Studio (alt)'],
+  [8080, 'Open WebUI'],
+  [3001, 'MCP SSE (common)'],
+  [18789, 'OpenClaw Gateway'],
+  [4000, 'LiteLLM'],
+  [5001, 'LocalAI'],
+  [9090, 'vLLM'],
+  [8000, 'FastChat'],
+]);
+
+// Heuristic port range for MCP SSE servers
+export const MCP_SSE_PORT_RANGE = [3000, 3999];
 
 // Common secret key patterns
 export const KEY_PATTERNS = [

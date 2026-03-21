@@ -71,18 +71,23 @@ export async function scan(options = {}) {
 
   const context = { cwd, homedir, config, deep: options.deep || false, online: options.online || false };
 
-  // Split checks into regular and coherence (two-pass)
-  const regularChecks = checks.filter(c => c.id !== 'coherence');
-  const coherenceCheck = checks.find(c => c.id === 'coherence');
+  // Split checks into pass 1 (default) and pass 2 (receive priorResults)
+  const pass1Checks = checks.filter(c => !c.pass || c.pass === 1);
+  const pass2Checks = checks.filter(c => c.pass === 2);
 
   // Pass 1: Run all regular checks
-  const results = await runChecks(regularChecks, context, options);
+  const results = await runChecks(pass1Checks, context, options);
 
-  // Pass 2: Run coherence check with prior results
-  if (coherenceCheck && (!options.checkFilter || options.checkFilter === 'coherence')) {
-    const coherenceContext = { ...context, priorResults: results };
-    const coherenceResults = await runChecks([coherenceCheck], coherenceContext, {});
-    results.push(...coherenceResults);
+  // Pass 2: Run checks that consume prior results (coherence, network-exposure, etc.)
+  if (pass2Checks.length > 0) {
+    const pass2Filtered = options.checkFilter
+      ? pass2Checks.filter(c => c.id === options.checkFilter)
+      : pass2Checks;
+    if (pass2Filtered.length > 0) {
+      const pass2Context = { ...context, priorResults: results };
+      const pass2Results = await runChecks(pass2Filtered, pass2Context, {});
+      results.push(...pass2Results);
+    }
   }
 
   // When filtering to specific checks, use average of their scores
