@@ -163,6 +163,40 @@ describe('coherence check', () => {
     expect(info).toBeDefined();
   });
 
+  it('WARNING when governance has shell restrictions but skill files have shell findings', async () => {
+    const result = await check.run({
+      priorResults: [
+        {
+          id: 'claude-md',
+          score: 100,
+          findings: [],
+          data: { matchedPatterns: ['shell restrictions'] },
+        },
+        {
+          id: 'skill-files',
+          score: 70,
+          findings: [],
+          data: { filesScanned: 1, injectionFindings: 0, exfiltrationFindings: 0, shellFindings: 2 },
+        },
+        {
+          id: 'mcp-config',
+          score: 100,
+          findings: [],
+          data: { hasNetworkTransport: false, hasBroadFilesystemAccess: false },
+        },
+        {
+          id: 'docker-security',
+          score: 100,
+          findings: [],
+          data: { hasPrivilegedContainer: false },
+        },
+      ],
+    });
+    const warning = result.findings.find(f => f.title.includes('shell restrictions'));
+    expect(warning).toBeDefined();
+    expect(warning.severity).toBe('warning');
+  });
+
   it('multiple contradictions compound', async () => {
     const result = await check.run({
       priorResults: [
