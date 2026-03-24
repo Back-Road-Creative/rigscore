@@ -95,7 +95,13 @@ export const AI_SERVICE_PORTS = new Map([
 // Heuristic port range for MCP SSE servers
 export const MCP_SSE_PORT_RANGE = [3000, 3999];
 
-// Common secret key patterns
+/**
+ * Common secret key patterns.
+ * INVARIANT: No pattern may use the /g flag — scanLineForSecrets calls
+ * pattern.test() which advances lastIndex on global regexes, causing
+ * intermittent false negatives on subsequent calls.
+ * @type {RegExp[]}
+ */
 export const KEY_PATTERNS = [
   /sk-ant-[a-zA-Z0-9_-]{10,}/,         // Anthropic
   /AKIA[0-9A-Z]{16}/,                   // AWS access key

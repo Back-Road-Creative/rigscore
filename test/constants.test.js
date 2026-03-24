@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD } from '../src/constants.js';
+import { WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD, KEY_PATTERNS } from '../src/constants.js';
 
 describe('constants', () => {
   it('weights sum to 100', () => {
@@ -39,5 +39,11 @@ describe('constants', () => {
 
   it('COVERAGE_PENALTY_THRESHOLD is 50', () => {
     expect(COVERAGE_PENALTY_THRESHOLD).toBe(50);
+  });
+
+  it('KEY_PATTERNS must not use the global /g flag', () => {
+    for (const pattern of KEY_PATTERNS) {
+      expect(pattern.flags, `Pattern ${pattern.source} has /g flag`).not.toContain('g');
+    }
   });
 });
