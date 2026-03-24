@@ -229,5 +229,8 @@ export async function scanRecursive(options = {}) {
     ? projects.reduce((worst, p) => (p.score < worst.score ? p : worst), projects[0])
     : null;
 
-  return { score: avgScore, projects, worstProject };
+  // allPassed: every project individually meets a reasonable threshold (70)
+  const allPassed = projects.every((p) => p.score >= 70);
+
+  return { score: avgScore, projects, worstProject, allPassed };
 }

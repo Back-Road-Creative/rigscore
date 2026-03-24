@@ -103,6 +103,35 @@ export default {
         // Can't read cwd — skip
       }
 
+      // 2b. Sensitive files in subdirectories (depth 2) — .pem/.key only
+      try {
+        const entries = await fs.promises.readdir(cwd, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          if (entry.name === 'node_modules' || entry.name === '.git' || entry.name.startsWith('.')) continue;
+          const subDir = path.join(cwd, entry.name);
+          let subEntries;
+          try { subEntries = await fs.promises.readdir(subDir); } catch { continue; }
+          for (const subEntry of subEntries) {
+            if (!subEntry.endsWith('.pem') && !subEntry.endsWith('.key')) continue;
+            const filePath = path.join(subDir, subEntry);
+            const fileStat = await statSafe(filePath);
+            if (!fileStat || !fileStat.isFile()) continue;
+            const mode = fileStat.mode & 0o777;
+            if (mode & 0o004) {
+              findings.push({
+                severity: 'warning',
+                title: `Sensitive file ${entry.name}/${subEntry} is world-readable`,
+                detail: `${entry.name}/${subEntry} has mode ${mode.toString(8)}. Sensitive files should not be world-readable.`,
+                remediation: `Run: chmod 600 ${entry.name}/${subEntry}`,
+              });
+            }
+          }
+        }
+      } catch {
+        // Can't read cwd — skip
+      }
+
       // 3. Governance file ownership consistency
       const uids = new Set();
       for (const relPath of GOVERNANCE_FILES) {

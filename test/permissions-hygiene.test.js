@@ -97,6 +97,28 @@ describe('permissions-hygiene check', () => {
     });
   }
 
+  if (process.platform !== 'win32') {
+    it('WARNING when .pem file in subdirectory is world-readable', async () => {
+      const tmpDir = makeTmpDir();
+      const tmpHome = makeTmpDir();
+      const subDir = path.join(tmpDir, 'certs');
+      fs.mkdirSync(subDir, { recursive: true });
+      const pemFile = path.join(subDir, 'server.pem');
+      fs.writeFileSync(pemFile, 'fake cert');
+      fs.chmodSync(pemFile, 0o644);
+      try {
+        const result = await check.run({ cwd: tmpDir, homedir: tmpHome, config: { paths: {}, network: {} } });
+        const warning = result.findings.find(
+          (f) => f.severity === 'warning' && f.title.includes('server.pem'),
+        );
+        expect(warning).toBeDefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+        fs.rmSync(tmpHome, { recursive: true });
+      }
+    });
+  }
+
   it('skips permission checks on Windows', async () => {
     const tmpDir = makeTmpDir();
     const tmpHome = makeTmpDir();
