@@ -259,6 +259,46 @@ describe('expanded secret patterns', () => {
     }
   });
 
+  it('detects AGE encryption key', async () => {
+    const tmpDir = makeTmpDir();
+    // AGE-SECRET-KEY-1 followed by 58 uppercase alphanumeric chars
+    const fakeAgeKey = 'AGE-SECRET-KEY-1' + 'A'.repeat(58);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeAgeKey }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Datadog API key', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeDatadogKey = 'ddapi_' + 'a'.repeat(32);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeDatadogKey }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects 1Password CLI reference', async () => {
+    const tmpDir = makeTmpDir();
+    const fake1pRef = 'op://vault/item/field';
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fake1pRef }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('detects Vercel token', async () => {
     const tmpDir = makeTmpDir();
     const fakeVercelToken = 'vercel_' + 'a'.repeat(24);
