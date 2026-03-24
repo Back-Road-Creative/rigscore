@@ -103,6 +103,12 @@ describe('formatBadge', () => {
     expect(badge).toContain('shields.io');
     expect(badge).toContain('54');
   });
+
+  it('links to Back-Road-Creative org, not joepetjr', () => {
+    const badge = formatBadge(mockResult);
+    expect(badge).toContain('Back-Road-Creative/rigscore');
+    expect(badge).not.toContain('joepetjr');
+  });
 });
 
 describe('stripAnsi', () => {

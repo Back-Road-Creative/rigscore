@@ -37,6 +37,11 @@ describe('SARIF output', () => {
     expect(sarif.runs[0].tool.driver.name).toBe('rigscore');
   });
 
+  it('informationUri points to Back-Road-Creative org', () => {
+    const sarif = formatSarif(mockResult);
+    expect(sarif.runs[0].tool.driver.informationUri).toBe('https://github.com/Back-Road-Creative/rigscore');
+  });
+
   it('maps critical severity to error', () => {
     const sarif = formatSarif(mockResult);
     const errorResults = sarif.runs[0].results.filter(r => r.level === 'error');

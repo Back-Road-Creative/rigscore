@@ -62,7 +62,7 @@ export function formatSarif(result) {
           driver: {
             name: 'rigscore',
             version,
-            informationUri: 'https://github.com/joepetjr/rigscore',
+            informationUri: 'https://github.com/Back-Road-Creative/rigscore',
             rules,
           },
         },
