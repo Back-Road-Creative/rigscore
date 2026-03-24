@@ -362,11 +362,14 @@ export default {
     const exfiltrationFindings = findings.filter(f =>
       f.title?.includes('exfiltration') || f.title?.includes('Exfiltration'),
     ).length;
+    const shellFindings = findings.filter(f =>
+      f.title?.includes('Shell execution'),
+    ).length;
 
     return {
       score: calculateCheckScore(findings),
       findings,
-      data: { filesScanned: filesToScan.length, injectionFindings, exfiltrationFindings },
+      data: { filesScanned: filesToScan.length, injectionFindings, exfiltrationFindings, shellFindings },
     };
   },
 };
