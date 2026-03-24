@@ -120,17 +120,19 @@ describe('deep-secrets check', () => {
     }
   });
 
-  it('skips test directories (test/, tests/, __tests__/)', async () => {
+  it('scans test directories for non-test files (test/, tests/, __tests__/)', async () => {
     const tmpDir = makeTmpDir();
     try {
       const key = ['sk', 'ant', 'abcdefghij1234567890'].join('-');
-      for (const dir of ['test', 'tests', '__tests__']) {
-        fs.mkdirSync(path.join(tmpDir, dir), { recursive: true });
-        fs.writeFileSync(path.join(tmpDir, dir, 'patterns.js'), `const key = "${key}";`);
-      }
+      // helpers.js is NOT a .test. or .spec. file, so should be scanned
+      fs.mkdirSync(path.join(tmpDir, 'test'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'test', 'helpers.js'), `const key = "${key}";`);
       fs.writeFileSync(path.join(tmpDir, 'clean.js'), 'const x = 1;');
       const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
-      expect(result.score).toBe(100);
+      expect(result.score).toBe(0);
+      const critical = result.findings.find(f => f.severity === 'critical');
+      expect(critical).toBeDefined();
+      expect(critical.title).toContain('test/helpers.js');
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
