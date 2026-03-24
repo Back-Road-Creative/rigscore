@@ -16,7 +16,7 @@ const QUALITY_CHECKS = [
   },
   {
     name: 'path restrictions',
-    pattern: /\b(restrict|allowed?.?(path|dir)|boundar|working.?dir)/i,
+    pattern: /\b(restrict|allowed?.?(path|dir)|boundar|working.?dir|path.?rule|paths?.must)/i,
     points: 3,
   },
   {
@@ -31,7 +31,7 @@ const QUALITY_CHECKS = [
   },
   {
     name: 'shell restrictions',
-    pattern: /\b(no.?shell|no.?bash|shell.?restrict|forbid.?shell|forbid.?bash.?command|disable.?shell)\b/i,
+    pattern: /\b(no.?shell|no.?bash|shell.?restrict|forbid.?shell|forbid.?bash.?command|disable.?shell|reserve.?bash|bash.?restrict)/i,
     points: 2,
   },
 ];
