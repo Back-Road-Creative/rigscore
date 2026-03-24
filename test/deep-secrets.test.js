@@ -151,6 +151,26 @@ describe('deep-secrets check', () => {
     }
   });
 
+  it('CRITICAL when GCP service account JSON detected (dual-field)', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const gcpContent = JSON.stringify({
+        type: 'service_account',
+        project_id: 'my-project',
+        private_key: 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASC',
+      });
+      fs.writeFileSync(path.join(tmpDir, 'service-account.json'), gcpContent);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      expect(result.score).toBe(0);
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('GCP service account'),
+      );
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('includes .env.production files', async () => {
     const tmpDir = makeTmpDir();
     try {

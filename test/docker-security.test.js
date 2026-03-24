@@ -142,6 +142,46 @@ describe('docker-security check', () => {
     expect(info).toBeDefined();
   });
 
+  it('WARNING when Dockerfile COPYs sensitive files (.env, *.pem, *.key, id_rsa)', async () => {
+    const tmpDir = makeTmpDir();
+    const dockerfile = [
+      'FROM node:18',
+      'COPY .env .',
+      'COPY server.pem /certs/',
+      'COPY id_rsa /root/.ssh/',
+      'USER node',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'Dockerfile'), dockerfile);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const warnings = result.findings.filter(
+        (f) => f.severity === 'warning' && f.title.includes('copies sensitive file'),
+      );
+      expect(warnings.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING when Dockerfile ADDs credentials.json', async () => {
+    const tmpDir = makeTmpDir();
+    const dockerfile = [
+      'FROM node:18',
+      'ADD credentials.json /app/',
+      'USER node',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'Dockerfile'), dockerfile);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('copies sensitive file'),
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('returns data.hasPrivilegedContainer', async () => {
     const result = await check.run({ cwd: fixture('docker-socket'), homedir: '/tmp', config: defaultConfig });
     expect(result.data).toBeDefined();

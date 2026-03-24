@@ -455,6 +455,26 @@ export default {
         });
       }
 
+      // COPY/ADD of sensitive files (.env, credentials.json, *.pem, *.key, id_rsa)
+      const sensitiveFilePatterns = [/\.env\b/, /credentials\.json/, /\.pem\b/, /\.key\b/, /\bid_rsa\b/];
+      const copyAddLines = content.match(/^(?:COPY|ADD)\s+.+$/gm) || [];
+      for (const line of copyAddLines) {
+        // Skip remote URLs (already handled above)
+        if (/^ADD\s+https?:\/\//.test(line)) continue;
+        for (const sfp of sensitiveFilePatterns) {
+          if (sfp.test(line)) {
+            const matched = line.match(sfp)?.[0] || 'sensitive file';
+            findings.push({
+              severity: 'warning',
+              title: `${df}: copies sensitive file (${matched})`,
+              detail: `COPY/ADD of ${matched} bakes secrets into the image layer.`,
+              remediation: 'Use .dockerignore to exclude sensitive files, or mount them at runtime.',
+            });
+            break; // one finding per line
+          }
+        }
+      }
+
       // Multi-stage build running as root in final stage
       const stages = content.split(/^FROM\s+/m);
       if (stages.length > 2) {
