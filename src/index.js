@@ -164,7 +164,9 @@ export async function run(args) {
       process.stdout.write(formatTerminalRecursive(result, cwd, { noCta: options.noCta }) + '\n');
     }
 
-    process.exit(result.score >= options.failUnder ? 0 : 1);
+    // Fail if ANY project is below threshold (fail-fast on worst)
+    const allPassed = result.projects.every((p) => p.score >= options.failUnder);
+    process.exit(allPassed ? 0 : 1);
   } else {
     const result = await scan(scanOptions);
 
