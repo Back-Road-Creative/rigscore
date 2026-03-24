@@ -7,7 +7,6 @@ import { scanLineForSecrets } from '../utils.js';
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'vendor', 'dist', 'build', '__pycache__',
   'venv', '.venv', 'coverage', '.next', '.nuxt', 'out',
-  'test', 'tests', '__tests__', '__mocks__',
 ]);
 
 const INCLUDE_EXTENSIONS = new Set([
