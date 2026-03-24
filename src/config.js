@@ -100,7 +100,7 @@ function mergeConfig(userConfig) {
     result.profile = userConfig.profile;
   }
   if (userConfig.weights && typeof userConfig.weights === 'object') {
-    result.weights = userConfig.weights;
+    result.weights = { ...result.weights, ...userConfig.weights };
   }
   if (userConfig.checks) {
     if (Array.isArray(userConfig.checks.disabled)) {

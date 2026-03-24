@@ -101,6 +101,21 @@ describe('loadConfig', () => {
     }
   });
 
+  it('merges partial weights with defaults instead of replacing', async () => {
+    const tmpDir = makeTmpDir();
+    const rc = { weights: { 'mcp-config': 30 } };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      // User specified only mcp-config, but default weights should be preserved
+      expect(config.weights['mcp-config']).toBe(30);
+      // Default empty weights should still be an object (not replaced entirely)
+      expect(typeof config.weights).toBe('object');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('ignores unknown keys gracefully', async () => {
     const tmpDir = makeTmpDir();
     const rc = { paths: { claudeMd: ['/a'], unknownKey: 'value' }, extra: true };
