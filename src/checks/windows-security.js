@@ -115,20 +115,20 @@ export default {
       // PowerShell not available or command failed — skip
     }
 
-    // NTFS permissions advisory
-    findings.push({
-      severity: 'info',
-      title: 'NTFS permissions advisory',
-      detail: 'On Windows, use icacls to verify that sensitive files (credentials, keys, .env) are not accessible to other users.',
-      remediation: 'Run: icacls .env /inheritance:r /grant:r "%USERNAME%":F',
-    });
-
     if (findings.length === 0) {
       findings.push({
         severity: 'pass',
         title: 'Windows security checks passed',
       });
     }
+
+    // NTFS permissions advisory — always shown on Windows
+    findings.push({
+      severity: 'info',
+      title: 'NTFS permissions advisory',
+      detail: 'On Windows, use icacls to verify that sensitive files (credentials, keys, .env) are not accessible to other users.',
+      remediation: 'Run: icacls .env /inheritance:r /grant:r "%USERNAME%":F',
+    });
 
     return {
       score: calculateCheckScore(findings),
