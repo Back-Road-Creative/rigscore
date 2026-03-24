@@ -209,6 +209,10 @@ export async function run(args) {
     }
 
     if (options.watch) {
+      // Fail fast on initial scan — watch loop is warn-only
+      if (result.score < options.failUnder) {
+        process.exit(1);
+      }
       const { startWatching } = await import('./watcher.js');
       await startWatching(cwd, args, options);
     } else {
