@@ -107,6 +107,59 @@ describe('env-exposure check', () => {
     }
   });
 
+  it('WARNING when .env.example contains a real secret', async () => {
+    const tmpDir = makeTmpDir();
+    const prefix = 'sk-ant-';
+    const suffix = 'api03-abcdefghij1234567890';
+    fs.writeFileSync(path.join(tmpDir, '.env.example'), `API_KEY=${prefix}${suffix}\n`);
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('.env.example'),
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PASS when .env.example has only placeholders', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, '.env.example'), 'API_KEY=your_key_here\nDATABASE_URL=changeme\n');
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('.env.example'),
+      );
+      expect(warning).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL when GCP service account file detected', async () => {
+    const tmpDir = makeTmpDir();
+    // Build GCP service account JSON — dual-field detection requires both keys
+    const gcpContent = JSON.stringify({
+      type: 'service_account',
+      project_id: 'my-project',
+      private_key: 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASC',
+    });
+    fs.writeFileSync(path.join(tmpDir, 'credentials.json'), gcpContent);
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('GCP service account'),
+      );
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   if (process.platform !== 'win32') {
     it('WARNING when .env file is world-readable', async () => {
       const tmpDir = makeTmpDir();

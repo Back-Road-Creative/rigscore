@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { KEY_PATTERNS, AI_CONFIG_FILES } from '../constants.js';
-import { readFileSafe, fileExists, statSafe } from '../utils.js';
+import { readFileSafe, fileExists, statSafe, scanLineForSecrets } from '../utils.js';
 
 const CONFIG_FILES = AI_CONFIG_FILES;
 
@@ -93,6 +93,45 @@ export default {
           severity: 'skipped',
           title: '.env file permission checks skipped on Windows',
           detail: 'POSIX file permission checks are not available on Windows. Consider using icacls to verify .env file permissions manually.',
+        });
+      }
+    }
+
+    // Scan .env.example/.env.sample/.env.template for real secrets
+    const templateSuffixes = ['.env.example', '.env.sample', '.env.template'];
+    for (const tmpl of templateSuffixes) {
+      const tmplPath = path.join(cwd, tmpl);
+      const tmplContent = await readFileSafe(tmplPath);
+      if (!tmplContent) continue;
+
+      const lines = tmplContent.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const result = scanLineForSecrets(line, trimmed);
+        if (result.matched && result.severity === 'critical') {
+          findings.push({
+            severity: 'warning',
+            title: `Real secret found in ${tmpl}`,
+            detail: `Template file ${tmpl} contains what appears to be a real secret, not a placeholder.`,
+            remediation: `Replace the real secret in ${tmpl} with a placeholder like "your_key_here".`,
+          });
+          break; // one finding per template file
+        }
+      }
+    }
+
+    // Detect GCP service account files (dual-field: "type":"service_account" + "private_key")
+    for (const configFile of CONFIG_FILES) {
+      const filePath = path.join(cwd, configFile);
+      const content = await readFileSafe(filePath);
+      if (!content) continue;
+      if (content.includes('"type"') && content.includes('service_account') && content.includes('"private_key"')) {
+        findings.push({
+          severity: 'critical',
+          title: `GCP service account key in ${configFile}`,
+          detail: `File contains both "type": "service_account" and "private_key" — this is a GCP credential file.`,
+          remediation: 'Remove the service account key file from the project. Use workload identity or environment-based auth.',
         });
       }
     }
