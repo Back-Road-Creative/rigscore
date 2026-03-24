@@ -48,6 +48,34 @@ describe('fixer', () => {
     }
   });
 
+  it('finds gitignore-sensitive-patterns fix for missing *.pem', () => {
+    const results = [{
+      id: 'permissions-hygiene',
+      findings: [{
+        severity: 'warning',
+        title: 'Sensitive file server.pem is world-readable',
+      }],
+    }];
+    const fixes = findApplicableFixes(results);
+    const gitignoreFix = fixes.find(f => f.id === 'gitignore-sensitive-patterns');
+    expect(gitignoreFix).toBeDefined();
+  });
+
+  it('applies gitignore-sensitive-patterns fix', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+      const fixes = [{ id: 'gitignore-sensitive-patterns', description: 'Add *.pem, *.key to .gitignore' }];
+      const { applied } = await applyFixes(fixes, tmpDir, tmpDir);
+      expect(applied.length).toBe(1);
+      const gitignore = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
+      expect(gitignore).toContain('*.pem');
+      expect(gitignore).toContain('*.key');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('skips env-not-gitignored if already present', async () => {
     const tmpDir = makeTmpDir();
     try {

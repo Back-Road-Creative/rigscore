@@ -70,6 +70,53 @@ const FIXABLE_CHECKS = {
       }
     },
   },
+  'gitignore-sensitive-patterns': {
+    match: (f) => f.severity === 'warning' && f.title?.includes('world-readable') && (f.title?.includes('.pem') || f.title?.includes('.key')),
+    description: 'Add *.pem, *.key to .gitignore',
+    async apply(cwd) {
+      const gitignorePath = path.join(cwd, '.gitignore');
+      let content = '';
+      try {
+        content = await fs.promises.readFile(gitignorePath, 'utf-8');
+      } catch {
+        // .gitignore doesn't exist yet
+      }
+      const lines = content.split('\n').map(l => l.trim());
+      const toAdd = [];
+      if (!lines.includes('*.pem')) toAdd.push('*.pem');
+      if (!lines.includes('*.key')) toAdd.push('*.key');
+      if (toAdd.length === 0) return false;
+      const newline = content && !content.endsWith('\n') ? '\n' : '';
+      await fs.promises.writeFile(gitignorePath, content + newline + toAdd.join('\n') + '\n');
+      return true;
+    },
+  },
+  'skill-file-world-writable': {
+    match: (f) => f.severity === 'warning' && f.title?.includes('world-writable') && f.title?.includes('Skill file'),
+    description: 'chmod 644 on world-writable skill files',
+    async apply(cwd) {
+      if (process.platform === 'win32') return false;
+      // Find skill files in known locations
+      const skillDirs = ['.claude/commands', '.claude/skills'];
+      let fixed = false;
+      for (const dir of skillDirs) {
+        const dirPath = path.join(cwd, dir);
+        let entries;
+        try { entries = await fs.promises.readdir(dirPath); } catch { continue; }
+        for (const entry of entries) {
+          const filePath = path.join(dirPath, entry);
+          try {
+            const stat = await fs.promises.stat(filePath);
+            if (stat.mode & 0o002) {
+              await fs.promises.chmod(filePath, 0o644);
+              fixed = true;
+            }
+          } catch { /* skip */ }
+        }
+      }
+      return fixed;
+    },
+  },
   'ssh-key-permissions': {
     match: (f) => f.severity === 'warning' && f.title?.includes('SSH') && f.title?.includes('key') && f.title?.includes('permission'),
     description: 'chmod 600 on SSH private keys',
