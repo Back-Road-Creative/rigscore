@@ -29,6 +29,11 @@ const QUALITY_CHECKS = [
     pattern: /\b(ignore previous|prompt.?injection|instruction.?override|injection)\b/i,
     points: 3,
   },
+  {
+    name: 'shell restrictions',
+    pattern: /\b(no.?shell|no.?bash|shell.?restrict|forbid.?shell|forbid.?bash.?command|disable.?shell)\b/i,
+    points: 2,
+  },
 ];
 
 const LENGTH_THRESHOLD = 50;
