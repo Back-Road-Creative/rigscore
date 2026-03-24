@@ -295,6 +295,29 @@ export default {
           }
         }
 
+        // Unpinned npx: command is 'npx' and no arg has a version pin
+        // A version pin looks like pkg@1.0.0 or @scope/pkg@1.0.0
+        // Scoped packages (@scope/pkg) without @version are NOT pinned
+        const hasVersionPin = args.some(a => {
+          if (typeof a !== 'string') return false;
+          // @scope/pkg@version — has @ after the /
+          if (a.startsWith('@')) {
+            const slashIdx = a.indexOf('/');
+            return slashIdx !== -1 && a.indexOf('@', slashIdx + 1) !== -1;
+          }
+          // pkg@version — has @ anywhere
+          return a.includes('@');
+        });
+        if ((server.command === 'npx' || server.command === 'npx.cmd') &&
+            args.length > 0 && !hasVersionPin) {
+          findings.push({
+            severity: 'warning',
+            title: `MCP server "${name}" uses unpinned npx package`,
+            detail: `npx without a version pin (e.g. @1.0.0) runs whatever version is latest. Found in ${relPath}.`,
+            remediation: 'Pin the package version: npx package@1.0.0',
+          });
+        }
+
         // Check for inline credentials in args or command
         const fullCommand = [server.command || '', ...args].join(' ');
         for (const pattern of KEY_PATTERNS) {

@@ -82,6 +82,51 @@ describe('mcp-config check', () => {
     }
   });
 
+  it('parses JSONC config files with comments', async () => {
+    const tmpDir = makeTmpDir();
+    const jsonc = `{
+  // This is a comment
+  "mcpServers": {
+    "test-server": {
+      "command": "node",
+      "args": ["server.js", "/"],
+      /* block comment */
+    }
+  }
+}`;
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), jsonc);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      // Should parse successfully and find the root filesystem access
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('filesystem'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING when npx server has no pinned version', async () => {
+    const tmpDir = makeTmpDir();
+    const mcpConfig = {
+      mcpServers: {
+        'unpinned-server': {
+          command: 'npx',
+          args: ['@modelcontextprotocol/server-filesystem', '--directory', './data'],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('reads additional MCP config paths from config', async () => {
     const tmpDir = makeTmpDir();
     const externalDir = makeTmpDir();
