@@ -119,6 +119,80 @@ describe('claude-md check', () => {
     expect(result.data.matchedPatterns.length).toBeGreaterThan(0);
   });
 
+  it('detects shell restrictions with "Reserve Bash for" phrasing', async () => {
+    const tmpDir = makeTmpDir();
+    const content = Array(60).fill('').map((_, i) => {
+      if (i === 0) return '# Rules';
+      if (i === 5) return 'Never do forbidden things';
+      if (i === 10) return 'Require approval for deploys';
+      if (i === 15) return 'Restrict allowed paths';
+      if (i === 20) return 'No external network calls';
+      if (i === 25) return 'Prevent prompt injection attacks';
+      if (i === 30) return 'Reserve Bash for git, docker, and systemctl only';
+      return `Rule line ${i}`;
+    }).join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const shellWarning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('shell restrictions'),
+      );
+      expect(shellWarning).toBeUndefined();
+      expect(result.data.matchedPatterns).toContain('shell restrictions');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects path restrictions with "Path Rule" section header', async () => {
+    const tmpDir = makeTmpDir();
+    const content = Array(60).fill('').map((_, i) => {
+      if (i === 0) return '# Rules';
+      if (i === 5) return 'Never do forbidden things';
+      if (i === 10) return 'Require approval for deploys';
+      if (i === 15) return '## Path Rule';
+      if (i === 16) return 'All paths must use /home/dev/, NEVER /home/joe/.';
+      if (i === 20) return 'No external network calls';
+      if (i === 25) return 'Prevent prompt injection attacks';
+      return `Rule line ${i}`;
+    }).join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const pathWarning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('path restrictions'),
+      );
+      expect(pathWarning).toBeUndefined();
+      expect(result.data.matchedPatterns).toContain('path restrictions');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects path restrictions with "paths must use" phrasing', async () => {
+    const tmpDir = makeTmpDir();
+    const content = Array(60).fill('').map((_, i) => {
+      if (i === 0) return '# Rules';
+      if (i === 5) return 'Never do forbidden things';
+      if (i === 10) return 'Require approval for deploys';
+      if (i === 15) return 'All paths must use /home/dev/ for portability';
+      if (i === 20) return 'No external network calls';
+      if (i === 25) return 'Prevent prompt injection attacks';
+      return `Rule line ${i}`;
+    }).join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const pathWarning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('path restrictions'),
+      );
+      expect(pathWarning).toBeUndefined();
+      expect(result.data.matchedPatterns).toContain('path restrictions');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('reads additional paths from config', async () => {
     const tmpDir = makeTmpDir();
     const extraFile = path.join(tmpDir, 'extra-claude.md');
