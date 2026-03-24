@@ -35,6 +35,7 @@ export default {
     const mcpClientCount = mcpResult?.data?.clientCount || 0;
     const skillInjectionFindings = skillResult?.data?.injectionFindings || 0;
     const skillExfiltrationFindings = skillResult?.data?.exfiltrationFindings || 0;
+    const skillShellFindings = skillResult?.data?.shellFindings || 0;
 
     // Check: governance claims "no external network" but MCP uses network transport
     if (matchedPatterns.includes('network restrictions') && hasNetworkTransport) {
@@ -73,6 +74,16 @@ export default {
         title: 'MCP configuration drifts across AI clients without governance guidance',
         detail: `${mcpClientCount} AI clients have divergent MCP configs, but governance does not address multi-client alignment.`,
         remediation: 'Add multi-client MCP management rules to your governance file, or align configurations.',
+      });
+    }
+
+    // Check: governance claims shell restrictions but skill files have shell execution findings
+    if (matchedPatterns.includes('shell restrictions') && skillShellFindings > 0) {
+      findings.push({
+        severity: 'warning',
+        title: 'Governance claims shell restrictions but skill files contain shell execution instructions',
+        detail: `Governance file restricts shell/bash usage, but ${skillShellFindings} shell execution pattern(s) were found in skill files.`,
+        remediation: 'Remove shell execution instructions from skill files or adjust governance documentation.',
       });
     }
 
