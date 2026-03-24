@@ -135,4 +135,7 @@ export const KEY_PATTERNS = [
   /r8_[a-zA-Z0-9]{37,}/,               // Replicate API token
   /tvly-[a-zA-Z0-9]{32,}/,             // Tavily API key
   /whsec_[a-zA-Z0-9_-]{24,}/,           // Webhook signing secret (Svix/Clerk)
+  /AGE-SECRET-KEY-1[A-Z0-9]{58}/,       // AGE encryption key
+  /dd[a-z]*_[a-f0-9]{32,40}/i,          // Datadog API/app key
+  /op:\/\/[^\s"']+/,                     // 1Password CLI reference
 ];

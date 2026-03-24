@@ -101,6 +101,20 @@ export default {
       const lines = content.split('\n');
       const relPath = path.relative(cwd, filePath);
 
+      // GCP service account dual-field detection
+      if (filePath.endsWith('.json') &&
+          content.includes('"type"') && content.includes('service_account') &&
+          content.includes('"private_key"')) {
+        secretCount++;
+        findings.push({
+          severity: 'critical',
+          title: `GCP service account key in ${relPath}`,
+          detail: 'File contains both "type": "service_account" and "private_key".',
+          remediation: 'Remove the service account key file. Use workload identity or environment-based auth.',
+        });
+        continue; // skip line-by-line scan for this file
+      }
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const trimmed = line.trim();
