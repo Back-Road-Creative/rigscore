@@ -70,6 +70,17 @@ const INDIRECT_INJECTION_PATTERNS = [
   /\bdownload\s+.*and\s+.*execute\b/i,
 ];
 
+// CVE-2025-54136: Trust exploitation patterns — instructions that bypass verification
+// by telling the agent to implicitly trust tool outputs or approve without checking
+const TRUST_EXPLOITATION_PATTERNS = [
+  /\btrust\s+(?:the\s+)?(?:output|result|response)s?\s+from\b/i,
+  /\balways\s+(?:accept|trust|approve)\s+(?:tool|server|mcp|command)\b/i,
+  /\bapprove\s+(?:all\s+)?(?:tool|server)?\s*(?:calls?\s+)?without\s+(?:check|verif|review)/i,
+  /\bskip\s+(?:verification|validation|review)\s+(?:for|of|on)\s+(?:tool|server|mcp)\b/i,
+  /\bdo\s+not\s+(?:verify|validate|check|review)\s+(?:tool|server|mcp)\b/i,
+  /\bauto-?approve\s+(?:all\s+)?(?:tool|server|mcp)\b/i,
+];
+
 const SHELL_EXEC_PATTERNS = [
   /\brun\s+`[^`]*`/i,
   /\bexecute\s+(the\s+)?(shell|bash|command)/i,
@@ -310,6 +321,23 @@ export default {
               title: `Indirect injection pattern in ${file.path}`,
               detail: 'File contains instructions to fetch and execute remote code.',
               remediation: 'Remove dynamic code execution instructions.',
+            });
+          }
+          break;
+        }
+      }
+
+      // CVE-2025-54136: Trust exploitation — instructions to bypass tool output verification
+      for (const pattern of TRUST_EXPLOITATION_PATTERNS) {
+        if (pattern.test(file.content)) {
+          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
+          const isDefensive = isDefensiveContext(matchLine);
+          if (!isDefensive) {
+            findings.push({
+              severity: 'warning',
+              title: `Trust exploitation pattern in ${file.path}`,
+              detail: 'File contains instructions to blindly trust tool outputs without verification, which can be exploited via name-based trust attacks (CVE-2025-54136).',
+              remediation: 'Remove instructions to skip verification. Always validate tool outputs before acting on them.',
             });
           }
           break;
