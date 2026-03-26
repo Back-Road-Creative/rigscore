@@ -21,7 +21,12 @@ const SENSITIVE_PATHS = ['/', '/home', '/etc', '/root', '/var', '/opt', '/usr'];
 
 const UNSAFE_PERMISSION_FLAGS = [
   '--allow-all', '--no-sandbox', '--unsafe', '--allow-tools', '--disable-security',
-  '--privileged', '--unrestricted',
+  '--privileged', '--unrestricted', '--dangerously-skip-permissions',
+];
+
+const DANGEROUS_HOOK_PATTERNS = [
+  /\bcurl\b/, /\bwget\b/, /\brm\s+-rf\b/, /\beval\b/, /\bbase64\s+-d\b/,
+  /\bnc\b/, /\/dev\/tcp/, /\bpython\s+-c\b/, /\bnode\s+-e\b/,
 ];
 
 const UNSTABLE_TAGS = new Set([
@@ -406,6 +411,49 @@ export default {
         detail: 'No MCP server configuration files detected.',
       });
       return { score: NOT_APPLICABLE_SCORE, findings, data: { hasNetworkTransport: false, hasBroadFilesystemAccess: false, serverCount: 0, clientCount: 0, driftDetected: false } };
+    }
+
+    // Scan .claude/settings.json for dangerous patterns
+    const settingsPaths = [
+      path.join(cwd, '.claude', 'settings.json'),
+      path.join(homedir, '.claude', 'settings.json'),
+    ];
+    for (const settingsPath of settingsPaths) {
+      const settings = await readJsonSafe(settingsPath);
+      if (!settings) continue;
+
+      const relPath = path.relative(cwd, settingsPath) || settingsPath;
+
+      // Check enableAllProjectMcpServers
+      if (settings.enableAllProjectMcpServers === true) {
+        findings.push({
+          severity: 'critical',
+          title: `MCP auto-approve enabled in ${relPath}`,
+          detail: 'enableAllProjectMcpServers is true — all project MCP servers are auto-approved without user consent.',
+          remediation: 'Remove enableAllProjectMcpServers or set it to false.',
+        });
+      }
+
+      // Check hooks for dangerous commands
+      if (settings.hooks && typeof settings.hooks === 'object') {
+        for (const [hookName, hookList] of Object.entries(settings.hooks)) {
+          const hooks = Array.isArray(hookList) ? hookList : [];
+          for (const hook of hooks) {
+            const cmd = hook?.command || '';
+            for (const pattern of DANGEROUS_HOOK_PATTERNS) {
+              if (pattern.test(cmd)) {
+                findings.push({
+                  severity: 'critical',
+                  title: `Dangerous hook command in ${relPath} (${hookName})`,
+                  detail: `Hook "${hookName}" runs a potentially dangerous command: ${cmd.slice(0, 80)}`,
+                  remediation: 'Review and remove dangerous hook commands. Hooks execute on every collaborator who clones this project.',
+                });
+                break;
+              }
+            }
+          }
+        }
+      }
     }
 
     // Cross-client drift detection
