@@ -77,6 +77,23 @@ export async function runChecks(checks, context, options = {}) {
   const settled = await Promise.allSettled(
     filtered.map(async (check) => {
       const result = await check.run(context);
+
+      // Validate result shape: must have numeric score and findings array
+      if (!result || typeof result.score !== 'number' || !Array.isArray(result.findings)) {
+        return {
+          id: check.id,
+          name: check.name,
+          category: check.category,
+          weight: WEIGHTS[check.id] || check.weight || 0,
+          score: 0,
+          findings: [{
+            severity: 'critical',
+            title: `Check "${check.id}" returned invalid result`,
+            detail: 'Expected { score: number, findings: Array } but got an invalid shape.',
+          }],
+        };
+      }
+
       return {
         id: check.id,
         name: check.name,
