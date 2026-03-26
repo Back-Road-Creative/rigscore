@@ -27,6 +27,9 @@ export const WEIGHTS = {
   'permissions-hygiene': 6,
   'windows-security': 0,
   'network-exposure': 0,
+  'claude-settings': 0,
+  'credential-storage': 0,
+  'unicode-steganography': 0,
 };
 
 // Sentinel score for checks that find nothing to scan
