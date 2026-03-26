@@ -104,6 +104,11 @@ describe('formatBadge', () => {
     expect(badge).toContain('54');
   });
 
+  it('badge URL includes cacheSeconds parameter', () => {
+    const badge = formatBadge(mockResult);
+    expect(badge).toContain('cacheSeconds=86400');
+  });
+
   it('links to Back-Road-Creative org, not joepetjr', () => {
     const badge = formatBadge(mockResult);
     expect(badge).toContain('Back-Road-Creative/rigscore');
