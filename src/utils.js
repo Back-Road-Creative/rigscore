@@ -105,6 +105,10 @@ export function scanLineForSecrets(line, trimmed) {
   const isExample = /\b(example|placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me)\b/i.test(line);
 
   for (const pattern of KEY_PATTERNS) {
+    // Defensive: reset lastIndex in case a pattern ever uses /g flag.
+    // Without this, .test() advances lastIndex on global regexes, causing
+    // alternating true/false results on subsequent calls.
+    pattern.lastIndex = 0;
     if (pattern.test(line)) {
       const severity = isComment || isExample ? 'info' : 'critical';
       return { matched: true, severity, pattern };
