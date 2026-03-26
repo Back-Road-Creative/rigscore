@@ -81,7 +81,17 @@ const URL_PATTERN = /https?:\/\/[^\s"')\]]+/g;
 // Anchored base64 pattern — requires whitespace boundary to reduce false positives
 const BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m;
 
-const DEFENSIVE_WORDS = /\b(defend|prevent|block|guard|detect|refuse|flag|stop|reject|deny|halt|intercept|catch|disallow|prohibit|warn|alert|protect|mitigate|counter|resist)\b/i;
+// Strong defensive phrases — clearly about security, always suppress
+const STRONG_DEFENSIVE_RE = /\b(defend against|prevent .{0,30}(attack|injection|escalat|exfiltrat|use of|access)|guard against|block .{0,20}(injection|attack|use of)|reject .{0,20}instruction|refuse .{0,20}(to|attempt|request)|protect against|disallow .{0,20}(sudo|curl|wget|shell)|prohibit .{0,20}(sudo|curl|wget|shell)|never .{0,10}(use|run|allow|execute) .{0,20}(sudo|curl|wget|rm ))\b/i;
+
+// Weak single words — only suppress when combined with a strong phrase
+// Words like "detect", "flag", "catch", "stop" are too common in non-security contexts
+const WEAK_DEFENSIVE_WORDS = /\b(detect|flag|catch|stop|halt|alert|warn|counter|resist)\b/i;
+
+// Combined check: strong phrases always suppress, weak words alone do NOT
+function isDefensiveContext(text) {
+  return STRONG_DEFENSIVE_RE.test(text);
+}
 
 // Cyrillic characters that look like Latin — check AFTER NFKC normalization
 const HOMOGLYPH_RE = /[\u0400-\u04FF\u0500-\u052F]/;
@@ -164,7 +174,7 @@ export default {
         const normalizedLine = normalizeText(line);
         for (const pattern of INJECTION_PATTERNS) {
           if (pattern.test(normalizedLine)) {
-            const isDefensive = DEFENSIVE_WORDS.test(normalizedLine);
+            const isDefensive = isDefensiveContext(normalizedLine);
             findings.push({
               severity: isDefensive ? 'info' : 'critical',
               title: isDefensive
@@ -190,7 +200,7 @@ export default {
           const twoLines = normalizeText(lines[i] + ' ' + lines[i + 1]);
           for (const pattern of INJECTION_PATTERNS) {
             if (pattern.test(twoLines)) {
-              const isDefensive = DEFENSIVE_WORDS.test(twoLines);
+              const isDefensive = isDefensiveContext(twoLines);
               findings.push({
                 severity: isDefensive ? 'info' : 'critical',
                 title: isDefensive
@@ -227,7 +237,7 @@ export default {
       // Check exfiltration patterns
       for (const pattern of EXFILTRATION_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
           if (!isDefensive) {
             findings.push({
               severity: 'warning',
@@ -243,7 +253,7 @@ export default {
       // Check privilege escalation patterns
       for (const pattern of ESCALATION_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
           if (!isDefensive) {
             findings.push({
               severity: 'warning',
@@ -259,7 +269,7 @@ export default {
       // Check persistence patterns
       for (const pattern of PERSISTENCE_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
           if (!isDefensive) {
             findings.push({
               severity: 'warning',
@@ -275,7 +285,7 @@ export default {
       // Check indirect injection patterns (CRITICAL severity)
       for (const pattern of INDIRECT_INJECTION_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = DEFENSIVE_WORDS.test(file.content.split('\n').find(l => pattern.test(l)) || '');
+          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
           if (!isDefensive) {
             findings.push({
               severity: 'critical',
