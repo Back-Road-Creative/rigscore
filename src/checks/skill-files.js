@@ -83,20 +83,38 @@ const BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m;
 
 const DEFENSIVE_WORDS = /\b(defend|prevent|block|guard|detect|refuse|flag|stop|reject|deny|halt|intercept|catch|disallow|prohibit|warn|alert|protect|mitigate|counter|resist)\b/i;
 
-// Cyrillic characters that look like Latin — check AFTER NFKC normalization
-const HOMOGLYPH_RE = /[\u0400-\u04FF\u0500-\u052F]/;
+// Characters from non-Latin scripts that look like Latin — check AFTER NFKC normalization
+// Covers: Greek, Cyrillic, Cyrillic Supplement, Armenian, Georgian
+const HOMOGLYPH_RE = /[\u0370-\u03FF\u0400-\u04FF\u0500-\u052F\u0530-\u058F\u10A0-\u10FF]/;
+
+// Zero-width and invisible characters (used to hide malicious content)
+const ZERO_WIDTH_RE = /[\u200B-\u200D\u2060\uFEFF]/;
+
+// Bidirectional override characters (can make text render differently than stored)
+// LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI
+const BIDI_OVERRIDE_RE = /[\u202A-\u202E\u2066-\u2069]/;
 
 function normalizeText(text) {
   return text
     .normalize('NFKC')
-    // Strip zero-width characters
-    .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF]/g, '')
+    // Strip zero-width characters (for pattern matching — they're detected separately)
+    .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u2060]/g, '')
+    // Strip bidi overrides (for pattern matching — detected separately)
+    .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
     // Strip markdown formatting chars
     .replace(/[*_`~]/g, '');
 }
 
 function hasHomoglyphs(text) {
   return HOMOGLYPH_RE.test(text.normalize('NFKC'));
+}
+
+function hasZeroWidthChars(text) {
+  return ZERO_WIDTH_RE.test(text);
+}
+
+function hasBidiOverrides(text) {
+  return BIDI_OVERRIDE_RE.test(text);
 }
 
 export default {
@@ -288,12 +306,32 @@ export default {
         }
       }
 
+      // Bidi override detection — CRITICAL (can make text render differently)
+      if (hasBidiOverrides(file.content)) {
+        findings.push({
+          severity: 'critical',
+          title: `Bidirectional override characters in ${file.path}`,
+          detail: 'File contains Unicode bidi override characters (U+202A-202E, U+2066-2069) that can make text render differently than stored, hiding malicious instructions.',
+          remediation: 'Remove all bidirectional override characters from the file.',
+        });
+      }
+
+      // Zero-width character detection — WARNING (invisible content)
+      if (hasZeroWidthChars(file.content)) {
+        findings.push({
+          severity: 'warning',
+          title: `Zero-width characters detected in ${file.path}`,
+          detail: 'File contains invisible zero-width characters (ZWJ, ZWNJ, ZWS, BOM, ZWNBS) that could hide malicious content between visible text.',
+          remediation: 'Remove zero-width characters. Run: cat -v <file> to reveal hidden characters.',
+        });
+      }
+
       // Homoglyph detection
       if (hasHomoglyphs(file.content)) {
         findings.push({
           severity: 'warning',
           title: `Homoglyph characters detected in ${file.path}`,
-          detail: 'File contains characters from non-Latin scripts that visually resemble Latin letters. This could be used to disguise malicious instructions.',
+          detail: 'File contains characters from non-Latin scripts (Greek, Cyrillic, Armenian, Georgian) that visually resemble Latin letters. This could be used to disguise malicious instructions.',
           remediation: 'Replace homoglyph characters with their ASCII equivalents.',
         });
       }
