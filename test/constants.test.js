@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD, KEY_PATTERNS } from '../src/constants.js';
+import { WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD, KEY_PATTERNS, OWASP_AGENTIC_MAP } from '../src/constants.js';
 
 describe('constants', () => {
   it('weights sum to 100', () => {
@@ -44,6 +44,15 @@ describe('constants', () => {
   it('KEY_PATTERNS must not use the global /g flag', () => {
     for (const pattern of KEY_PATTERNS) {
       expect(pattern.flags, `Pattern ${pattern.source} has /g flag`).not.toContain('g');
+    }
+  });
+
+  it('every weighted check has an OWASP mapping', () => {
+    for (const checkId of Object.keys(WEIGHTS)) {
+      if (WEIGHTS[checkId] > 0) {
+        expect(OWASP_AGENTIC_MAP[checkId], `${checkId} missing OWASP mapping`).toBeDefined();
+        expect(OWASP_AGENTIC_MAP[checkId]).toMatch(/^ASI\d{2}$/);
+      }
     }
   });
 });

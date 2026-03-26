@@ -14,7 +14,7 @@ const defaultConfig = { paths: { hookDirs: [] }, network: {} };
 describe('git-hooks check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('git-hooks');
-    expect(WEIGHTS[check.id]).toBe(6);
+    expect(WEIGHTS[check.id]).toBe(4);
   });
 
   it('WARNING when no hooks exist', async () => {

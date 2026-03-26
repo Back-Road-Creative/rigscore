@@ -18,7 +18,7 @@ const defaultConfig = { paths: { dockerCompose: [] }, network: {} };
 describe('docker-security check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('docker-security');
-    expect(WEIGHTS[check.id]).toBe(8);
+    expect(WEIGHTS[check.id]).toBe(6);
   });
 
   it('CRITICAL when socket mounted and privileged', async () => {

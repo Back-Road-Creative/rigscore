@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { OWASP_AGENTIC_MAP } from './constants.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
@@ -33,12 +34,18 @@ export function formatSarif(result) {
       const level = SEVERITY_MAP[finding.severity] || 'none';
       if (level === 'none') continue; // skip pass/skipped
 
+      const tags = [];
+      const owasp = OWASP_AGENTIC_MAP[r.id];
+      if (owasp) tags.push(`owasp-agentic:${owasp}`);
+      tags.push(`category:${r.category}`);
+
       sarifResults.push({
         ruleId: r.id,
         level,
         message: {
           text: finding.detail ? `${finding.title}: ${finding.detail}` : finding.title,
         },
+        properties: { tags },
         locations: [
           {
             logicalLocations: [

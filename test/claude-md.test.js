@@ -18,7 +18,7 @@ const defaultConfig = { paths: { claudeMd: [] }, network: {} };
 describe('claude-md check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('claude-md');
-    expect(WEIGHTS[check.id]).toBe(12);
+    expect(WEIGHTS[check.id]).toBe(10);
   });
 
   it('CRITICAL when no CLAUDE.md exists', async () => {

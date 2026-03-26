@@ -34,9 +34,9 @@ describe('N/A score weight redistribution', () => {
   });
 
   it('applies coverage penalty when applicable weight is below threshold', () => {
-    // claude-md (w12) + env-exposure (w10) + permissions (w6) = 28 applicable weight
-    // Internal = (50*12 + 100*10 + 100*6)/28 = (600+1000+600)/28 = 2200/28 = 78.57 → 79
-    // Coverage penalty: 79 * (28/100) = 22.12 → 22
+    // claude-md (w10) + env-exposure (w8) + permissions (w4) = 22 applicable weight
+    // Internal = (50*10 + 100*8 + 100*4)/22 = (500+800+400)/22 = 1700/22 = 77.27 → 77
+    // Coverage penalty: 77 * (22/100) = 16.94 → 17
     const results = [
       { id: 'claude-md', score: 50 },
       { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -46,12 +46,12 @@ describe('N/A score weight redistribution', () => {
       { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
       { id: 'permissions-hygiene', score: 100 },
     ];
-    expect(calculateOverallScore(results)).toBe(22);
+    expect(calculateOverallScore(results)).toBe(17);
   });
 
   it('all-100 with low applicable weight gets coverage penalty', () => {
-    // claude-md (w12) + env-exposure (w10) + permissions (w6) = 28 applicable weight
-    // Internal = 100, penalty: 100 * 0.28 = 28
+    // claude-md (w10) + env-exposure (w8) + permissions (w4) = 22 applicable weight
+    // Internal = 100, penalty: 100 * 0.22 = 22
     const results = [
       { id: 'claude-md', score: 100 },
       { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -61,7 +61,7 @@ describe('N/A score weight redistribution', () => {
       { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
       { id: 'permissions-hygiene', score: 100 },
     ];
-    expect(calculateOverallScore(results)).toBe(28);
+    expect(calculateOverallScore(results)).toBe(22);
   });
 
   it('gives same result as before when no checks are N/A', () => {
