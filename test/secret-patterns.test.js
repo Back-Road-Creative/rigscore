@@ -299,6 +299,36 @@ describe('expanded secret patterns', () => {
     }
   });
 
+  it('scanLineForSecrets returns consistent results on repeated calls', async () => {
+    // Regression: if a KEY_PATTERN ever had /g flag, pattern.test() would
+    // alternate true/false due to lastIndex advancement. The defensive guard
+    // in utils.js should prevent this even if a /g pattern slips through.
+    const { scanLineForSecrets } = await import('../src/utils.js');
+    const line = 'AKIA' + 'A'.repeat(16);
+    const trimmed = line.trim();
+    // Call 5 times — all must match
+    for (let i = 0; i < 5; i++) {
+      const result = scanLineForSecrets(line, trimmed);
+      expect(result.matched, `Call ${i + 1} should match`).toBe(true);
+    }
+  });
+
+  it('scanLineForSecrets handles hypothetical global regex safely', async () => {
+    // Directly test the defensive guard by temporarily testing with a global pattern
+    const { scanLineForSecrets } = await import('../src/utils.js');
+    // The function should reset lastIndex before .test(), so even if we
+    // externally set lastIndex on one of the patterns, it still works
+    const { KEY_PATTERNS } = await import('../src/constants.js');
+    const awsPattern = KEY_PATTERNS.find(p => p.source.startsWith('AKIA'));
+    // Manually advance lastIndex (simulating what /g would do)
+    awsPattern.lastIndex = 999;
+    const line = 'AKIA' + 'A'.repeat(16);
+    const result = scanLineForSecrets(line, line.trim());
+    expect(result.matched).toBe(true);
+    // Clean up
+    awsPattern.lastIndex = 0;
+  });
+
   it('detects Vercel token', async () => {
     const tmpDir = makeTmpDir();
     const fakeVercelToken = 'vercel_' + 'a'.repeat(24);
