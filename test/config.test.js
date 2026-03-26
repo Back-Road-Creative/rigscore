@@ -141,6 +141,28 @@ describe('loadConfig', () => {
     expect(resolved['claude-md']).toBe(15);
   });
 
+  it('loads suppress array from config', async () => {
+    const tmpDir = makeTmpDir();
+    const rc = { suppress: ['Docker', 'env'] };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      expect(config.suppress).toEqual(['Docker', 'env']);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('suppress defaults to empty array', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const config = await loadConfig(tmpDir, tmpDir);
+      expect(config.suppress).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('ignores unknown keys gracefully', async () => {
     const tmpDir = makeTmpDir();
     const rc = { paths: { claudeMd: ['/a'], unknownKey: 'value' }, extra: true };

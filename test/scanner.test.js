@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runChecks } from '../src/scanner.js';
+import { runChecks, suppressFindings } from '../src/scanner.js';
 import { loadChecks } from '../src/checks/index.js';
 import { WEIGHTS } from '../src/constants.js';
 import path from 'node:path';
@@ -102,6 +102,57 @@ describe('scan integration', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
+  });
+
+  it('suppressFindings removes findings matching patterns (case-insensitive)', () => {
+    const results = [{
+      id: 'env-exposure',
+      score: 0,
+      findings: [
+        { severity: 'critical', title: '.env file found but NOT in .gitignore' },
+        { severity: 'warning', title: '.env.local is world-readable' },
+      ],
+    }];
+    suppressFindings(results, ['gitignore']);
+    expect(results[0].findings).toHaveLength(1);
+    expect(results[0].findings[0].title).toContain('world-readable');
+  });
+
+  it('suppressFindings does nothing when patterns array is empty', () => {
+    const results = [{
+      id: 'test',
+      score: 50,
+      findings: [{ severity: 'warning', title: 'Some finding' }],
+    }];
+    suppressFindings(results, []);
+    expect(results[0].findings).toHaveLength(1);
+  });
+
+  it('suppressFindings recalculates score after suppression', () => {
+    const results = [{
+      id: 'test',
+      score: 0,
+      findings: [
+        { severity: 'critical', title: 'Bad thing', detail: 'Very bad' },
+        { severity: 'pass', title: 'Good thing' },
+      ],
+    }];
+    suppressFindings(results, ['Bad thing']);
+    expect(results[0].score).toBe(100);
+  });
+
+  it('suppressFindings preserves pass findings during suppression', () => {
+    const results = [{
+      id: 'test',
+      score: 85,
+      findings: [
+        { severity: 'warning', title: 'Docker issue' },
+        { severity: 'pass', title: 'Docker looks good' },
+      ],
+    }];
+    suppressFindings(results, ['Docker issue']);
+    expect(results[0].findings).toHaveLength(1);
+    expect(results[0].findings[0].severity).toBe('pass');
   });
 
   it('pass 2 checks receive cloned priorResults (mutations do not leak)', async () => {

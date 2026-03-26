@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
-import { scan, scanRecursive } from './scanner.js';
+import { scan, scanRecursive, suppressFindings } from './scanner.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
@@ -25,6 +25,7 @@ export function parseArgs(args) {
     profile: null,
     initHook: false,
     watch: false,
+    ignore: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -65,6 +66,8 @@ export function parseArgs(args) {
       options.initHook = true;
     } else if (arg === '--watch') {
       options.watch = true;
+    } else if (arg === '--ignore' && i + 1 < args.length) {
+      options.ignore = args[++i].split(',').map(s => s.trim()).filter(Boolean);
     } else if (arg === '--ci') {
       options.sarif = true;
       options.noColor = true;
@@ -169,6 +172,12 @@ export async function run(args) {
     process.exit(allPassed ? 0 : 1);
   } else {
     const result = await scan(scanOptions);
+
+    // Apply suppress/ignore patterns
+    const suppressPatterns = [...(result.config?.suppress || []), ...(options.ignore || [])];
+    if (suppressPatterns.length > 0) {
+      suppressFindings(result.results, suppressPatterns);
+    }
 
     if (options.sarif) {
       process.stdout.write(JSON.stringify(formatSarif(result), null, 2) + '\n');

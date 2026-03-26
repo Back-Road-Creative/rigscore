@@ -34,6 +34,21 @@ describe('parseArgs', () => {
     expect(opts.noCta).toBe(true);
   });
 
+  it('parses --ignore with comma-separated values', () => {
+    const opts = parseArgs(['--ignore', 'env,docker']);
+    expect(opts.ignore).toEqual(['env', 'docker']);
+  });
+
+  it('--ignore defaults to null', () => {
+    const opts = parseArgs([]);
+    expect(opts.ignore).toBe(null);
+  });
+
+  it('--ignore trims whitespace from patterns', () => {
+    const opts = parseArgs(['--ignore', ' env , docker ']);
+    expect(opts.ignore).toEqual(['env', 'docker']);
+  });
+
   it('preserves existing flags', () => {
     const opts = parseArgs(['--json', '--deep', '--online', '--verbose']);
     expect(opts.json).toBe(true);

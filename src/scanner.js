@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadChecks } from './checks/index.js';
-import { calculateOverallScore } from './scoring.js';
+import { calculateOverallScore, calculateCheckScore } from './scoring.js';
 import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
 
@@ -39,6 +39,25 @@ function deduplicateFindings(results) {
       } else {
         seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
       }
+    }
+  }
+}
+
+/**
+ * Suppress findings whose title matches any of the given patterns (case-insensitive).
+ * Recalculates each affected check's score after removal.
+ */
+export function suppressFindings(results, patterns) {
+  if (!patterns || patterns.length === 0) return;
+
+  for (const r of results) {
+    const before = r.findings.length;
+    r.findings = r.findings.filter((f) => {
+      const title = (f.title || '').toLowerCase();
+      return !patterns.some((p) => title.includes(p.toLowerCase()));
+    });
+    if (r.findings.length !== before) {
+      r.score = calculateCheckScore(r.findings);
     }
   }
 }
@@ -145,7 +164,7 @@ export async function scan(options = {}) {
     overallScore = calculateOverallScore(results, weights);
   }
 
-  return { score: overallScore, results };
+  return { score: overallScore, results, config };
 }
 
 // Files that indicate a directory is a scannable project

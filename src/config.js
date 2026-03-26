@@ -16,6 +16,7 @@ const DEFAULTS = {
   profile: null,
   weights: {},
   checks: { disabled: [] },
+  suppress: [],
 };
 
 export const PROFILES = {
@@ -120,6 +121,10 @@ function mergeConfig(userConfig) {
     if (Array.isArray(userConfig.checks.disabled)) {
       result.checks.disabled = userConfig.checks.disabled;
     }
+  }
+
+  if (Array.isArray(userConfig.suppress)) {
+    result.suppress = userConfig.suppress;
   }
 
   return result;
