@@ -6,6 +6,44 @@ import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
 
 /**
+ * Deduplicate findings across check results.
+ * When two checks produce findings with the same severity+title,
+ * keep the one from the higher-weighted check.
+ */
+function deduplicateFindings(results) {
+  const seen = new Map(); // "severity:normalizedTitle" → { resultIdx, findingIdx, weight }
+
+  for (let ri = 0; ri < results.length; ri++) {
+    const r = results[ri];
+    const weight = WEIGHTS[r.id] || 0;
+    const findings = r.findings || [];
+
+    for (let fi = findings.length - 1; fi >= 0; fi--) {
+      const f = findings[fi];
+      if (!f.title || f.severity === 'pass' || f.severity === 'info') continue;
+
+      // Normalize: strip file paths and trailing details for comparison
+      const normalized = f.title.replace(/\s+in\s+\S+$/, '').replace(/:\s+\S+$/, '').trim();
+      const key = `${f.severity}:${normalized}`;
+
+      if (seen.has(key)) {
+        const prev = seen.get(key);
+        if (weight >= prev.weight) {
+          // Current check has higher weight — remove from previous
+          results[prev.resultIdx].findings.splice(prev.findingIdx, 1);
+          seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
+        } else {
+          // Previous check has higher weight — remove current
+          findings.splice(fi, 1);
+        }
+      } else {
+        seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
+      }
+    }
+  }
+}
+
+/**
  * Run an array of checks against a context, collect results.
  * Uses Promise.allSettled so one failing check doesn't block others.
  */
@@ -84,11 +122,14 @@ export async function scan(options = {}) {
       ? pass2Checks.filter(c => c.id === options.checkFilter)
       : pass2Checks;
     if (pass2Filtered.length > 0) {
-      const pass2Context = { ...context, priorResults: results };
+      const pass2Context = { ...context, priorResults: structuredClone(results) };
       const pass2Results = await runChecks(pass2Filtered, pass2Context, {});
       results.push(...pass2Results);
     }
   }
+
+  // Deduplicate findings across checks — keep finding from higher-weighted check
+  deduplicateFindings(results);
 
   // When filtering to specific checks, use average of their scores
   // instead of weighted system (which assumes all checks are present)
