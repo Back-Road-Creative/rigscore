@@ -46,9 +46,23 @@ export function resolveWeights(config) {
 
   const resolved = { ...profile };
 
-  // Apply weight overrides (including plugin weights)
+  // Apply weight overrides (including plugin weights) with validation
   if (config?.weights) {
     for (const [key, value] of Object.entries(config.weights)) {
+      if (typeof value !== 'number' || Number.isNaN(value)) {
+        console.warn(`rigscore: ignoring non-numeric weight for "${key}": ${value}`);
+        continue;
+      }
+      if (value < 0) {
+        console.warn(`rigscore: clamping negative weight for "${key}" to 0`);
+        resolved[key] = 0;
+        continue;
+      }
+      if (value > 100) {
+        console.warn(`rigscore: clamping weight for "${key}" from ${value} to 100`);
+        resolved[key] = 100;
+        continue;
+      }
       resolved[key] = value;
     }
   }
