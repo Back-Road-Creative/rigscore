@@ -182,6 +182,71 @@ describe('docker-security check', () => {
     }
   });
 
+  it('CRITICAL when ipc: host in compose service', async () => {
+    const tmpDir = makeTmpDir();
+    const compose = `services:\n  app:\n    image: node:18\n    ipc: host\n`;
+    fs.writeFileSync(path.join(tmpDir, 'docker-compose.yml'), compose);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('ipc'));
+      expect(finding).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL when pid: host in compose service', async () => {
+    const tmpDir = makeTmpDir();
+    const compose = `services:\n  app:\n    image: node:18\n    pid: host\n`;
+    fs.writeFileSync(path.join(tmpDir, 'docker-compose.yml'), compose);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('pid'));
+      expect(finding).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING when volumes_from used in compose service', async () => {
+    const tmpDir = makeTmpDir();
+    const compose = `services:\n  app:\n    image: node:18\n    volumes_from:\n      - other\n  other:\n    image: alpine\n`;
+    fs.writeFileSync(path.join(tmpDir, 'docker-compose.yml'), compose);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find(f => f.title?.includes('volumes_from'));
+      expect(finding).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL when cap_add includes SYS_ADMIN', async () => {
+    const tmpDir = makeTmpDir();
+    const compose = `services:\n  app:\n    image: node:18\n    cap_add:\n      - SYS_ADMIN\n`;
+    fs.writeFileSync(path.join(tmpDir, 'docker-compose.yml'), compose);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find(f => f.severity === 'critical' && f.title?.includes('SYS_ADMIN'));
+      expect(finding).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING when volume mount has path traversal', async () => {
+    const tmpDir = makeTmpDir();
+    const compose = `services:\n  app:\n    image: node:18\n    volumes:\n      - "../../sensitive:/data"\n`;
+    fs.writeFileSync(path.join(tmpDir, 'docker-compose.yml'), compose);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find(f => f.title?.includes('traversal'));
+      expect(finding).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('returns data.hasPrivilegedContainer', async () => {
     const result = await check.run({ cwd: fixture('docker-socket'), homedir: '/tmp', config: defaultConfig });
     expect(result.data).toBeDefined();
