@@ -160,6 +160,69 @@ describe('env-exposure check', () => {
     }
   });
 
+  it('WARNING when shell history contains secrets', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    const prefix = 'sk-ant-';
+    const suffix = 'api03-abcdefghij1234567890';
+    fs.writeFileSync(path.join(homeDir, '.bash_history'),
+      `ls\ncd project\nexport ANTHROPIC_API_KEY=${prefix}${suffix}\nnpm start\n`);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: homeDir });
+      const finding = result.findings.find(f => f.title?.includes('bash_history'));
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe('warning');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for secrets in zsh_history', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    const prefix = 'sk-ant-';
+    const suffix = 'api03-abcdefghij1234567890';
+    fs.writeFileSync(path.join(homeDir, '.zsh_history'),
+      `git push\nANTHROPIC_API_KEY=${prefix}${suffix} npm run\n`);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: homeDir });
+      const finding = result.findings.find(f => f.title?.includes('zsh_history'));
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe('warning');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
+  it('no history finding when history is clean', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    fs.writeFileSync(path.join(homeDir, '.bash_history'), 'ls\ncd project\nnpm start\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: homeDir });
+      const finding = result.findings.find(f => f.title?.includes('history'));
+      expect(finding).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
+  it('no history finding when no history files exist', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: homeDir });
+      const finding = result.findings.find(f => f.title?.includes('history'));
+      expect(finding).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
   if (process.platform !== 'win32') {
     it('WARNING when .env file is world-readable', async () => {
       const tmpDir = makeTmpDir();

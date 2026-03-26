@@ -196,6 +196,38 @@ export default {
       }
     }
 
+    // Scan shell history for leaked secrets
+    const historyFiles = ['.bash_history', '.zsh_history'];
+    for (const histFile of historyFiles) {
+      if (!context.homedir) continue;
+      const histPath = path.join(context.homedir, histFile);
+      const histContent = await readFileSafe(histPath);
+      if (!histContent) continue;
+
+      const histLines = histContent.split('\n');
+      const recentLines = histLines.slice(-500);
+      let secretsInHistory = 0;
+
+      for (const line of recentLines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const result = scanLineForSecrets(line, trimmed);
+        if (result.matched && result.severity === 'critical') {
+          secretsInHistory++;
+          if (secretsInHistory >= 3) break;
+        }
+      }
+
+      if (secretsInHistory > 0) {
+        findings.push({
+          severity: 'warning',
+          title: `Secrets found in ${histFile}`,
+          detail: `Found ${secretsInHistory} potential secret(s) in shell history (~/${histFile}). These can be exposed via terminal shoulder-surfing or history file theft.`,
+          remediation: `Clear secrets from history: edit ~/${histFile} or run history -c. Consider using a secrets manager.`,
+        });
+      }
+    }
+
     if (envFiles.length === 0 && !hardcodedFound && !sopsConfig) {
       findings.push({
         severity: 'pass',
