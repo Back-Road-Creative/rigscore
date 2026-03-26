@@ -127,6 +127,163 @@ describe('mcp-config check', () => {
     }
   });
 
+  it('WARNING when npx server uses unstable tag @next', async () => {
+    const tmpDir = makeTmpDir();
+    const mcpConfig = {
+      mcpServers: {
+        'next-server': {
+          command: 'npx',
+          args: ['some-mcp-server@next'],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING when npx server uses unstable tag @dev', async () => {
+    const tmpDir = makeTmpDir();
+    const mcpConfig = {
+      mcpServers: {
+        'dev-server': {
+          command: 'npx',
+          args: ['some-mcp-server@dev'],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for scoped package with @latest tag', async () => {
+    const tmpDir = makeTmpDir();
+    const mcpConfig = {
+      mcpServers: {
+        'scoped-latest': {
+          command: 'npx',
+          args: ['@modelcontextprotocol/server-filesystem@latest', '--directory', './data'],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for scoped package with @nightly tag', async () => {
+    const tmpDir = makeTmpDir();
+    const mcpConfig = {
+      mcpServers: {
+        'scoped-nightly': {
+          command: 'npx',
+          args: ['@modelcontextprotocol/server-filesystem@nightly'],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('NO warning for scoped package with semver pin', async () => {
+    const tmpDir = makeTmpDir();
+    const mcpConfig = {
+      mcpServers: {
+        'pinned-scoped': {
+          command: 'npx',
+          args: ['@modelcontextprotocol/server-filesystem@1.2.3', '--directory', './data'],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+      );
+      expect(warning).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('NO warning for unscoped package with semver pin', async () => {
+    const tmpDir = makeTmpDir();
+    const mcpConfig = {
+      mcpServers: {
+        'pinned-unscoped': {
+          command: 'npx',
+          args: ['some-mcp-server@2.0.1'],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const warning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+      );
+      expect(warning).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for all unstable distribution tags', async () => {
+    const unstableTags = ['latest', 'next', 'main', 'dev', 'nightly', 'canary', 'beta', 'alpha', 'rc'];
+    for (const tag of unstableTags) {
+      const tmpDir = makeTmpDir();
+      const mcpConfig = {
+        mcpServers: {
+          'test-server': {
+            command: 'npx',
+            args: [`some-mcp-server@${tag}`],
+          },
+        },
+      };
+      fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+      try {
+        const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+        const warning = result.findings.find(
+          (f) => f.severity === 'warning' && f.title.includes('unpinned'),
+        );
+        expect(warning, `Expected warning for unstable tag @${tag}`).toBeDefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    }
+  });
+
   it('reads additional MCP config paths from config', async () => {
     const tmpDir = makeTmpDir();
     const externalDir = makeTmpDir();

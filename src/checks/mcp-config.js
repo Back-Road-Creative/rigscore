@@ -24,6 +24,10 @@ const UNSAFE_PERMISSION_FLAGS = [
   '--privileged', '--unrestricted',
 ];
 
+const UNSTABLE_TAGS = new Set([
+  'latest', 'next', 'main', 'dev', 'nightly', 'canary', 'beta', 'alpha', 'rc',
+]);
+
 function extractPathsFromArgs(args) {
   const paths = [];
   const flagPatterns = ['--directory', '--root', '--path', '--allowed-directories', '--dir'];
@@ -281,32 +285,47 @@ export default {
           });
         }
 
-        // Check for unpinned versions
+        // Check for unpinned versions (unstable distribution tags)
         for (const arg of args) {
-          if (arg.includes('@latest')) {
-            findings.push({
-              severity: 'warning',
-              title: `MCP server "${name}" uses unpinned version (@latest)`,
-              detail: 'Unpinned versions can introduce breaking changes or supply chain attacks.',
-              remediation: 'Pin MCP server packages to specific versions.',
-              learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
-            });
-            break;
+          if (typeof arg !== 'string') continue;
+          const atIdx = arg.lastIndexOf('@');
+          if (atIdx > 0) {
+            const tag = arg.slice(atIdx + 1).toLowerCase();
+            if (UNSTABLE_TAGS.has(tag)) {
+              findings.push({
+                severity: 'warning',
+                title: `MCP server "${name}" uses unpinned version (@${tag})`,
+                detail: 'Unstable distribution tags can introduce breaking changes or supply chain attacks.',
+                remediation: 'Pin MCP server packages to specific versions.',
+                learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+              });
+              break;
+            }
           }
         }
 
         // Unpinned npx: command is 'npx' and no arg has a version pin
         // A version pin looks like pkg@1.0.0 or @scope/pkg@1.0.0
         // Scoped packages (@scope/pkg) without @version are NOT pinned
+        // Unstable tags (@latest, @next, @dev, etc.) are NOT pins
         const hasVersionPin = args.some(a => {
           if (typeof a !== 'string') return false;
-          // @scope/pkg@version — has @ after the /
+          let versionPart = null;
           if (a.startsWith('@')) {
+            // @scope/pkg@version — extract version after the scope
             const slashIdx = a.indexOf('/');
-            return slashIdx !== -1 && a.indexOf('@', slashIdx + 1) !== -1;
+            if (slashIdx === -1) return false;
+            const atIdx = a.indexOf('@', slashIdx + 1);
+            if (atIdx === -1) return false;
+            versionPart = a.slice(atIdx + 1);
+          } else {
+            // pkg@version — extract version after @
+            const atIdx = a.indexOf('@');
+            if (atIdx === -1) return false;
+            versionPart = a.slice(atIdx + 1);
           }
-          // pkg@version — has @ anywhere
-          return a.includes('@');
+          // Reject unstable distribution tags as version pins
+          return versionPart && !UNSTABLE_TAGS.has(versionPart.toLowerCase());
         });
         if ((server.command === 'npx' || server.command === 'npx.cmd') &&
             args.length > 0 && !hasVersionPin) {
