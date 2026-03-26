@@ -69,6 +69,52 @@ describe('runChecks', () => {
     expect(receivedContext.homedir).toBe('/b');
   });
 
+  it('handles check returning wrong shape (missing findings)', async () => {
+    const badCheck = {
+      id: 'bad-shape',
+      name: 'Bad Shape',
+      category: 'test',
+      weight: 5,
+      async run() { return { score: 50 }; }, // missing findings
+    };
+    const context = { cwd: '/tmp', homedir: '/tmp' };
+    const results = await runChecks([badCheck], context);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBe(0);
+    expect(results[0].findings[0].severity).toBe('critical');
+    expect(results[0].findings[0].title).toContain('invalid result');
+  });
+
+  it('handles check returning non-numeric score', async () => {
+    const badCheck = {
+      id: 'bad-score',
+      name: 'Bad Score',
+      category: 'test',
+      weight: 5,
+      async run() { return { score: 'high', findings: [] }; },
+    };
+    const context = { cwd: '/tmp', homedir: '/tmp' };
+    const results = await runChecks([badCheck], context);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBe(0);
+    expect(results[0].findings[0].severity).toBe('critical');
+  });
+
+  it('handles check returning null', async () => {
+    const badCheck = {
+      id: 'null-result',
+      name: 'Null Result',
+      category: 'test',
+      weight: 5,
+      async run() { return null; },
+    };
+    const context = { cwd: '/tmp', homedir: '/tmp' };
+    const results = await runChecks([badCheck], context);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBe(0);
+    expect(results[0].findings[0].severity).toBe('critical');
+  });
+
   it('filters checks by id', async () => {
     const checkA = { id: 'alpha', name: 'A', category: 't', weight: 5, async run() { return { score: 100, findings: [] }; } };
     const checkB = { id: 'beta', name: 'B', category: 't', weight: 5, async run() { return { score: 100, findings: [] }; } };
