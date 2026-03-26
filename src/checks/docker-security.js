@@ -44,6 +44,50 @@ function analyzeComposeServices(services, findings, sourceLabel) {
       });
     }
 
+    // Check ipc: host (breaks container IPC isolation)
+    if (service.ipc === 'host') {
+      findings.push({
+        severity: 'critical',
+        title: `Container "${name}" uses ipc: host`,
+        detail: `Host IPC namespace allows full inter-process communication with the host. Found in ${sourceLabel}.`,
+        remediation: 'Remove ipc: host. Use default IPC isolation.',
+      });
+    }
+
+    // Check pid: host (breaks container PID isolation)
+    if (service.pid === 'host') {
+      findings.push({
+        severity: 'critical',
+        title: `Container "${name}" uses pid: host`,
+        detail: `Host PID namespace allows the container to see and signal all host processes. Found in ${sourceLabel}.`,
+        remediation: 'Remove pid: host. Use default PID isolation.',
+      });
+    }
+
+    // Check volumes_from (inherits all mounts from another container)
+    if (service.volumes_from && Array.isArray(service.volumes_from) && service.volumes_from.length > 0) {
+      findings.push({
+        severity: 'warning',
+        title: `Container "${name}" uses volumes_from`,
+        detail: `volumes_from inherits all volume mounts from another container, which may include sensitive paths. Found in ${sourceLabel}.`,
+        remediation: 'Define explicit volume mounts instead of inheriting from other containers.',
+      });
+    }
+
+    // Check cap_add for dangerous capabilities
+    const capAdd = service.cap_add || [];
+    const dangerousCaps = ['SYS_ADMIN', 'SYS_PTRACE', 'SYS_MODULE', 'DAC_OVERRIDE', 'NET_ADMIN'];
+    for (const cap of capAdd) {
+      if (dangerousCaps.includes(cap)) {
+        findings.push({
+          severity: 'critical',
+          title: `Container "${name}" adds dangerous capability: ${cap}`,
+          detail: `${cap} capability can enable privilege escalation or container escape. Found in ${sourceLabel}.`,
+          remediation: `Remove ${cap} from cap_add. Use the minimum capabilities needed.`,
+        });
+      }
+    }
+
     // Check volumes
     const volumes = service.volumes || [];
     for (const vol of volumes) {
@@ -60,6 +104,17 @@ function analyzeComposeServices(services, findings, sourceLabel) {
       }
 
       const hostPath = volStr.split(':')[0];
+
+      // Check for path traversal in host path
+      if (hostPath.includes('..')) {
+        findings.push({
+          severity: 'warning',
+          title: `Container "${name}" volume mount uses path traversal`,
+          detail: `Host path "${hostPath}" contains ".." which may escape the project scope. Found in ${sourceLabel}.`,
+          remediation: 'Use absolute paths scoped to your project directory.',
+        });
+      }
+
       for (const sensitive of SENSITIVE_MOUNTS) {
         if (hostPath === sensitive) {
           findings.push({
