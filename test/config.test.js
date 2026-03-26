@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { loadConfig } from '../src/config.js';
+import { loadConfig, resolveWeights } from '../src/config.js';
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-config-'));
@@ -114,6 +114,31 @@ describe('loadConfig', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
+  });
+
+  it('resolveWeights ignores non-numeric weight values', () => {
+    const config = { weights: { 'mcp-config': 'fifty' } };
+    const resolved = resolveWeights(config);
+    expect(resolved['mcp-config']).toBe(16); // default, not 'fifty'
+  });
+
+  it('resolveWeights clamps negative weights to 0', () => {
+    const config = { weights: { 'mcp-config': -10 } };
+    const resolved = resolveWeights(config);
+    expect(resolved['mcp-config']).toBe(0);
+  });
+
+  it('resolveWeights clamps weights above 100 to 100', () => {
+    const config = { weights: { 'mcp-config': 999 } };
+    const resolved = resolveWeights(config);
+    expect(resolved['mcp-config']).toBe(100);
+  });
+
+  it('resolveWeights accepts valid numeric weights', () => {
+    const config = { weights: { 'mcp-config': 25, 'claude-md': 15 } };
+    const resolved = resolveWeights(config);
+    expect(resolved['mcp-config']).toBe(25);
+    expect(resolved['claude-md']).toBe(15);
   });
 
   it('ignores unknown keys gracefully', async () => {
