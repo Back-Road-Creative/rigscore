@@ -22,6 +22,76 @@ function matchesGlob(filename, pattern) {
   return filename === pattern;
 }
 
+export const fixes = [
+  {
+    id: 'ssh-dir-permissions',
+    match: (f) => f.severity === 'warning' && f.title?.includes('.ssh') && f.title?.includes('permission'),
+    description: 'chmod 700 on ~/.ssh',
+    async apply(_cwd, homedir) {
+      if (process.platform === 'win32') return false;
+      const sshDir = path.join(homedir, '.ssh');
+      try {
+        await fs.promises.chmod(sshDir, 0o700);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  },
+  {
+    id: 'ssh-key-permissions',
+    match: (f) => f.severity === 'critical' && f.title?.includes('SSH') && f.title?.includes('key') && f.title?.includes('permission'),
+    description: 'chmod 600 on SSH private keys',
+    async apply(_cwd, homedir) {
+      if (process.platform === 'win32') return false;
+      const sshDir = path.join(homedir, '.ssh');
+      let fixed = false;
+      try {
+        const entries = await fs.promises.readdir(sshDir);
+        for (const entry of entries) {
+          if (entry.startsWith('id_') && !entry.endsWith('.pub')) {
+            const keyPath = path.join(sshDir, entry);
+            try {
+              const stat = await fs.promises.stat(keyPath);
+              if (stat.mode & 0o077) {
+                await fs.promises.chmod(keyPath, 0o600);
+                fixed = true;
+              }
+            } catch {
+              // skip
+            }
+          }
+        }
+      } catch {
+        // ssh dir doesn't exist
+      }
+      return fixed;
+    },
+  },
+  {
+    id: 'gitignore-sensitive-patterns',
+    match: (f) => f.severity === 'warning' && f.title?.includes('world-readable') && (f.title?.includes('.pem') || f.title?.includes('.key')),
+    description: 'Add *.pem, *.key to .gitignore',
+    async apply(cwd) {
+      const gitignorePath = path.join(cwd, '.gitignore');
+      let content = '';
+      try {
+        content = await fs.promises.readFile(gitignorePath, 'utf-8');
+      } catch {
+        // .gitignore doesn't exist yet
+      }
+      const lines = content.split('\n').map(l => l.trim());
+      const toAdd = [];
+      if (!lines.includes('*.pem')) toAdd.push('*.pem');
+      if (!lines.includes('*.key')) toAdd.push('*.key');
+      if (toAdd.length === 0) return false;
+      const newline = content && !content.endsWith('\n') ? '\n' : '';
+      await fs.promises.writeFile(gitignorePath, content + newline + toAdd.join('\n') + '\n');
+      return true;
+    },
+  },
+];
+
 export default {
   id: 'permissions-hygiene',
   name: 'Permissions hygiene',

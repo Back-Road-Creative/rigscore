@@ -4,9 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Module-level cache for self-registered fixes collected during loadChecks()
+let _registeredFixes = {};
+
 /**
  * Auto-discover all check modules in this directory (excluding index.js).
  * Then discover rigscore-check-* plugins from node_modules.
+ * Also collects self-registered fixes from check modules that export a `fixes` array.
  */
 export async function loadChecks(options = {}) {
   const files = await fs.promises.readdir(__dirname);
@@ -15,9 +19,20 @@ export async function loadChecks(options = {}) {
   );
 
   const checks = [];
+  _registeredFixes = {};
+
   for (const file of checkFiles) {
     const mod = await import(path.join(__dirname, file));
     checks.push(mod.default);
+
+    // Collect self-registered fixes
+    if (Array.isArray(mod.fixes)) {
+      for (const fix of mod.fixes) {
+        if (fix.id && typeof fix.match === 'function' && typeof fix.apply === 'function') {
+          _registeredFixes[fix.id] = fix;
+        }
+      }
+    }
   }
 
   // Discover plugins from node_modules
@@ -25,6 +40,14 @@ export async function loadChecks(options = {}) {
   checks.push(...plugins);
 
   return checks;
+}
+
+/**
+ * Return fixes self-registered by check modules during the last loadChecks() call.
+ * Keys are fix IDs, values are { id, match, description, apply } objects.
+ */
+export function getRegisteredFixes() {
+  return _registeredFixes;
 }
 
 /**

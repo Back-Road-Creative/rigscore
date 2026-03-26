@@ -138,6 +138,35 @@ function hasBidiOverrides(text) {
   return BIDI_OVERRIDE_RE.test(text);
 }
 
+export const fixes = [
+  {
+    id: 'skill-file-world-writable',
+    match: (f) => f.severity === 'warning' && f.title?.includes('world-writable') && f.title?.includes('Skill file'),
+    description: 'chmod 644 on world-writable skill files',
+    async apply(cwd) {
+      if (process.platform === 'win32') return false;
+      const skillDirs = ['.claude/commands', '.claude/skills'];
+      let fixed = false;
+      for (const dir of skillDirs) {
+        const dirPath = path.join(cwd, dir);
+        let entries;
+        try { entries = await fs.promises.readdir(dirPath); } catch { continue; }
+        for (const entry of entries) {
+          const filePath = path.join(dirPath, entry);
+          try {
+            const stat = await fs.promises.stat(filePath);
+            if (stat.mode & 0o002) {
+              await fs.promises.chmod(filePath, 0o644);
+              fixed = true;
+            }
+          } catch { /* skip */ }
+        }
+      }
+      return fixed;
+    },
+  },
+];
+
 export default {
   id: 'skill-files',
   name: 'Skill file safety',

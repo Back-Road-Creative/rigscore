@@ -35,6 +35,54 @@ async function isInGitignore(cwd) {
   return lines.some((l) => ENV_GITIGNORE_PATTERNS.includes(l));
 }
 
+export const fixes = [
+  {
+    id: 'env-not-gitignored',
+    match: (f) => f.severity === 'critical' && f.title?.includes('.env') && f.title?.includes('.gitignore'),
+    description: 'Add .env to .gitignore',
+    async apply(cwd) {
+      const gitignorePath = path.join(cwd, '.gitignore');
+      let content = '';
+      try {
+        content = await fs.promises.readFile(gitignorePath, 'utf-8');
+      } catch {
+        // .gitignore doesn't exist yet
+      }
+      if (!content.split('\n').map(l => l.trim()).includes('.env')) {
+        const newline = content && !content.endsWith('\n') ? '\n' : '';
+        await fs.promises.writeFile(gitignorePath, content + newline + '.env\n');
+        return true;
+      }
+      return false;
+    },
+  },
+  {
+    id: 'env-world-readable',
+    match: (f) => f.severity === 'warning' && f.title?.includes('world-readable') && f.title?.includes('.env'),
+    description: 'chmod 600 on .env files',
+    async apply(cwd) {
+      if (process.platform === 'win32') return false;
+      const entries = await fs.promises.readdir(cwd).catch(() => []);
+      let fixed = false;
+      for (const entry of entries) {
+        if (entry === '.env' || entry.startsWith('.env.')) {
+          const filePath = path.join(cwd, entry);
+          try {
+            const stat = await fs.promises.stat(filePath);
+            if (stat.mode & 0o004) {
+              await fs.promises.chmod(filePath, 0o600);
+              fixed = true;
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+      return fixed;
+    },
+  },
+];
+
 export default {
   id: 'env-exposure',
   name: 'Secret exposure',
