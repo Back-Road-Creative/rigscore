@@ -300,13 +300,9 @@ describe('expanded secret patterns', () => {
   });
 
   it('scanLineForSecrets returns consistent results on repeated calls', async () => {
-    // Regression: if a KEY_PATTERN ever had /g flag, pattern.test() would
-    // alternate true/false due to lastIndex advancement. The defensive guard
-    // in utils.js should prevent this even if a /g pattern slips through.
     const { scanLineForSecrets } = await import('../src/utils.js');
     const line = 'AKIA' + 'A'.repeat(16);
     const trimmed = line.trim();
-    // Call 5 times — all must match
     for (let i = 0; i < 5; i++) {
       const result = scanLineForSecrets(line, trimmed);
       expect(result.matched, `Call ${i + 1} should match`).toBe(true);
@@ -314,19 +310,66 @@ describe('expanded secret patterns', () => {
   });
 
   it('scanLineForSecrets handles hypothetical global regex safely', async () => {
-    // Directly test the defensive guard by temporarily testing with a global pattern
     const { scanLineForSecrets } = await import('../src/utils.js');
-    // The function should reset lastIndex before .test(), so even if we
-    // externally set lastIndex on one of the patterns, it still works
     const { KEY_PATTERNS } = await import('../src/constants.js');
     const awsPattern = KEY_PATTERNS.find(p => p.source.startsWith('AKIA'));
-    // Manually advance lastIndex (simulating what /g would do)
     awsPattern.lastIndex = 999;
     const line = 'AKIA' + 'A'.repeat(16);
     const result = scanLineForSecrets(line, line.trim());
     expect(result.matched).toBe(true);
-    // Clean up
     awsPattern.lastIndex = 0;
+  });
+
+  it('detects AWS temporary credentials (ASIA prefix)', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeAwsTempKey = 'ASIA' + 'A'.repeat(16);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeAwsTempKey }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects HashiCorp Vault token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeVaultToken = 'hvs.' + 'a'.repeat(24);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeVaultToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects JFrog Artifactory token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeJfrogToken = 'AKCp' + 'a'.repeat(10);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeJfrogToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Docker registry auth token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeDockerAuth = '"auth": "' + 'A'.repeat(30) + '"';
+    fs.writeFileSync(path.join(tmpDir, 'credentials.json'), fakeDockerAuth);
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('credentials.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
   });
 
   it('detects Vercel token', async () => {
