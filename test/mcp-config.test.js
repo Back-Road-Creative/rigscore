@@ -18,7 +18,7 @@ const defaultConfig = { paths: { mcpConfig: [] }, network: { safeHosts: ['127.0.
 describe('mcp-config check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('mcp-config');
-    expect(WEIGHTS[check.id]).toBe(18);
+    expect(WEIGHTS[check.id]).toBe(16);
   });
 
   it('PASS with clean stdio config', async () => {

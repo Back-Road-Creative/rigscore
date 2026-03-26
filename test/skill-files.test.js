@@ -18,7 +18,7 @@ const defaultConfig = { paths: { skillFiles: [] }, network: {} };
 describe('skill-files check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('skill-files');
-    expect(WEIGHTS[check.id]).toBe(12);
+    expect(WEIGHTS[check.id]).toBe(10);
   });
 
   it('CRITICAL when injection pattern found', async () => {

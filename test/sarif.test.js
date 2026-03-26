@@ -87,6 +87,14 @@ describe('SARIF output', () => {
     expect(sarif.runs[1].automationDetails.id).toBe('project-b');
   });
 
+  it('includes OWASP agentic tags in properties', () => {
+    const sarif = formatSarif(mockResult);
+    const result = sarif.runs[0].results[0]; // mcp-config warning
+    expect(result.properties).toBeDefined();
+    expect(result.properties.tags).toContain('owasp-agentic:ASI04');
+    expect(result.properties.tags).toContain('category:supply-chain');
+  });
+
   it('formatSarifMulti handles empty projects', () => {
     const sarif = formatSarifMulti([]);
     expect(sarif.runs).toHaveLength(1); // falls back to single empty run

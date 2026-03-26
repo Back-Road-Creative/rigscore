@@ -16,20 +16,37 @@ export const CATEGORY = {
 
 // Weights must sum to 100 — moat-heavy: AI-specific checks get ~63%
 export const WEIGHTS = {
-  'mcp-config': 18,
-  'coherence': 18,
-  'skill-files': 12,
-  'claude-md': 12,
-  'deep-secrets': 10,
-  'env-exposure': 10,
-  'docker-security': 8,
-  'git-hooks': 6,
-  'permissions-hygiene': 6,
+  'mcp-config': 16,
+  'coherence': 16,
+  'skill-files': 10,
+  'claude-md': 10,
+  'claude-settings': 8,
+  'deep-secrets': 8,
+  'env-exposure': 8,
+  'credential-storage': 6,
+  'docker-security': 6,
+  'unicode-steganography': 4,
+  'git-hooks': 4,
+  'permissions-hygiene': 4,
   'windows-security': 0,
   'network-exposure': 0,
-  'claude-settings': 0,
-  'credential-storage': 0,
-  'unicode-steganography': 0,
+};
+
+// OWASP Agentic Top 10 (2026) mapping for findings
+export const OWASP_AGENTIC_MAP = {
+  'mcp-config': 'ASI04',       // Agentic Supply Chain
+  'coherence': 'ASI01',        // Agent Goal Hijack
+  'skill-files': 'ASI01',      // Agent Goal Hijack
+  'claude-md': 'ASI01',        // Agent Goal Hijack
+  'claude-settings': 'ASI02',  // Tool Misuse & Exploitation
+  'deep-secrets': 'ASI03',     // Identity & Privilege Abuse
+  'env-exposure': 'ASI03',     // Identity & Privilege Abuse
+  'credential-storage': 'ASI03', // Identity & Privilege Abuse
+  'docker-security': 'ASI05',  // Unexpected Code Execution
+  'unicode-steganography': 'ASI01', // Agent Goal Hijack
+  'git-hooks': 'ASI02',        // Tool Misuse & Exploitation
+  'permissions-hygiene': 'ASI03', // Identity & Privilege Abuse
+  'network-exposure': 'ASI07', // Insecure Inter-Agent Communication
 };
 
 // Sentinel score for checks that find nothing to scan

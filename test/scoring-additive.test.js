@@ -95,8 +95,8 @@ describe('additive scoring model', () => {
     });
 
     it('penalty applies when applicable weight < 60', () => {
-      // Only claude-md (12) + env-exposure (10) = 22 applicable weight
-      // Internal = 100, penalty: 100 * 0.22 = 22
+      // Only claude-md (10) + env-exposure (8) = 18 applicable weight
+      // Internal = 100, penalty: 100 * 0.18 = 18
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -106,12 +106,12 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: NOT_APPLICABLE_SCORE },
       ];
-      expect(calculateOverallScore(results)).toBe(22);
+      expect(calculateOverallScore(results)).toBe(18);
     });
 
-    it('CLAUDE.md-only project scoring 100 internally gets penalized to 12', () => {
-      // Only claude-md (12) applicable = weight 12
-      // Internal = 100, penalty: 100 * 0.12 = 12
+    it('CLAUDE.md-only project scoring 100 internally gets penalized to 10', () => {
+      // Only claude-md (10) applicable = weight 10
+      // Internal = 100, penalty: 100 * 0.10 = 10
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -121,12 +121,12 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: NOT_APPLICABLE_SCORE },
       ];
-      expect(calculateOverallScore(results)).toBe(12);
+      expect(calculateOverallScore(results)).toBe(10);
     });
 
-    it('penalty applies at weight 32 (just below threshold)', () => {
-      // claude-md:12 + docker:8 + git-hooks:6 + permissions:6 = 32
-      // Internal = 100, penalty: 100 * 0.32 = 32
+    it('penalty applies at weight 24 (just below threshold)', () => {
+      // claude-md:10 + docker:6 + git-hooks:4 + permissions:4 = 24
+      // Internal = 100, penalty: 100 * 0.24 = 24
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -136,11 +136,11 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: 100 },
       ];
-      expect(calculateOverallScore(results)).toBe(32);
+      expect(calculateOverallScore(results)).toBe(24);
     });
 
-    it('no penalty at weight 62 (above threshold)', () => {
-      // claude-md:12 + mcp:18 + env:10 + deep-secrets:10 + skill-files:12 = 62
+    it('no penalty at weight 52 (above threshold)', () => {
+      // claude-md:10 + mcp:16 + env:8 + deep-secrets:8 + skill-files:10 = 52
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: 100 },
@@ -155,9 +155,9 @@ describe('additive scoring model', () => {
       expect(calculateOverallScore(results)).toBe(100);
     });
 
-    it('penalty applies at weight 36', () => {
-      // claude-md:12 + env:10 + docker:8 + permissions:6 = 36
-      // Internal = 100, penalty: 100 * 0.36 = 36
+    it('penalty applies at weight 28', () => {
+      // claude-md:10 + env:8 + docker:6 + permissions:4 = 28
+      // Internal = 100, penalty: 100 * 0.28 = 28
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -167,7 +167,7 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: 100 },
       ];
-      expect(calculateOverallScore(results)).toBe(36);
+      expect(calculateOverallScore(results)).toBe(28);
     });
   });
 
