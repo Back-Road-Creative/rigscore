@@ -138,4 +138,8 @@ export const KEY_PATTERNS = [
   /AGE-SECRET-KEY-1[A-Z0-9]{58}/,       // AGE encryption key
   /dd[a-z]*_[a-f0-9]{32,40}/i,          // Datadog API/app key
   /op:\/\/[^\s"']+/,                     // 1Password CLI reference
+  /ASIA[0-9A-Z]{16}/,                    // AWS temporary credentials (STS)
+  /hvs\.[a-zA-Z0-9_-]{24,}/,            // HashiCorp Vault token
+  /AKCp[a-zA-Z0-9]{10,}/,               // JFrog Artifactory token
+  /"auth"\s*:\s*"[A-Za-z0-9+/=]{20,}"/, // Docker registry auth token
 ];
