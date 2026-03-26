@@ -299,6 +299,58 @@ describe('expanded secret patterns', () => {
     }
   });
 
+  it('detects AWS temporary credentials (ASIA prefix)', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeAwsTempKey = 'ASIA' + 'A'.repeat(16);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeAwsTempKey }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects HashiCorp Vault token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeVaultToken = 'hvs.' + 'a'.repeat(24);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeVaultToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects JFrog Artifactory token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeJfrogToken = 'AKCp' + 'a'.repeat(10);
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ key: fakeJfrogToken }));
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('config.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('detects Docker registry auth token', async () => {
+    const tmpDir = makeTmpDir();
+    const fakeDockerAuth = '"auth": "' + 'A'.repeat(30) + '"';
+    fs.writeFileSync(path.join(tmpDir, 'credentials.json'), fakeDockerAuth);
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('credentials.json'));
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('detects Vercel token', async () => {
     const tmpDir = makeTmpDir();
     const fakeVercelToken = 'vercel_' + 'a'.repeat(24);
