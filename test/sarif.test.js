@@ -99,4 +99,85 @@ describe('SARIF output', () => {
     const sarif = formatSarifMulti([]);
     expect(sarif.runs).toHaveLength(1); // falls back to single empty run
   });
+
+  it('adds physicalLocation when finding title references a file via "in <file>"', () => {
+    const result = {
+      score: 50,
+      results: [{
+        id: 'claude-settings',
+        name: 'Claude settings',
+        category: 'governance',
+        weight: 8,
+        score: 0,
+        findings: [
+          { severity: 'critical', title: 'Dangerous hook command in .claude/settings.json' },
+        ],
+      }],
+    };
+    const sarif = formatSarif(result);
+    const sarifResult = sarif.runs[0].results[0];
+    expect(sarifResult.locations[0].physicalLocation).toBeDefined();
+    expect(sarifResult.locations[0].physicalLocation.artifactLocation.uri).toBe('.claude/settings.json');
+  });
+
+  it('adds physicalLocation from detail "Found in .mcp.json"', () => {
+    const result = {
+      score: 50,
+      results: [{
+        id: 'mcp-config',
+        name: 'MCP config',
+        category: 'supply-chain',
+        weight: 16,
+        score: 50,
+        findings: [
+          { severity: 'warning', title: 'Unpinned MCP version', detail: 'Server uses @latest. Found in .mcp.json.' },
+        ],
+      }],
+    };
+    const sarif = formatSarif(result);
+    const sarifResult = sarif.runs[0].results[0];
+    expect(sarifResult.locations[0].physicalLocation).toBeDefined();
+    expect(sarifResult.locations[0].physicalLocation.artifactLocation.uri).toBe('.mcp.json');
+  });
+
+  it('no physicalLocation when no file reference found', () => {
+    const result = {
+      score: 50,
+      results: [{
+        id: 'claude-md',
+        name: 'CLAUDE.md governance',
+        category: 'governance',
+        weight: 10,
+        score: 0,
+        findings: [
+          { severity: 'critical', title: 'No governance file found' },
+        ],
+      }],
+    };
+    const sarif = formatSarif(result);
+    const sarifResult = sarif.runs[0].results[0];
+    expect(sarifResult.locations[0].logicalLocations).toBeDefined();
+    expect(sarifResult.locations[0].physicalLocation).toBeUndefined();
+  });
+
+  it('preserves logicalLocations alongside physicalLocation', () => {
+    const result = {
+      score: 50,
+      results: [{
+        id: 'env-exposure',
+        name: 'Secret exposure',
+        category: 'secrets',
+        weight: 8,
+        score: 0,
+        findings: [
+          { severity: 'critical', title: 'Hardcoded API key found in config.json', detail: 'A secret was found.' },
+        ],
+      }],
+    };
+    const sarif = formatSarif(result);
+    const sarifResult = sarif.runs[0].results[0];
+    expect(sarifResult.locations[0].logicalLocations).toBeDefined();
+    expect(sarifResult.locations[0].physicalLocation).toBeDefined();
+    expect(sarifResult.locations[0].physicalLocation.artifactLocation.uri).toBe('config.json');
+  });
 });
