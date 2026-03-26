@@ -155,7 +155,7 @@ export async function run(args) {
 
     if (result.error) {
       process.stderr.write(`Error: ${result.error}\n`);
-      process.exit(1);
+      process.exit(2);
     }
 
     if (options.sarif) {
@@ -171,7 +171,13 @@ export async function run(args) {
     const allPassed = result.projects.every((p) => p.score >= options.failUnder);
     process.exit(allPassed ? 0 : 1);
   } else {
-    const result = await scan(scanOptions);
+    let result;
+    try {
+      result = await scan(scanOptions);
+    } catch (err) {
+      process.stderr.write(`Error: scan failed: ${err.message}\n`);
+      process.exit(2);
+    }
 
     // Apply suppress/ignore patterns
     const suppressPatterns = [...(result.config?.suppress || []), ...(options.ignore || [])];

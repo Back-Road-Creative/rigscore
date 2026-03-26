@@ -44,6 +44,32 @@ function deduplicateFindings(results) {
 }
 
 /**
+ * Slugify a finding title into a stable ID component.
+ * "env file found but NOT in .gitignore" → "env-file-found-but-not-in-gitignore"
+ */
+function slugify(title) {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+}
+
+/**
+ * Assign findingId to all findings that don't already have one.
+ * Convention: {checkId}/{slugified-title}
+ */
+export function assignFindingIds(results) {
+  for (const r of results) {
+    for (const f of r.findings) {
+      if (!f.findingId) {
+        f.findingId = `${r.id}/${slugify(f.title || 'unknown')}`;
+      }
+    }
+  }
+}
+
+/**
  * Suppress findings whose title matches any of the given patterns (case-insensitive).
  * Recalculates each affected check's score after removal.
  */
@@ -166,6 +192,9 @@ export async function scan(options = {}) {
 
   // Deduplicate findings across checks — keep finding from higher-weighted check
   deduplicateFindings(results);
+
+  // Assign stable finding IDs
+  assignFindingIds(results);
 
   // When filtering to specific checks, use average of their scores
   // instead of weighted system (which assumes all checks are present)

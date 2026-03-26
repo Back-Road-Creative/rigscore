@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runChecks, suppressFindings } from '../src/scanner.js';
+import { runChecks, suppressFindings, assignFindingIds } from '../src/scanner.js';
 import { loadChecks } from '../src/checks/index.js';
 import { WEIGHTS } from '../src/constants.js';
 import path from 'node:path';
@@ -199,6 +199,50 @@ describe('scan integration', () => {
     suppressFindings(results, ['Docker issue']);
     expect(results[0].findings).toHaveLength(1);
     expect(results[0].findings[0].severity).toBe('pass');
+  });
+
+  it('assignFindingIds generates IDs from checkId + slugified title', () => {
+    const results = [{
+      id: 'env-exposure',
+      score: 0,
+      findings: [
+        { severity: 'critical', title: '.env file found but NOT in .gitignore' },
+        { severity: 'warning', title: '.env.local is world-readable' },
+      ],
+    }];
+    assignFindingIds(results);
+    expect(results[0].findings[0].findingId).toBe('env-exposure/env-file-found-but-not-in-gitignore');
+    expect(results[0].findings[1].findingId).toBe('env-exposure/env-local-is-world-readable');
+  });
+
+  it('assignFindingIds preserves existing findingId', () => {
+    const results = [{
+      id: 'test',
+      score: 100,
+      findings: [
+        { severity: 'pass', title: 'All good', findingId: 'test/custom-id' },
+      ],
+    }];
+    assignFindingIds(results);
+    expect(results[0].findings[0].findingId).toBe('test/custom-id');
+  });
+
+  it('scan results have findingIds assigned', async () => {
+    const { scan } = await import('../src/scanner.js');
+    const os = await import('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-ids-'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nBe safe.\n');
+    try {
+      const result = await scan({ cwd: tmpDir });
+      for (const r of result.results) {
+        for (const f of r.findings) {
+          expect(f.findingId).toBeDefined();
+          expect(f.findingId).toMatch(/^[a-z-]+\/[a-z0-9-]+$/);
+        }
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
   });
 
   it('pass 2 checks receive cloned priorResults (mutations do not leak)', async () => {
