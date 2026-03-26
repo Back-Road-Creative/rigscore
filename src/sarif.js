@@ -13,6 +13,25 @@ const SEVERITY_MAP = {
 };
 
 /**
+ * Extract a file path from finding title or detail text.
+ * Matches patterns like "in path/file.ext", "Found in file.ext",
+ * "key found in config.json", or leading ".env.local is ...".
+ */
+function extractFilePath(text) {
+  if (!text) return null;
+
+  // "in <filepath>" or "Found in <filepath>" or "found in <filepath>"
+  const inMatch = text.match(/(?:\bin|Found in)\s+([.\w][\w./-]*\.\w+)/i);
+  if (inMatch) return inMatch[1];
+
+  // Leading file reference: ".env.local is" or "Dockerfile has"
+  const leadMatch = text.match(/^([.\w][\w./-]*\.\w+)\s+(?:is|has|file|not)/i);
+  if (leadMatch) return leadMatch[1];
+
+  return null;
+}
+
+/**
  * Convert rigscore scan results to SARIF v2.1.0 format.
  */
 export function formatSarif(result) {
@@ -39,6 +58,23 @@ export function formatSarif(result) {
       if (owasp) tags.push(`owasp-agentic:${owasp}`);
       tags.push(`category:${r.category}`);
 
+      const location = {
+        logicalLocations: [
+          {
+            name: r.category,
+            kind: 'module',
+          },
+        ],
+      };
+
+      // Extract physical file location from finding text
+      const filePath = extractFilePath(finding.title) || extractFilePath(finding.detail);
+      if (filePath) {
+        location.physicalLocation = {
+          artifactLocation: { uri: filePath },
+        };
+      }
+
       sarifResults.push({
         ruleId: r.id,
         level,
@@ -46,16 +82,7 @@ export function formatSarif(result) {
           text: finding.detail ? `${finding.title}: ${finding.detail}` : finding.title,
         },
         properties: { tags },
-        locations: [
-          {
-            logicalLocations: [
-              {
-                name: r.category,
-                kind: 'module',
-              },
-            ],
-          },
-        ],
+        locations: [location],
       });
     }
   }
