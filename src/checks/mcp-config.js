@@ -540,10 +540,20 @@ export default {
       });
     }
 
+    // Collect all discovered server names across all clients
+    const serverNames = [];
+    for (const servers of clientServers.values()) {
+      for (const name of Object.keys(servers)) {
+        if (!serverNames.includes(name)) {
+          serverNames.push(name);
+        }
+      }
+    }
+
     return {
       score: calculateCheckScore(findings),
       findings,
-      data: { hasNetworkTransport, hasBroadFilesystemAccess, serverCount, clientCount, driftDetected },
+      data: { hasNetworkTransport, hasBroadFilesystemAccess, serverCount, clientCount, driftDetected, serverNames },
     };
   },
 };

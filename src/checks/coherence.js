@@ -1,6 +1,49 @@
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 
+const BROAD_CAPABILITY_NAMES = ['filesystem', 'browser', 'database', 'shell', 'terminal', 'code', 'exec'];
+
+/**
+ * Reverse coherence: for each MCP server in config, verify governance declares it.
+ * Forward coherence checks governance→config; this checks config→governance.
+ *
+ * @param {string} governanceContent - concatenated text from CLAUDE.md + _governance/*.md
+ * @param {string[]} serverNames - discovered MCP server names (from mcp-config data)
+ * @returns {Array<{severity: string, title: string, detail: string, remediation: string}>}
+ */
+function checkReverseCoherence(governanceContent, serverNames) {
+  const findings = [];
+
+  for (const serverName of serverNames) {
+    const mentioned = governanceContent.toLowerCase().includes(serverName.toLowerCase());
+    if (!mentioned) {
+      findings.push({
+        severity: 'warning',
+        title: `Undeclared MCP server: ${serverName}`,
+        detail: `Server '${serverName}' is configured but not mentioned in any governance document. Undeclared capabilities create hidden exposure that static reviews miss.`,
+        remediation: `Add a section to CLAUDE.md or _governance/ declaring '${serverName}' purpose, approved use cases, and scope restrictions.`,
+      });
+    }
+  }
+
+  const hasBroadCapability = serverNames.some(name =>
+    BROAD_CAPABILITY_NAMES.some(cap => name.toLowerCase().includes(cap))
+  );
+  if (hasBroadCapability) {
+    const hasApprovedToolsSection = /approved\s+tools|allowed\s+tools|permitted\s+tools/i.test(governanceContent);
+    if (!hasApprovedToolsSection) {
+      findings.push({
+        severity: 'info',
+        title: 'No approved-tools declaration for broad-capability MCP server',
+        detail: 'One or more MCP servers with filesystem, browser, shell, or code-execution capabilities are configured without an approved-tools governance declaration.',
+        remediation: 'Add an "Approved Tools" section to CLAUDE.md listing permitted MCP capabilities and their scope restrictions.',
+      });
+    }
+  }
+
+  return findings;
+}
+
 /**
  * Cross-config coherence check.
  * Examines prior check results for contradictions between governance claims
@@ -28,6 +71,7 @@ export default {
     const envResult = priorResults.find(r => r.id === 'env-exposure');
 
     const matchedPatterns = claudeMdResult?.data?.matchedPatterns || [];
+    const governanceText = claudeMdResult?.data?.governanceText || '';
     const hasNetworkTransport = mcpResult?.data?.hasNetworkTransport || false;
     const hasBroadFilesystemAccess = mcpResult?.data?.hasBroadFilesystemAccess || false;
     const hasPrivilegedContainer = dockerResult?.data?.hasPrivilegedContainer || false;
@@ -36,6 +80,7 @@ export default {
     const skillInjectionFindings = skillResult?.data?.injectionFindings || 0;
     const skillExfiltrationFindings = skillResult?.data?.exfiltrationFindings || 0;
     const skillShellFindings = skillResult?.data?.shellFindings || 0;
+    const mcpServerNames = mcpResult?.data?.serverNames || [];
 
     // Check: governance claims "no external network" but MCP uses network transport
     if (matchedPatterns.includes('network restrictions') && hasNetworkTransport) {
@@ -136,6 +181,13 @@ export default {
           remediation: 'Track governance files in git for change history.',
         });
       }
+    }
+
+    // Reverse coherence: check config→governance direction.
+    // Only run when both governance text and server names are available.
+    if (governanceText && mcpServerNames.length > 0) {
+      const reverseFindings = checkReverseCoherence(governanceText, mcpServerNames);
+      findings.push(...reverseFindings);
     }
 
     if (findings.length === 0) {

@@ -209,7 +209,7 @@ export default {
     return {
       score: calculateCheckScore(findings),
       findings,
-      data: { matchedPatterns },
+      data: { matchedPatterns, governanceText: combined },
     };
   },
 };
