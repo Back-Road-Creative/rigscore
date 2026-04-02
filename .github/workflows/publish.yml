@@ -64,20 +64,23 @@ jobs:
           git clone "https://x-access-token:${GH_TOKEN}@github.com/Back-Road-Creative/headlessmode.git" /tmp/headlessmode
           cd /tmp/headlessmode
 
-          # Generate the post
+          # Generate the journal post
           node scripts/generate-rigscore-post.js \
             --version "${VERSION}" \
             --prev-version "${PREV_VERSION}" \
             --release-body "${BODY}" \
             --git-log "${GIT_LOG}"
 
+          # Patch the tool page version string and date
+          node scripts/patch-rigscore-toolpage.js --version "${VERSION}"
+
           # Create branch and PR
           BRANCH="rigscore-release/v${VERSION}"
           git config user.name "rigscore-bot"
           git config user.email "rigscore-bot@headlessmode.com"
           git checkout -b "${BRANCH}"
-          git add content/journal/
-          git commit -m "journal: rigscore v${VERSION} release post"
+          git add content/journal/ content/tools/rigscore.md
+          git commit -m "release: rigscore v${VERSION} — journal post + tool page sync"
           git push origin "${BRANCH}"
 
           gh pr create \
