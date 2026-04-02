@@ -1,0 +1,132 @@
+name: Release
+
+# Triggered by a package.json version bump on main.
+# Single workflow — no cross-workflow event chain, no GITHUB_TOKEN trigger gap.
+#
+# Steps: test → npm publish → GitHub release → headlessmode post PR
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['package.json']
+
+jobs:
+  release:
+    name: Test, publish, and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write   # required for npm provenance
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Read version from package.json
+        id: pkg
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check if already released (idempotent)
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.pkg.outputs.version }}" \
+               --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${{ steps.pkg.outputs.version }} already released — skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'false'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.check.outputs.exists == 'false'
+        run: npm test
+
+      - name: Publish to npm
+        if: steps.check.outputs.exists == 'false'
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build changelog
+        if: steps.check.outputs.exists == 'false'
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            LOG=$(git log --oneline "${PREV_TAG}..HEAD" --no-merges)
+          else
+            LOG=$(git log --oneline --no-merges | head -20)
+          fi
+          {
+            echo "log<<EOF"
+            echo "$LOG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.pkg.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --title "rigscore v${{ steps.pkg.outputs.version }}" \
+            --notes "${{ steps.changelog.outputs.log }}"
+          echo "Created release v${{ steps.pkg.outputs.version }}"
+
+      - name: Generate headlessmode release post + tool page sync
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.pkg.outputs.version }}"
+          BODY=$(printf '%s' "${{ steps.changelog.outputs.log }}" | head -c 500)
+
+          PREV_TAG=$(git describe --tags --abbrev=0 "v${VERSION}^" 2>/dev/null || echo "v0.0.0")
+          PREV_VERSION="${PREV_TAG#v}"
+          GIT_LOG=$(git log --oneline "${PREV_TAG}..v${VERSION}" --no-merges 2>/dev/null || echo "")
+
+          echo "Version: ${VERSION}"
+          echo "Previous: ${PREV_VERSION}"
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/Back-Road-Creative/headlessmode.git" /tmp/headlessmode
+          cd /tmp/headlessmode
+
+          # Generate journal post
+          node scripts/generate-rigscore-post.js \
+            --version "${VERSION}" \
+            --prev-version "${PREV_VERSION}" \
+            --release-body "${BODY}" \
+            --git-log "${GIT_LOG}"
+
+          # Patch tool page version string and date
+          node scripts/patch-rigscore-toolpage.js --version "${VERSION}"
+
+          BRANCH="rigscore-release/v${VERSION}"
+          git config user.name "rigscore-bot"
+          git config user.email "rigscore-bot@headlessmode.com"
+          git checkout -b "${BRANCH}"
+          git add content/journal/ content/tools/rigscore.md
+          git commit -m "release: rigscore v${VERSION} — journal post + tool page sync"
+          git push origin "${BRANCH}"
+
+          gh pr create \
+            --repo Back-Road-Creative/headlessmode \
+            --title "release: rigscore v${VERSION}" \
+            --body "Auto-generated release post for rigscore v${VERSION}. Includes journal post and tool page version bump. Created by rigscore release workflow." \
+            --head "${BRANCH}" \
+            --base master
