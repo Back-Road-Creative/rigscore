@@ -34,7 +34,46 @@ const QUALITY_CHECKS = [
     pattern: /\b(no.?shell|no.?bash|shell.?restrict|forbid.?shell|forbid.?bash.?command|disable.?shell|reserve.?bash|bash.?restrict)/i,
     points: 2,
   },
+  {
+    name: 'test-driven development',
+    pattern: /\b(tdd|test.before|test.first|failing test|red.green|test.driven|write.*test.*before|pipeline.*lock|write.*fail.*test)\b/i,
+    points: 3,
+  },
+  {
+    name: 'definition of done',
+    pattern: /\b(definition of done|dod|task is not (done|complete)|not complete until|complete when|done when|must.*pass.*before.*done)\b/i,
+    points: 3,
+  },
+  {
+    name: 'git workflow rules',
+    pattern: /\b(feature branch|feat\/|branch.*only|never push.*main|never.*push.*master|pr create|gh pr create|push.*origin.*feat)\b/i,
+    points: 2,
+  },
 ];
+
+// Injection patterns meaningful in a governance file context.
+// Defined locally — do not import from skill-files.js to avoid cross-module coupling.
+const CLAUDE_INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?previous\s+instructions/i,
+  /ignore\s+(all\s+)?prior\s+instructions/i,
+  /disregard\s+(all\s+)?previous/i,
+  /override\s+(all\s+)?instructions/i,
+  /forget\s+(all\s+)?(previous|prior)/i,
+  /you\s+are\s+now/i,
+  /your\s+new\s+system\s+prompt/i,
+  /from\s+now\s+on\s+you/i,
+];
+
+// Strong defensive phrases that indicate the injection reference is about prevention
+const INJECTION_DEFENSIVE_RE = /\b(defend against|prevent .{0,30}(attack|injection)|guard against|block .{0,20}injection|reject .{0,20}instruction|refuse .{0,20}(injection|attempts?)|protect against|disallow .{0,20}injection|must be (blocked|rejected|refused|prevented)|overrides? must be|should not be followed)\b/i;
+
+function normalizeForInjection(text) {
+  return text
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u2060]/g, '')
+    .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
+    .replace(/[*_`~]/g, '');
+}
 
 const LENGTH_THRESHOLD = 50;
 
@@ -144,13 +183,78 @@ export default {
       if (hasGenuineMatch) {
         matchedPatterns.push(check.name);
       } else {
-        findings.push({
-          severity: 'warning',
-          title: `Governance file missing: ${check.name}`,
-          detail: `No ${check.name} rules detected in your governance file(s).`,
-          remediation: `Add ${check.name} instructions to your governance file.`,
-          learnMore: 'https://headlessmode.com/tools/rigscore/#claude-md-hardening',
-        });
+        // Distinguish: keyword present-but-negated (adversarial) vs. simply absent (incomplete)
+        const globalPattern2 = new RegExp(check.pattern.source, check.pattern.flags.replace('g', '') + 'g');
+        let hasNegatedMatch = false;
+        let match2;
+        while ((match2 = globalPattern2.exec(combined)) !== null) {
+          if (isNegatedMatch(combined, match2.index)) {
+            hasNegatedMatch = true;
+            break;
+          }
+        }
+
+        if (hasNegatedMatch) {
+          findings.push({
+            severity: 'critical',
+            title: `Governance file actively negates: ${check.name}`,
+            detail: `Governance contains ${check.name} keywords in a negated context — actively contradicts best practices.`,
+            remediation: `Remove negated ${check.name} statements and replace with genuine enforcement rules.`,
+            learnMore: 'https://headlessmode.com/tools/rigscore/#claude-md-hardening',
+          });
+        } else {
+          findings.push({
+            severity: 'warning',
+            title: `Governance file missing: ${check.name}`,
+            detail: `No ${check.name} rules detected in your governance file(s).`,
+            remediation: `Add ${check.name} instructions to your governance file.`,
+            learnMore: 'https://headlessmode.com/tools/rigscore/#claude-md-hardening',
+          });
+        }
+      }
+    }
+
+    // Scan governance file contents for injection patterns (single-line + 2-line sliding window)
+    for (const content of contents) {
+      const contentLines = content.split('\n');
+      let injectionFound = false;
+
+      // Single-line scan
+      for (const line of contentLines) {
+        const normalized = normalizeForInjection(line);
+        for (const pattern of CLAUDE_INJECTION_PATTERNS) {
+          if (pattern.test(normalized) && !INJECTION_DEFENSIVE_RE.test(normalized)) {
+            findings.push({
+              severity: 'critical',
+              title: 'Injection pattern found in governance file',
+              detail: 'Governance file contains instruction-override patterns that could hijack AI agent behavior.',
+              remediation: 'Remove instruction override patterns from the governance file. If this is a defensive rule, rephrase it to reference injection defense explicitly.',
+            });
+            injectionFound = true;
+            break;
+          }
+        }
+        if (injectionFound) break;
+      }
+
+      // 2-line sliding window (catches split patterns)
+      if (!injectionFound) {
+        for (let i = 0; i < contentLines.length - 1; i++) {
+          const twoLines = normalizeForInjection(contentLines[i] + ' ' + contentLines[i + 1]);
+          for (const pattern of CLAUDE_INJECTION_PATTERNS) {
+            if (pattern.test(twoLines) && !INJECTION_DEFENSIVE_RE.test(twoLines)) {
+              findings.push({
+                severity: 'critical',
+                title: 'Injection pattern found in governance file',
+                detail: 'Governance file contains instruction-override patterns split across lines that could hijack AI agent behavior.',
+                remediation: 'Remove instruction override patterns from the governance file.',
+              });
+              injectionFound = true;
+              break;
+            }
+          }
+          if (injectionFound) break;
+        }
       }
     }
 
