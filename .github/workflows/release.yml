@@ -9,6 +9,7 @@ on:
   push:
     branches: [main, master]
     paths: ['package.json']
+  workflow_dispatch:   # allows manual re-trigger after tag/release cleanup
 
 jobs:
   release:
