@@ -16,7 +16,7 @@ function padContent(content) {
 }
 
 describe('keyword gaming / negation detection', () => {
-  it('WARNING when governance says "we do not restrict paths"', async () => {
+  it('CRITICAL when governance says "we do not restrict paths"', async () => {
     const tmpDir = makeTmpDir();
     const content = padContent([
       '# Governance',
@@ -29,10 +29,10 @@ describe('keyword gaming / negation detection', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      const pathWarning = result.findings.find(
-        (f) => f.severity === 'warning' && f.title.includes('path restrictions'),
+      const pathCritical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('path restrictions'),
       );
-      expect(pathWarning).toBeDefined();
+      expect(pathCritical).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
@@ -60,7 +60,7 @@ describe('keyword gaming / negation detection', () => {
     }
   });
 
-  it('WARNING when governance says "don\'t need approval"', async () => {
+  it('CRITICAL when governance says "don\'t need approval"', async () => {
     const tmpDir = makeTmpDir();
     const content = padContent([
       '# Governance',
@@ -73,16 +73,16 @@ describe('keyword gaming / negation detection', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      const approvalWarning = result.findings.find(
-        (f) => f.severity === 'warning' && f.title.includes('approval gates'),
+      const approvalCritical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('approval gates'),
       );
-      expect(approvalWarning).toBeDefined();
+      expect(approvalCritical).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
 
-  it('WARNING when governance says "nothing is forbidden"', async () => {
+  it('CRITICAL when governance says "nothing is forbidden"', async () => {
     const tmpDir = makeTmpDir();
     const content = padContent([
       '# Governance',
@@ -95,10 +95,10 @@ describe('keyword gaming / negation detection', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      const warning = result.findings.find(
-        (f) => f.severity === 'warning' && f.title.includes('forbidden actions'),
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('forbidden actions'),
       );
-      expect(warning).toBeDefined();
+      expect(critical).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
@@ -127,6 +127,15 @@ describe('semantic reversal (known limitation)', () => {
       '',
       '# Shell Restrictions',
       'No shell commands are restricted here.',
+      '',
+      '# TDD and Test-Driven Development',
+      'Testing is optional — ship fast and iterate.',
+      '',
+      '# Definition of Done',
+      'Done when it feels right — task is complete when you decide.',
+      '',
+      '# Git Workflow Rules',
+      'Feature branch or main — push to whatever feels right.',
     ].join('\n'));
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {

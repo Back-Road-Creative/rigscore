@@ -66,9 +66,9 @@ export default {
     const claudeMdResult = priorResults.find(r => r.id === 'claude-md');
     const mcpResult = priorResults.find(r => r.id === 'mcp-config');
     const dockerResult = priorResults.find(r => r.id === 'docker-security');
-
     const skillResult = priorResults.find(r => r.id === 'skill-files');
     const envResult = priorResults.find(r => r.id === 'env-exposure');
+    const settingsCheckResult = priorResults.find(r => r.id === 'claude-settings');
 
     const matchedPatterns = claudeMdResult?.data?.matchedPatterns || [];
     const governanceText = claudeMdResult?.data?.governanceText || '';
@@ -81,6 +81,9 @@ export default {
     const skillExfiltrationFindings = skillResult?.data?.exfiltrationFindings || 0;
     const skillShellFindings = skillResult?.data?.shellFindings || 0;
     const mcpServerNames = mcpResult?.data?.serverNames || [];
+    const hasBypassPermissions = settingsCheckResult?.data?.hasBypassPermissions || false;
+    const missingLifecycleHooks = settingsCheckResult?.data?.missingLifecycleHooks || [];
+    const allowListEntries = settingsCheckResult?.data?.allowListEntries || [];
 
     // Check: governance claims "no external network" but MCP uses network transport
     if (matchedPatterns.includes('network restrictions') && hasNetworkTransport) {
@@ -188,6 +191,48 @@ export default {
     if (governanceText && mcpServerNames.length > 0) {
       const reverseFindings = checkReverseCoherence(governanceText, mcpServerNames);
       findings.push(...reverseFindings);
+    }
+
+    // Settings vs. governance coherence checks
+    // Only run when settings data is available
+    if (settingsCheckResult) {
+      // Check: bypassPermissions + approval-gates claim + no PreToolUse hook
+      // Governance says "require approval" but settings skip all confirmation without a PreToolUse hook
+      if (hasBypassPermissions && matchedPatterns.includes('approval gates') && missingLifecycleHooks.includes('PreToolUse')) {
+        findings.push({
+          severity: 'warning',
+          title: 'Governance claims approval gates but bypassPermissions has no PreToolUse hook',
+          detail: 'bypassPermissions mode with no PreToolUse hook means all tool calls execute automatically — governance approval-gate rules have no enforcement mechanism.',
+          remediation: 'Add a PreToolUse hook to .claude/settings.json to enforce approval gates, or change defaultMode to "acceptEdits".',
+        });
+      }
+
+      // Check: allow list contains entries that governance explicitly forbids
+      // Two specific known-contradiction patterns
+      const ALLOW_GOVERNANCE_CONTRADICTIONS = [
+        {
+          allowRe: /sudo\s+-u\s+dev\s+git/i,
+          govRe: /\b(never|must not|do not)\b.{0,30}sudo.{0,20}-u.{0,20}dev/i,
+          title: 'Allow list permits sudo-u-dev-git which governance forbids',
+          detail: 'settings.json allow list contains a sudo -u dev git entry, but governance explicitly forbids this operation.',
+          remediation: 'Remove the sudo -u dev git allow-list entry. Joe owns source code — use git as joe directly.',
+        },
+        {
+          allowRe: /pip[23]?\s+install/i,
+          govRe: /\b(dev-pip|pip.*wrapper|use.*wrapper.*pip|no pip install|must not.*pip)\b/i,
+          title: 'Allow list permits pip install which governance restricts to a wrapper',
+          detail: 'settings.json allow list contains pip install, but governance restricts installs to a project-specific wrapper.',
+          remediation: 'Remove the pip install allow-list entry and use the configured wrapper instead.',
+        },
+      ];
+
+      for (const { allowRe, govRe, title, detail, remediation } of ALLOW_GOVERNANCE_CONTRADICTIONS) {
+        const inAllowList = allowListEntries.some(e => allowRe.test(e));
+        const forbiddenInGovernance = governanceText && govRe.test(governanceText);
+        if (inAllowList && forbiddenInGovernance) {
+          findings.push({ severity: 'warning', title, detail, remediation });
+        }
+      }
     }
 
     if (findings.length === 0) {
