@@ -67,6 +67,7 @@ jobs:
             echo "log<<EOF"
             echo "$LOG"
             echo "EOF"
+            echo "prev_tag=${PREV_TAG}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
@@ -84,28 +85,28 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
+          RIGSCORE_CHANGELOG: ${{ steps.changelog.outputs.log }}
+          RIGSCORE_PREV_TAG: ${{ steps.changelog.outputs.prev_tag }}
         run: |
           set -euo pipefail
 
           VERSION="${{ steps.pkg.outputs.version }}"
-          BODY=$(printf '%s' "${{ steps.changelog.outputs.log }}" | head -c 500)
-
-          PREV_TAG=$(git describe --tags --abbrev=0 "v${VERSION}^" 2>/dev/null || echo "v0.0.0")
-          PREV_VERSION="${PREV_TAG#v}"
-          GIT_LOG=$(git log --oneline "${PREV_TAG}..v${VERSION}" --no-merges 2>/dev/null || echo "")
+          PREV_VERSION="${RIGSCORE_PREV_TAG#v}"
 
           echo "Version: ${VERSION}"
-          echo "Previous: ${PREV_VERSION}"
+          echo "Previous: ${PREV_VERSION:-none}"
 
           git clone "https://x-access-token:${GH_TOKEN}@github.com/Back-Road-Creative/headlessmode.git" /tmp/headlessmode
           cd /tmp/headlessmode
 
-          # Generate journal post
+          # Write git log to temp file — avoids multiline shell argument issues
+          printf '%s\n' "${RIGSCORE_CHANGELOG}" > /tmp/rigscore-git-log.txt
+
+          # Generate journal post — exits non-zero if no conventional commits found
           node scripts/generate-rigscore-post.js \
             --version "${VERSION}" \
             --prev-version "${PREV_VERSION}" \
-            --release-body "${BODY}" \
-            --git-log "${GIT_LOG}"
+            --git-log-file "/tmp/rigscore-git-log.txt"
 
           # Patch tool page version string and date
           node scripts/patch-rigscore-toolpage.js --version "${VERSION}"
