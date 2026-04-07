@@ -74,11 +74,13 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGELOG: ${{ steps.changelog.outputs.log }}
         run: |
+          printf '%s\n' "$CHANGELOG" > /tmp/release-notes.txt
           gh release create "v${{ steps.pkg.outputs.version }}" \
             --repo "${{ github.repository }}" \
             --title "rigscore v${{ steps.pkg.outputs.version }}" \
-            --notes "${{ steps.changelog.outputs.log }}"
+            --notes-file /tmp/release-notes.txt
           echo "Created release v${{ steps.pkg.outputs.version }}"
 
       - name: Generate headlessmode release post + tool page sync
