@@ -86,9 +86,9 @@ describe('calculateOverallScore', () => {
       { id: 'skill-files', score: 60 },             // 60 * 12/72
       { id: 'permissions-hygiene', score: 100 },    // 100 * 6/72
     ];
-    // totalApplicableWeight = 12+18+10+8+6+12+6 = 72 >= 60, no penalty
-    // (50*12+80*18+100*10+0*8+100*6+60*12+100*6)/72 = (600+1440+1000+0+600+720+600)/72 = 4960/72 = 68.89 → 69
-    expect(calculateOverallScore(results)).toBe(69);
+    // totalApplicableWeight = 10+14+8+6+2+10+4 = 54 >= 50, no penalty
+    // (50*10+80*14+100*8+0*6+100*2+60*10+100*4)/54 = (500+1120+800+0+200+600+400)/54 = 3620/54 = 67.04 → 67
+    expect(calculateOverallScore(results)).toBe(67);
   });
 
   it('rounds to integer', () => {

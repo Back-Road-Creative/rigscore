@@ -40,15 +40,20 @@ Options:
   --help, -h         Show this help
 
 Checks (moat-heavy weighting):
-  mcp-config          MCP server configuration (18 pts)
-  coherence           Cross-config coherence (18 pts)
-  skill-files         Skill file safety (12 pts)
-  claude-md           CLAUDE.md governance (12 pts)
-  deep-secrets        Deep source secret scanning (--deep, 10 pts)
-  env-exposure        Secret exposure (10 pts)
-  docker-security     Docker/K8s/Podman security (8 pts)
-  git-hooks           Git hooks (6 pts)
-  permissions-hygiene File permissions hygiene (6 pts)
+  mcp-config              MCP server configuration (14 pts)
+  coherence               Cross-config coherence (14 pts)
+  skill-files             Skill file safety (10 pts)
+  claude-md               CLAUDE.md governance (10 pts)
+  deep-secrets            Deep source secret scanning (--deep, 8 pts)
+  env-exposure            Secret exposure (8 pts)
+  claude-settings         Claude settings safety (8 pts)
+  credential-storage      Credential storage hygiene (6 pts)
+  docker-security         Docker/K8s/Podman security (6 pts)
+  infrastructure-security Infrastructure safety (6 pts)
+  unicode-steganography   Unicode steganography (4 pts)
+  permissions-hygiene     File permissions hygiene (4 pts)
+  git-hooks               Git hooks (2 pts)
+  site-security           Deployed site security (--online, advisory)
 
 Examples:
   rigscore                          Scan current directory

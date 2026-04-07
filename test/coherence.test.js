@@ -5,7 +5,7 @@ import { NOT_APPLICABLE_SCORE, WEIGHTS } from '../src/constants.js';
 describe('coherence check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('coherence');
-    expect(WEIGHTS[check.id]).toBe(16);
+    expect(WEIGHTS[check.id]).toBe(14);
   });
 
   it('returns N/A when no prior results', async () => {
