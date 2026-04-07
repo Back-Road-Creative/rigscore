@@ -99,6 +99,10 @@ function checkNpmRegistry(packageName) {
             return;
           }
           const pkg = JSON.parse(data);
+          if (!pkg.time?.created) {
+            resolve(null);
+            return;
+          }
           const created = new Date(pkg.time?.created);
           const now = new Date();
           const daysSinceCreated = (now - created) / (1000 * 60 * 60 * 24);
