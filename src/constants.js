@@ -33,6 +33,7 @@ export const WEIGHTS = {
   'network-exposure': 0,
   'site-security': 0,
   'instruction-effectiveness': 0,
+  'skill-coherence': 0,
 };
 
 // OWASP Agentic Top 10 (2026) mapping for findings
@@ -52,6 +53,7 @@ export const OWASP_AGENTIC_MAP = {
   'network-exposure': 'ASI07', // Insecure Inter-Agent Communication
   'infrastructure-security': 'ASI02', // Tool Misuse & Exploitation
   'instruction-effectiveness': 'ASI01', // Agent Goal Hijack
+  'skill-coherence': 'ASI01',          // Agent Goal Hijack
 };
 
 // Sentinel score for checks that find nothing to scan
