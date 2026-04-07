@@ -35,6 +35,8 @@ Options:
   --fix              Show auto-fixable issues (dry run)
   --fix --yes        Apply safe auto-remediations
   --watch            Watch for changes and re-run automatically
+  --verbose, -v      Show passing checks and info-level findings
+  --ignore <list>    Suppress findings matching patterns (comma-separated)
   --init-hook        Install a pre-commit hook that runs rigscore
   --version          Show version
   --help, -h         Show this help

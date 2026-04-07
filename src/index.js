@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import { scan, scanRecursive, suppressFindings } from './scanner.js';
+import { calculateOverallScore } from './scoring.js';
+import { resolveWeights } from './config.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
@@ -151,7 +153,7 @@ export async function run(args) {
   };
 
   if (options.recursive) {
-    const result = await scanRecursive({ ...scanOptions, depth: options.depth });
+    const result = await scanRecursive({ ...scanOptions, depth: options.depth, failUnder: options.failUnder });
 
     if (result.error) {
       process.stderr.write(`Error: ${result.error}\n`);
@@ -183,6 +185,7 @@ export async function run(args) {
     const suppressPatterns = [...(result.config?.suppress || []), ...(options.ignore || [])];
     if (suppressPatterns.length > 0) {
       suppressFindings(result.results, suppressPatterns);
+      result.score = calculateOverallScore(result.results, resolveWeights(result.config));
     }
 
     if (options.sarif) {

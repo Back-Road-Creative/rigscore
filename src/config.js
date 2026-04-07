@@ -53,16 +53,16 @@ export function resolveWeights(config) {
   if (config?.weights) {
     for (const [key, value] of Object.entries(config.weights)) {
       if (typeof value !== 'number' || Number.isNaN(value)) {
-        console.warn(`rigscore: ignoring non-numeric weight for "${key}": ${value}`);
+        process.stderr.write(`rigscore: ignoring non-numeric weight for "${key}": ${value}\n`);
         continue;
       }
       if (value < 0) {
-        console.warn(`rigscore: clamping negative weight for "${key}" to 0`);
+        process.stderr.write(`rigscore: clamping negative weight for "${key}" to 0\n`);
         resolved[key] = 0;
         continue;
       }
       if (value > 100) {
-        console.warn(`rigscore: clamping weight for "${key}" from ${value} to 100`);
+        process.stderr.write(`rigscore: clamping weight for "${key}" from ${value} to 100\n`);
         resolved[key] = 100;
         continue;
       }
