@@ -4,12 +4,13 @@ import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 
 describe('N/A score weight redistribution', () => {
   it('redistributes weight when some checks are N/A (above threshold)', () => {
-    // claude-md(12) + mcp(18) + env(10) + git-hooks(6) + skill(12) + perms(6) = 64
-    // Total applicable weight = 64 >= 60 — no penalty
+    // claude-md(10) + mcp(14) + env(8) + git-hooks(2) + skill(10) + perms(4) + coherence(14) = 62
+    // Total applicable weight = 62 >= 50 — no penalty
     const results = [
       { id: 'claude-md', score: 100 },
       { id: 'mcp-config', score: 100 },
       { id: 'env-exposure', score: 100 },
+      { id: 'coherence', score: 100 },
       { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
       { id: 'git-hooks', score: 100 },
       { id: 'skill-files', score: 100 },
@@ -74,8 +75,8 @@ describe('N/A score weight redistribution', () => {
       { id: 'skill-files', score: 60 },
       { id: 'permissions-hygiene', score: 100 },
     ];
-    // totalApplicableWeight = 12+18+10+8+6+12+6 = 72 >= 60, no penalty
-    // (50*12+80*18+100*10+0*8+100*6+60*12+100*6)/72 = (600+1440+1000+0+600+720+600)/72 = 4960/72 = 68.89 → 69
-    expect(calculateOverallScore(results)).toBe(69);
+    // totalApplicableWeight = 10+14+8+6+2+10+4 = 54 >= 50, no penalty
+    // (50*10+80*14+100*8+0*6+100*2+60*10+100*4)/54 = (500+1120+800+0+200+600+400)/54 = 3620/54 = 67.04 → 67
+    expect(calculateOverallScore(results)).toBe(67);
   });
 });

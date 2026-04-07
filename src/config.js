@@ -9,10 +9,12 @@ const DEFAULTS = {
     mcpConfig: [],
     hookDirs: [],
     skillFiles: [],
+    immutableDirs: [],
   },
   network: {
     safeHosts: ['127.0.0.1', 'localhost', '::1'],
   },
+  sites: [],
   profile: null,
   weights: {},
   checks: { disabled: [] },
@@ -125,6 +127,10 @@ function mergeConfig(userConfig) {
 
   if (Array.isArray(userConfig.suppress)) {
     result.suppress = userConfig.suppress;
+  }
+
+  if (Array.isArray(userConfig.sites)) {
+    result.sites = [...new Set([...result.sites, ...userConfig.sites])];
   }
 
   return result;

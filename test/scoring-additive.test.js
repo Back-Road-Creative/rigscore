@@ -124,9 +124,9 @@ describe('additive scoring model', () => {
       expect(calculateOverallScore(results)).toBe(10);
     });
 
-    it('penalty applies at weight 24 (just below threshold)', () => {
-      // claude-md:10 + docker:6 + git-hooks:4 + permissions:4 = 24
-      // Internal = 100, penalty: 100 * 0.24 = 24
+    it('penalty applies at weight 22 (just below threshold)', () => {
+      // claude-md:10 + docker:6 + git-hooks:2 + permissions:4 = 22
+      // Internal = 100, penalty: 100 * 0.22 = 22
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
@@ -136,7 +136,7 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: NOT_APPLICABLE_SCORE },
         { id: 'permissions-hygiene', score: 100 },
       ];
-      expect(calculateOverallScore(results)).toBe(24);
+      expect(calculateOverallScore(results)).toBe(22);
     });
 
     it('no penalty at weight 52 (above threshold)', () => {
