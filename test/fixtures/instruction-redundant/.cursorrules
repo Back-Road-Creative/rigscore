@@ -1,0 +1,5 @@
+# Cursor Rules
+
+Always run tests before committing code changes to the repository.
+Never push directly to the main branch without a pull request.
+Use TypeScript for all new files.
