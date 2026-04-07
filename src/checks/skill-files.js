@@ -173,7 +173,7 @@ export default {
   category: 'supply-chain',
 
   async run(context) {
-    const { cwd, config } = context;
+    const { cwd, homedir, config } = context;
     const findings = [];
     const filesToScan = [];
 
@@ -196,21 +196,29 @@ export default {
       }
     }
 
-    // Collect files from skill directories
-    for (const dir of SKILL_DIRS) {
-      const dirPath = path.join(cwd, dir);
-      try {
-        const entries = await fs.promises.readdir(dirPath);
-        for (const entry of entries) {
-          if (entry.startsWith('.')) continue;
-          const fullPath = path.join(dirPath, entry);
-          const content = await readFileSafe(fullPath);
-          if (content) {
-            filesToScan.push({ path: path.join(dir, entry), fullPath, content });
+    // Collect files from skill directories (both cwd and homedir)
+    const searchRoots = [cwd];
+    if (homedir && homedir !== cwd) searchRoots.push(homedir);
+
+    for (const root of searchRoots) {
+      for (const dir of SKILL_DIRS) {
+        const dirPath = path.join(root, dir);
+        try {
+          const entries = await fs.promises.readdir(dirPath, { recursive: true });
+          for (const entry of entries) {
+            if (entry.startsWith('.')) continue;
+            const fullPath = path.join(dirPath, entry);
+            const stat = await statSafe(fullPath);
+            if (!stat || stat.isDirectory()) continue;
+            const content = await readFileSafe(fullPath);
+            if (content) {
+              const relLabel = root === cwd ? path.join(dir, entry) : path.join('~', dir, entry);
+              filesToScan.push({ path: relLabel, fullPath, content });
+            }
           }
+        } catch {
+          // Directory doesn't exist, skip
         }
-      } catch {
-        // Directory doesn't exist, skip
       }
     }
 

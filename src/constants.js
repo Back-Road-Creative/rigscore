@@ -16,8 +16,8 @@ export const CATEGORY = {
 
 // Weights must sum to 100 — moat-heavy: AI-specific checks get ~63%
 export const WEIGHTS = {
-  'mcp-config': 16,
-  'coherence': 16,
+  'mcp-config': 14,
+  'coherence': 14,
   'skill-files': 10,
   'claude-md': 10,
   'claude-settings': 8,
@@ -25,11 +25,13 @@ export const WEIGHTS = {
   'env-exposure': 8,
   'credential-storage': 6,
   'docker-security': 6,
+  'infrastructure-security': 6,
   'unicode-steganography': 4,
-  'git-hooks': 4,
+  'git-hooks': 2,
   'permissions-hygiene': 4,
   'windows-security': 0,
   'network-exposure': 0,
+  'site-security': 0,
 };
 
 // OWASP Agentic Top 10 (2026) mapping for findings
@@ -47,6 +49,7 @@ export const OWASP_AGENTIC_MAP = {
   'git-hooks': 'ASI02',        // Tool Misuse & Exploitation
   'permissions-hygiene': 'ASI03', // Identity & Privilege Abuse
   'network-exposure': 'ASI07', // Insecure Inter-Agent Communication
+  'infrastructure-security': 'ASI02', // Tool Misuse & Exploitation
 };
 
 // Sentinel score for checks that find nothing to scan

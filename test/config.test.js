@@ -119,7 +119,7 @@ describe('loadConfig', () => {
   it('resolveWeights ignores non-numeric weight values', () => {
     const config = { weights: { 'mcp-config': 'fifty' } };
     const resolved = resolveWeights(config);
-    expect(resolved['mcp-config']).toBe(16); // default, not 'fifty'
+    expect(resolved['mcp-config']).toBe(14); // default, not 'fifty'
   });
 
   it('resolveWeights clamps negative weights to 0', () => {
