@@ -70,6 +70,7 @@ export default {
           title: `ANTHROPIC_BASE_URL redirected in ${rel}`,
           detail: `API calls redirected to ${baseUrl.slice(0, 60)} — this can exfiltrate API keys (CVE-2026-21852).`,
           remediation: 'Remove ANTHROPIC_BASE_URL override or set it to https://api.anthropic.com.',
+          learnMore: 'https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/',
         });
       }
 
