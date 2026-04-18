@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 14 checks. A hygiene score out of 100. Know where you stand before something breaks.
+One command. 13 scored checks plus 6 advisory checks. A hygiene score out of 100. Know where you stand before something breaks.
 
 ```bash
 npx github:Back-Road-Creative/rigscore
@@ -11,32 +11,37 @@ npx github:Back-Road-Creative/rigscore
 ```
   ╭────────────────────────────────────────╮
   │                                        │
-  │        rigscore v0.7.2                 │
+  │        rigscore v0.8.0                 │
   │   AI Dev Environment Hygiene Check     │
   │                                        │
   ╰────────────────────────────────────────╯
 
   Scanning /home/user/my-project ...
 
-  ✗ MCP server configuration...... 0/16
-  ✓ Cross-config coherence........ 16/16
-  ✓ Skill file safety............. 10/10
   ✓ CLAUDE.md governance.......... 10/10
   ✓ Claude settings safety........ 8/8
-  ✗ Deep source secrets........... N/A
-  ✓ Secret exposure............... 8/8
-  ✓ Credential storage............ 6/6
+  ✓ Cross-config coherence........ 14/14
+  ✓ Credential storage hygiene.... 6/6
+  ↷ Deep source secrets........... N/A
   ✓ Docker security............... 6/6
-  ✓ Unicode steganography......... 4/4
-  ✗ Git hooks..................... 2/4
+  ✓ Secret exposure............... 8/8
+  ✓ Git hooks..................... 2/2
+  ✓ Infrastructure security....... 5/6
+  ⚠ Instruction effectiveness..... advisory
+  ✗ MCP server configuration...... 0/14
   ✓ Permissions hygiene........... 4/4
-  ~ Windows/WSL security.......... advisory
-  ~ Network exposure.............. advisory
+  ↷ Site security................. N/A
+  ✓ Skill file safety............. 10/10
+  ✓ Unicode steganography......... 4/4
+  ↷ Windows/WSL security.......... N/A
+  ✓ Skill ↔ governance coherence.. advisory
+  ✓ Workflow maturity............. advisory
+  ↷ Network exposure.............. N/A
 
   ╭────────────────────────────────────────╮
   │                                        │
-  │         HYGIENE SCORE: 74/100          │
-  │         Grade: C                       │
+  │         HYGIENE SCORE: 78/100          │
+  │         Grade: B                       │
   │         Risk: Standard                 │
   │                                        │
   ╰────────────────────────────────────────╯
@@ -44,10 +49,6 @@ npx github:Back-Road-Creative/rigscore
   CRITICAL (1)
   ✗ MCP server "filesystem" has broad filesystem access: /
     → Scope filesystem access to your project directory only.
-
-  WARNING (1)
-  ⚠ No pre-commit hooks installed
-    → Fix: Install Husky or lefthook and add pre-commit hooks.
 ```
 
 ## Why this exists
@@ -69,6 +70,9 @@ rigscore checks the things that matter:
 - Do your Claude settings expose dangerous permissions or bypass combos?
 - Are credentials stored correctly, or are they leaking into the wrong places?
 - Are there hidden characters in your skill files that could redirect agent behavior?
+- Is your host-level infrastructure (root-owned hooks, git wrapper, deny list) actually in place?
+- Are your instruction files readable and consistent, or bloated, contradictory, and full of dead references?
+- Do your skills align with the governance they run under?
 
 Run it. See the score. Fix what's broken.
 
@@ -104,6 +108,9 @@ npx github:Back-Road-Creative/rigscore --check docker-security
 # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --deep
 
+# Online checks (site-security, MCP supply-chain verification)
+npx github:Back-Road-Creative/rigscore --online
+
 # Auto-fix safe issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix
 
@@ -122,7 +129,7 @@ npx github:Back-Road-Creative/rigscore --init-hook
 
 ## What it checks
 
-### 1. MCP server configuration (16 points) {#mcp-permissions}
+### 1. MCP server configuration (14 points) {#mcp-permissions}
 
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets AI agents connect to external tools via servers. Each server exposes capabilities — filesystem access, API calls, database queries. The security risk is in the permissions.
 
@@ -134,13 +141,13 @@ rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vsco
 - Filesystem scope: is the server limited to project directories, or does it have access to `/`?
 - Version pinning: are packages locked to specific versions, or using `@latest`?
 - Cross-client configuration drift: are the same servers configured differently across clients?
-- Typosquatting detection: is a package name suspiciously close to a known MCP server? (~52 known servers)
+- Typosquatting detection: is a package name suspiciously close to a known MCP server?
 
 **Supply chain risk:** An MCP server installed as `@latest` today could push a malicious update tomorrow. Version pinning prevents this. {#mcp-supply-chain}
 
 **What to fix:** Scope filesystem servers to your project directory only. Remove wildcard env passthrough — pass only the specific variables each server needs. Pin all server packages to exact versions. Prefer `stdio` transport unless you specifically need network access.
 
-### 2. Cross-config coherence (16 points) {#coherence-check}
+### 2. Cross-config coherence (14 points) {#coherence-check}
 
 The coherence check is rigscore's second pass — it compares what your governance file *claims* against what your actual configuration *does*. This catches contradictions that no single check can see.
 
@@ -203,7 +210,7 @@ rigscore recognizes governance files for all major AI coding clients: CLAUDE.md,
 When enabled with `--deep`, rigscore recursively scans your source files for hardcoded secrets. This goes beyond the root config file scanning and checks `.js`, `.ts`, `.py`, `.go`, `.rb`, `.java`, `.yaml`, `.json`, `.toml`, `.sh`, and `.env.*` files.
 
 **What rigscore looks for:**
-- 34 secret patterns: API keys from Anthropic, OpenAI, AWS, GitHub, Slack, Stripe, SendGrid, Twilio, Firebase, DigitalOcean, Mailgun, npm, PyPI, Hugging Face, MongoDB, Vercel, Supabase, Cloudflare, Railway, PlanetScale, Neon, Linear, Replicate, Tavily, and webhook signing secrets
+- ~40 secret patterns: API keys from Anthropic, OpenAI, AWS (including STS tokens), GitHub, GitLab, Slack, Stripe, SendGrid, Twilio, Firebase/Google, DigitalOcean, Mailgun, npm, PyPI, Hugging Face, MongoDB, Vercel, Supabase, Cloudflare, Railway, PlanetScale, Neon, Linear, Replicate, Tavily, webhook signing secrets, AGE encryption keys, Datadog, 1Password CLI references, HashiCorp Vault, JFrog Artifactory, and Docker registry auth tokens
 - Comment vs. hardcoded distinction (commented/example keys are `info`, real keys are `critical`)
 - Skips test files, node_modules, .git, vendor, dist, build directories
 
@@ -245,7 +252,21 @@ rigscore scans **Docker Compose**, **Podman Compose**, **Kubernetes manifests**,
 
 **What to fix:** Never mount the Docker socket unless absolutely necessary. Never run containers in privileged mode. Scope volume mounts to project directories only. Add `user`, `cap_drop: [ALL]`, and `no-new-privileges` to every service. Set memory limits.
 
-### 10. Unicode steganography detection (4 points) {#unicode-steganography}
+### 10. Infrastructure security (6 points) {#infrastructure-security}
+
+Host-level controls that sit beneath your project: root-owned git hooks, a git wrapper that cannot be bypassed, a shell safety guard, and immutable governance directories. These are the backstop when per-project hooks or settings are missing or tampered with. This check is Linux-only — it returns N/A on macOS and Windows.
+
+**What rigscore looks for:**
+- A global git hooks directory at `/opt/git-hooks/` (path is configurable via `.rigscorerc.json` → `paths.hooksDir`)
+- That directory is owned by root
+- Required hooks present and executable: `pre-commit`, `pre-push`, `commit-msg`
+- A git safety wrapper at `/usr/local/bin/git` (configurable) that is root-owned and strips `--no-verify` to prevent hook bypass
+- A shell safety guard at `/etc/profile.d/safety-gates.sh` (configurable) that blocks dangerous patterns like `chmod 777`
+- Immutable flag (`chattr +i`) on `_governance/` and `_foundation/` workspace directories (and any dirs listed in `paths.immutableDirs`)
+- `permissions.deny` list in `~/.claude/settings.json` includes dangerous patterns: `git push --force`, `git reset --hard`, `rm -rf`, `git push origin main`, `git push origin master`
+- A `sandbox-gate` hook registered under `PreToolUse` to gate Write/Edit/Bash
+
+### 11. Unicode steganography detection (4 points) {#unicode-steganography}
 
 Checks skill files and CLAUDE.md for hidden characters that render identically to legitimate text but redirect agent behavior. Covers the attack surface from the ToxicSkills and Rules File Backdoor incidents.
 
@@ -254,7 +275,7 @@ Checks skill files and CLAUDE.md for hidden characters that render identically t
 - Zero-width joiners and zero-width non-joiners
 - Bidirectional control characters (bidi overrides)
 
-### 11. Git hooks (4 points) {#git-hooks-for-ai}
+### 12. Git hooks (2 points) {#git-hooks-for-ai}
 
 Git hooks are your last line of defense before code leaves your machine. Without pre-commit hooks, secrets, broken governance files, and unreviewed changes go straight to the repo.
 
@@ -266,7 +287,7 @@ Git hooks are your last line of defense before code leaves your machine. Without
 
 **What to fix:** Install [Husky](https://github.com/typicode/husky) or [lefthook](https://github.com/evilmartians/lefthook) and add pre-commit hooks that scan for secret patterns and validate governance files.
 
-### 12. Permissions hygiene (4 points) {#permissions-hygiene}
+### 13. Permissions hygiene (4 points) {#permissions-hygiene}
 
 File permissions are the foundation of access control. Misconfigured permissions on SSH keys, secret files, or governance files can undermine every other security measure.
 
@@ -280,7 +301,7 @@ File permissions are the foundation of access control. Misconfigured permissions
 
 **Platform note:** Permission checks are POSIX-only. On Windows, rigscore reports a SKIPPED finding and recommends manual verification with `icacls`.
 
-### 13. Windows/WSL security (advisory, 0 points) {#windows-security}
+### 14. Windows/WSL security (advisory, 0 points) {#windows-security}
 
 On Windows, rigscore checks for WSL-specific security risks. This is an advisory check — it doesn't affect the score but surfaces important configuration issues.
 
@@ -292,9 +313,56 @@ On Windows, rigscore checks for WSL-specific security risks. This is an advisory
 
 **Platform note:** Returns N/A on non-Windows systems. Weight 0 means it never affects the score.
 
-### 14. Network exposure (advisory, 0 points) {#network-exposure}
+### 15. Network exposure (advisory, 0 points) {#network-exposure}
 
 Advisory check that detects AI services bound to `0.0.0.0` instead of `127.0.0.1`. Scans MCP config URLs, Docker port bindings, Ollama config, and live listeners.
+
+### 16. Site security (advisory, 0 points, `--online`) {#site-security}
+
+Probes deployed sites listed in `.rigscorerc.json` under `sites: [...]`. Only runs when `--online` is passed; otherwise returns N/A.
+
+**What rigscore looks for:**
+- Critical security headers: `content-security-policy`, `x-frame-options`, `x-content-type-options`, `strict-transport-security`
+- Advisory headers: `referrer-policy`, `permissions-policy`
+- Server fingerprinting via `X-Powered-By` and versioned `Server` headers
+- Sensitive paths that should not be publicly reachable (`.env`, `.git/config`, `backup.zip`, `wp-admin/`, `phpmyadmin/`, etc.)
+- PII leakage in rendered HTML (emails, phone numbers, internal IP ranges)
+- Hardcoded API keys in the served page source
+- `<meta name="generator">` build-tool disclosure
+- SSL certificate expiry (critical if expired, warning if <30 days)
+
+### 17. Instruction effectiveness (advisory, 0 points) {#instruction-effectiveness}
+
+Audits the instruction files that feed the agent — CLAUDE.md, `~/.claude/CLAUDE.md`, and files under `.claude/commands/` and `.claude/skills/`. Measures quality, not security, so it is advisory.
+
+**What rigscore looks for:**
+- Context budget: total estimated tokens across all instruction files versus a 200K reference window (warns above 20%, info above 10%); flags individual files above ~5K tokens
+- Bloat: files over 500 lines (warning) or 300 lines (info)
+- Vague directives: phrases like "use your best judgment", "as appropriate", "figure it out", "when it makes sense"
+- Contradictions between `always`/`must` and `never`/`must not` directives on the same topic
+- Dead file references in backtick paths and markdown links (paths that no longer exist)
+- Redundancy across instruction files
+
+### 18. Skill ↔ governance coherence (advisory, 0 points) {#skill-coherence}
+
+Scans every SKILL.md under `.claude/skills/` and `.claude/commands/` (both project and `~/.claude/`) and checks that each skill is aware of the constraints that governance claims to enforce. Advisory.
+
+**What rigscore looks for:**
+- Skills that perform git/ship/push operations but don't acknowledge manual merge workflow requirements (`gh-merge-approved`, `brc-merge-approved`)
+- Skills that perform write/edit/scaffold operations but don't acknowledge layer write restrictions on `_governance/` and `_foundation/`
+- Skills that overwrite files without mentioning WIP protection (untracked files in `_active/svc-*` have no backup)
+- Skills that push/commit/ship without mentioning branch protection (no force push, no direct push to main/master)
+- Hook ↔ settings conflicts where a PreToolUse hook blocks a pattern that `settings.json` allow-lists
+
+### 19. Workflow maturity (advisory, 0 points) {#workflow-maturity}
+
+Classifies the project's workflow artefacts against the AI development taxonomy and surfaces graduation signals — skills that should become code, pipelines that should be split, memory files that have gone stale. Advisory.
+
+**What rigscore looks for:**
+- Pipeline step overload: single modules with too many `# Stage N` / `# Step N` / `# Phase N` markers, or stage directories that suggest a monolithic pipeline should be decomposed
+- Skills that have matured past the LLM-driven stage and should be graduated to deterministic code
+- Stale memory files and orphan memory that is not linked from `MEMORY.md`
+- Taxonomy misclassification between skills, agents, pipelines, and memory
 
 ## Scoring
 
@@ -306,12 +374,12 @@ Advisory check that detects AI services bound to `0.0.0.0` instead of `127.0.0.1
 | 40-59 | D | Significant gaps |
 | 0-39 | F | Critical issues, fix immediately |
 
-Scoring uses an additive deduction model with moat-heavy weighting — AI-specific checks (MCP, coherence, skill files, governance) account for ~60% of the score:
+Scoring uses an additive deduction model with moat-heavy weighting — AI-specific checks (MCP, coherence, skill files, governance) account for ~48% of the score:
 
 | Check | Weight | Category |
 |-------|--------|----------|
-| MCP server configuration | 16 | supply-chain |
-| Cross-config coherence | 16 | governance |
+| MCP server configuration | 14 | supply-chain |
+| Cross-config coherence | 14 | governance |
 | Skill file safety | 10 | supply-chain |
 | CLAUDE.md governance | 10 | governance |
 | Claude settings safety | 8 | governance |
@@ -319,11 +387,16 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 | Secret exposure | 8 | secrets |
 | Credential storage hygiene | 6 | secrets |
 | Docker security | 6 | isolation |
+| Infrastructure security | 6 | process |
 | Unicode steganography | 4 | supply-chain |
-| Git hooks | 4 | process |
 | Permissions hygiene | 4 | process |
+| Git hooks | 2 | process |
 | Windows/WSL security | 0 | isolation (advisory) |
 | Network exposure | 0 | isolation (advisory) |
+| Site security | 0 | isolation (advisory) |
+| Instruction effectiveness | 0 | governance (advisory) |
+| Skill ↔ governance coherence | 0 | governance (advisory) |
+| Workflow maturity | 0 | governance (advisory) |
 
 - **CRITICAL** findings zero out their sub-check entirely
 - **WARNING** findings deduct 15 points each (1 WARNING = 85, 2 = 70, 3 = 55...)
@@ -362,11 +435,13 @@ npx github:Back-Road-Creative/rigscore --check <id>              # Run a single 
 npx github:Back-Road-Creative/rigscore --recursive               # Scan subdirectories as projects
 npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive scan, 2 levels deep
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
+npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
-npx github:Back-Road-Creative/rigscore --ignore "finding-id"     # Suppress a specific finding
+npx github:Back-Road-Creative/rigscore --ignore "finding-id"     # Suppress a specific finding (comma-separated)
+npx github:Back-Road-Creative/rigscore --verbose                 # Show pass/skipped findings in terminal output
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help
 ```
@@ -492,7 +567,7 @@ npx github:Back-Road-Creative/rigscore --sarif > results.sarif
 
 ## Privacy
 
-rigscore runs entirely on your local machine. No data is collected, transmitted, or stored anywhere. No API calls. No telemetry. No accounts. The scan reads your local config files and outputs results to your terminal. That's it.
+rigscore runs entirely on your local machine by default. No telemetry, no accounts, no API calls. The `--online` flag opts in to outbound HTTP probes for the site-security check and MCP supply-chain verification — those explicitly reach out, and only to the URLs and packages you have already configured.
 
 ## Contributing
 

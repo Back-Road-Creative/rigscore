@@ -513,9 +513,10 @@ function analyzeRedundancy(files) {
     if (count <= MAX_REDUNDANCY_FINDINGS) {
       const fileList = [...distinctFiles].join(', ');
       const truncated = normalized.length > 80 ? normalized.slice(0, 80) + '...' : normalized;
+      const titleSnippet = normalized.length > 40 ? normalized.slice(0, 40) + '...' : normalized;
       findings.push({
         severity: 'info',
-        title: `Redundant instruction across ${distinctFiles.size} files`,
+        title: `Redundant instruction (${distinctFiles.size} files): "${titleSnippet}"`,
         detail: `"${truncated}" appears in: ${fileList}. Redundant instructions waste context budget.`,
         remediation: 'Consolidate into a single governance file or use includes/references.',
       });
