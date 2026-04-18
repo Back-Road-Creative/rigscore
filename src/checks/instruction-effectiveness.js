@@ -187,7 +187,7 @@ function analyzeContextBudget(files) {
         severity: 'warning',
         title: `Large instruction file: ${file.relPath}`,
         detail: `${file.relPath} is ~${tokens.toLocaleString()} estimated tokens. Large instruction files consume context budget and may reduce effective working memory.`,
-        remediation: `Review ${file.relPath} for sections that can be condensed or moved to on-demand references. Run /instruction-audit for deep analysis.`,
+        remediation: `Review ${file.relPath} for sections that can be condensed or moved to on-demand references.`,
       });
     }
   }
@@ -278,7 +278,7 @@ function detectContradictions(file) {
           severity: 'info',
           title: `Possible contradiction in ${file.relPath}`,
           detail: `Line ${a.line}: "${a.text}" may contradict line ${n.line}: "${n.text}" (${intersection.size} overlapping terms).`,
-          remediation: `Review these directives for consistency. Run /instruction-audit for semantic analysis.`,
+          remediation: `Review these directives for consistency and reconcile the conflicting language.`,
         });
         break; // one finding per always-claim
       }
@@ -416,7 +416,7 @@ function detectVagueInstructions(file) {
       severity: 'info',
       title: `${vagueCount} vague instructions in ${file.relPath}`,
       detail: `${file.relPath} contains ${vagueCount} directives that delegate decisions without criteria (showing first 3).`,
-      remediation: 'Run /instruction-audit for a detailed review of instruction specificity.',
+      remediation: 'Rewrite vague directives with concrete criteria, examples, or decision rules.',
     });
   }
 
@@ -527,7 +527,7 @@ function analyzeRedundancy(files) {
     findings.push({
       severity: 'info',
       title: `${count} redundant instructions detected (showing ${MAX_REDUNDANCY_FINDINGS})`,
-      detail: `Found ${count} instruction lines duplicated across files. Run /instruction-audit for full analysis.`,
+      detail: `Found ${count} instruction lines duplicated across files.`,
       remediation: 'Consolidate overlapping governance and skill files to reduce context budget waste.',
     });
   }
