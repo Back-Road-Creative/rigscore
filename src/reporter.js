@@ -104,6 +104,11 @@ export function formatTerminal(result, cwd, options = {}) {
       const icon = chalk.dim('\u21B7');
       const name = r.name.padEnd(30, '.');
       lines.push(`  ${icon} ${name} N/A`);
+    } else if (r.weight === 0) {
+      // Advisory check — no score contribution. Mark clearly, don't use critical red.
+      const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.yellow('\u26A0');
+      const name = r.name.padEnd(30, '.');
+      lines.push(`  ${icon} ${name} ${chalk.dim('advisory')}`);
     } else {
       const checkScore = Math.round((r.score / 100) * r.weight);
       const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.red('\u2717');

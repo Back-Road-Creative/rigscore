@@ -32,6 +32,9 @@ export const WEIGHTS = {
   'windows-security': 0,
   'network-exposure': 0,
   'site-security': 0,
+  'instruction-effectiveness': 0,
+  'skill-coherence': 0,
+  'workflow-maturity': 0,
 };
 
 // OWASP Agentic Top 10 (2026) mapping for findings
@@ -50,6 +53,9 @@ export const OWASP_AGENTIC_MAP = {
   'permissions-hygiene': 'ASI03', // Identity & Privilege Abuse
   'network-exposure': 'ASI07', // Insecure Inter-Agent Communication
   'infrastructure-security': 'ASI02', // Tool Misuse & Exploitation
+  'instruction-effectiveness': 'ASI01', // Agent Goal Hijack
+  'skill-coherence': 'ASI01',          // Agent Goal Hijack
+  'workflow-maturity': 'ASI01',        // Agent Goal Hijack — taxonomy misclassification causes goal drift
 };
 
 // Sentinel score for checks that find nothing to scan
