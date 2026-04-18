@@ -122,11 +122,11 @@ export async function run(args) {
     // Create hooks dir if needed
     fs.mkdirSync(hooksDir, { recursive: true });
 
-    const hookContent = '#!/bin/sh\nnpx rigscore --fail-under 70 --no-cta || exit 1\n';
+    const hookContent = '#!/bin/sh\nnpx github:Back-Road-Creative/rigscore --fail-under 70 --no-cta || exit 1\n';
 
     if (existing) {
       // Append to existing hook
-      fs.appendFileSync(hookPath, '\n# rigscore hygiene check\n' + 'npx rigscore --fail-under 70 --no-cta || exit 1\n');
+      fs.appendFileSync(hookPath, '\n# rigscore hygiene check\nnpx github:Back-Road-Creative/rigscore --fail-under 70 --no-cta || exit 1\n');
     } else {
       fs.writeFileSync(hookPath, hookContent);
     }

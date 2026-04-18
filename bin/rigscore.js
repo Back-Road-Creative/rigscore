@@ -54,6 +54,8 @@ Checks (moat-heavy weighting):
   permissions-hygiene     File permissions hygiene (4 pts)
   git-hooks               Git hooks (2 pts)
   site-security           Deployed site security (--online, advisory)
+  instruction-effectiveness Instruction quality & context budget (advisory)
+  skill-coherence          Skill ↔ governance coherence (advisory)
 
 Examples:
   rigscore                          Scan current directory

@@ -1,6 +1,6 @@
 # pkg-rigscore
 
-Configuration hygiene checker for AI development environments. Scans locally with zero external calls. 14 checks across governance, secrets, MCP, Docker, and permissions — outputs a score out of 100.
+AI dev security scoring tool. Moat-first: MCP supply chain, governance coherence, prompt injection — not generic checks. Scans locally with zero external calls and outputs a score out of 100.
 
 ## Commands
 
@@ -32,11 +32,15 @@ node bin/rigscore.js . --check claude-md
 | `src/config.js` | Profile loading (default, minimal, ci) |
 | `src/watcher.js` | `--watch` mode file change detection |
 | `src/known-mcp-servers.js` | Typosquat registry (~52 known MCP servers) |
-| `src/checks/*.js` | 14 individual check modules (see below) |
+| `src/checks/*.js` | Individual check modules (see below) |
 
 ### Check modules (src/checks/)
 
-`mcp-config` (14pt), `coherence` (14pt), `skill-files` (10pt), `claude-md` (10pt), `claude-settings` (8pt), `deep-secrets` (8pt), `env-exposure` (8pt), `credential-storage` (6pt), `docker-security` (6pt), `infrastructure-security` (6pt), `unicode-steganography` (4pt), `git-hooks` (4pt), `permissions-hygiene` (4pt), `windows-security` (0pt advisory)
+Scored: `mcp-config` (14pt), `coherence` (14pt), `skill-files` (10pt), `claude-md` (10pt), `claude-settings` (8pt), `deep-secrets` (8pt), `env-exposure` (8pt), `credential-storage` (6pt), `docker-security` (6pt), `infrastructure-security` (6pt), `unicode-steganography` (4pt), `permissions-hygiene` (4pt), `git-hooks` (2pt).
+
+Advisory (weight 0): `windows-security`, `network-exposure`, `site-security`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`.
+
+Weights are the single source of truth in `src/constants.js` — never hardcode them elsewhere.
 
 ## Conventions
 
@@ -51,3 +55,6 @@ node bin/rigscore.js . --check claude-md
 - Zero network calls in default mode (`--online` flag required for supply-chain verification)
 - Checks must be pure functions of local filesystem state
 - New checks must export `{ id, name, category, weight, run }` and self-register in `src/checks/`
+- Scoring weighted ~48% moat (mcp-config 14 + coherence 14 + skill-files 10 + claude-md 10) / ~52% hygiene (secrets 22, docker/infra 12, permissions/hooks/unicode/settings 18)
+- `--fix` never modifies governance content
+- Distributed via GitHub only: `npx github:Back-Road-Creative/rigscore` (npm intentionally dropped)
