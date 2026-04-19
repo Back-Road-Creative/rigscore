@@ -4,10 +4,26 @@ import { NOT_APPLICABLE_SCORE } from '../constants.js';
 const BROAD_CAPABILITY_NAMES = ['filesystem', 'browser', 'database', 'shell', 'terminal', 'code', 'exec'];
 
 /**
+ * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
+ * into a RegExp. Returns null if the spec is unusable.
+ */
+function toRegex(spec) {
+  if (!spec) return null;
+  if (spec instanceof RegExp) return spec;
+  if (typeof spec === 'string') {
+    try { return new RegExp(spec, 'i'); } catch { return null; }
+  }
+  if (typeof spec === 'object' && typeof spec.source === 'string') {
+    try { return new RegExp(spec.source, spec.flags || 'i'); } catch { return null; }
+  }
+  return null;
+}
+
+/**
  * Reverse coherence: for each MCP server in config, verify governance declares it.
  * Forward coherence checks governance→config; this checks config→governance.
  *
- * @param {string} governanceContent - concatenated text from CLAUDE.md + _governance/*.md
+ * @param {string} governanceContent - concatenated text from CLAUDE.md and governance files
  * @param {string[]} serverNames - discovered MCP server names (from mcp-config data)
  * @returns {Array<{severity: string, title: string, detail: string, remediation: string}>}
  */
@@ -21,7 +37,7 @@ function checkReverseCoherence(governanceContent, serverNames) {
         severity: 'warning',
         title: `Undeclared MCP server: ${serverName}`,
         detail: `Server '${serverName}' is configured but not mentioned in any governance document. Undeclared capabilities create hidden exposure that static reviews miss.`,
-        remediation: `Add a section to CLAUDE.md or _governance/ declaring '${serverName}' purpose, approved use cases, and scope restrictions.`,
+        remediation: `Add a section to CLAUDE.md declaring '${serverName}' purpose, approved use cases, and scope restrictions.`,
       });
     }
   }
@@ -55,7 +71,7 @@ export default {
   category: 'governance',
 
   async run(context) {
-    const { priorResults } = context;
+    const { priorResults, config } = context;
     const findings = [];
 
     if (!priorResults || priorResults.length === 0) {
@@ -207,30 +223,24 @@ export default {
         });
       }
 
-      // Check: allow list contains entries that governance explicitly forbids
-      // Two specific known-contradiction patterns
-      const ALLOW_GOVERNANCE_CONTRADICTIONS = [
-        {
-          allowRe: /sudo\s+-u\s+dev\s+git/i,
-          govRe: /\b(never|must not|do not)\b.{0,30}sudo.{0,20}-u.{0,20}dev/i,
-          title: 'Allow list permits sudo-u-dev-git which governance forbids',
-          detail: 'settings.json allow list contains a sudo -u dev git entry, but governance explicitly forbids this operation.',
-          remediation: 'Remove the sudo -u dev git allow-list entry. Joe owns source code — use git as joe directly.',
-        },
-        {
-          allowRe: /pip[23]?\s+install/i,
-          govRe: /\b(dev-pip|pip.*wrapper|use.*wrapper.*pip|no pip install|must not.*pip)\b/i,
-          title: 'Allow list permits pip install which governance restricts to a wrapper',
-          detail: 'settings.json allow list contains pip install, but governance restricts installs to a project-specific wrapper.',
-          remediation: 'Remove the pip install allow-list entry and use the configured wrapper instead.',
-        },
-      ];
+      // Check: allow list contains entries that governance explicitly forbids.
+      // Pairings are opt-in via config.coherence.allowGovernanceContradictions.
+      // Default: empty array — no author-specific pairings fire by default.
+      const configPairings = config?.coherence?.allowGovernanceContradictions || [];
 
-      for (const { allowRe, govRe, title, detail, remediation } of ALLOW_GOVERNANCE_CONTRADICTIONS) {
+      for (const pairing of configPairings) {
+        const allowRe = toRegex(pairing.allowRe);
+        const govRe = toRegex(pairing.govRe);
+        if (!allowRe || !govRe) continue;
         const inAllowList = allowListEntries.some(e => allowRe.test(e));
         const forbiddenInGovernance = governanceText && govRe.test(governanceText);
         if (inAllowList && forbiddenInGovernance) {
-          findings.push({ severity: 'warning', title, detail, remediation });
+          findings.push({
+            severity: 'warning',
+            title: pairing.title || 'Allow list entry contradicts governance',
+            detail: pairing.detail || 'settings.json allow-list entry is forbidden by governance.',
+            remediation: pairing.remediation || 'Remove the offending allow-list entry or update governance.',
+          });
         }
       }
     }
