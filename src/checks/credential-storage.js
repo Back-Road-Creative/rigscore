@@ -16,6 +16,13 @@ const EXAMPLE_RE = /\b(example|placeholder|demo|sample|template|your_?key|xxx|ch
 
 function matchesSecretPattern(value) {
   if (typeof value !== 'string') return false;
+  // 1Password CLI references (op://vault/item/field) and shell template
+  // placeholders (${VAR}) are secure — the real secret is resolved at runtime.
+  // Exclude here in credential-storage only; KEY_PATTERNS (shared) continues to
+  // match these for other checks (e.g., env-exposure) where the reference
+  // itself may still be mildly leaky in public config.
+  if (value.startsWith('op://')) return false;
+  if (/^\$\{[^}]+\}$/.test(value)) return false;
   for (const pattern of KEY_PATTERNS) {
     pattern.lastIndex = 0;
     if (pattern.test(value)) return true;

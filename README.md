@@ -440,7 +440,7 @@ npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fix
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
-npx github:Back-Road-Creative/rigscore --ignore "finding-id"     # Suppress a specific finding (comma-separated)
+npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-file-found-but-not-in-gitignore,docker-security/docker-socket-mount" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). Title-substring still works as a legacy fallback.
 npx github:Back-Road-Creative/rigscore --verbose                 # Show pass/skipped findings in terminal output
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help

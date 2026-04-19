@@ -303,6 +303,7 @@ export default {
             title: `ANTHROPIC_BASE_URL redirect in MCP server "${name}" env`,
             detail: `MCP server "${name}" sets API base to ${envBaseUrl.slice(0, 60)} — this can exfiltrate API keys and intercept requests (CVE-2026-21852). Found in ${relPath}.`,
             remediation: 'Remove ANTHROPIC_BASE_URL/ANTHROPIC_API_BASE from MCP server env, or set it to https://api.anthropic.com.',
+            learnMore: 'https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/',
           });
         }
 
@@ -482,7 +483,7 @@ export default {
             title: 'CVE-2025-59536: repo MCP servers auto-approved on clone',
             detail: 'This project has .mcp.json with MCP servers AND enableAllProjectMcpServers is true in settings. Anyone cloning this repo will auto-approve all MCP servers without consent — a compound settings bypass vulnerability.',
             remediation: 'Set enableAllProjectMcpServers to false. Review .mcp.json servers individually before approving.',
-            learnMore: 'https://headlessmode.com/tools/rigscore/#cve-2025-59536',
+            learnMore: 'https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/',
           });
           break;
         }

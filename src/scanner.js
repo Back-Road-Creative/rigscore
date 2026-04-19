@@ -9,9 +9,14 @@ import { loadConfig, resolveWeights } from './config.js';
  * Deduplicate findings across check results.
  * When two checks produce findings with the same severity+title,
  * keep the one from the higher-weighted check.
+ *
+ * After splicing a finding out of a result's findings array, we
+ * recalculate that result's score so stale pre-dedup scores don't
+ * stick (matches the behavior of suppressFindings).
  */
-function deduplicateFindings(results) {
+export function deduplicateFindings(results) {
   const seen = new Map(); // "severity:normalizedTitle" → { resultIdx, findingIdx, weight }
+  const touched = new Set(); // indices of results that had findings removed
 
   for (let ri = 0; ri < results.length; ri++) {
     const r = results[ri];
@@ -31,15 +36,22 @@ function deduplicateFindings(results) {
         if (weight >= prev.weight) {
           // Current check has higher weight — remove from previous
           results[prev.resultIdx].findings.splice(prev.findingIdx, 1);
+          touched.add(prev.resultIdx);
           seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
         } else {
           // Previous check has higher weight — remove current
           findings.splice(fi, 1);
+          touched.add(ri);
         }
       } else {
         seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
       }
     }
+  }
+
+  // Recalculate scores for every result whose findings were mutated.
+  for (const idx of touched) {
+    results[idx].score = calculateCheckScore(results[idx].findings);
   }
 }
 
@@ -70,17 +82,25 @@ export function assignFindingIds(results) {
 }
 
 /**
- * Suppress findings whose title matches any of the given patterns (case-insensitive).
+ * Suppress findings matching any of the given patterns (case-insensitive).
+ *
+ * Matching is case-insensitive and checks each pattern against:
+ *   1. `findingId` via exact equality (preferred, documented form), or
+ *   2. `title` via substring match (legacy fallback; pre-existing behavior).
+ *
  * Recalculates each affected check's score after removal.
  */
 export function suppressFindings(results, patterns) {
   if (!patterns || patterns.length === 0) return;
 
+  const lowered = patterns.map((p) => String(p).toLowerCase());
+
   for (const r of results) {
     const before = r.findings.length;
     r.findings = r.findings.filter((f) => {
+      const id = (f.findingId || '').toLowerCase();
       const title = (f.title || '').toLowerCase();
-      return !patterns.some((p) => title.includes(p.toLowerCase()));
+      return !lowered.some((p) => id === p || title.includes(p));
     });
     if (r.findings.length !== before) {
       r.score = calculateCheckScore(r.findings);
