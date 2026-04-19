@@ -34,6 +34,12 @@ const DEFAULTS = {
   workflowMaturity: {
     stageDirs: ['stages', 'phases'],
   },
+  mcpConfig: {
+    // Default-on INFO finding per repo-level MCP server in .mcp.json that
+    // reports runtime tool-hash pin status (see `rigscore mcp-hash` subcommand).
+    // Set to false to suppress the INFO findings in normal scans.
+    surfaceRuntimeHashStatus: true,
+  },
 };
 
 export const PROFILES = {
@@ -170,6 +176,12 @@ function mergeConfig(userConfig) {
   if (userConfig.workflowMaturity && typeof userConfig.workflowMaturity === 'object') {
     if (Array.isArray(userConfig.workflowMaturity.stageDirs)) {
       result.workflowMaturity.stageDirs = userConfig.workflowMaturity.stageDirs;
+    }
+  }
+
+  if (userConfig.mcpConfig && typeof userConfig.mcpConfig === 'object') {
+    if (typeof userConfig.mcpConfig.surfaceRuntimeHashStatus === 'boolean') {
+      result.mcpConfig.surfaceRuntimeHashStatus = userConfig.mcpConfig.surfaceRuntimeHashStatus;
     }
   }
 
