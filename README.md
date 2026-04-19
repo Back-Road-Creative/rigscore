@@ -186,6 +186,8 @@ Skill files (`.cursorrules`, `.windsurfrules`, `.continuerules`, `copilot-instru
 
 **What to fix:** Audit all skill files for unexpected instructions. Lock file permissions so only you can modify them. Be cautious with skill files from untrusted sources — treat them like executable code, because that's effectively what they are.
 
+**Scope:** By default rigscore only scans skill files under the project being scored (cwd). Home-level skills (`~/.claude/skills/`, `~/.claude/commands/`) are user-global and not attributable to a project, so they do not deduct from the project score. Pass `--include-home-skills` if you want home-level skills scanned too; findings from home files are labeled with a `~/` prefix.
+
 ### 4. CLAUDE.md governance (10 points) {#why-claude-md-matters}
 
 Your CLAUDE.md file tells AI agents what they can and can't do. Without one, your agent operates with no explicit rules — it can access any file, run any command, and make any API call that its underlying permissions allow.
@@ -448,6 +450,7 @@ npx github:Back-Road-Creative/rigscore --recursive               # Scan subdirec
 npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive scan, 2 levels deep
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
+npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan ~/.claude/skills and ~/.claude/commands (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically

@@ -189,7 +189,14 @@ export async function scan(options = {}) {
     config.profile = options.profile;
   }
 
-  const context = { cwd, homedir, config, deep: options.deep || false, online: options.online || false };
+  const context = {
+    cwd,
+    homedir,
+    config,
+    deep: options.deep || false,
+    online: options.online || false,
+    includeHomeSkills: options.includeHomeSkills || false,
+  };
 
   // Split checks into pass 1 (default) and pass 2 (receive priorResults)
   const pass1Checks = checks.filter(c => !c.pass || c.pass === 1);
