@@ -375,6 +375,7 @@ export default {
               title: `Trust exploitation pattern in ${file.path}`,
               detail: 'File contains instructions to blindly trust tool outputs without verification, which can be exploited via name-based trust attacks (CVE-2025-54136).',
               remediation: 'Remove instructions to skip verification. Always validate tool outputs before acting on them.',
+              learnMore: 'https://research.checkpoint.com/2025/cursor-vulnerability-mcpoison/',
             });
           }
           break;
