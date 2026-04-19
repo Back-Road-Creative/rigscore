@@ -87,6 +87,60 @@ describe('unicode-steganography check', () => {
     }
   });
 
+  it('WARNING for Mathematical Bold Latin homoglyphs in CLAUDE.md', async () => {
+    const tmpDir = makeTmpDir();
+    // Mathematical Bold Capital A U+1D400 looks like Latin A
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), 'Follow \u{1D400}gent rules');
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const finding = result.findings.find(f => f.severity === 'warning' && f.title.includes('Homoglyph'));
+      expect(finding).toBeDefined();
+      expect(finding.detail).toMatch(/Mathematical/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for Fullwidth Latin homoglyphs in .mcp.json', async () => {
+    const tmpDir = makeTmpDir();
+    // Fullwidth Latin Capital A U+FF21 looks like Latin A
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), '{"\uFF21name": "value"}');
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const finding = result.findings.find(f => f.severity === 'warning' && f.title.includes('Homoglyph'));
+      expect(finding).toBeDefined();
+      expect(finding.detail).toMatch(/Fullwidth/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for Cherokee homoglyphs in AGENTS.md', async () => {
+    const tmpDir = makeTmpDir();
+    // Cherokee letter A U+13AA looks like Latin A
+    fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), 'Follow the \u13AAgent rules');
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const finding = result.findings.find(f => f.severity === 'warning' && f.title.includes('Homoglyph'));
+      expect(finding).toBeDefined();
+      expect(finding.detail).toMatch(/Cherokee/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('no false positives for clean ASCII — no new-range homoglyph findings', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nBe helpful and concise. ABC 123.\n');
+    try {
+      const result = await check.run({ cwd: tmpDir });
+      const homoglyphFinding = result.findings.find(f => f.title?.includes('Homoglyph'));
+      expect(homoglyphFinding).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('detects multiple issue types in one file', async () => {
     const tmpDir = makeTmpDir();
     // Both bidi override AND zero-width

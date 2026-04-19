@@ -82,6 +82,73 @@ describe('skill-files check', () => {
     }
   });
 
+  it('WARNING for Mathematical Bold Latin homoglyph in skill file', async () => {
+    const tmpDir = makeTmpDir();
+    // U+1D400 = Mathematical Bold Capital A
+    fs.writeFileSync(path.join(tmpDir, '.cursorrules'), 'Follow the \u{1D400}gent rules carefully');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find((f) => f.severity === 'warning' && f.title.includes('Homoglyph'));
+      expect(finding).toBeDefined();
+      expect(finding.detail).toMatch(/Mathematical/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for Fullwidth Latin homoglyph in skill file', async () => {
+    const tmpDir = makeTmpDir();
+    // U+FF21 = Fullwidth Latin Capital A
+    fs.writeFileSync(path.join(tmpDir, '.cursorrules'), 'Follow the \uFF21gent rules');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find((f) => f.severity === 'warning' && f.title.includes('Homoglyph'));
+      expect(finding).toBeDefined();
+      expect(finding.detail).toMatch(/Fullwidth/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('WARNING for Cherokee homoglyph in skill file', async () => {
+    const tmpDir = makeTmpDir();
+    // U+13AA = Cherokee letter A (Latin-A lookalike)
+    fs.writeFileSync(path.join(tmpDir, '.cursorrules'), 'Follow the \u13AAgent rules');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find((f) => f.severity === 'warning' && f.title.includes('Homoglyph'));
+      expect(finding).toBeDefined();
+      expect(finding.detail).toMatch(/Cherokee/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('no homoglyph finding for plain ASCII skill file', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, '.cursorrules'), 'Be helpful, concise, ABC 123.');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const homoglyph = result.findings.find((f) => f.title?.includes('Homoglyph'));
+      expect(homoglyph).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('regression: still detects Cyrillic homoglyph in skill file', async () => {
+    const tmpDir = makeTmpDir();
+    // Cyrillic 'а' U+0430 looks like Latin 'a'
+    fs.writeFileSync(path.join(tmpDir, '.cursorrules'), 'Follow rules c\u0430refully');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const finding = result.findings.find((f) => f.severity === 'warning' && f.title.includes('Homoglyph'));
+      expect(finding).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   if (process.platform !== 'win32') {
     it('WARNING when skill file is world-writable', async () => {
       const tmpDir = makeTmpDir();
