@@ -284,6 +284,72 @@ describe('mcp-config check', () => {
     }
   });
 
+  // W4: version-pin detection must look at package-position arg only, not flag values
+  describe('version pin — package-position arg only (W4)', () => {
+    async function runWithArgs(command, args) {
+      const tmpDir = makeTmpDir();
+      const mcpConfig = { mcpServers: { 'srv': { command, args } } };
+      fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
+      try {
+        return await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    }
+    const hasUnpinned = (result) =>
+      result.findings.some((f) => f.severity === 'warning' && f.title.includes('unpinned'));
+
+    it('1. npx -y some-package@1.0.0 — no WARN (pinned)', async () => {
+      const result = await runWithArgs('npx', ['-y', 'some-package@1.0.0']);
+      expect(hasUnpinned(result)).toBe(false);
+    });
+
+    it('2. npx -y some-package — WARN (unpinned)', async () => {
+      const result = await runWithArgs('npx', ['-y', 'some-package']);
+      expect(hasUnpinned(result)).toBe(true);
+    });
+
+    it('3. npx -y --token=@abc123 some-package — WARN (bug case: @ in flag must not count)', async () => {
+      const result = await runWithArgs('npx', ['-y', '--token=@abc123', 'some-package']);
+      expect(hasUnpinned(result)).toBe(true);
+    });
+
+    it('4. npx -y --token=@abc123 some-package@1.0.0 — no WARN (package pinned, unrelated @ in flag)', async () => {
+      const result = await runWithArgs('npx', ['-y', '--token=@abc123', 'some-package@1.0.0']);
+      expect(hasUnpinned(result)).toBe(false);
+    });
+
+    it('5. npx -y @scope/pkg@1.0.0 — no WARN (scoped pinned)', async () => {
+      const result = await runWithArgs('npx', ['-y', '@scope/pkg@1.0.0']);
+      expect(hasUnpinned(result)).toBe(false);
+    });
+
+    it('6. npx -y @scope/pkg — WARN (scoped unpinned)', async () => {
+      const result = await runWithArgs('npx', ['-y', '@scope/pkg']);
+      expect(hasUnpinned(result)).toBe(true);
+    });
+
+    it('7. npx some-package@latest — WARN (unstable tag is not a pin)', async () => {
+      const result = await runWithArgs('npx', ['some-package@latest']);
+      expect(hasUnpinned(result)).toBe(true);
+    });
+
+    it('8. non-npx command (node) — no unpinned WARN (gate preserved)', async () => {
+      const result = await runWithArgs('node', ['some-package']);
+      expect(hasUnpinned(result)).toBe(false);
+    });
+
+    it('9. args.length === 0 — no unpinned WARN (gate preserved)', async () => {
+      const result = await runWithArgs('npx', []);
+      expect(hasUnpinned(result)).toBe(false);
+    });
+
+    it('10. npx -y --yes some-package@1.0.0 — no WARN (both -y and --yes skipped)', async () => {
+      const result = await runWithArgs('npx', ['-y', '--yes', 'some-package@1.0.0']);
+      expect(hasUnpinned(result)).toBe(false);
+    });
+  });
+
   it('reads additional MCP config paths from config', async () => {
     const tmpDir = makeTmpDir();
     const externalDir = makeTmpDir();
