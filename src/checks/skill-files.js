@@ -105,8 +105,16 @@ function isDefensiveContext(text) {
 }
 
 // Characters from non-Latin scripts that look like Latin — check AFTER NFKC normalization
-// Covers: Greek, Cyrillic, Cyrillic Supplement, Armenian, Georgian
-const HOMOGLYPH_RE = /[\u0370-\u03FF\u0400-\u04FF\u0500-\u052F\u0530-\u058F\u10A0-\u10FF]/;
+// Covers: Greek, Cyrillic, Cyrillic Supplement, Armenian, Georgian, Cherokee
+// (Cherokee U+13A0-13FF has letterforms matching Latin A/D/E/G/H/etc.)
+const HOMOGLYPH_RE = /[\u0370-\u03FF\u0400-\u04FF\u0500-\u052F\u0530-\u058F\u10A0-\u10FF\u13A0-\u13FF]/;
+
+// Ranges that NFKC-normalize to ASCII Latin — must be checked BEFORE normalization.
+// Mathematical Alphanumeric Symbols (U+1D400-1D7FF) — "𝐀𝐁𝐂" bold/italic/etc. lookalikes
+// Fullwidth Latin (U+FF00-FF5E) — "ＡＢＣ" Asian-width Latin
+const MATH_ALPHA_RE = /[\u{1D400}-\u{1D7FF}]/u;
+const FULLWIDTH_LATIN_RE = /[\uFF00-\uFF5E]/;
+const CHEROKEE_RE = /[\u13A0-\u13FF]/;
 
 // Zero-width and invisible characters (used to hide malicious content)
 const ZERO_WIDTH_RE = /[\u200B-\u200D\u2060\uFEFF]/;
@@ -128,6 +136,17 @@ function normalizeText(text) {
 
 function hasHomoglyphs(text) {
   return HOMOGLYPH_RE.test(text.normalize('NFKC'));
+}
+
+// Detect modern prompt-injection homoglyph ranges that either NFKC-normalize to ASCII
+// (Mathematical Alphanumeric Symbols, Fullwidth Latin) or aren't in the classic range
+// set (Cherokee). Returns an array of matched range names for diagnostic messages.
+function detectModernHomoglyphRanges(text) {
+  const ranges = [];
+  if (MATH_ALPHA_RE.test(text)) ranges.push('Mathematical Bold/Italic Latin');
+  if (FULLWIDTH_LATIN_RE.test(text)) ranges.push('Fullwidth Latin');
+  if (CHEROKEE_RE.test(text)) ranges.push('Cherokee');
+  return ranges;
 }
 
 function hasZeroWidthChars(text) {
@@ -402,14 +421,32 @@ export default {
         });
       }
 
-      // Homoglyph detection
+      // Homoglyph detection (classic ranges: Greek, Cyrillic, Armenian, Georgian, Cherokee)
       if (hasHomoglyphs(file.content)) {
+        const modernRanges = detectModernHomoglyphRanges(file.content);
+        const classicDetail = 'File contains characters from non-Latin scripts (Greek, Cyrillic, Armenian, Georgian, Cherokee) that visually resemble Latin letters. This could be used to disguise malicious instructions.';
+        const detail = modernRanges.length
+          ? `${classicDetail} Detected ranges: ${modernRanges.join(', ')}.`
+          : classicDetail;
         findings.push({
           severity: 'warning',
           title: `Homoglyph characters detected in ${file.path}`,
-          detail: 'File contains characters from non-Latin scripts (Greek, Cyrillic, Armenian, Georgian) that visually resemble Latin letters. This could be used to disguise malicious instructions.',
+          detail,
           remediation: 'Replace homoglyph characters with their ASCII equivalents.',
         });
+      } else {
+        // Modern prompt-injection ranges that NFKC-normalize to ASCII — must be detected
+        // on raw text. Skill/governance files are dev-control surfaces where Mathematical
+        // Bold or Fullwidth text is extremely unlikely to be legitimate.
+        const modernRanges = detectModernHomoglyphRanges(file.content);
+        if (modernRanges.length > 0) {
+          findings.push({
+            severity: 'warning',
+            title: `Homoglyph characters detected in ${file.path}`,
+            detail: `File contains Unicode characters from ranges used in prompt-injection attacks: ${modernRanges.join(', ')}. These visually resemble Latin letters and can disguise malicious instructions.`,
+            remediation: 'Replace homoglyph characters with their ASCII equivalents.',
+          });
+        }
       }
 
       // Check external URLs — only WARNING for HTTP (non-TLS)
