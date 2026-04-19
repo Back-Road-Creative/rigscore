@@ -195,6 +195,7 @@ export async function scan(options = {}) {
     config,
     deep: options.deep || false,
     online: options.online || false,
+    refreshMcpRegistry: options.refreshMcpRegistry || false,
     includeHomeSkills: options.includeHomeSkills || false,
   };
 

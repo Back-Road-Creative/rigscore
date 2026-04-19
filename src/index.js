@@ -21,6 +21,7 @@ export function parseArgs(args) {
     depth: 1,
     deep: false,
     online: false,
+    refreshMcpRegistry: false,
     includeHomeSkills: false,
     failUnder: 70,
     profile: null,
@@ -54,6 +55,9 @@ export function parseArgs(args) {
       options.deep = true;
     } else if (arg === '--online') {
       options.online = true;
+    } else if (arg === '--refresh-mcp-registry') {
+      options.refreshMcpRegistry = true;
+      options.online = true; // implies --online
     } else if (arg === '--include-home-skills') {
       options.includeHomeSkills = true;
     } else if (arg === '--fail-under' && i + 1 < args.length) {
@@ -150,6 +154,7 @@ export async function run(args) {
     checkFilter: options.checkFilter,
     deep: options.deep,
     online: options.online,
+    refreshMcpRegistry: options.refreshMcpRegistry,
     includeHomeSkills: options.includeHomeSkills,
     profile: options.profile,
   };
