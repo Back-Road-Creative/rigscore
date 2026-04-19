@@ -35,6 +35,7 @@ export const WEIGHTS = {
   'instruction-effectiveness': 0,
   'skill-coherence': 0,
   'workflow-maturity': 0,
+  'documentation': 0,
 };
 
 // OWASP Agentic Top 10 (2026) mapping for findings
@@ -56,6 +57,7 @@ export const OWASP_AGENTIC_MAP = {
   'instruction-effectiveness': 'ASI01', // Agent Goal Hijack
   'skill-coherence': 'ASI01',          // Agent Goal Hijack
   'workflow-maturity': 'ASI01',        // Agent Goal Hijack — taxonomy misclassification causes goal drift
+  'documentation': 'ASI02',            // Tool Misuse & Exploitation — undocumented check behavior
 };
 
 // Sentinel score for checks that find nothing to scan
@@ -114,7 +116,6 @@ export const AI_SERVICE_PORTS = new Map([
   [1235, 'LM Studio (alt)'],
   [8080, 'Open WebUI'],
   [3001, 'MCP SSE (common)'],
-  [18789, 'OpenClaw Gateway'],
   [4000, 'LiteLLM'],
   [5001, 'LocalAI'],
   [9090, 'vLLM'],

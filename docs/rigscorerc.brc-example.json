@@ -12,7 +12,6 @@
       "/home/dev/workspaces/_governance"
     ],
     "hookFiles": [
-      "~/.openclaw/hooks/sandbox-gate.py",
       "~/.claude/hooks/sandbox-gate.py"
     ]
   },
