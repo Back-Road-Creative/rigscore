@@ -33,6 +33,40 @@ const UNSTABLE_TAGS = new Set([
   'latest', 'next', 'main', 'dev', 'nightly', 'canary', 'beta', 'alpha', 'rc',
 ]);
 
+// Return the first non-flag arg in the args list, skipping -y and --yes.
+// Used to locate the package-position arg in an `npx` invocation so that
+// version-pin detection does not accidentally match `@` characters inside
+// unrelated flag values (e.g. `--token=@abc123`).
+export function findPackagePositionArg(args) {
+  if (!Array.isArray(args)) return null;
+  for (const a of args) {
+    if (typeof a !== 'string') continue;
+    if (a === '-y' || a === '--yes') continue;
+    if (a.startsWith('-')) continue;
+    return a;
+  }
+  return null;
+}
+
+// True iff the given arg carries a stable (non-unstable-tag) version pin of the
+// form `pkg@1.0.0` or `@scope/pkg@1.0.0`.
+export function argHasStableVersionPin(a) {
+  if (typeof a !== 'string') return false;
+  let versionPart = null;
+  if (a.startsWith('@')) {
+    const slashIdx = a.indexOf('/');
+    if (slashIdx === -1) return false;
+    const atIdx = a.indexOf('@', slashIdx + 1);
+    if (atIdx === -1) return false;
+    versionPart = a.slice(atIdx + 1);
+  } else {
+    const atIdx = a.indexOf('@');
+    if (atIdx === -1) return false;
+    versionPart = a.slice(atIdx + 1);
+  }
+  return Boolean(versionPart) && !UNSTABLE_TAGS.has(versionPart.toLowerCase());
+}
+
 function extractPathsFromArgs(args) {
   const paths = [];
   const flagPatterns = ['--directory', '--root', '--path', '--allowed-directories', '--dir'];
@@ -326,29 +360,15 @@ export default {
           }
         }
 
-        // Unpinned npx: command is 'npx' and no arg has a version pin
-        // A version pin looks like pkg@1.0.0 or @scope/pkg@1.0.0
-        // Scoped packages (@scope/pkg) without @version are NOT pinned
-        // Unstable tags (@latest, @next, @dev, etc.) are NOT pins
-        const hasVersionPin = args.some(a => {
-          if (typeof a !== 'string') return false;
-          let versionPart = null;
-          if (a.startsWith('@')) {
-            // @scope/pkg@version — extract version after the scope
-            const slashIdx = a.indexOf('/');
-            if (slashIdx === -1) return false;
-            const atIdx = a.indexOf('@', slashIdx + 1);
-            if (atIdx === -1) return false;
-            versionPart = a.slice(atIdx + 1);
-          } else {
-            // pkg@version — extract version after @
-            const atIdx = a.indexOf('@');
-            if (atIdx === -1) return false;
-            versionPart = a.slice(atIdx + 1);
-          }
-          // Reject unstable distribution tags as version pins
-          return versionPart && !UNSTABLE_TAGS.has(versionPart.toLowerCase());
-        });
+        // Unpinned npx: command is 'npx' and the package-position arg has no version pin.
+        // Package-position = first non-flag arg (not starting with '-'), skipping -y/--yes.
+        // A version pin looks like pkg@1.0.0 or @scope/pkg@1.0.0.
+        // Scoped packages (@scope/pkg) without @version are NOT pinned.
+        // Unstable tags (@latest, @next, @dev, etc.) are NOT pins.
+        // IMPORTANT: only the package-position arg is checked — flag values like
+        // `--token=@abc123` must not satisfy the pin check.
+        const packageArg = findPackagePositionArg(args);
+        const hasVersionPin = packageArg !== null && argHasStableVersionPin(packageArg);
         if ((server.command === 'npx' || server.command === 'npx.cmd') &&
             args.length > 0 && !hasVersionPin) {
           findings.push({
