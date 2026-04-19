@@ -32,6 +32,8 @@ Options:
   --depth <N>        Recursion depth (default: 1, implies --recursive)
   --deep             Enable deep source secret scanning
   --online           Enable online MCP supply chain verification
+  --refresh-mcp-registry  Force a refetch of the MCP registry cache
+                          (implies --online; bypasses the 24h TTL)
   --include-home-skills  Also scan ~/.claude/skills and ~/.claude/commands
                          (default: scan cwd only; home findings do not
                          affect project scores unless this flag is set)

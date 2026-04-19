@@ -122,6 +122,9 @@ npx github:Back-Road-Creative/rigscore --deep
 # Online checks (site-security, MCP supply-chain verification)
 npx github:Back-Road-Creative/rigscore --online
 
+# Force refresh of the MCP registry cache (implies --online)
+npx github:Back-Road-Creative/rigscore --refresh-mcp-registry
+
 # Auto-fix safe issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix
 
@@ -155,6 +158,10 @@ rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vsco
 - Typosquatting detection: is a package name suspiciously close to a known MCP server?
 
 **Supply chain risk:** An MCP server installed as `@latest` today could push a malicious update tomorrow. Version pinning prevents this. {#mcp-supply-chain}
+
+**MCP registry augmentation (`--online`):** when `--online` is passed, rigscore augments the hand-curated typosquat list with data from the official MCP registry at `https://registry.modelcontextprotocol.io/v0/servers`. The response is cached at `~/.cache/rigscore/mcp-registry.json` (XDG convention; overridable via `XDG_CACHE_HOME`) with a 24-hour TTL. If the refetch fails after expiry, the stale cache is still used and an INFO finding surfaces the state. The registry only **augments** the hand-curated list — it never replaces it. Pass `--refresh-mcp-registry` to force a refetch (implies `--online`).
+
+**Air-gapped / offline pre-populate:** place a JSON file at `~/.cache/rigscore/mcp-registry.json` with the shape `{"fetchedAt": "<ISO-8601 timestamp>", "data": { ... raw /v0/servers response ... }}`. rigscore will treat it like any other cache entry and respect the 24h TTL. An air-gapped host can refresh the file from a machine with network access on whatever cadence it chooses.
 
 **What to fix:** Scope filesystem servers to your project directory only. Remove wildcard env passthrough — pass only the specific variables each server needs. Pin all server packages to exact versions. Prefer `stdio` transport unless you specifically need network access.
 
@@ -452,6 +459,7 @@ npx github:Back-Road-Creative/rigscore --recursive               # Scan subdirec
 npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive scan, 2 levels deep
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
+npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
 npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan ~/.claude/skills and ~/.claude/commands (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations

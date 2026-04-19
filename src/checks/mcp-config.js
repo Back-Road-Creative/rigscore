@@ -3,8 +3,9 @@ import https from 'node:https';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readJsonSafe, readFileSafe } from '../utils.js';
-import { KNOWN_MCP_SERVERS, findTyposquatMatch } from '../known-mcp-servers.js';
+import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { computeServerHash, loadState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
+import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
 
 const SENSITIVE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -202,6 +203,22 @@ export default {
     if (config?.paths?.mcpConfig) {
       for (const p of config.paths.mcpConfig) {
         configPaths.push(p);
+      }
+    }
+
+    // MCP registry (online, augments hand-curated typosquat list).
+    // Fetched lazily once per check run; cached on disk with 24h TTL.
+    // Injection points (context.registryCachePath, context.registryFetch) exist for tests.
+    let registryResult = null;
+    if (context.online) {
+      try {
+        registryResult = await fetchRegistry({
+          cachePath: context.registryCachePath || getDefaultCachePath(homedir),
+          fetchImpl: context.registryFetch,
+          force: context.refreshMcpRegistry === true,
+        });
+      } catch (err) {
+        registryResult = { servers: [], warning: `MCP registry client error: ${err.message}` };
       }
     }
 
@@ -430,15 +447,37 @@ export default {
           }
         }
 
-        // Typosquatting detection (offline)
+        // Typosquatting detection (offline, hand-curated list)
+        let hadCuratedMatch = false;
         if (packageName && !KNOWN_MCP_SERVERS.includes(packageName)) {
           const match = findTyposquatMatch(packageName);
           if (match) {
+            hadCuratedMatch = true;
             findings.push({
               severity: 'warning',
               title: `MCP server "${name}": package "${packageName}" is similar to known "${match}"`,
               detail: `Levenshtein distance 1-2 from an official MCP server package. This could be a typosquat.`,
               remediation: `Verify the package name is correct. Did you mean "${match}"?`,
+            });
+          }
+        }
+
+        // Typosquatting detection (online, augments with MCP registry data)
+        if (
+          packageName &&
+          !hadCuratedMatch &&
+          registryResult &&
+          Array.isArray(registryResult.servers) &&
+          registryResult.servers.length > 0
+        ) {
+          const regMatch = findRegistryTyposquatMatch(packageName, registryResult.servers, levenshtein);
+          if (regMatch) {
+            findings.push({
+              severity: 'critical',
+              title: `MCP server "${name}": package "${packageName}" typosquats registry server "${regMatch}"`,
+              detail: `Package name is 1-2 edits from "${regMatch}" in the official MCP registry at https://registry.modelcontextprotocol.io. Source: MCP registry.`,
+              remediation: `Verify the package name is correct. Did you mean "${regMatch}"?`,
+              learnMore: 'https://registry.modelcontextprotocol.io/v0/servers',
             });
           }
         }
@@ -451,6 +490,19 @@ export default {
           }
         }
       }
+    }
+
+    // Surface registry status as an INFO finding when --online is requested.
+    // These are advisory — they do not flip the check to critical and do not
+    // materially move the score (floor applies for INFO-only).
+    if (registryResult && registryResult.warning) {
+      findings.push({
+        severity: 'info',
+        title: registryResult.warning,
+        detail: registryResult.stale
+          ? 'Using cached MCP registry data from a previous successful fetch.'
+          : 'Falling back to the hand-curated MCP server list for typosquat detection.',
+      });
     }
 
     if (!foundAny) {
