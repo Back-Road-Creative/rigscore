@@ -13,7 +13,7 @@ export function parseArgs(args) {
     fix: false,
     yes: false,
     noColor: false,
-    noCta: false,
+    noCta: true,
     verbose: false,
     checkFilter: null,
     cwd: null,
@@ -42,6 +42,8 @@ export function parseArgs(args) {
       options.noColor = true;
     } else if (arg === '--no-cta') {
       options.noCta = true;
+    } else if (arg === '--cta') {
+      options.noCta = false;
     } else if (arg === '--check' && i + 1 < args.length) {
       options.checkFilter = args[++i];
     } else if (arg === '--verbose' || arg === '-v') {

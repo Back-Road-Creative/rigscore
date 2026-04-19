@@ -82,8 +82,41 @@ describe('formatTerminal', () => {
     expect(plain).toContain('.env file found but NOT in .gitignore');
   });
 
-  it('includes CTA link', () => {
+  it('suppresses CTA by default (opt-in via --cta)', () => {
     const plain = stripAnsi(formatTerminal(mockResult, '/home/user/project'));
+    expect(plain).not.toContain('backroadcreative.com');
+  });
+
+  it('includes CTA when noCta is explicitly false', () => {
+    const plain = stripAnsi(formatTerminal(mockResult, '/home/user/project', { noCta: false }));
+    expect(plain).toContain('backroadcreative.com');
+  });
+
+  it('suppresses CTA when noCta is true', () => {
+    const plain = stripAnsi(formatTerminal(mockResult, '/home/user/project', { noCta: true }));
+    expect(plain).not.toContain('backroadcreative.com');
+  });
+});
+
+describe('formatTerminalRecursive CTA gating', () => {
+  const recursiveResult = {
+    score: 60,
+    projects: [
+      { path: 'project-a', score: 40, results: mockResult.results },
+      { path: 'project-b', score: 80, results: [] },
+    ],
+    worstProject: { path: 'project-a', score: 40 },
+  };
+
+  it('suppresses CTA by default', async () => {
+    const { formatTerminalRecursive } = await import('../src/reporter.js');
+    const plain = stripAnsi(formatTerminalRecursive(recursiveResult, '/root'));
+    expect(plain).not.toContain('backroadcreative.com');
+  });
+
+  it('includes CTA when noCta is explicitly false', async () => {
+    const { formatTerminalRecursive } = await import('../src/reporter.js');
+    const plain = stripAnsi(formatTerminalRecursive(recursiveResult, '/root', { noCta: false }));
     expect(plain).toContain('backroadcreative.com');
   });
 });

@@ -178,8 +178,8 @@ export function formatTerminal(result, cwd, options = {}) {
     }
   }
 
-  // CTA
-  if (!options.noCta) {
+  // CTA (opt-in: only shown when noCta is explicitly false)
+  if (options.noCta === false) {
     lines.push(`  ${'─'.repeat(40)}`);
     lines.push('');
     lines.push('  Want a full audit with hardened configurations deployed?');
@@ -271,8 +271,8 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
     }
   }
 
-  // CTA
-  if (!options.noCta) {
+  // CTA (opt-in: only shown when noCta is explicitly false)
+  if (options.noCta === false) {
     lines.push(`  ${'─'.repeat(40)}`);
     lines.push('');
     lines.push('  Want a full audit with hardened configurations deployed?');
