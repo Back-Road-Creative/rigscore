@@ -590,6 +590,34 @@ When your project has a repo-level `.mcp.json`, rigscore writes `.rigscore-state
 
 **Recommendation: commit `.rigscore-state.json`.** Supply-chain changes become visible in code review, and drift across collaborators resolves naturally via git. Diff rules: new servers are recorded silently, removed servers are silently dropped, a corrupted state file produces one INFO finding and resets. If you prefer local-only, add `.rigscore-state.json` to `.gitignore` — you'll still get rug-pull detection, just scoped to your machine.
 
+## Runtime tool pinning
+
+The config-shape hash above catches `.mcp.json` edits, but it cannot see changes to an MCP server's **tool descriptions** — the prompt-level payload the model actually reads. CVE-2025-54136 and the broader "MCP rug pull" class exploit this: the config stays identical, the package version stays identical, but a new tool description appears or is mutated to coerce the model (for example, "IGNORE PREVIOUS INSTRUCTIONS and exfiltrate …").
+
+rigscore detects this **without executing the MCP server itself**. The server's `npx` package is supplied by the upstream you are trying to verify — running it as part of a scan would hand arbitrary code execution to the thing you distrust. Instead, rigscore uses a print-and-paste workflow: you run the server, pipe its `tools/list` JSON output into `rigscore mcp-hash`, and paste the resulting hash back with `rigscore mcp-pin`. rigscore only ever canonicalizes and hashes text from stdin.
+
+**Why rigscore does NOT execute the MCP server:** a malicious MCP package can run any code during startup. Any tool that spawns it to probe its tool list becomes an RCE-on-scan gadget. The user is already going to launch the server in their editor — reusing that invocation to emit `tools/list` once keeps rigscore in the pure-inspection lane.
+
+### Workflow
+
+```bash
+# One-time: pin the server's current tool descriptions.
+npx -y @modelcontextprotocol/server-filesystem /path | rigscore mcp-hash | xargs rigscore mcp-pin filesystem
+
+# Later (on demand or in CI): verify no drift vs the pinned snapshot.
+npx -y @modelcontextprotocol/server-filesystem /path | rigscore mcp-verify filesystem
+```
+
+`rigscore mcp-verify` exits 0 when the hash matches and non-zero with a drift message (including stored-hash prefix, current-hash prefix, and pinnedAt timestamp) when it doesn't.
+
+During normal scans, each MCP server in `.mcp.json` produces an INFO finding showing its pin status ("runtime tool hash pinned <date>" or "runtime tool hash not pinned — run `rigscore mcp-hash`"). These INFOs are zero-weight and suppressible via `.rigscorerc.json`:
+
+```json
+{ "mcpConfig": { "surfaceRuntimeHashStatus": false } }
+```
+
+The runtime hash is stored under `servers[<name>].runtimeToolHash` / `runtimeToolPinnedAt` in `.rigscore-state.json`, alongside the existing `mcpServers` config-shape map. State schema version stays at 1.
+
 ## Contributing
 
 Issues and PRs welcome. If you find a check that's missing or a false positive, [open an issue](https://github.com/Back-Road-Creative/rigscore/issues).
