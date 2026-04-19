@@ -3,10 +3,24 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
 import { readFileSafe } from '../utils.js';
 
-const HOMOGLYPH_RE = /[\u0370-\u03FF\u0400-\u052F\u0530-\u058F\u10A0-\u10FF]/;
+// Classic homoglyph ranges (detected AFTER NFKC normalization):
+// Greek, Cyrillic, Armenian, Georgian, Cherokee (U+13A0-13FF has Latin A/D/E/G/H lookalikes)
+const HOMOGLYPH_RE = /[\u0370-\u03FF\u0400-\u052F\u0530-\u058F\u10A0-\u10FF\u13A0-\u13FF]/;
+// Modern prompt-injection ranges that NFKC-normalize to ASCII — detect on raw text.
+const MATH_ALPHA_RE = /[\u{1D400}-\u{1D7FF}]/u;
+const FULLWIDTH_LATIN_RE = /[\uFF00-\uFF5E]/;
+const CHEROKEE_RE = /[\u13A0-\u13FF]/;
 const ZERO_WIDTH_RE = /[\u200B-\u200D\u2060\uFEFF]/;
 const BIDI_RE = /[\u202A-\u202E\u2066-\u2069]/;
 const TAG_CHARS_RE = /[\u{E0001}-\u{E007F}]/u;
+
+function detectModernHomoglyphRanges(text) {
+  const ranges = [];
+  if (MATH_ALPHA_RE.test(text)) ranges.push('Mathematical Bold/Italic Latin');
+  if (FULLWIDTH_LATIN_RE.test(text)) ranges.push('Fullwidth Latin');
+  if (CHEROKEE_RE.test(text)) ranges.push('Cherokee');
+  return ranges;
+}
 
 const CONFIG_FILES = [
   '.mcp.json',
@@ -61,12 +75,24 @@ export default {
       }
 
       // Homoglyphs — WARNING
-      if (HOMOGLYPH_RE.test(content.normalize('NFKC'))) {
+      // Check classic ranges (post-NFKC) and modern ranges (raw text).
+      // Modern ranges like Mathematical Alphanumeric Symbols and Fullwidth Latin
+      // NFKC-normalize to ASCII, so they must be detected before normalization.
+      const classicMatch = HOMOGLYPH_RE.test(content.normalize('NFKC'));
+      const modernRanges = detectModernHomoglyphRanges(content);
+      if (classicMatch || modernRanges.length > 0) {
         hasIssue = true;
+        const parts = [];
+        if (classicMatch) {
+          parts.push('non-Latin characters (Greek, Cyrillic, Armenian, Georgian, Cherokee)');
+        }
+        if (modernRanges.length > 0) {
+          parts.push(`characters from ${modernRanges.join(', ')} ranges`);
+        }
         findings.push({
           severity: 'warning',
           title: `Homoglyph characters in ${rel}`,
-          detail: 'File contains non-Latin characters (Greek, Cyrillic, Armenian, Georgian) that visually resemble Latin letters.',
+          detail: `File contains ${parts.join(' and ')} that visually resemble Latin letters.`,
           remediation: 'Replace homoglyph characters with ASCII equivalents.',
         });
       }
