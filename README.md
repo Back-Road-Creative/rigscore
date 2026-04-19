@@ -428,7 +428,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 
 - **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. Mitigations in the pipeline include LLM-judge assist (opt-in) and cross-check against observed behavior via the coherence pass.
 - **Injection detection is pattern-based.** The injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
-- **No tool-description pinning (MCP rug-pull detection).** rigscore does not hash MCP tool descriptions across scans. A server whose manifest advertises safe tools on install day and malicious tools two weeks later will not be flagged as drift. Snyk Agent Scan's Tool Pinning feature covers this; rigscore doesn't, yet.
+- **Config-shape pinning only (not runtime tool descriptions).** rigscore hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). It does **not** hash the tool descriptions that a running MCP server advertises; doing so would require actually invoking servers (out of scope for offline mode). Snyk Agent Scan's Tool Pinning covers runtime description drift; rigscore covers the config-file rug-pull. See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use gitleaks or trufflehog.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
 
@@ -583,6 +583,12 @@ npx github:Back-Road-Creative/rigscore --sarif > results.sarif
 ## Privacy
 
 rigscore runs entirely on your local machine by default. No telemetry, no accounts, no API calls. The `--online` flag opts in to outbound HTTP probes for the site-security check and MCP supply-chain verification — those explicitly reach out, and only to the URLs and packages you have already configured.
+
+## State file
+
+When your project has a repo-level `.mcp.json`, rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
+
+**Recommendation: commit `.rigscore-state.json`.** Supply-chain changes become visible in code review, and drift across collaborators resolves naturally via git. Diff rules: new servers are recorded silently, removed servers are silently dropped, a corrupted state file produces one INFO finding and resets. If you prefer local-only, add `.rigscore-state.json` to `.gitignore` — you'll still get rug-pull detection, just scoped to your machine.
 
 ## Contributing
 

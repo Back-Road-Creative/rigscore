@@ -22,26 +22,26 @@ describe('mcp-config check', () => {
   });
 
   it('PASS with clean stdio config', async () => {
-    const result = await check.run({ cwd: fixture('mcp-clean'), homedir: '/tmp/nonexistent', config: defaultConfig });
+    const result = await check.run({ cwd: fixture('mcp-clean'), homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
     const critical = result.findings.find((f) => f.severity === 'critical');
     expect(critical).toBeUndefined();
   });
 
   it('CRITICAL when root filesystem access', async () => {
-    const result = await check.run({ cwd: fixture('mcp-root'), homedir: '/tmp/nonexistent', config: defaultConfig });
+    const result = await check.run({ cwd: fixture('mcp-root'), homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
     const critical = result.findings.find((f) => f.severity === 'critical');
     expect(critical).toBeDefined();
     expect(critical.title).toMatch(/root|filesystem/i);
   });
 
   it('CRITICAL/WARNING for env passthrough and SSE transport', async () => {
-    const result = await check.run({ cwd: fixture('mcp-passthrough'), homedir: '/tmp/nonexistent', config: defaultConfig });
+    const result = await check.run({ cwd: fixture('mcp-passthrough'), homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
     const issues = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning');
     expect(issues.length).toBeGreaterThanOrEqual(1);
   });
 
   it('INFO when no MCP config found', async () => {
-    const result = await check.run({ cwd: fixture('mcp-none'), homedir: '/tmp/nonexistent', config: defaultConfig });
+    const result = await check.run({ cwd: fixture('mcp-none'), homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
     const info = result.findings.find((f) => f.severity === 'info');
     expect(info).toBeDefined();
     expect(result.score).toBe(-1);
@@ -59,7 +59,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const info = result.findings.find((f) => f.severity === 'info' && f.title.includes('localhost'));
       expect(info).toBeDefined();
       const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('network transport'));
@@ -74,7 +74,7 @@ describe('mcp-config check', () => {
     const raw = '{"mcpServers": {"test": {"command": "node", "args": [], "env": {"ALL": "...process.env"}}}}';
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), raw);
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('Wildcard env'));
       expect(warning).toBeDefined();
     } finally {
@@ -96,7 +96,7 @@ describe('mcp-config check', () => {
 }`;
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), jsonc);
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       // Should parse successfully and find the root filesystem access
       const critical = result.findings.find((f) => f.severity === 'critical' && f.title.includes('filesystem'));
       expect(critical).toBeDefined();
@@ -117,7 +117,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find(
         (f) => f.severity === 'warning' && f.title.includes('unpinned'),
       );
@@ -139,7 +139,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find(
         (f) => f.severity === 'warning' && f.title.includes('unpinned'),
       );
@@ -161,7 +161,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find(
         (f) => f.severity === 'warning' && f.title.includes('unpinned'),
       );
@@ -183,7 +183,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find(
         (f) => f.severity === 'warning' && f.title.includes('unpinned'),
       );
@@ -205,7 +205,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find(
         (f) => f.severity === 'warning' && f.title.includes('unpinned'),
       );
@@ -227,7 +227,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find(
         (f) => f.severity === 'warning' && f.title.includes('unpinned'),
       );
@@ -249,7 +249,7 @@ describe('mcp-config check', () => {
     };
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
     try {
-      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
       const warning = result.findings.find(
         (f) => f.severity === 'warning' && f.title.includes('unpinned'),
       );
@@ -273,7 +273,7 @@ describe('mcp-config check', () => {
       };
       fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify(mcpConfig));
       try {
-        const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+        const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
         const warning = result.findings.find(
           (f) => f.severity === 'warning' && f.title.includes('unpinned'),
         );
