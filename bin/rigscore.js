@@ -4,6 +4,24 @@ import { run } from '../src/index.js';
 
 const args = process.argv.slice(2);
 
+// Subcommand dispatch (MCP runtime-hash pinning, print-and-paste workflow).
+// These commands never execute an MCP server subprocess — user pipes
+// `tools/list` JSON into stdin and pastes the hash back via `mcp-pin`.
+const MCP_SUBCOMMANDS = new Set(['mcp-hash', 'mcp-pin', 'mcp-verify']);
+if (args.length > 0 && MCP_SUBCOMMANDS.has(args[0])) {
+  const subcommand = args[0];
+  const rest = args.slice(1);
+  const mod = await import('../src/cli/mcp-subcommands.js');
+  if (subcommand === 'mcp-hash') {
+    await mod.runMcpHash();
+  } else if (subcommand === 'mcp-pin') {
+    await mod.runMcpPin(rest);
+  } else if (subcommand === 'mcp-verify') {
+    await mod.runMcpVerify(rest);
+  }
+  process.exit(0);
+}
+
 if (args.includes('--version')) {
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
@@ -62,13 +80,19 @@ Checks (moat-heavy weighting):
   instruction-effectiveness Instruction quality & context budget (advisory)
   skill-coherence          Skill ↔ governance coherence (advisory)
 
+Subcommands (MCP runtime tool pinning — print-and-paste, no exec):
+  mcp-hash                         Hash a tools/list JSON read from stdin
+  mcp-pin <server> <hash>          Pin a runtime tool hash in .rigscore-state.json
+  mcp-verify <server>              Compare stdin tools/list to the pinned hash
+
 Examples:
   rigscore                          Scan current directory
   rigscore /path/to/project         Scan a specific project
   rigscore --json                   JSON output for CI
   rigscore --ci --fail-under 80     CI with strict threshold
   rigscore . -r --depth 2           Scan monorepo (2 levels deep)
-  rigscore --check docker-security  Run only Docker/K8s check`);
+  rigscore --check docker-security  Run only Docker/K8s check
+  npx -y <pkg> | rigscore mcp-hash | xargs rigscore mcp-pin <server>`);
   process.exit(0);
 }
 
