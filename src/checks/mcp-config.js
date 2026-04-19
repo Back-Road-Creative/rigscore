@@ -657,7 +657,44 @@ export default {
       }
 
       // Write the new state (first scan, drift acknowledged, or unchanged).
-      await saveState(cwd, { version: STATE_VERSION, mcpServers: currentHashes });
+      // Preserve any existing `servers` map (runtime tool-hash pins written by
+      // `rigscore mcp-pin`). Round 2's top-level `mcpServers` map carries the
+      // config-shape hash; Round 3's `servers[<name>]` carries runtime pins.
+      const preservedServers = (state && state.servers && typeof state.servers === 'object')
+        ? state.servers
+        : undefined;
+      const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
+      if (preservedServers) nextState.servers = preservedServers;
+      await saveState(cwd, nextState);
+    }
+
+    // Runtime tool-hash pin status (print-and-paste workflow).
+    // Default-on INFO finding per repo-level MCP server, suppressible via
+    // `.rigscorerc.json` key `mcpConfig.surfaceRuntimeHashStatus: false`.
+    const surfaceRuntime = config?.mcpConfig?.surfaceRuntimeHashStatus !== false;
+    if (surfaceRuntime && Object.keys(currentHashes).length > 0) {
+      const { state: pinState } = await loadState(cwd);
+      const serversMap = (pinState && pinState.servers && typeof pinState.servers === 'object') ? pinState.servers : {};
+      for (const name of Object.keys(currentHashes)) {
+        const entry = serversMap[name] || {};
+        const pinnedAt = typeof entry.runtimeToolPinnedAt === 'string' ? entry.runtimeToolPinnedAt : null;
+        const hasRuntimeHash = typeof entry.runtimeToolHash === 'string';
+        if (hasRuntimeHash && pinnedAt) {
+          const date = pinnedAt.slice(0, 10); // ISO YYYY-MM-DD
+          findings.push({
+            severity: 'info',
+            title: `MCP server "${name}": runtime tool pin recorded ${date}`,
+            detail: `Runtime tool hash pinned (pinnedAt ${pinnedAt}). Verify before trusting tool descriptions with: rigscore mcp-verify ${name}.`,
+          });
+        } else {
+          findings.push({
+            severity: 'info',
+            title: `MCP server "${name}": runtime tool pin not recorded`,
+            detail: 'Pin a snapshot of the server\'s tool descriptions to detect CVE-2025-54136-class drift between scans. rigscore does NOT execute the server — user must pipe tools/list JSON into stdin.',
+            remediation: `Run: npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin ${name}`,
+          });
+        }
+      }
     }
 
     if (findings.length === 0) {
