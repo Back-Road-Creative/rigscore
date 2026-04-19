@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:docs": "node scripts/verify-docs.js"
   },
   "engines": {
     "node": ">=18"

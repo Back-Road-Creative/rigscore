@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 13 scored checks plus 6 advisory checks. A hygiene score out of 100. Know where you stand before something breaks.
+One command. 13 scored checks plus 7 advisory checks. A hygiene score out of 100. Know where you stand before something breaks.
 
 ```bash
 npx github:Back-Road-Creative/rigscore
@@ -384,6 +384,17 @@ Classifies the project's workflow artefacts against the AI development taxonomy 
 - Stale memory files and orphan memory that is not linked from `MEMORY.md`
 - Taxonomy misclassification between skills, agents, pipelines, and memory
 
+### 20. Documentation coverage (advisory, 0 points) {#documentation}
+
+Enforces the docs-first gate: every module in `src/checks/` must have a matching page under `docs/checks/` with the canonical sections (Purpose, Triggers, Weight rationale, Fix semantics, SARIF, Example) filled in, and every doc must correspond to a real check. Advisory, and only active in rigscore itself or plugin repos that mirror its layout. See [`docs/checks/documentation.md`](docs/checks/documentation.md).
+
+**What rigscore looks for:**
+- Check modules in `src/checks/` with no matching `docs/checks/<id>.md`
+- Doc pages that are missing required H2 sections or have empty section bodies
+- Doc pages whose stated weight drifts from `src/constants.js`
+- Doc H1 titles that do not match the check id
+- Orphan doc pages with no corresponding check module
+
 ## Scoring
 
 | Score | Grade | Meaning |
@@ -417,6 +428,7 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 | Instruction effectiveness | 0 | governance (advisory) |
 | Skill ↔ governance coherence | 0 | governance (advisory) |
 | Workflow maturity | 0 | governance (advisory) |
+| Documentation coverage | 0 | process (advisory) |
 
 - **CRITICAL** findings zero out their sub-check entirely
 - **WARNING** findings deduct 15 points each (1 WARNING = 85, 2 = 70, 3 = 55...)
@@ -440,6 +452,15 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 - **Config-shape pinning only (not runtime tool descriptions).** rigscore hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). It does **not** hash the tool descriptions that a running MCP server advertises; doing so would require actually invoking servers (out of scope for offline mode). Snyk Agent Scan's Tool Pinning covers runtime description drift; rigscore covers the config-file rug-pull. See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use gitleaks or trufflehog.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
+- **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. An npm package will see 9–10 of 19 checks as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and score accordingly. rigscore scores *itself* 35/100 in CI for this reason, not because the project is broken — see [Dogfooding](#dogfooding) below.
+
+## Dogfooding
+
+rigscore runs on rigscore in CI. Transparency about what that score means:
+
+- **Self-score: 35/100 (Grade F).** This is the real score, not a vanity baseline. Rigscore is an npm package; 10 of 19 checks legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior.
+- **CI threshold: `--fail-under 30`.** Calibrated to the observed baseline with a 5-point regression buffer. The public default is 70 — the 40-point gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
+- **`.rigscorerc.json` disables three checks** (`infrastructure-security`, `skill-coherence`, `workflow-maturity`) that require workspace-oriented artifacts rigscore doesn't ship. These are per-check disables at the profile level, not ignore-rules on individual findings — the distinction matters when auditing the config.
 
 ## Options
 

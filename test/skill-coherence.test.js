@@ -196,7 +196,7 @@ describe('skill-coherence check', () => {
     writeGovernance(tmpDir, '# Rules\n');
     writeSettings(tmpDir, {
       permissions: {
-        allow: ['Bash(sops-get OPENCLAW_TOKEN:*)'],
+        allow: ['Bash(sops-get CUSTOM_TOKEN:*)'],
         deny: ['Bash(sops-get:*)'],
       },
     });

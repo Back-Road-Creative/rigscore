@@ -228,7 +228,7 @@ describe('W2/T2.4–T2.7: skill-coherence detectors are opt-in', () => {
     // If the default config now reads it, this test would prove the
     // leak — the hook content contains a sentinel we look for in findings.
     const homedir = path.join(tmpDir, 'home');
-    const oldHookPath = path.join(homedir, '.openclaw', 'hooks', 'sandbox-gate.py');
+    const oldHookPath = path.join(homedir, '.custom-hooks', 'hooks', 'sandbox-gate.py');
     fs.mkdirSync(path.dirname(oldHookPath), { recursive: true });
     fs.writeFileSync(oldHookPath, '# sops-get is always blocked in this fake hook\n');
 
@@ -237,7 +237,7 @@ describe('W2/T2.4–T2.7: skill-coherence detectors are opt-in', () => {
     fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(tmpDir, '.claude', 'settings.json'), JSON.stringify({
       permissions: {
-        allow: ['Bash(sops-get OPENCLAW_TOKEN:*)'],
+        allow: ['Bash(sops-get CUSTOM_TOKEN:*)'],
       },
     }));
     writeSkill(tmpDir, 'anything', '---\nname: anything\ndescription: x\n---\n');
