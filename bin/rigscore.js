@@ -32,6 +32,9 @@ Options:
   --depth <N>        Recursion depth (default: 1, implies --recursive)
   --deep             Enable deep source secret scanning
   --online           Enable online MCP supply chain verification
+  --include-home-skills  Also scan ~/.claude/skills and ~/.claude/commands
+                         (default: scan cwd only; home findings do not
+                         affect project scores unless this flag is set)
   --fix              Show auto-fixable issues (dry run)
   --fix --yes        Apply safe auto-remediations
   --watch            Watch for changes and re-run automatically

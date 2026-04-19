@@ -21,6 +21,7 @@ export function parseArgs(args) {
     depth: 1,
     deep: false,
     online: false,
+    includeHomeSkills: false,
     failUnder: 70,
     profile: null,
     initHook: false,
@@ -53,6 +54,8 @@ export function parseArgs(args) {
       options.deep = true;
     } else if (arg === '--online') {
       options.online = true;
+    } else if (arg === '--include-home-skills') {
+      options.includeHomeSkills = true;
     } else if (arg === '--fail-under' && i + 1 < args.length) {
       const parsed = parseInt(args[++i], 10);
       options.failUnder = Math.max(0, Math.min(100, Number.isNaN(parsed) ? 70 : parsed));
@@ -147,6 +150,7 @@ export async function run(args) {
     checkFilter: options.checkFilter,
     deep: options.deep,
     online: options.online,
+    includeHomeSkills: options.includeHomeSkills,
     profile: options.profile,
   };
 
