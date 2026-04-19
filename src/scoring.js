@@ -38,8 +38,36 @@ export function calculateCheckScore(findings) {
  * N/A checks (score === -1) are excluded and their weight is
  * redistributed proportionally among applicable checks.
  *
- * Coverage penalty: if total applicable weight < COVERAGE_PENALTY_THRESHOLD,
- * the score is scaled down by (totalApplicableWeight / 100).
+ * ── Coverage scaling (design note) ──────────────────────────────────────
+ *
+ * "Coverage" means the sum of WEIGHTS[id] for every check that was actually
+ * applicable to this project (i.e. not N/A). Scoring is additive-deduction
+ * within each check, then combined across checks as a weight-proportional
+ * average. When applicable coverage is low — fewer than
+ * COVERAGE_PENALTY_THRESHOLD points of weight out of 100 — we additionally
+ * scale the result by (totalApplicableWeight / 100). A project where only a
+ * handful of checks can reach a verdict should not be able to claim a
+ * perfect 100; partial coverage means partial confidence.
+ *
+ * Why additive deduction + coverage scaling, not averaged confidence:
+ *   - The per-check score already answers "how clean is this one surface?".
+ *   - The overall score additionally answers "how much of the attack
+ *     surface did we actually measure?".
+ *   - Conflating the two (e.g. ignoring N/A checks entirely) rewards
+ *     under-configured projects for being invisible to the scanner.
+ *
+ * Known edge — discontinuity at the threshold:
+ *   At coverage just below 50, the reported score is scaled; at coverage of
+ *   exactly 50 and above, it is not. This produces a visible step. It is
+ *   intentional and user-decision-gated: smoothing the curve would shift
+ *   every existing score for zero correctness benefit. The sequence is
+ *   monotonically non-decreasing (no dip), which is the hard contract.
+ *   See H1 in the hostile review and test/scoring-coverage.test.js for the
+ *   characterization tests that pin this behavior exactly.
+ *
+ * If you ever need to change coverage scaling, update the characterization
+ * tests first, get sign-off on the score shift, then update the formula —
+ * in that order.
  */
 export function calculateOverallScore(results, customWeights) {
   const w = customWeights || WEIGHTS;
