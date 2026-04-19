@@ -8,8 +8,13 @@ const DEFAULTS = {
     dockerCompose: [],
     mcpConfig: [],
     hookDirs: [],
+    hookFiles: [],
     skillFiles: [],
+    governanceDirs: [],
     immutableDirs: [],
+    hooksDir: null,
+    gitWrapper: null,
+    safetyGates: null,
   },
   network: {
     safeHosts: ['127.0.0.1', 'localhost', '::1'],
@@ -19,6 +24,16 @@ const DEFAULTS = {
   weights: {},
   checks: { disabled: [] },
   suppress: [],
+  coherence: {
+    allowGovernanceContradictions: [],
+  },
+  skillCoherence: {
+    constraints: [],
+    hookSettingsConflicts: [],
+  },
+  workflowMaturity: {
+    stageDirs: ['stages', 'phases'],
+  },
 };
 
 export const PROFILES = {
@@ -99,9 +114,13 @@ function mergeConfig(userConfig) {
 
   if (userConfig.paths) {
     for (const key of Object.keys(result.paths)) {
-      if (Array.isArray(userConfig.paths[key])) {
+      const userValue = userConfig.paths[key];
+      if (Array.isArray(result.paths[key]) && Array.isArray(userValue)) {
         // Concatenate and deduplicate arrays instead of replacing
-        result.paths[key] = [...new Set([...result.paths[key], ...userConfig.paths[key]])];
+        result.paths[key] = [...new Set([...result.paths[key], ...userValue])];
+      } else if (result.paths[key] === null && typeof userValue === 'string') {
+        // Scalar path overrides
+        result.paths[key] = userValue;
       }
     }
   }
@@ -131,6 +150,27 @@ function mergeConfig(userConfig) {
 
   if (Array.isArray(userConfig.sites)) {
     result.sites = [...new Set([...result.sites, ...userConfig.sites])];
+  }
+
+  if (userConfig.coherence && typeof userConfig.coherence === 'object') {
+    if (Array.isArray(userConfig.coherence.allowGovernanceContradictions)) {
+      result.coherence.allowGovernanceContradictions = userConfig.coherence.allowGovernanceContradictions;
+    }
+  }
+
+  if (userConfig.skillCoherence && typeof userConfig.skillCoherence === 'object') {
+    if (Array.isArray(userConfig.skillCoherence.constraints)) {
+      result.skillCoherence.constraints = userConfig.skillCoherence.constraints;
+    }
+    if (Array.isArray(userConfig.skillCoherence.hookSettingsConflicts)) {
+      result.skillCoherence.hookSettingsConflicts = userConfig.skillCoherence.hookSettingsConflicts;
+    }
+  }
+
+  if (userConfig.workflowMaturity && typeof userConfig.workflowMaturity === 'object') {
+    if (Array.isArray(userConfig.workflowMaturity.stageDirs)) {
+      result.workflowMaturity.stageDirs = userConfig.workflowMaturity.stageDirs;
+    }
   }
 
   return result;

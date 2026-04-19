@@ -1,0 +1,131 @@
+{
+  "_comment": "Back-Road Creative's internal rigscore config — safe to copy as a template and adapt to your own conventions.",
+  "paths": {
+    "hooksDir": "/opt/git-hooks",
+    "gitWrapper": "/usr/local/bin/git",
+    "safetyGates": "/etc/profile.d/safety-gates.sh",
+    "immutableDirs": [
+      "/home/dev/workspaces/_governance",
+      "/home/dev/workspaces/_foundation"
+    ],
+    "governanceDirs": [
+      "/home/dev/workspaces/_governance"
+    ],
+    "hookFiles": [
+      "~/.openclaw/hooks/sandbox-gate.py",
+      "~/.claude/hooks/sandbox-gate.py"
+    ]
+  },
+  "coherence": {
+    "allowGovernanceContradictions": [
+      {
+        "allowRe": "sudo\\s+-u\\s+dev\\s+git",
+        "govRe": "\\b(never|must not|do not)\\b.{0,30}sudo.{0,20}-u.{0,20}dev",
+        "title": "Allow list permits sudo-u-dev-git which governance forbids",
+        "detail": "settings.json allow list contains a sudo -u dev git entry, but governance explicitly forbids this operation.",
+        "remediation": "Remove the sudo -u dev git allow-list entry and use git as the human owner directly."
+      },
+      {
+        "allowRe": "pip[23]?\\s+install",
+        "govRe": "\\b(dev-pip|pip.*wrapper|use.*wrapper.*pip|no pip install|must not.*pip)\\b",
+        "title": "Allow list permits pip install which governance restricts to a wrapper",
+        "detail": "settings.json allow list contains pip install, but governance restricts installs to a project-specific wrapper.",
+        "remediation": "Remove the pip install allow-list entry and use the configured wrapper instead."
+      }
+    ]
+  },
+  "skillCoherence": {
+    "constraints": [
+      {
+        "id": "merge-workflow",
+        "governancePattern": "\\b(gh-merge-approved|brc-merge-approved|no direct merge)\\b",
+        "awarenessPatterns": [
+          "gh-merge-approved",
+          "brc-merge-approved",
+          "merge.*manual",
+          "hand.?off.*merge"
+        ],
+        "appliesTo": "\\b(ship|commit|push|deploy|pr create|git push)\\b",
+        "finding": {
+          "severity": "warning",
+          "title": "Skill unaware of merge workflow restrictions",
+          "detail": "Governance requires merges via gh-merge-approved/brc-merge-approved (manual hand-off), but this skill handles git/shipping operations without mentioning the constraint.",
+          "remediation": "Add merge workflow awareness: 'Merge is manual via gh-merge-approved. Print PR URL and merge command for the user.'"
+        }
+      },
+      {
+        "id": "layer-restrictions",
+        "governancePattern": "\\b(_governance\\/|_foundation\\/|session.local.*consent|explicit.*approval)\\b",
+        "awarenessPatterns": [
+          "_governance\\/",
+          "_foundation\\/",
+          "session.local",
+          "layer.*restrict",
+          "require.*approval",
+          "freely writable"
+        ],
+        "appliesTo": "\\b(write|edit|create|modify|scaffold|build|fix|remediat)\\b",
+        "finding": {
+          "severity": "warning",
+          "title": "Skill unaware of layer write restrictions",
+          "detail": "Governance restricts writes to _governance/ and _foundation/ (require explicit session-local approval), but this skill performs write operations without mentioning layer restrictions.",
+          "remediation": "Add layer awareness: '_governance/ and _foundation/ require explicit session-local human approval before modification.'"
+        }
+      },
+      {
+        "id": "wip-protection",
+        "governancePattern": "\\b(WIP|untracked.*no backup|read.*before.*overwrite)\\b",
+        "awarenessPatterns": [
+          "WIP",
+          "read.*before.*modif",
+          "read.*existing.*files",
+          "untracked.*no backup"
+        ],
+        "appliesTo": "\\b(write|edit|create|scaffold|build|overwrite)\\b",
+        "finding": {
+          "severity": "info",
+          "title": "Skill does not mention WIP protection",
+          "detail": "Governance requires reading existing files before overwriting in _active/svc-* (untracked files have no backup), but this skill performs write operations without mentioning the precaution.",
+          "remediation": "Add WIP protection note: 'Before overwriting files in _active/svc-*, read them first — untracked files have no backup.'"
+        }
+      },
+      {
+        "id": "branch-protection",
+        "governancePattern": "\\b(no.*force.*push|never.*push.*main|feature.*branch|protected.*branch)\\b",
+        "awarenessPatterns": [
+          "force.*push",
+          "feature.*branch",
+          "never.*push.*main",
+          "protected.*branch",
+          "branch.*first"
+        ],
+        "appliesTo": "\\b(push|commit|ship|deploy|git push)\\b",
+        "finding": {
+          "severity": "info",
+          "title": "Skill does not mention branch protection",
+          "detail": "Governance prohibits direct push to main/master and force push, but this skill handles git operations without mentioning branch protection.",
+          "remediation": "Add branch protection note: 'Always create a feature branch. No force push. No direct push to main/master.'"
+        }
+      }
+    ],
+    "hookSettingsConflicts": [
+      {
+        "hookPattern": "sops-get",
+        "settingsPattern": "sops-get",
+        "title": "Hook blocks sops-get but settings allows it",
+        "detail": "PreToolUse hook hard-blocks all sops-get commands, but settings allow-list permits specific sops-get invocations. The hook always wins, making the allow entry dead code.",
+        "remediation": "Remove sops-get from the PreToolUse hook ALWAYS_BLOCK list, or remove the dead allow entry from settings."
+      },
+      {
+        "hookPattern": "gh-merge-approved",
+        "settingsPattern": "gh-merge-approved",
+        "title": "Hook blocks gh-merge-approved but settings allows it",
+        "detail": "PreToolUse hook hard-blocks gh-merge-approved (intentionally keeping merges manual), but settings allow-list has a matching entry. The allow entry is dead code.",
+        "remediation": "Remove the dead gh-merge-approved allow entry from settings, since the hook intentionally blocks it."
+      }
+    ]
+  },
+  "workflowMaturity": {
+    "stageDirs": ["stages", "phases", "drive_phases"]
+  }
+}

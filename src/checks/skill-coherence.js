@@ -5,100 +5,88 @@ import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, readJsonSafe } from '../utils.js';
 
 /**
- * Shared constraints that skills should be aware of.
- * Each entry defines: what governance claims, what keyword(s) indicate awareness,
- * which skill categories need this, and the finding to emit if missing.
+ * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
+ * into a RegExp. Returns null if the spec is unusable.
  */
-const CONSTRAINT_CHECKS = [
-  {
-    id: 'merge-workflow',
-    governancePattern: /\b(gh-merge-approved|brc-merge-approved|no direct merge)\b/i,
-    awarenessPatterns: [/gh-merge-approved/i, /brc-merge-approved/i, /merge.*manual/i, /hand.?off.*merge/i],
-    appliesTo: /\b(ship|commit|push|deploy|pr create|git push)\b/i,
+function toRegex(spec) {
+  if (!spec) return null;
+  if (spec instanceof RegExp) return spec;
+  if (typeof spec === 'string') {
+    try { return new RegExp(spec, 'i'); } catch { return null; }
+  }
+  if (typeof spec === 'object' && typeof spec.source === 'string') {
+    try { return new RegExp(spec.source, spec.flags || 'i'); } catch { return null; }
+  }
+  return null;
+}
+
+/**
+ * Normalise a config-provided constraint entry into a runnable constraint.
+ * Returns null for malformed entries (missing required regex fields).
+ *
+ * Shape (see DEFAULTS in src/config.js): each entry is
+ *   {
+ *     id, governancePattern, awarenessPatterns: [...], appliesTo,
+ *     finding: { severity, title, detail, remediation }
+ *   }
+ * where pattern fields may be RegExp, string, or {source, flags}.
+ */
+function normaliseConstraint(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const governancePattern = toRegex(entry.governancePattern);
+  const appliesTo = toRegex(entry.appliesTo);
+  const awarenessPatterns = Array.isArray(entry.awarenessPatterns)
+    ? entry.awarenessPatterns.map(toRegex).filter(Boolean)
+    : [];
+  if (!governancePattern || !appliesTo || awarenessPatterns.length === 0) return null;
+  const finding = entry.finding && typeof entry.finding === 'object' ? entry.finding : null;
+  if (!finding || typeof finding.title !== 'string') return null;
+  return {
+    id: entry.id || 'unnamed-constraint',
+    governancePattern,
+    appliesTo,
+    awarenessPatterns,
     finding: {
-      severity: 'warning',
-      title: 'Skill unaware of merge workflow restrictions',
-      detail: 'Governance requires merges via gh-merge-approved/brc-merge-approved (manual hand-off), but this skill handles git/shipping operations without mentioning the constraint.',
-      remediation: 'Add merge workflow awareness: "Merge is manual via gh-merge-approved. Print PR URL and merge command for the user."',
+      severity: finding.severity || 'warning',
+      title: finding.title,
+      detail: finding.detail || '',
+      remediation: finding.remediation || '',
     },
-  },
-  {
-    id: 'layer-restrictions',
-    governancePattern: /\b(_governance\/|_foundation\/|session.local.*consent|explicit.*approval)\b/i,
-    awarenessPatterns: [/_governance\//i, /_foundation\//i, /session.local/i, /layer.*restrict/i, /require.*approval/i, /freely writable/i],
-    appliesTo: /\b(write|edit|create|modify|scaffold|build|fix|remediat)\b/i,
-    finding: {
-      severity: 'warning',
-      title: 'Skill unaware of layer write restrictions',
-      detail: 'Governance restricts writes to _governance/ and _foundation/ (require explicit session-local approval), but this skill performs write operations without mentioning layer restrictions.',
-      remediation: 'Add layer awareness: "_governance/ and _foundation/ require explicit session-local human approval before modification."',
-    },
-  },
-  {
-    id: 'wip-protection',
-    governancePattern: /\b(WIP|untracked.*no backup|read.*before.*overwrite)\b/i,
-    awarenessPatterns: [/WIP/i, /read.*before.*modif/i, /read.*existing.*files/i, /untracked.*no backup/i],
-    appliesTo: /\b(write|edit|create|scaffold|build|overwrite)\b/i,
-    finding: {
-      severity: 'info',
-      title: 'Skill does not mention WIP protection',
-      detail: 'Governance requires reading existing files before overwriting in _active/svc-* (untracked files have no backup), but this skill performs write operations without mentioning the precaution.',
-      remediation: 'Add WIP protection note: "Before overwriting files in _active/svc-*, read them first — untracked files have no backup."',
-    },
-  },
-  {
-    id: 'branch-protection',
-    governancePattern: /\b(no.*force.*push|never.*push.*main|feature.*branch|protected.*branch)\b/i,
-    awarenessPatterns: [/force.*push/i, /feature.*branch/i, /never.*push.*main/i, /protected.*branch/i, /branch.*first/i],
-    appliesTo: /\b(push|commit|ship|deploy|git push)\b/i,
-    finding: {
-      severity: 'info',
-      title: 'Skill does not mention branch protection',
-      detail: 'Governance prohibits direct push to main/master and force push, but this skill handles git operations without mentioning branch protection.',
-      remediation: 'Add branch protection note: "Always create a feature branch. No force push. No direct push to main/master."',
-    },
-  },
-];
+  };
+}
 
 /**
  * Check for hook↔settings contradictions.
  * Detect cases where settings.json allow list permits something
  * that a PreToolUse hook blocks.
+ *
+ * Conflict patterns are opt-in via config.skillCoherence.hookSettingsConflicts.
+ * Each entry: { hookPattern, settingsPattern, title, detail, remediation }
+ * (patterns may be RegExp, string, or {source, flags}).
  */
-function checkHookSettingsConflicts(hookContent, settingsData) {
+function checkHookSettingsConflicts(hookContent, settingsData, conflictPatterns = []) {
   const findings = [];
   if (!hookContent || !settingsData) return findings;
+  if (!Array.isArray(conflictPatterns) || conflictPatterns.length === 0) return findings;
 
   const allows = settingsData.allow || [];
   const localAllows = settingsData.localAllow || [];
   const allAllows = [...allows, ...localAllows];
 
-  // Known conflict patterns: hook blocks X but settings allows X
-  const CONFLICT_PATTERNS = [
-    {
-      hookPattern: /sops-get/,
-      settingsPattern: /sops-get/i,
-      title: 'Hook blocks sops-get but settings allows it',
-      detail: 'PreToolUse hook hard-blocks all sops-get commands, but settings allow-list permits specific sops-get invocations. The hook always wins, making the allow entry dead code.',
-      remediation: 'Remove sops-get from the PreToolUse hook ALWAYS_BLOCK list, or remove the dead allow entry from settings.',
-    },
-    {
-      hookPattern: /gh-merge-approved/,
-      settingsPattern: /gh-merge-approved/i,
-      title: 'Hook blocks gh-merge-approved but settings allows it',
-      detail: 'PreToolUse hook hard-blocks gh-merge-approved (intentionally keeping merges manual), but settings allow-list has a matching entry. The allow entry is dead code.',
-      remediation: 'Remove the dead gh-merge-approved allow entry from settings, since the hook intentionally blocks it.',
-    },
-  ];
+  for (const conflict of conflictPatterns) {
+    const hookPattern = toRegex(conflict.hookPattern);
+    const settingsPattern = toRegex(conflict.settingsPattern);
+    if (!hookPattern || !settingsPattern) continue;
 
-  for (const conflict of CONFLICT_PATTERNS) {
-    const hookBlocks = conflict.hookPattern.test(hookContent);
-    const settingsAllows = allAllows.some(a => conflict.settingsPattern.test(a));
+    const hookBlocks = hookPattern.test(hookContent);
+    const settingsAllows = allAllows.some(a => settingsPattern.test(a));
 
     if (hookBlocks && settingsAllows) {
       findings.push({
-        severity: 'warning',
-        ...conflict,
+        severity: conflict.severity || 'warning',
+        title: conflict.title || 'Hook/settings allow-list conflict',
+        detail: conflict.detail || 'PreToolUse hook blocks a command that settings allow-list permits.',
+        remediation: conflict.remediation || 'Resolve the conflict by updating the hook or settings.',
       });
     }
   }
@@ -186,15 +174,16 @@ async function discoverSkills(cwd, homedir) {
 
 /**
  * Read hook script content for analysis.
+ *
+ * Hook paths are opt-in via config.paths.hookFiles.
+ * When no paths are configured, no hook content is read — callers should
+ * then skip the hook/settings conflict check entirely.
  */
-async function readHookContent(homedir) {
-  // Check common hook locations
-  const hookPaths = [
-    path.join(homedir, '.openclaw', 'hooks', 'sandbox-gate.py'),
-    path.join(homedir, '.claude', 'hooks', 'sandbox-gate.py'),
-  ];
+async function readHookContent(hookFilePaths = []) {
+  if (!Array.isArray(hookFilePaths) || hookFilePaths.length === 0) return null;
 
-  for (const p of hookPaths) {
+  for (const p of hookFilePaths) {
+    if (typeof p !== 'string' || !p) continue;
     const content = await readFileSafe(p);
     if (content) return content;
   }
@@ -238,35 +227,50 @@ export default {
   pass: 2,
 
   async run(context) {
-    const { cwd, homedir, priorResults } = context;
+    const { cwd, homedir, priorResults, config } = context;
     const findings = [];
+
+    // Resolve configured constraints, hook paths, and conflict patterns.
+    // All of these default to empty — a fresh install fires no author-specific
+    // pairings. Users opt in via .rigscorerc.json.
+    const configuredConstraints = (config?.skillCoherence?.constraints || [])
+      .map(normaliseConstraint)
+      .filter(Boolean);
+    const hookFilePaths = Array.isArray(config?.paths?.hookFiles)
+      ? config.paths.hookFiles
+      : [];
+    const hookConflictPatterns = Array.isArray(config?.skillCoherence?.hookSettingsConflicts)
+      ? config.skillCoherence.hookSettingsConflicts
+      : [];
 
     // Get governance text from claude-md check
     const claudeMdResult = priorResults?.find(r => r.id === 'claude-md');
     const governanceText = claudeMdResult?.data?.governanceText || '';
 
-    // Also read _governance/ files directly for richer context
+    // Also read extra governance directories directly for richer context.
+    // Path list is user-configurable via config.paths.governanceDirs.
+    // Default empty: no extra reading.
     let extendedGovernance = governanceText;
-    const govDir = path.join(cwd, '_governance');
-    try {
-      const entries = await fs.promises.readdir(govDir);
-      for (const entry of entries) {
-        if (!entry.endsWith('.md')) continue;
-        const content = await readFileSafe(path.join(govDir, entry));
-        if (content) extendedGovernance += '\n' + content;
-      }
-    } catch { /* no _governance dir */ }
+    const extraGovDirs = Array.isArray(config?.paths?.governanceDirs)
+      ? config.paths.governanceDirs
+      : [];
+    for (const govDir of extraGovDirs) {
+      try {
+        const entries = await fs.promises.readdir(govDir);
+        for (const entry of entries) {
+          if (!entry.endsWith('.md')) continue;
+          const content = await readFileSafe(path.join(govDir, entry));
+          if (content) extendedGovernance += '\n' + content;
+        }
+      } catch { /* missing or not readable */ }
+    }
 
     // Discover skills
     const skills = await discoverSkills(cwd, homedir);
 
-    if (skills.length === 0 && !governanceText) {
-      return { score: NOT_APPLICABLE_SCORE, findings: [], data: {} };
-    }
-
     // --- Check 1: Skill ↔ Governance constraint awareness ---
-    if (skills.length > 0 && extendedGovernance) {
-      for (const constraint of CONSTRAINT_CHECKS) {
+    if (configuredConstraints.length > 0 && skills.length > 0 && extendedGovernance) {
+      for (const constraint of configuredConstraints) {
         // Does governance claim this constraint?
         if (!constraint.governancePattern.test(extendedGovernance)) continue;
 
@@ -289,21 +293,36 @@ export default {
     }
 
     // --- Check 2: Hook ↔ Settings contradictions ---
-    const hookContent = await readHookContent(homedir);
+    const hookContent = await readHookContent(hookFilePaths);
     const settingsData = await readSettingsPermissions(cwd, homedir);
 
     if (hookContent && settingsData) {
-      findings.push(...checkHookSettingsConflicts(hookContent, settingsData));
+      findings.push(...checkHookSettingsConflicts(hookContent, settingsData, hookConflictPatterns));
     }
 
     // --- Check 3: Settings allow ↔ deny conflicts ---
+    let settingsConflictsFound = 0;
     if (settingsData) {
-      findings.push(...checkSettingsConflicts(settingsData));
+      const conflicts = checkSettingsConflicts(settingsData);
+      settingsConflictsFound = conflicts.length;
+      findings.push(...conflicts);
     }
 
-    // If no issues found
+    // N/A gate: when constraint awareness and hook-conflict features are
+    // unconfigured AND there are no settings-level allow/deny conflicts,
+    // the check has nothing universal to report. Return N/A so a default
+    // install produces no findings here.
+    const constraintsConfigured = configuredConstraints.length > 0;
+    const hookFeatureActive = hookFilePaths.length > 0 && hookConflictPatterns.length > 0;
+    const hasAnythingToReport = constraintsConfigured || hookFeatureActive || settingsConflictsFound > 0;
+
+    if (findings.length === 0 && !hasAnythingToReport) {
+      return { score: NOT_APPLICABLE_SCORE, findings: [], data: {} };
+    }
+
+    // If no issues found but we did exercise a feature, emit a pass
     if (findings.length === 0) {
-      if (skills.length === 0) {
+      if (skills.length === 0 && !constraintsConfigured && !hookFeatureActive) {
         return { score: NOT_APPLICABLE_SCORE, findings: [], data: {} };
       }
       findings.push({
@@ -317,7 +336,7 @@ export default {
       findings,
       data: {
         skillsAnalyzed: skills.length,
-        constraintsCovered: CONSTRAINT_CHECKS.filter(c =>
+        constraintsCovered: configuredConstraints.filter(c =>
           c.governancePattern.test(extendedGovernance),
         ).length,
         hookAnalyzed: !!hookContent,

@@ -32,14 +32,21 @@ describe('infrastructure-security check', () => {
     }
   });
 
-  it('produces findings when infrastructure is present', async () => {
+  it('produces findings when infrastructure is present (with opt-in paths)', async () => {
     // On this machine, infrastructure should exist
     if (process.platform !== 'linux') return;
 
     const result = await check.run({
       cwd: '/home/dev/workspaces',
       homedir: '/home/joe',
-      config: { paths: { immutableDirs: [] } },
+      config: {
+        paths: {
+          hooksDir: '/opt/git-hooks',
+          gitWrapper: '/usr/local/bin/git',
+          safetyGates: '/etc/profile.d/safety-gates.sh',
+          immutableDirs: [],
+        },
+      },
     });
 
     expect(result.score).toBeGreaterThanOrEqual(0);
@@ -69,13 +76,19 @@ describe('infrastructure-security check', () => {
     expect(criticals.some((f) => f.title.includes('hooks directory missing'))).toBe(true);
   });
 
-  it('returns data with infrastructure summary', async () => {
+  it('returns data with infrastructure summary (with opt-in paths)', async () => {
     if (process.platform !== 'linux') return;
 
     const result = await check.run({
       cwd: '/home/dev/workspaces',
       homedir: '/home/joe',
-      config: {},
+      config: {
+        paths: {
+          hooksDir: '/opt/git-hooks',
+          gitWrapper: '/usr/local/bin/git',
+          safetyGates: '/etc/profile.d/safety-gates.sh',
+        },
+      },
     });
 
     expect(result.data).toHaveProperty('hooksDir');
