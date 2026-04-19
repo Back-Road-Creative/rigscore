@@ -27,6 +27,15 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # docs-first gate: verify every src/checks/*.js has a complete doc page at
+      # docs/checks/<id>.md. Intentionally non-blocking for PR 1 (docs-first-gate).
+      # Flipped to blocking in PR 2 (docs-fill) once all checks have doc pages.
+      # DO NOT remove continue-on-error without removing it from all
+      # advisory-to-blocking migration planning notes.
+      - name: Verify check docs
+        run: npm run verify:docs
+        continue-on-error: true
+
       # Dogfood: self-scan rigscore against its own repo with the committed
       # .rigscorerc.json (disables workspace-oriented checks that don't apply
       # to an npm package). The --fail-under value is calibrated to the
