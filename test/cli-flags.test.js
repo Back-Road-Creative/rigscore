@@ -34,6 +34,29 @@ describe('parseArgs', () => {
     expect(opts.noCta).toBe(true);
   });
 
+  it('CTA is suppressed by default (opt-in via --cta)', () => {
+    const opts = parseArgs([]);
+    expect(opts.noCta).toBe(true);
+  });
+
+  it('--cta opts in to showing the CTA', () => {
+    const opts = parseArgs(['--cta']);
+    expect(opts.noCta).toBe(false);
+  });
+
+  it('--no-cta remains a back-compat alias (same as default)', () => {
+    const opts = parseArgs(['--no-cta']);
+    expect(opts.noCta).toBe(true);
+  });
+
+  it('last CTA flag wins when --cta and --no-cta are combined', () => {
+    const optsA = parseArgs(['--cta', '--no-cta']);
+    expect(optsA.noCta).toBe(true);
+
+    const optsB = parseArgs(['--no-cta', '--cta']);
+    expect(optsB.noCta).toBe(false);
+  });
+
   it('parses --ignore with comma-separated values', () => {
     const opts = parseArgs(['--ignore', 'env,docker']);
     expect(opts.ignore).toEqual(['env', 'docker']);
