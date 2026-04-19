@@ -44,7 +44,9 @@ Options:
   --fail-under <N>   Exit code 1 if score < N (default: 70)
   --profile <name>   Scoring profile (default, minimal, ci)
   --no-color         Disable colored output
-  --no-cta           Suppress promotional call-to-action
+  --cta              Show the promotional call-to-action (off by default)
+  --no-cta           Deprecated alias — CTA is already off by default; kept
+                     for back-compat with pre-commit hooks and CI configs
   --check <id>       Run a single check by ID
   --recursive, -r    Scan subdirectories as separate projects
   --depth <N>        Recursion depth (default: 1, implies --recursive)

@@ -453,7 +453,8 @@ npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
 npx github:Back-Road-Creative/rigscore --badge                   # Generate a markdown badge
 npx github:Back-Road-Creative/rigscore --no-color                # Plain text output
-npx github:Back-Road-Creative/rigscore --no-cta                  # Suppress promotional CTA
+npx github:Back-Road-Creative/rigscore --cta                     # Opt in to the promotional CTA (off by default)
+npx github:Back-Road-Creative/rigscore --no-cta                  # Deprecated alias — CTA is already off by default; kept for back-compat
 npx github:Back-Road-Creative/rigscore --check <id>              # Run a single check by ID
 npx github:Back-Road-Creative/rigscore --recursive               # Scan subdirectories as projects
 npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive scan, 2 levels deep
