@@ -81,6 +81,7 @@ Checks (moat-heavy weighting):
   site-security           Deployed site security (--online, advisory)
   instruction-effectiveness Instruction quality & context budget (advisory)
   skill-coherence          Skill ↔ governance coherence (advisory)
+  documentation            Check docs coverage against src/checks (advisory)
 
 Subcommands (MCP runtime tool pinning — print-and-paste, no exec):
   mcp-hash                         Hash a tools/list JSON read from stdin

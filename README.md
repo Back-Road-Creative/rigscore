@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 13 scored checks plus 6 advisory checks. A hygiene score out of 100. Know where you stand before something breaks.
+One command. 13 scored checks plus 7 advisory checks. A hygiene score out of 100. Know where you stand before something breaks.
 
 ```bash
 npx github:Back-Road-Creative/rigscore
@@ -384,6 +384,17 @@ Classifies the project's workflow artefacts against the AI development taxonomy 
 - Stale memory files and orphan memory that is not linked from `MEMORY.md`
 - Taxonomy misclassification between skills, agents, pipelines, and memory
 
+### 20. Documentation coverage (advisory, 0 points) {#documentation}
+
+Enforces the docs-first gate: every module in `src/checks/` must have a matching page under `docs/checks/` with the canonical sections (Purpose, Triggers, Weight rationale, Fix semantics, SARIF, Example) filled in, and every doc must correspond to a real check. Advisory, and only active in rigscore itself or plugin repos that mirror its layout. See [`docs/checks/documentation.md`](docs/checks/documentation.md).
+
+**What rigscore looks for:**
+- Check modules in `src/checks/` with no matching `docs/checks/<id>.md`
+- Doc pages that are missing required H2 sections or have empty section bodies
+- Doc pages whose stated weight drifts from `src/constants.js`
+- Doc H1 titles that do not match the check id
+- Orphan doc pages with no corresponding check module
+
 ## Scoring
 
 | Score | Grade | Meaning |
@@ -417,6 +428,7 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 | Instruction effectiveness | 0 | governance (advisory) |
 | Skill ↔ governance coherence | 0 | governance (advisory) |
 | Workflow maturity | 0 | governance (advisory) |
+| Documentation coverage | 0 | process (advisory) |
 
 - **CRITICAL** findings zero out their sub-check entirely
 - **WARNING** findings deduct 15 points each (1 WARNING = 85, 2 = 70, 3 = 55...)
