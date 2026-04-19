@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Detects AI-adjacent services (Ollama, LM Studio, Open WebUI, LiteLLM, vLLM, FastChat, LocalAI, MCP SSE endpoints, the OpenClaw Gateway) that listen on non-loopback interfaces or are declared to do so in config. The check inspects four surfaces: (1) MCP client configs for SSE/streamable-HTTP URLs that target non-loopback hosts, (2) Docker compose port mappings for AI service ports without an explicit `127.0.0.1:` bind, (3) Ollama systemd and user-config overrides setting `OLLAMA_HOST=0.0.0.0`, and (4) live TCP listeners via `ss` (Linux) or `lsof` (macOS) on known AI ports or the MCP SSE heuristic range `3000–3999`. Maps to OWASP Agentic Top 10 **ASI07 — Insecure Inter-Agent Communication**: an SSE endpoint on `0.0.0.0` lets any process on any reachable interface impersonate a legitimate agent client. A passing check means no AI service was found bound outside loopback. A failure means something a local agent is talking to is also reachable from the LAN or beyond.
+Detects AI-adjacent services (Ollama, LM Studio, Open WebUI, LiteLLM, vLLM, FastChat, LocalAI, MCP SSE endpoints) that listen on non-loopback interfaces or are declared to do so in config. The check inspects four surfaces: (1) MCP client configs for SSE/streamable-HTTP URLs that target non-loopback hosts, (2) Docker compose port mappings for AI service ports without an explicit `127.0.0.1:` bind, (3) Ollama systemd and user-config overrides setting `OLLAMA_HOST=0.0.0.0`, and (4) live TCP listeners via `ss` (Linux) or `lsof` (macOS) on known AI ports or the MCP SSE heuristic range `3000–3999`. Maps to OWASP Agentic Top 10 **ASI07 — Insecure Inter-Agent Communication**: an SSE endpoint on `0.0.0.0` lets any process on any reachable interface impersonate a legitimate agent client. A passing check means no AI service was found bound outside loopback. A failure means something a local agent is talking to is also reachable from the LAN or beyond.
 
 ## Triggers
 
@@ -16,7 +16,7 @@ Detects AI-adjacent services (Ollama, LM Studio, Open WebUI, LiteLLM, vLLM, Fast
 | Live AI-service TCP listener on non-loopback address | WARNING | `network-exposure` (level `warning`) | Reconfigure the service to bind loopback; restart. |
 | No AI service network exposure detected | INFO (N/A) | — | — |
 
-Ports considered AI services (from `AI_SERVICE_PORTS` in `src/constants.js`): `11434` (Ollama), `1234`/`1235` (LM Studio), `8080` (Open WebUI), `3001` (MCP SSE), `18789` (OpenClaw Gateway), `4000` (LiteLLM), `5001` (LocalAI), `9090` (vLLM), `8000` (FastChat). Plus the MCP SSE heuristic range `3000–3999` applied only to live-listener detection.
+Ports considered AI services (from `AI_SERVICE_PORTS` in `src/constants.js`): `11434` (Ollama), `1234`/`1235` (LM Studio), `8080` (Open WebUI), `3001` (MCP SSE), `4000` (LiteLLM), `5001` (LocalAI), `9090` (vLLM), `8000` (FastChat). Plus the MCP SSE heuristic range `3000–3999` applied only to live-listener detection.
 
 ## Weight rationale
 

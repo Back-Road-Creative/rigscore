@@ -116,7 +116,6 @@ export const AI_SERVICE_PORTS = new Map([
   [1235, 'LM Studio (alt)'],
   [8080, 'Open WebUI'],
   [3001, 'MCP SSE (common)'],
-  [18789, 'OpenClaw Gateway'],
   [4000, 'LiteLLM'],
   [5001, 'LocalAI'],
   [9090, 'vLLM'],
