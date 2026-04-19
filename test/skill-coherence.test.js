@@ -43,6 +43,40 @@ function makePriorResults(governanceText) {
   ];
 }
 
+// Opt-in config that restores the author's joe-specific constraint checks.
+// Tests that exercise the constraint logic must pass this explicitly.
+const joeConstraintsConfig = {
+  paths: {},
+  skillCoherence: {
+    constraints: [
+      {
+        id: 'merge-workflow',
+        governancePattern: /\b(gh-merge-approved|brc-merge-approved|no direct merge)\b/i,
+        awarenessPatterns: [/gh-merge-approved/i, /brc-merge-approved/i, /merge.*manual/i, /hand.?off.*merge/i],
+        appliesTo: /\b(ship|commit|push|deploy|pr create|git push)\b/i,
+        finding: {
+          severity: 'warning',
+          title: 'Skill unaware of merge workflow restrictions',
+          detail: 'Governance requires merges via gh-merge-approved/brc-merge-approved, but this skill handles git/shipping operations without mentioning the constraint.',
+          remediation: 'Add merge workflow awareness.',
+        },
+      },
+      {
+        id: 'layer-restrictions',
+        governancePattern: /\b(_governance\/|_foundation\/|session.local.*consent|explicit.*approval)\b/i,
+        awarenessPatterns: [/_governance\//i, /_foundation\//i, /session.local/i, /layer.*restrict/i, /require.*approval/i, /freely writable/i],
+        appliesTo: /\b(write|edit|create|modify|scaffold|build|fix|remediat)\b/i,
+        finding: {
+          severity: 'warning',
+          title: 'Skill unaware of layer write restrictions',
+          detail: 'Governance restricts writes to _governance/ and _foundation/.',
+          remediation: 'Add layer awareness.',
+        },
+      },
+    ],
+  },
+};
+
 describe('skill-coherence check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('skill-coherence');
@@ -66,7 +100,7 @@ describe('skill-coherence check', () => {
     }
   });
 
-  it('passes when skills are aware of governance constraints', async () => {
+  it('passes when skills are aware of governance constraints (with opt-in constraints)', async () => {
     const tmpDir = makeTmpDir();
     writeGovernance(tmpDir, 'No direct merge. Use gh-merge-approved.\n');
     writeSkill(tmpDir, 'ship', [
@@ -83,6 +117,7 @@ describe('skill-coherence check', () => {
       const result = await check.run({
         cwd: tmpDir,
         homedir: tmpDir,
+        config: joeConstraintsConfig,
         priorResults: makePriorResults('No direct merge. Use gh-merge-approved.'),
       });
       const warnings = result.findings.filter(f => f.severity === 'warning');
@@ -93,7 +128,7 @@ describe('skill-coherence check', () => {
     }
   });
 
-  it('warns when skill handling git push is unaware of merge workflow', async () => {
+  it('warns when skill handling git push is unaware of merge workflow (with opt-in constraints)', async () => {
     const tmpDir = makeTmpDir();
     writeGovernance(tmpDir, 'No direct merge. Use gh-merge-approved.\n');
     writeSkill(tmpDir, 'deploy', [
@@ -110,6 +145,7 @@ describe('skill-coherence check', () => {
       const result = await check.run({
         cwd: tmpDir,
         homedir: tmpDir,
+        config: joeConstraintsConfig,
         priorResults: makePriorResults('No direct merge. Use gh-merge-approved.'),
       });
       const warnings = result.findings.filter(f =>
@@ -121,9 +157,9 @@ describe('skill-coherence check', () => {
     }
   });
 
-  it('warns when skill handling writes is unaware of layer restrictions', async () => {
+  it('warns when skill handling writes is unaware of layer restrictions (with opt-in constraints + governanceDirs)', async () => {
     const tmpDir = makeTmpDir();
-    writeGovSubdir(tmpDir, 'RULES.md', 'Changes to _governance/ require session-local explicit consent.');
+    writeGovSubdir(tmpDir, 'RULES.md', 'Changes to the governance directory require session-local explicit consent.');
     writeSkill(tmpDir, 'fixer', [
       '---',
       'name: fixer',
@@ -137,6 +173,13 @@ describe('skill-coherence check', () => {
       const result = await check.run({
         cwd: tmpDir,
         homedir: tmpDir,
+        config: {
+          ...joeConstraintsConfig,
+          paths: {
+            ...joeConstraintsConfig.paths,
+            governanceDirs: [path.join(tmpDir, '_governance')],
+          },
+        },
         priorResults: makePriorResults(''),
       });
       const layerWarnings = result.findings.filter(f =>
@@ -179,7 +222,7 @@ describe('skill-coherence check', () => {
     }
   });
 
-  it('does not flag skills that do not perform relevant operations', async () => {
+  it('does not flag skills that do not perform relevant operations (with opt-in constraints)', async () => {
     const tmpDir = makeTmpDir();
     writeGovernance(tmpDir, 'No direct merge. Use gh-merge-approved.\n');
     writeSkill(tmpDir, 'analyzer', [
@@ -196,6 +239,7 @@ describe('skill-coherence check', () => {
       const result = await check.run({
         cwd: tmpDir,
         homedir: tmpDir,
+        config: joeConstraintsConfig,
         priorResults: makePriorResults('No direct merge. Use gh-merge-approved.'),
       });
       const mergeWarnings = result.findings.filter(f =>
@@ -208,7 +252,7 @@ describe('skill-coherence check', () => {
     }
   });
 
-  it('populates data object', async () => {
+  it('populates data object (with opt-in constraints)', async () => {
     const tmpDir = makeTmpDir();
     writeGovernance(tmpDir, 'No direct merge. Use gh-merge-approved.\n');
     writeSkill(tmpDir, 'builder', [
@@ -223,6 +267,7 @@ describe('skill-coherence check', () => {
       const result = await check.run({
         cwd: tmpDir,
         homedir: tmpDir,
+        config: joeConstraintsConfig,
         priorResults: makePriorResults('No direct merge. Use gh-merge-approved.'),
       });
       expect(result.data).toBeDefined();

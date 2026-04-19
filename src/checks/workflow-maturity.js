@@ -24,8 +24,9 @@ const STAGE_PATTERNS = [
   /^class Phase[A-Z]\b/,
 ];
 
-// Stage directory names that indicate distributed pipeline architectures
-const STAGE_DIR_NAMES = new Set(['stages', 'drive_phases', 'phases']);
+// Default stage directory names that indicate distributed pipeline architectures.
+// Additional names can be added via config.workflowMaturity.stageDirs.
+const DEFAULT_STAGE_DIR_NAMES = ['stages', 'phases'];
 
 /**
  * Discover all skill directories under .claude/skills and .claude/commands
@@ -334,8 +335,13 @@ export default {
   category: 'governance',
 
   async run(context) {
-    const { cwd, homedir } = context;
+    const { cwd, homedir, config } = context;
     const findings = [];
+
+    const configuredStageDirs = Array.isArray(config?.workflowMaturity?.stageDirs)
+      ? config.workflowMaturity.stageDirs
+      : DEFAULT_STAGE_DIR_NAMES;
+    const stageDirNames = new Set(configuredStageDirs);
 
     // Shared: discover skills once for checks 1, 2, 3
     const skills = await discoverSkillsWithContent(cwd, homedir);
@@ -483,7 +489,7 @@ export default {
     }
 
     // Distributed architecture detection: stage/phase directories with 10+ modules
-    const stageDirs = await findDirsNamed(cwd, STAGE_DIR_NAMES);
+    const stageDirs = await findDirsNamed(cwd, stageDirNames);
     for (const stageDir of stageDirs) {
       try {
         const entries = await fs.promises.readdir(stageDir);

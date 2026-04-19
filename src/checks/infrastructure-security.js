@@ -6,11 +6,6 @@ import { fileExists, readFileSafe, readJsonSafe, execSafe, statSafe } from '../u
 // Required git hooks in the global hooks directory
 const REQUIRED_HOOKS = ['pre-commit', 'pre-push', 'commit-msg'];
 
-// Default infrastructure paths (overridable via config)
-const DEFAULT_HOOKS_DIR = '/opt/git-hooks';
-const DEFAULT_GIT_WRAPPER = '/usr/local/bin/git';
-const DEFAULT_SAFETY_GATES = '/etc/profile.d/safety-gates.sh';
-
 // Required deny-list entries in settings.json
 const REQUIRED_DENY_PATTERNS = [
   'git push --force',
@@ -64,124 +59,126 @@ export default {
       };
     }
 
-    const findings = [];
-    const hooksDir = config?.paths?.hooksDir || DEFAULT_HOOKS_DIR;
-    const gitWrapper = config?.paths?.gitWrapper || DEFAULT_GIT_WRAPPER;
-    const safetyGates = config?.paths?.safetyGates || DEFAULT_SAFETY_GATES;
-
-    // ── 1. Global git hooks directory ───────────────────────────────────
-    const hooksDirExists = await fileExists(hooksDir);
-    if (!hooksDirExists) {
-      findings.push({
-        severity: 'critical',
-        title: 'Global git hooks directory missing',
-        detail: `Expected root-owned hooks at ${hooksDir}`,
-        remediation: 'Create /opt/git-hooks/ owned by root with pre-commit, pre-push, and commit-msg hooks.',
-      });
-    } else {
-      const hooksDirRootOwned = await isRootOwned(hooksDir);
-      if (!hooksDirRootOwned) {
-        findings.push({
-          severity: 'critical',
-          title: 'Global git hooks directory not root-owned',
-          detail: `${hooksDir} should be owned by root to prevent tampering`,
-          remediation: `sudo chown root:root ${hooksDir}`,
-        });
-      }
-
-      // Check each required hook
-      for (const hook of REQUIRED_HOOKS) {
-        const hookPath = path.join(hooksDir, hook);
-        const exists = await fileExists(hookPath);
-        if (!exists) {
-          findings.push({
-            severity: 'critical',
-            title: `Required git hook missing: ${hook}`,
-            detail: `${hookPath} not found`,
-            remediation: `Create ${hookPath} as root-owned executable script.`,
-          });
-        } else {
-          const executable = await isExecutable(hookPath);
-          if (!executable) {
-            findings.push({
-              severity: 'warning',
-              title: `Git hook not executable: ${hook}`,
-              remediation: `sudo chmod 755 ${hookPath}`,
-            });
-          } else {
-            findings.push({ severity: 'pass', title: `Git hook present and executable: ${hook}` });
-          }
-        }
-      }
-    }
-
-    // ── 2. Git wrapper ──────────────────────────────────────────────────
-    const wrapperExists = await fileExists(gitWrapper);
-    if (!wrapperExists) {
-      findings.push({
-        severity: 'critical',
-        title: 'Git safety wrapper missing',
-        detail: `Expected root-owned git wrapper at ${gitWrapper}`,
-        remediation: 'Install a git wrapper that strips --no-verify and blocks force push to main/master.',
-      });
-    } else {
-      const wrapperRootOwned = await isRootOwned(gitWrapper);
-      if (!wrapperRootOwned) {
-        findings.push({
-          severity: 'warning',
-          title: 'Git wrapper not root-owned',
-          detail: `${gitWrapper} should be root-owned to prevent tampering`,
-        });
-      }
-
-      const content = await readFileSafe(gitWrapper);
-      if (content && content.includes('no-verify')) {
-        findings.push({ severity: 'pass', title: 'Git wrapper strips --no-verify' });
-      } else {
-        findings.push({
-          severity: 'warning',
-          title: 'Git wrapper does not strip --no-verify',
-          detail: 'The wrapper should remove --no-verify flags to prevent hook bypass.',
-        });
-      }
-    }
-
-    // ── 3. Shell safety guard ───────────────────────────────────────────
-    const safetyGatesExists = await fileExists(safetyGates);
-    if (safetyGatesExists) {
-      findings.push({ severity: 'pass', title: 'Shell safety guard present' });
-    } else {
-      findings.push({
-        severity: 'info',
-        title: 'Shell safety guard missing',
-        detail: `No ${safetyGates} found. This blocks dangerous patterns like chmod 777.`,
-        remediation: `Create ${safetyGates} with command wrappers for dangerous operations.`,
-      });
-    }
-
-    // ── 4. Immutable directories ────────────────────────────────────────
+    const hooksDir = config?.paths?.hooksDir || null;
+    const gitWrapper = config?.paths?.gitWrapper || null;
+    const safetyGates = config?.paths?.safetyGates || null;
     const immutableDirs = config?.paths?.immutableDirs || [];
 
-    // Auto-detect workspace governance/foundation dirs
-    const autoDetectDirs = ['_governance', '_foundation'];
-    const dirsToCheck = [...immutableDirs];
+    // Opt-in gate: without any infrastructure paths configured, return N/A.
+    // This keeps the "universal infrastructure guidance" framing without
+    // punishing default installs that don't replicate an enterprise stack.
+    const anyInfraConfigured = !!(hooksDir || gitWrapper || safetyGates || immutableDirs.length > 0);
+    if (!anyInfraConfigured) {
+      return {
+        score: NOT_APPLICABLE_SCORE,
+        findings: [{
+          severity: 'skipped',
+          title: 'Infrastructure security check is opt-in; configure .rigscorerc.json paths.hooksDir/gitWrapper/safetyGates/immutableDirs to enable.',
+        }],
+        data: {},
+      };
+    }
 
-    for (const dirName of autoDetectDirs) {
-      // Walk up from cwd to find workspace root
-      let current = cwd;
-      for (let i = 0; i < 5; i++) {
-        const candidate = path.join(current, dirName);
-        if (await fileExists(candidate)) {
-          if (!dirsToCheck.includes(candidate)) {
-            dirsToCheck.push(candidate);
-          }
-          break;
+    const findings = [];
+
+    // ── 1. Global git hooks directory (only when configured) ───────────
+    if (hooksDir) {
+      const hooksDirExists = await fileExists(hooksDir);
+      if (!hooksDirExists) {
+        findings.push({
+          severity: 'critical',
+          title: 'Global git hooks directory missing',
+          detail: `Expected root-owned hooks at ${hooksDir}`,
+          remediation: `Create ${hooksDir} owned by root with pre-commit, pre-push, and commit-msg hooks.`,
+        });
+      } else {
+        const hooksDirRootOwned = await isRootOwned(hooksDir);
+        if (!hooksDirRootOwned) {
+          findings.push({
+            severity: 'critical',
+            title: 'Global git hooks directory not root-owned',
+            detail: `${hooksDir} should be owned by root to prevent tampering`,
+            remediation: `sudo chown root:root ${hooksDir}`,
+          });
         }
-        const parent = path.dirname(current);
-        if (parent === current) break;
-        current = parent;
+
+        // Check each required hook
+        for (const hook of REQUIRED_HOOKS) {
+          const hookPath = path.join(hooksDir, hook);
+          const exists = await fileExists(hookPath);
+          if (!exists) {
+            findings.push({
+              severity: 'critical',
+              title: `Required git hook missing: ${hook}`,
+              detail: `${hookPath} not found`,
+              remediation: `Create ${hookPath} as root-owned executable script.`,
+            });
+          } else {
+            const executable = await isExecutable(hookPath);
+            if (!executable) {
+              findings.push({
+                severity: 'warning',
+                title: `Git hook not executable: ${hook}`,
+                remediation: `sudo chmod 755 ${hookPath}`,
+              });
+            } else {
+              findings.push({ severity: 'pass', title: `Git hook present and executable: ${hook}` });
+            }
+          }
+        }
       }
     }
+
+    // ── 2. Git wrapper (only when configured) ──────────────────────────
+    if (gitWrapper) {
+      const wrapperExists = await fileExists(gitWrapper);
+      if (!wrapperExists) {
+        findings.push({
+          severity: 'critical',
+          title: 'Git safety wrapper missing',
+          detail: `Expected root-owned git wrapper at ${gitWrapper}`,
+          remediation: 'Install a git wrapper that strips --no-verify and blocks force push to main/master.',
+        });
+      } else {
+        const wrapperRootOwned = await isRootOwned(gitWrapper);
+        if (!wrapperRootOwned) {
+          findings.push({
+            severity: 'warning',
+            title: 'Git wrapper not root-owned',
+            detail: `${gitWrapper} should be root-owned to prevent tampering`,
+          });
+        }
+
+        const content = await readFileSafe(gitWrapper);
+        if (content && content.includes('no-verify')) {
+          findings.push({ severity: 'pass', title: 'Git wrapper strips --no-verify' });
+        } else {
+          findings.push({
+            severity: 'warning',
+            title: 'Git wrapper does not strip --no-verify',
+            detail: 'The wrapper should remove --no-verify flags to prevent hook bypass.',
+          });
+        }
+      }
+    }
+
+    // ── 3. Shell safety guard (only when configured) ───────────────────
+    if (safetyGates) {
+      const safetyGatesExists = await fileExists(safetyGates);
+      if (safetyGatesExists) {
+        findings.push({ severity: 'pass', title: 'Shell safety guard present' });
+      } else {
+        findings.push({
+          severity: 'info',
+          title: 'Shell safety guard missing',
+          detail: `No ${safetyGates} found. This blocks dangerous patterns like chmod 777.`,
+          remediation: `Create ${safetyGates} with command wrappers for dangerous operations.`,
+        });
+      }
+    }
+
+    // ── 4. Immutable directories (explicit list only) ──────────────────
+    const dirsToCheck = [...immutableDirs];
 
     for (const dir of dirsToCheck) {
       const output = await execSafe('lsattr', ['-d', dir]);

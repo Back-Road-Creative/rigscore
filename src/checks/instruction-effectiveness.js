@@ -87,16 +87,21 @@ async function discoverFiles(cwd, homedir, config) {
     }
   }
 
-  // 2. Governance subdirectory
-  const govSubDir = path.join(cwd, '_governance');
-  try {
-    const entries = await fs.promises.readdir(govSubDir, { recursive: true });
-    for (const entry of entries) {
-      if (entry.startsWith('.') || !entry.endsWith('.md')) continue;
-      const full = path.join(govSubDir, entry);
-      await addFile(full, path.join('_governance', entry), 'governance');
-    }
-  } catch { /* directory doesn't exist */ }
+  // 2. Extra governance directories (opt-in via config.paths.governanceDirs)
+  const extraGovDirs = Array.isArray(config?.paths?.governanceDirs)
+    ? config.paths.governanceDirs
+    : [];
+  for (const govSubDir of extraGovDirs) {
+    try {
+      const entries = await fs.promises.readdir(govSubDir, { recursive: true });
+      for (const entry of entries) {
+        if (entry.startsWith('.') || !entry.endsWith('.md')) continue;
+        const full = path.join(govSubDir, entry);
+        const relName = path.relative(cwd, full) || full;
+        await addFile(full, relName, 'governance');
+      }
+    } catch { /* directory doesn't exist or unreadable */ }
+  }
 
   // 3. Skill/command directories (project + homedir)
   const searchRoots = [cwd];
