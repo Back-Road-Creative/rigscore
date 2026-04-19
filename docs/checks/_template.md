@@ -32,7 +32,8 @@ What `--fix --yes` does for this check, finding by finding. If no auto-fix is su
 ## SARIF
 
 - Tool component: `rigscore`
-- Rule IDs emitted: `<id>/<slug>` per row in Triggers.
+- Rule ID emitted: the check id (e.g. `env-exposure`). See `src/sarif.js` — the current implementation emits one ruleId per check, with per-finding discrimination carried in the message text.
+- The `SARIF ruleId` column in the Triggers table above is the **logical** per-finding identifier, matching the `findingId` shown in terminal / JSON output and used by `.rigscorerc.json` `suppress[]` entries. Per-finding ruleIds in SARIF output are a target state (tracked as a follow-up) and not yet emitted.
 - Level mapping: CRITICAL→`error`, WARNING→`warning`, INFO→`note`.
 - Location data: relative path + line number when available; otherwise project root.
 
