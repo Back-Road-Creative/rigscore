@@ -53,28 +53,39 @@ npx github:Back-Road-Creative/rigscore
 
 ## Why this exists
 
-AI coding tools are powerful. Claude Code, Cursor, Windsurf, and autonomous agents can read your filesystem, execute commands, call APIs, and modify your codebase. Most developers set them up fast and never audit the configuration hygiene.
+rigscore scores AI-agent config hygiene and catches contradictions between what your governance file claims and what your actual configuration does — in one local command, no account, no API token, passable as a CI gate with a single `--fail-under` threshold.
 
-rigscore checks the things that matter:
+Most AI-agent security scanning today is either finding-stream static analysis (Snyk Agent Scan, Semgrep rules) or manual review. rigscore fills a narrower slot: a single hygiene score with an A–F grade, a cross-config **coherence** pass that compares governance claims to observed behavior (MCP scope, Docker privileges, approval gates), and a CI-gate exit code. It runs fully offline by default; `--online` is opt-in for site probes and MCP supply-chain verification.
 
-- Does your AI agent have governance rules, or is it operating without boundaries?
-- Are your MCP servers scoped to project directories, or can they access your entire filesystem?
-- Are your API keys in `.gitignore`, or one commit away from being public?
-- Are your containers configured safely, or is the socket exposed?
-- Do you have commit hooks catching mistakes, or is everything going straight to the repo?
-- Are your skill files clean, or could they contain injection payloads?
-- Are file permissions locked down, or are sensitive files world-readable?
-- Do your governance claims match your actual configuration?
-- Are there hardcoded secrets buried in your source code?
-- Is your Windows/WSL boundary more porous than you think?
-- Do your Claude settings expose dangerous permissions or bypass combos?
-- Are credentials stored correctly, or are they leaking into the wrong places?
-- Are there hidden characters in your skill files that could redirect agent behavior?
-- Is your host-level infrastructure (root-owned hooks, git wrapper, deny list) actually in place?
-- Are your instruction files readable and consistent, or bloated, contradictory, and full of dead references?
-- Do your skills align with the governance they run under?
+It's the thing you run before you care about tool pinning, before you stand up a SARIF pipeline, before you adopt an enterprise scanner. If your CLAUDE.md says "never access `/etc`" and your MCP config mounts `/`, rigscore tells you.
+
+**What rigscore checks:** MCP scope and supply chain, cross-config coherence, skill-file injection vectors, governance quality, Claude settings bypass combos, secret exposure in config files, container and devcontainer isolation, Unicode steganography, git hooks, file permissions, credential storage, and (advisory) instruction effectiveness, skill↔governance coherence, workflow maturity, Windows/WSL boundary, site security, and network exposure.
 
 Run it. See the score. Fix what's broken.
+
+## How rigscore compares
+
+rigscore isn't the only AI-agent config scanner. The April-2026 landscape has real alternatives — pick based on what you actually need.
+
+| Tool | Niche | Use when |
+|------|-------|----------|
+| **rigscore** | Single-score hygiene check + cross-config coherence | You want one local command, an A–F grade, and a CI gate. No account, no token. |
+| **Snyk Agent Scan** ([github.com/snyk/agent-scan](https://github.com/snyk/agent-scan)) | 15+ risk-category finding stream, tool-hash pinning (rug-pull detection) | You need enterprise reporting, MCP tool-pinning to detect supply-chain drift, or already have a Snyk contract. Requires `SNYK_TOKEN` for full features. |
+| **Semgrep** ([semgrep.dev](https://semgrep.dev)) | General static analysis, 5000+ rules, optional MCP server | You're scanning source code, not config hygiene, or already run Semgrep in CI and want to extend it. |
+
+**Where rigscore differs from Snyk Agent Scan:**
+- Cross-config COHERENCE check — compares what your governance file claims against what your actual MCP/settings/Docker configuration does. Snyk scans each config independently and doesn't cross-reference them against a governance file.
+- Single-score CI gate with `--fail-under N` and grade A–F. Snyk is a finding stream; you'd have to script a threshold yourself.
+- Fully local, no account, no API token, no external call by default. `--online` is opt-in.
+
+**Where Snyk is ahead:**
+- Tool Pinning: hashes MCP tool descriptions and flags drift over time (mitigates CVE-2025-54136 class "MCP rug pull" attacks). rigscore does not persist tool-description hashes across scans — this is a planned follow-up, not a current capability.
+- Detailed published threat models for SKILL.md and agent configs. rigscore's skill-files check is pattern-based and has a documented **semantic-reversal weakness** (see Limitations).
+- Broader risk-category coverage (toxic flows, tool shadowing, malware payloads).
+
+**Where Semgrep is a better fit:** you want to scan your application source for vulnerabilities, not validate your AI-agent configuration. rigscore does not replace Semgrep — it runs upstream of it.
+
+**Picking one:** run rigscore as a pre-commit / PR-gate hygiene check. Run Snyk Agent Scan in CI if you need tool pinning and enterprise reporting. Run Semgrep against your application code. They are complementary.
 
 ## Install and run
 
@@ -411,10 +422,11 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 
 ## Limitations
 
-rigscore is a configuration presence checker, not a security enforcement tool. Understanding its scope helps you use it effectively:
+rigscore is a configuration presence checker, not a security enforcement tool. Understanding its scope helps you use it effectively. Read this section before you rely on rigscore as a governance quality signal.
 
-- **Governance checks verify keyword presence, not semantic intent.** rigscore checks that your governance file mentions concepts like "forbidden actions" and "path restrictions." It cannot verify that those boundaries are actually enforced.
+- **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. Mitigations in the pipeline include LLM-judge assist (opt-in) and cross-check against observed behavior via the coherence pass.
 - **Injection detection is pattern-based.** The injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
+- **No tool-description pinning (MCP rug-pull detection).** rigscore does not hash MCP tool descriptions across scans. A server whose manifest advertises safe tools on install day and malicious tools two weeks later will not be flagged as drift. Snyk Agent Scan's Tool Pinning feature covers this; rigscore doesn't, yet.
 - **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use gitleaks or trufflehog.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
 

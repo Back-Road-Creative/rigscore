@@ -290,4 +290,59 @@ describe('instruction-effectiveness check', () => {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
+
+  it('T4.4 — no finding references the author-only /instruction-audit slash command', async () => {
+    // Build a workspace that triggers every code path with remediation strings:
+    // - large single file (token threshold)
+    // - 500+ lines (bloat)
+    // - contradictions (always vs never)
+    // - vague instructions
+    // - redundant lines across multiple files
+    const tmpDir = makeTmpDir();
+    try {
+      // Main file: triggers contradictions + vagueness + bloat + token threshold
+      const baseLines = [
+        '# Rules',
+        'Always validate input data.',
+        'Never validate input data lazily.',
+        'Always restrict path access.',
+        'Never allow unrestricted path access.',
+        'Always check authentication.',
+        'Never skip authentication.',
+        'Always run tests.',
+        'Never skip tests.',
+        'Always use secure defaults.',
+        'Never use insecure defaults.',
+        'Use your judgment when naming variables.',
+        'Figure it out as appropriate.',
+        'Be smart about error handling.',
+        'When it makes sense, use caching.',
+        'Where applicable, cache responses.',
+      ];
+      // pad for bloat + token threshold
+      const padded = Array(600).fill('This is a redundant governance rule with enough characters to trigger deduplication.');
+      fs.writeFileSync(
+        path.join(tmpDir, 'CLAUDE.md'),
+        baseLines.concat(padded).join('\n'),
+      );
+      // Second file: duplicates the padded line across files to trigger redundancy
+      fs.writeFileSync(
+        path.join(tmpDir, 'AGENTS.md'),
+        padded.join('\n'),
+      );
+
+      const result = await check.run({
+        cwd: tmpDir,
+        homedir: '/tmp/nonexistent-home-ie',
+        config: defaultConfig,
+      });
+
+      for (const f of result.findings) {
+        const combined = [f.title, f.detail, f.remediation].filter(Boolean).join(' ');
+        expect(combined).not.toContain('/instruction-audit');
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });
