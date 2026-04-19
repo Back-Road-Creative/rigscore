@@ -418,7 +418,9 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 
 **Compound risk penalty:** When the coherence check finds a CRITICAL contradiction, 10 additional points are deducted from the overall score — reflecting the systemic nature of governance failures.
 
-**Coverage penalty:** Checks that find nothing to scan are marked N/A and excluded from the weighted average. If the total applicable check weight falls below 50%, the overall score is scaled down proportionally — this prevents projects with minimal configuration from appearing fully secure.
+**Coverage scaling (what the `Coverage: N of M checks applicable (weight W/100)` line means):** Checks that find nothing to scan are marked N/A and excluded from the weighted average — their weight is redistributed proportionally across the remaining applicable checks. Separately, if the total applicable check weight W falls strictly below 50 (out of 100), the final overall score is additionally scaled by `W / 100`. A project where only a handful of checks can reach a verdict should not be able to claim a perfect 100 — partial coverage means partial confidence.
+
+There is a visible step at the W = 50 threshold: a project at W = 49 is scaled down, and one at W = 50 is not. This is intentional and documented rather than smoothed — smoothing would shift every existing user-visible score for no correctness benefit. The sequence is still monotonically non-decreasing (no dip) as coverage increases. Characterization tests pin the exact behavior in `test/scoring-coverage.test.js`; see the design note at the top of `src/scoring.js` for the rationale.
 
 **Scoring profiles:** Use `--profile minimal` to focus only on AI-specific checks, or `--profile ci` for CI pipelines. Custom weights can be set in `.rigscorerc.json`.
 
