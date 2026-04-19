@@ -36,9 +36,21 @@ runs:
       with:
         node-version: '20'
 
-    - name: Install rigscore
+    # Check out the rigscore source at the ref the caller pinned
+    # (e.g. Back-Road-Creative/rigscore@v0.8.0 → clones v0.8.0 here).
+    # `github.action_ref` resolves to the ref used in the caller's `uses:` line.
+    # We clone into a sibling path so we don't clobber the caller's checkout.
+    - name: Check out rigscore source
+      uses: actions/checkout@v4
+      with:
+        repository: Back-Road-Creative/rigscore
+        ref: ${{ github.action_ref }}
+        path: .rigscore-action-src
+
+    - name: Install rigscore dependencies
       shell: bash
-      run: npm install -g rigscore
+      working-directory: .rigscore-action-src
+      run: npm ci --no-audit --no-fund
 
     - name: Run rigscore
       shell: bash
@@ -51,7 +63,7 @@ runs:
         if [ "${{ inputs.deep }}" = "true" ]; then
           ARGS="$ARGS --deep"
         fi
-        rigscore $ARGS . > rigscore-results.sarif 2>/dev/null || true
+        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" $ARGS . > rigscore-results.sarif 2>/dev/null || true
         cat rigscore-results.sarif
 
     - name: Upload SARIF
@@ -70,4 +82,4 @@ runs:
         if [ "${{ inputs.deep }}" = "true" ]; then
           ARGS="$ARGS --deep"
         fi
-        rigscore $ARGS .
+        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" $ARGS .
