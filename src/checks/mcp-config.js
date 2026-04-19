@@ -4,6 +4,7 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readJsonSafe, readFileSafe } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch } from '../known-mcp-servers.js';
+import { computeServerHash, loadState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 
 const SENSITIVE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -215,6 +216,10 @@ export default {
     // Collect all servers per config file for cross-client drift detection
     const clientServers = new Map(); // configPath → { name → server }
 
+    // Hash each repo-level MCP server by name for rug-pull detection (CVE-2025-54136).
+    // Only repo-level configs (.mcp.json at cwd) are hashed — home-dir configs are per-user.
+    const currentHashes = {}; // serverName → sha256hex
+
     for (const configPath of configPaths) {
       const mcpConfig = await readJsonSafe(configPath);
       if (!mcpConfig) continue;
@@ -242,7 +247,14 @@ export default {
       clientCount++;
       serverCount += Object.keys(servers).length;
 
+      const isRepoConfig = configPath === path.join(cwd, '.mcp.json');
+
       for (const [name, server] of Object.entries(servers)) {
+        // Record hash for repo-level servers (rug-pull / hash-pinning detection)
+        if (isRepoConfig && !currentHashes[name]) {
+          currentHashes[name] = computeServerHash(server);
+        }
+
         // Check transport type
         const transport = server.transport || 'stdio';
         if (transport === 'sse' || transport === 'http' || server.url) {
@@ -552,6 +564,48 @@ export default {
           });
         }
       }
+    }
+
+    // Hash-pinning / rug-pull detection (CVE-2025-54136 / "MCPoison" class).
+    // Compare current repo-level MCP server hashes against on-disk state file.
+    // Diff rules:
+    //   - hash changed on existing entry → WARN
+    //   - new entries → silently record
+    //   - removed entries → silently drop
+    //   - missing state file → first scan, no warnings
+    //   - corrupt state file → INFO finding + reset
+    if (Object.keys(currentHashes).length > 0 && context.writeState !== false) {
+      const { state, corrupt } = await loadState(cwd);
+      if (corrupt) {
+        findings.push({
+          severity: 'info',
+          title: `Corrupted ${STATE_FILENAME} — resetting`,
+          detail: 'Could not parse the rigscore state file. Rewriting with current MCP server hashes.',
+          remediation: 'No action needed. The state file has been regenerated.',
+        });
+      }
+
+      const previousHashes = (state && state.version === STATE_VERSION && state.mcpServers && typeof state.mcpServers === 'object')
+        ? state.mcpServers
+        : null;
+
+      if (previousHashes) {
+        for (const [name, hash] of Object.entries(currentHashes)) {
+          const prev = previousHashes[name];
+          if (typeof prev === 'string' && prev !== hash) {
+            findings.push({
+              severity: 'warning',
+              title: `MCP server "${name}" changed shape between scans (possible rug-pull)`,
+              detail: `The configured command/args/env-key-set for "${name}" differs from the recorded hash in ${STATE_FILENAME}. This is how MCPoison-class attacks (CVE-2025-54136) pivot trusted MCP servers.`,
+              remediation: `Review the diff in ${path.join(cwd, '.mcp.json')} against version control. If the change is intentional, re-run rigscore to update the state file.`,
+              learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+            });
+          }
+        }
+      }
+
+      // Write the new state (first scan, drift acknowledged, or unchanged).
+      await saveState(cwd, { version: STATE_VERSION, mcpServers: currentHashes });
     }
 
     if (findings.length === 0) {
