@@ -192,7 +192,7 @@ export default {
   category: 'supply-chain',
 
   async run(context) {
-    const { cwd, homedir, config } = context;
+    const { cwd, homedir, config, includeHomeSkills } = context;
     const findings = [];
     const filesToScan = [];
 
@@ -215,9 +215,11 @@ export default {
       }
     }
 
-    // Collect files from skill directories (both cwd and homedir)
+    // Collect files from skill directories.
+    // Default: cwd only (home-level skills belong to the home profile, not the project).
+    // --include-home-skills opts in to scanning ~/.claude/** as well.
     const searchRoots = [cwd];
-    if (homedir && homedir !== cwd) searchRoots.push(homedir);
+    if (includeHomeSkills && homedir && homedir !== cwd) searchRoots.push(homedir);
 
     for (const root of searchRoots) {
       for (const dir of SKILL_DIRS) {
