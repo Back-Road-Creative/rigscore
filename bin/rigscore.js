@@ -28,14 +28,14 @@ if (args.length > 0 && args[0] === 'diff') {
   mod.runDiffSubcommand(args.slice(1));
 }
 
-// `init` subcommand: writes a starter .rigscorerc.json. With `--example`,
-// scaffolds a small demo project with intentional hygiene issues. Agent B's
-// richer `init` (next commit) supersedes this by switching to
-// `src/cli/init.js`; until then, Agent C's `init-subcommand.js` handles both.
+// `init` subcommand: writes a starter .rigscorerc.json. Accepts
+// `--profile <name>` to pre-fill the profile, `--force` / `-f` to overwrite
+// pre-existing files, and `--example` to scaffold a demo project with
+// intentional hygiene issues (useful for CI smoke tests).
 if (args.length > 0 && args[0] === 'init') {
   const rest = args.slice(1);
-  const mod = await import('../src/cli/init-subcommand.js');
-  const code = mod.runInit(rest);
+  const mod = await import('../src/cli/init.js');
+  const code = await mod.runInitSubcommand(rest);
   process.exit(code ?? 0);
 }
 
