@@ -341,17 +341,32 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
  */
 async function scanK8sManifests(cwd, findings) {
   const entries = await fs.promises.readdir(cwd).catch(() => []);
-  // Also check common k8s directories
+  // Also check common k8s directories. Use lstat so a symlink pointing at a
+  // system dir (/, /etc) or a cycle into cwd itself doesn't double-scan.
+  // Visited-inode set deduplicates real targets.
   const k8sDirs = ['k8s', 'kubernetes', 'manifests', 'deploy'];
   const allDirs = [cwd];
+  const visited = new Set();
+  try {
+    const rootStat = await fs.promises.stat(cwd);
+    visited.add(`${rootStat.dev}:${rootStat.ino}`);
+  } catch { /* cwd unreadable */ }
   for (const d of k8sDirs) {
     const dirPath = path.join(cwd, d);
-    try {
-      const stat = await fs.promises.stat(dirPath);
-      if (stat.isDirectory()) allDirs.push(dirPath);
-    } catch {
-      // doesn't exist
+    let lst;
+    try { lst = await fs.promises.lstat(dirPath); } catch { continue; }
+    // Resolve real target for symlinks; require a directory at the end.
+    let realPath = dirPath;
+    if (lst.isSymbolicLink()) {
+      try { realPath = await fs.promises.realpath(dirPath); } catch { continue; }
     }
+    let st;
+    try { st = await fs.promises.stat(realPath); } catch { continue; }
+    if (!st.isDirectory()) continue;
+    const key = `${st.dev}:${st.ino}`;
+    if (visited.has(key)) continue; // symlink pointing back into cwd
+    visited.add(key);
+    allDirs.push(realPath);
   }
 
   let foundAny = false;
