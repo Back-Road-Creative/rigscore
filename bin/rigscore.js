@@ -22,6 +22,18 @@ if (args.length > 0 && MCP_SUBCOMMANDS.has(args[0])) {
   process.exit(0);
 }
 
+// `init` subcommand: writes a starter .rigscorerc.json. With `--example`,
+// scaffolds a small demo project with intentional hygiene issues. Base
+// `init` is owned by Agent B (config-ergonomics) — this is a minimal
+// placeholder that Agent B's richer version will supersede. Preserve the
+// `--example` branch during that merge.
+if (args.length > 0 && args[0] === 'init') {
+  const rest = args.slice(1);
+  const mod = await import('../src/cli/init-subcommand.js');
+  const code = mod.runInit(rest);
+  process.exit(code ?? 0);
+}
+
 if (args.includes('--version')) {
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
@@ -87,6 +99,12 @@ Subcommands (MCP runtime tool pinning — print-and-paste, no exec):
   mcp-hash                         Hash a tools/list JSON read from stdin
   mcp-pin <server> <hash>          Pin a runtime tool hash in .rigscore-state.json
   mcp-verify <server>              Compare stdin tools/list to the pinned hash
+
+Subcommands (scaffolders):
+  init                             Write a starter .rigscorerc.json into cwd
+  init --example                   Scaffold a demo project with intentional
+                                   hygiene issues (useful for CI smoke tests)
+  init --force / -f                Overwrite pre-existing files
 
 Examples:
   rigscore                          Scan current directory
