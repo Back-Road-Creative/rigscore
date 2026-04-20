@@ -7,24 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Cross-platform CI matrix (`ubuntu-latest` + `macos-latest`). Windows native is
-  out of scope; WSL is expected to work via the Linux runner.
-- Draft `Dockerfile` and `.github/workflows/docker-publish.yml` for a future
-  `ghcr.io/back-road-creative/rigscore` image. The workflow is gated to
-  `workflow_dispatch` only — no auto-publish on tags until the user flips the
-  trigger.
-- `rigscore init --example` scaffolds a demo project with intentional issues for
-  CI smoke tests and documentation. Builds on the `rigscore init` base
-  subcommand.
-- `CHANGELOG.md` (this file).
-- README section documenting the deliberate npm-off posture and the
-  `npx github:Back-Road-Creative/rigscore` path.
+## [1.0.0] - 2026-04-20
 
-### Notes
-- **npm publish remains off.** See `CLAUDE.md` and the README "Distribution"
-  section. Distribution is GitHub-only via
-  `npx github:Back-Road-Creative/rigscore`.
+First tagged `1.x` release. A packaging, quality, and distribution milestone —
+stabilises the finding API, extends profiles, and draws a clean line in the
+changelog.
+
+### Added
+- **Scoring profiles** — `home` and `monorepo` profiles alongside existing
+  `default | minimal | ci`. `--profile` CLI flag and `.rigscorerc.json`
+  top-level `"profile"` key. Precedence: CLI > project `.rigscorerc.json` >
+  `~/.rigscorerc.json` > `default` (#88).
+- **Baseline / diff mode** — `rigscore --baseline <path>` stores/reads prior
+  findings JSON and reports only *new* findings vs. baseline. `rigscore diff
+  <baseline> <current>` emits JSON for CI gating (#88).
+- **Suppress semantics** — glob (`skill-files:drive-resume/*`) and regex
+  (`re:/.*sudo.*/`) support alongside substring. Backwards compatible (#88).
+- **`skillFiles.allowlist`** — per-skill + per-pattern allowlist so legitimate
+  operator-skill `sudo` usage isn't flagged. Keyed by skill directory and
+  pattern id, not title substring (#90).
+- **`instructionEffectiveness.crossRepoRefs`** — config key for
+  glob-allowlisting known-good cross-repo path references (#90).
+- **Finding evidence field** — every finding includes a ≤120-char snippet of
+  the offending content. Rendered by the reporter when present (#90).
+- **Fixture dogfood** — `test/fixtures/scored-project/` with 42 intentional
+  findings across 12+ checks plus an assertion suite that locks the expected
+  score range (#89).
+- **`rigscore init`** and **`rigscore explain <findingId>`** subcommands
+  (#88). `rigscore init --example` scaffolds a demo project with intentional
+  issues (#87).
+- **Docker image** — `Dockerfile` + `docker-publish.yml` publish
+  `ghcr.io/back-road-creative/rigscore:<tag>` on `v*.*.*` tag push (#87).
+- **`CHANGELOG.md`** (this file) (#87).
+
+### Changed
+- **SARIF ruleIds** are now per-finding (`<checkId>/<findingId>`) instead of
+  check-level. Improves finding dedup and cross-run tracking in GitHub
+  Advanced Security (backlog 3.2, #90).
+- **Fix matcher** switched from title-substring to `findingId`. Title match
+  remains a deprecated fallback with a console warning so plugin fixes don't
+  silently break (backlog 3.3, #90).
+- **Coverage scaling** no longer counts weight-0 advisory checks toward the
+  applicable-weight ratio (backlog 3.1, #88). Adding new advisories can no
+  longer drag the score down.
+- **`instruction-effectiveness`** false-positive reduction — file-line-range
+  suffixes stripped before path existence check; cross-repo refs
+  allowlist-aware; `/home/joe` dead-ref count dropped from 143 to 12 (#90).
+
+### Distribution
+- **npm publish remains off** by design. Distribution is GitHub-only via
+  `npx github:Back-Road-Creative/rigscore`. See README "Distribution" for
+  the rationale.
+- **Cross-platform CI matrix** is deferred pending `--json` truncation
+  investigation on macOS runners; ubuntu-only for v1.0.0.
 
 ## [0.9.0] - 2026-04-07
 

@@ -1,19 +1,12 @@
-# Docker image publish workflow — DRAFT (v1.1.0 scope).
+# Docker image publish workflow.
 #
-# Intentionally gated on `workflow_dispatch` only so no auto-publish happens
-# on tag pushes until the user explicitly decides to ship the image. When
-# ready, change the `on:` block to:
-#
-#   on:
-#     push:
-#       tags: ['v*.*.*']
-#     workflow_dispatch:
-#
-# The image target is ghcr.io/back-road-creative/rigscore.
-# See Dockerfile at repo root and CHANGELOG.md [Unreleased] for context.
-name: Docker Publish (draft)
+# Auto-publishes `ghcr.io/back-road-creative/rigscore:<tag>` on `v*.*.*` tag
+# pushes. Also callable via `workflow_dispatch` for manual builds / dry-runs.
+name: Docker Publish
 
 on:
+  push:
+    tags: ['v*.*.*']
   workflow_dispatch:
     inputs:
       tag:
@@ -35,11 +28,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute image tags and push flag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            # Tag push: strip leading 'v', publish <version> and 'latest'.
+            VERSION="${GITHUB_REF_NAME#v}"
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "tags=ghcr.io/back-road-creative/rigscore:${VERSION}
+          ghcr.io/back-road-creative/rigscore:latest" >> "$GITHUB_OUTPUT"
+          else
+            # workflow_dispatch: honour inputs.push / inputs.tag.
+            echo "push=${{ inputs.push }}" >> "$GITHUB_OUTPUT"
+            echo "tags=ghcr.io/back-road-creative/rigscore:${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: inputs.push == 'true'
+        if: steps.meta.outputs.push == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -50,9 +58,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ inputs.push == 'true' }}
-          tags: |
-            ghcr.io/back-road-creative/rigscore:${{ inputs.tag }}
+          push: ${{ steps.meta.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/Back-Road-Creative/rigscore
             org.opencontainers.image.description=AI dev environment hygiene checker
