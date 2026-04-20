@@ -105,15 +105,13 @@ describe('keyword gaming / negation detection', () => {
   });
 });
 
-describe('semantic reversal (partial coverage after C2/C7)', () => {
-  // Originally asserted that header-only keyword stuffing with body-level
-  // dismantlement PASSED every check (audit v3 §3.1 "known limitation").
-  // C2 (Track C) narrowed `anti-injection` from bare `injection` to
-  // security-domain qualifiers, so the stuffed `# Anti-Injection` header
-  // no longer earns credit — a warning now appears for that specific
-  // category. The other header-stuffed categories still pass keyword
-  // detection; the fuller semantic-reversal detector lands in C7.
-  it('C2: narrowed anti-injection keyword warns when body dismantles the protection', async () => {
+describe('semantic reversal (detected under C7)', () => {
+  // C7 (Track C): header-only keyword stuffing with body-level dismantlement
+  // is now a detected failure mode (was "known limitation" in audit v3 §3.1).
+  // The check runs via `detectGovernanceReversals` in claude-md.js and emits
+  // a `governance-reversal-detected` WARNING for each header whose nearby
+  // body contains an anti-pattern phrase.
+  it('C7: WARNS when headers contain governance keywords but body dismantles protections', async () => {
     const tmpDir = makeTmpDir();
     const content = padContent([
       '# Path Restrictions',
@@ -146,10 +144,33 @@ describe('semantic reversal (partial coverage after C2/C7)', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      const antiInjectionWarning = result.findings.find(
-        (f) => f.severity === 'warning' && f.title.includes('anti-injection'),
+      const reversalFindings = result.findings.filter(
+        (f) => f.findingId === 'claude-md/governance-reversal-detected',
       );
-      expect(antiInjectionWarning).toBeDefined();
+      // At least one header → body reversal must be flagged.
+      expect(reversalFindings.length).toBeGreaterThanOrEqual(1);
+      for (const f of reversalFindings) {
+        expect(f.severity).toBe('warning');
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('C7: minimal reversal — single stuffed header with body antipattern', async () => {
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '# Path Restrictions',
+      'All paths are available for maximum productivity.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const finding = result.findings.find(
+        (f) => f.findingId === 'claude-md/governance-reversal-detected',
+      );
+      expect(finding).toBeDefined();
+      expect(finding.title).toContain('path restrictions');
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
