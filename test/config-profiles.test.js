@@ -22,6 +22,29 @@ describe('scoring profiles', () => {
     expect(minimal['mcp-config']).toBeGreaterThan(0);
     expect(minimal['coherence']).toBeGreaterThan(0);
   });
+
+  it('home profile emphasizes governance / skill-files / MCP, disables infra', () => {
+    const { home } = PROFILES;
+    expect(home).toBeDefined();
+    expect(home['claude-md']).toBeGreaterThan(0);
+    expect(home['skill-files']).toBeGreaterThan(0);
+    expect(home['mcp-config']).toBeGreaterThan(0);
+    expect(home['docker-security']).toBe(0);
+    expect(home['infrastructure-security']).toBe(0);
+    expect(home['windows-security']).toBe(0);
+  });
+
+  it('monorepo profile preserves default scoring weights', () => {
+    const { monorepo } = PROFILES;
+    expect(monorepo).toBeDefined();
+    expect(monorepo).toEqual(WEIGHTS);
+  });
+
+  it('exposes the 5 expected profile names (default, minimal, ci, home, monorepo)', () => {
+    expect(Object.keys(PROFILES).sort()).toEqual(
+      ['ci', 'default', 'home', 'minimal', 'monorepo'].sort(),
+    );
+  });
 });
 
 describe('resolveWeights', () => {

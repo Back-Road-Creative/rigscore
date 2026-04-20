@@ -448,7 +448,14 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 
 There is a visible step at the W = 50 threshold: a project at W = 49 is scaled down, and one at W = 50 is not. This is intentional and documented rather than smoothed — smoothing would shift every existing user-visible score for no correctness benefit. The sequence is still monotonically non-decreasing (no dip) as coverage increases. Characterization tests pin the exact behavior in `test/scoring-coverage.test.js`; see the design note at the top of `src/scoring.js` for the rationale.
 
-**Scoring profiles:** Use `--profile minimal` to focus only on AI-specific checks, or `--profile ci` for CI pipelines. Custom weights can be set in `.rigscorerc.json`.
+**Scoring profiles:** Five built-in profiles:
+- `default` — balanced AI dev environment audit (WEIGHTS from `src/constants.js`).
+- `minimal` — AI-moat checks only (mcp-config 30, coherence 30, skill-files 20, claude-md 20; rest 0).
+- `ci` — CI pipelines (identical to `default` today).
+- `home` — single-user dev boxes / `~/` scans. Governance / skill-files / MCP emphasized; infra / docker / windows off so coverage-scaling doesn't punish N/A infra surfaces.
+- `monorepo` — same weights as `default` with hints for `--recursive --depth 3`.
+
+See `docs/profiles/` for full weight tables. Custom weights can be set in `.rigscorerc.json`. Advisory (weight-0) checks NEVER affect the overall score — they are excluded from the coverage-penalty denominator so adding a new advisory cannot shift existing scores.
 
 ## Limitations
 

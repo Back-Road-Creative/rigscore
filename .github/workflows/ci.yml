@@ -36,12 +36,11 @@ jobs:
 
       # Dogfood: self-scan rigscore against its own repo with the committed
       # .rigscorerc.json (disables workspace-oriented checks that don't apply
-      # to an npm package). The --fail-under value is calibrated to the CI
-      # runner's baseline (19/100 as of v0.9.0 + docs-first gate; dev-local
-      # runs typically score 35/100 due to extra governance files the runner
-      # doesn't pick up). Threshold set to 15 with a 4-point regression
-      # buffer. Drops below 15 signal a regression not caught by unit tests.
-      # Follow-up: investigate why adding a weight-0 advisory check shifts
-      # the coverage calc and lowers CI baseline vs dev-local.
+      # to an npm package). Backlog 3.1 fix prevents weight-0 advisory checks
+      # from diluting coverage scaling, but CI still runs against a bare npm
+      # package so 13/20 checks legitimately N/A — coverage ratio keeps the
+      # CI self-score at ~19/100 vs dev-local 35. Threshold 15 = CI baseline
+      # (19) minus a 4-point regression buffer. Raising this threshold needs
+      # a richer CI fixture or a profile that exempts N/A infra checks.
       - name: Self-scan
         run: node bin/rigscore.js --no-cta --profile default --fail-under 15 .

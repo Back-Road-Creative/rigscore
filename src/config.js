@@ -71,6 +71,44 @@ export const PROFILES = {
     'permissions-hygiene': 0,
   },
   ci: { ...WEIGHTS },
+  // `home` — single-user dev boxes (e.g. ~/ as the project). Governance,
+  // skill files, CLAUDE.md, and MCP config dominate; infra/docker/windows
+  // checks are turned off so coverage-scaling doesn't punish home users for
+  // N/A infrastructure surfaces that don't apply to a personal home dir.
+  home: {
+    'mcp-config': 20,
+    'skill-files': 20,
+    'claude-md': 20,
+    'coherence': 15,
+    'claude-settings': 10,
+    'deep-secrets': 5,
+    'env-exposure': 5,
+    'credential-storage': 5,
+    'docker-security': 0,
+    'infrastructure-security': 0,
+    'unicode-steganography': 0,
+    'git-hooks': 0,
+    'permissions-hygiene': 0,
+    'windows-security': 0,
+    'network-exposure': 0,
+    'site-security': 0,
+    'instruction-effectiveness': 0,
+    'skill-coherence': 0,
+    'workflow-maturity': 0,
+    'documentation': 0,
+  },
+  // `monorepo` — default weights, but hints callers toward recursive=true
+  // and a higher depth tolerance. Weights identical to default; the
+  // difference is behavioral (see resolveProfileHints).
+  monorepo: { ...WEIGHTS },
+};
+
+/**
+ * Non-weight profile defaults (recursive mode, depth). Applied as hints
+ * when the CLI doesn't override them explicitly.
+ */
+export const PROFILE_HINTS = {
+  monorepo: { recursive: true, depth: 3 },
 };
 
 /**
@@ -117,21 +155,28 @@ export function resolveWeights(config) {
 }
 
 /**
- * Load optional .rigscorerc.json from cwd, then homedir.
- * cwd takes precedence. Returns merged config with defaults.
+ * Load .rigscorerc.json from ~/ and project root and merge them.
+ *
+ * Precedence (low → high): DEFAULTS → ~/.rigscorerc.json → project
+ * .rigscorerc.json. Arrays concatenate (deduplicated); scalars and
+ * objects from the higher-precedence file override the lower one. This
+ * lets users keep personal suppressions / safeHosts in ~/.rigscorerc.json
+ * and have them additive with project-specific rules.
  */
 export async function loadConfig(cwd, homedir) {
+  const homeConfig = homedir
+    ? await readJsonSafe(path.join(homedir, '.rigscorerc.json'))
+    : null;
   const cwdConfig = await readJsonSafe(path.join(cwd, '.rigscorerc.json'));
-  if (cwdConfig) return mergeConfig(cwdConfig);
 
-  const homeConfig = await readJsonSafe(path.join(homedir, '.rigscorerc.json'));
-  if (homeConfig) return mergeConfig(homeConfig);
-
-  return structuredClone(DEFAULTS);
+  let merged = structuredClone(DEFAULTS);
+  if (homeConfig) merged = mergeConfig(homeConfig, merged);
+  if (cwdConfig) merged = mergeConfig(cwdConfig, merged);
+  return merged;
 }
 
-function mergeConfig(userConfig) {
-  const result = structuredClone(DEFAULTS);
+function mergeConfig(userConfig, baseline) {
+  const result = baseline ? structuredClone(baseline) : structuredClone(DEFAULTS);
 
   if (userConfig.paths) {
     for (const key of Object.keys(result.paths)) {
@@ -161,12 +206,16 @@ function mergeConfig(userConfig) {
   }
   if (userConfig.checks) {
     if (Array.isArray(userConfig.checks.disabled)) {
-      result.checks.disabled = userConfig.checks.disabled;
+      // Concat & dedupe so home-level disables stay in effect in projects
+      result.checks.disabled = [
+        ...new Set([...(result.checks.disabled || []), ...userConfig.checks.disabled]),
+      ];
     }
   }
 
   if (Array.isArray(userConfig.suppress)) {
-    result.suppress = userConfig.suppress;
+    // Concat & dedupe — personal suppressions stack with project suppressions
+    result.suppress = [...new Set([...(result.suppress || []), ...userConfig.suppress])];
   }
 
   if (Array.isArray(userConfig.sites)) {
@@ -175,22 +224,42 @@ function mergeConfig(userConfig) {
 
   if (userConfig.coherence && typeof userConfig.coherence === 'object') {
     if (Array.isArray(userConfig.coherence.allowGovernanceContradictions)) {
-      result.coherence.allowGovernanceContradictions = userConfig.coherence.allowGovernanceContradictions;
+      result.coherence.allowGovernanceContradictions = [
+        ...new Set([
+          ...(result.coherence.allowGovernanceContradictions || []),
+          ...userConfig.coherence.allowGovernanceContradictions,
+        ]),
+      ];
     }
   }
 
   if (userConfig.skillCoherence && typeof userConfig.skillCoherence === 'object') {
     if (Array.isArray(userConfig.skillCoherence.constraints)) {
-      result.skillCoherence.constraints = userConfig.skillCoherence.constraints;
+      result.skillCoherence.constraints = [
+        ...new Set([
+          ...(result.skillCoherence.constraints || []),
+          ...userConfig.skillCoherence.constraints,
+        ]),
+      ];
     }
     if (Array.isArray(userConfig.skillCoherence.hookSettingsConflicts)) {
-      result.skillCoherence.hookSettingsConflicts = userConfig.skillCoherence.hookSettingsConflicts;
+      result.skillCoherence.hookSettingsConflicts = [
+        ...new Set([
+          ...(result.skillCoherence.hookSettingsConflicts || []),
+          ...userConfig.skillCoherence.hookSettingsConflicts,
+        ]),
+      ];
     }
   }
 
   if (userConfig.workflowMaturity && typeof userConfig.workflowMaturity === 'object') {
     if (Array.isArray(userConfig.workflowMaturity.stageDirs)) {
-      result.workflowMaturity.stageDirs = userConfig.workflowMaturity.stageDirs;
+      result.workflowMaturity.stageDirs = [
+        ...new Set([
+          ...(result.workflowMaturity.stageDirs || []),
+          ...userConfig.workflowMaturity.stageDirs,
+        ]),
+      ];
     }
   }
 

@@ -85,26 +85,81 @@ export function assignFindingIds(results) {
 }
 
 /**
- * Suppress findings matching any of the given patterns (case-insensitive).
+ * Convert a glob pattern to a case-insensitive RegExp.
+ * Supports `*` (any sequence except "/") and `**` (any sequence including "/").
+ * Escapes regex metacharacters.
+ */
+function globToRegExp(glob) {
+  const re = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '__GLOBSTAR__')
+    .replace(/\*/g, '[^/]*')
+    .replace(/__GLOBSTAR__/g, '.*');
+  return new RegExp(`^${re}$`, 'i');
+}
+
+/**
+ * Compile a user-supplied suppress pattern into a predicate.
  *
- * Matching is case-insensitive and checks each pattern against:
- *   1. `findingId` via exact equality (preferred, documented form), or
- *   2. `title` via substring match (legacy fallback; pre-existing behavior).
+ * Three supported forms:
+ *   - `re:/<pattern>/[flags]`  → regex against findingId or title
+ *   - `<string>/<wildcard>`    → glob against findingId (contains `*`)
+ *   - `<string>`               → exact findingId match OR case-insensitive
+ *                                substring match against title (legacy)
+ */
+function compileSuppressPattern(raw) {
+  const str = String(raw);
+
+  // Regex form: re:/pattern/flags
+  if (str.startsWith('re:/')) {
+    const last = str.lastIndexOf('/');
+    if (last > 3) {
+      const body = str.slice(4, last);
+      const flags = str.slice(last + 1) || '';
+      try {
+        const re = new RegExp(body, flags.includes('i') ? flags : flags + 'i');
+        return (finding) => re.test(finding.findingId || '') || re.test(finding.title || '');
+      } catch {
+        // Malformed regex — fall through to substring match for safety
+      }
+    }
+  }
+
+  // Glob form: any `*` character present
+  if (str.includes('*')) {
+    const re = globToRegExp(str);
+    return (finding) => re.test(finding.findingId || '');
+  }
+
+  // Legacy form: exact findingId OR case-insensitive title substring
+  const lowered = str.toLowerCase();
+  return (finding) => {
+    const id = (finding.findingId || '').toLowerCase();
+    const title = (finding.title || '').toLowerCase();
+    return id === lowered || title.includes(lowered);
+  };
+}
+
+/**
+ * Suppress findings matching any of the given patterns.
  *
- * Recalculates each affected check's score after removal.
+ * Supports three pattern forms (see compileSuppressPattern above):
+ *  - Regex form     — prefix "re:" + a /body/flags literal.
+ *  - Glob form      — any string containing "*".
+ *  - Substring form — plain string matched as exact findingId or
+ *                     case-insensitive title substring.
+ *
+ * Matching is case-insensitive (regex defaults to /i). Recalculates
+ * each affected check's score after removal.
  */
 export function suppressFindings(results, patterns) {
   if (!patterns || patterns.length === 0) return;
 
-  const lowered = patterns.map((p) => String(p).toLowerCase());
+  const predicates = patterns.map(compileSuppressPattern);
 
   for (const r of results) {
     const before = r.findings.length;
-    r.findings = r.findings.filter((f) => {
-      const id = (f.findingId || '').toLowerCase();
-      const title = (f.title || '').toLowerCase();
-      return !lowered.some((p) => id === p || title.includes(p));
-    });
+    r.findings = r.findings.filter((f) => !predicates.some((pred) => pred(f)));
     if (r.findings.length !== before) {
       r.score = calculateCheckScore(r.findings);
     }
