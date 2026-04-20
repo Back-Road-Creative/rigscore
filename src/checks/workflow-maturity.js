@@ -357,10 +357,12 @@ export default {
       if (!hasEval) {
         skillsWithoutEvals++;
         findings.push({
+          findingId: 'workflow-maturity/skill-no-eval',
           severity: 'info',
           title: `Skill \`${skill.name}\` has no eval`,
           detail: `Skill \`${skill.name}\` has no eval — graduation requires at least one eval before promoting to code or agent.`,
           remediation: `Create \`evals/${skill.name}/\` or \`tests/test_${skill.name}.*\` to provide coverage for this skill.`,
+          context: { skill: skill.name },
         });
       }
     }
@@ -381,10 +383,12 @@ export default {
         compoundSkills++;
         const reasons = [`${triggerCount} trigger keywords`];
         findings.push({
+          findingId: 'workflow-maturity/skill-compound-responsibility',
           severity: 'info',
           title: `Skill \`${skill.name}\` description suggests compound responsibility`,
           detail: `Skill \`${skill.name}\` description suggests compound responsibility — consider splitting or scoping more narrowly. (${reasons.join('; ')})`,
           remediation: `Review \`${skill.name}\` and split into focused skills if it handles multiple distinct concerns.`,
+          context: { skill: skill.name, triggerCount },
         });
       }
     }
@@ -411,10 +415,12 @@ export default {
         if (consumerCount <= 1) {
           mcpSingleConsumer++;
           findings.push({
+            findingId: 'workflow-maturity/mcp-single-consumer',
             severity: 'warning',
             title: `MCP server \`${serverName}\` has ≤1 discoverable consumer`,
             detail: `MCP server \`${serverName}\` has ≤1 discoverable consumer — MCP overhead requires at least 2 consumers to justify.`,
             remediation: `Either add \`${serverName}\` references to more skills or evaluate whether this MCP server is still needed.`,
+            context: { serverName, consumerCount },
           });
         }
       }
@@ -435,10 +441,12 @@ export default {
           if (f === 'MEMORY.md') continue;
           orphanMemoryFiles++;
           findings.push({
+            findingId: 'workflow-maturity/memory-orphan',
             severity: 'warning',
             title: `\`${f}\` is not linked from MEMORY.md`,
             detail: `\`${path.join(memDir, f)}\` is not linked from MEMORY.md — orphan memory biases responses without visibility.`,
             remediation: `Add a link to \`${f}\` in the MEMORY.md index for this project.`,
+            context: { file: f, memDir },
           });
         }
         continue;
@@ -450,10 +458,12 @@ export default {
         if (!linkedFiles.has(f)) {
           orphanMemoryFiles++;
           findings.push({
+            findingId: 'workflow-maturity/memory-orphan',
             severity: 'warning',
             title: `\`${f}\` is not linked from MEMORY.md`,
             detail: `\`${path.join(memDir, f)}\` is not linked from MEMORY.md — orphan memory biases responses without visibility.`,
             remediation: `Add a link to \`${f}\` in the MEMORY.md index in \`${memDir}\`.`,
+            context: { file: f, memDir },
           });
         }
       }
@@ -480,10 +490,12 @@ export default {
         overloadedPipelines++;
         const relPath = path.relative(cwd, filePath);
         findings.push({
+          findingId: 'workflow-maturity/pipeline-step-overload',
           severity: 'info',
           title: `Pipeline \`${relPath}\` has ${markerCount} stage markers`,
           detail: `Pipeline \`${relPath}\` has ${markerCount} stage markers — consider sub-pipeline decomposition.`,
           remediation: `Break \`${relPath}\` into sub-pipeline modules, each handling a focused phase.`,
+          context: { file: relPath, markerCount },
         });
       }
     }
@@ -498,10 +510,12 @@ export default {
           overloadedPipelines++;
           const relDir = path.relative(cwd, stageDir);
           findings.push({
+            findingId: 'workflow-maturity/stage-dir-overload',
             severity: 'info',
             title: `Pipeline directory \`${relDir}/\` has ${pyFiles.length} stage modules`,
             detail: `Directory \`${relDir}/\` contains ${pyFiles.length} stage/phase modules — consider grouping related stages into sub-pipelines.`,
             remediation: `Group related stages in \`${relDir}/\` into sub-pipeline packages to reduce orchestration breadth.`,
+            context: { dir: relDir, moduleCount: pyFiles.length },
           });
         }
       } catch { /* ok */ }

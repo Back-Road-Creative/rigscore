@@ -88,9 +88,11 @@ async function checkMcpConfigUrls(context) {
       if (!parsed) {
         if (url) {
           findings.push({
+            findingId: 'network-exposure/mcp-url-malformed',
             severity: 'info',
             title: `MCP server "${name}": malformed URL skipped`,
             detail: `Could not parse URL "${url}" in ${relPath}.`,
+            context: { serverName: name, url, file: relPath },
           });
         }
         continue;
@@ -100,10 +102,12 @@ async function checkMcpConfigUrls(context) {
 
       if (!isSafeHost(parsed.hostname, safeHosts)) {
         findings.push({
+          findingId: 'network-exposure/mcp-non-loopback-host',
           severity: 'critical',
           title: `MCP server "${name}" SSE endpoint on non-loopback host`,
           detail: `Server "${name}" in ${relPath} targets ${parsed.hostname}:${parsed.port || '(default)'}. Non-loopback MCP endpoints are reachable from the network.`,
           remediation: 'Bind MCP SSE servers to 127.0.0.1 instead of 0.0.0.0 or a public IP.',
+          context: { serverName: name, host: parsed.hostname, port: parsed.port, file: relPath },
         });
       }
     }
@@ -165,10 +169,12 @@ async function checkDockerPortBindings(context) {
         }
 
         findings.push({
+          findingId: 'network-exposure/docker-port-no-loopback-bind',
           severity: 'warning',
           title: `Docker port ${parsed.hostPort} (${serviceName}) exposed without loopback bind`,
           detail: `Container "${name}" in ${sourceLabel} maps port ${parsed.hostPort} without explicit 127.0.0.1 bind. It will listen on all interfaces.`,
           remediation: `Change "${portStr}" to "127.0.0.1:${parsed.hostPort}:${parsed.containerPort}" in ${sourceLabel}.`,
+          context: { container: name, hostPort: parsed.hostPort, service: serviceName, file: sourceLabel },
         });
       }
     }
@@ -222,10 +228,12 @@ async function checkOllamaConfig(context) {
 
     if (/OLLAMA_HOST\s*=\s*0\.0\.0\.0/i.test(content)) {
       findings.push({
+        findingId: 'network-exposure/ollama-systemd-all-interfaces',
         severity: 'warning',
         title: 'Ollama systemd override binds to all interfaces',
         detail: `OLLAMA_HOST=0.0.0.0 found in ${p}. Ollama will accept connections from any network interface.`,
         remediation: 'Change OLLAMA_HOST to 127.0.0.1 or remove the override to use the default (localhost).',
+        context: { source: p },
       });
     }
   }
@@ -243,10 +251,12 @@ async function checkOllamaConfig(context) {
 
     if (/OLLAMA_HOST\s*=\s*0\.0\.0\.0/i.test(content)) {
       findings.push({
+        findingId: 'network-exposure/ollama-config-all-interfaces',
         severity: 'warning',
         title: 'Ollama config binds to all interfaces',
         detail: `OLLAMA_HOST=0.0.0.0 found in ${p}. Ollama will accept connections from any network interface.`,
         remediation: 'Change OLLAMA_HOST to 127.0.0.1 or remove the setting to use the default.',
+        context: { source: p },
       });
     }
   }
@@ -284,10 +294,12 @@ async function checkLiveListeners(context) {
 
       if (!isSafeAddress(normalizedAddr, safeHosts)) {
         findings.push({
+          findingId: 'network-exposure/live-listener-non-loopback',
           severity: 'warning',
           title: `${serviceName} listening on ${normalizedAddr}:${port}`,
           detail: `Live listener detected on non-loopback address. This service is reachable from the network.`,
           remediation: `Configure ${serviceName} to bind to 127.0.0.1 instead of ${normalizedAddr}.`,
+          context: { service: serviceName, addr: normalizedAddr, port, source: 'ss' },
         });
       }
     }
@@ -315,10 +327,12 @@ async function checkLiveListeners(context) {
 
       if (!isSafeAddress(normalizedAddr, safeHosts)) {
         findings.push({
+          findingId: 'network-exposure/live-listener-non-loopback',
           severity: 'warning',
           title: `${serviceName} listening on ${normalizedAddr}:${port}`,
           detail: `Live listener detected on non-loopback address. This service is reachable from the network.`,
           remediation: `Configure ${serviceName} to bind to 127.0.0.1 instead of ${normalizedAddr}.`,
+          context: { service: serviceName, addr: normalizedAddr, port, source: 'lsof' },
         });
       }
     }

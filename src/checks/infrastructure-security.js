@@ -86,19 +86,23 @@ export default {
       const hooksDirExists = await fileExists(hooksDir);
       if (!hooksDirExists) {
         findings.push({
+          findingId: 'infrastructure-security/hooks-dir-missing',
           severity: 'critical',
           title: 'Global git hooks directory missing',
           detail: `Expected root-owned hooks at ${hooksDir}`,
           remediation: `Create ${hooksDir} owned by root with pre-commit, pre-push, and commit-msg hooks.`,
+          context: { hooksDir },
         });
       } else {
         const hooksDirRootOwned = await isRootOwned(hooksDir);
         if (!hooksDirRootOwned) {
           findings.push({
+            findingId: 'infrastructure-security/hooks-dir-not-root-owned',
             severity: 'critical',
             title: 'Global git hooks directory not root-owned',
             detail: `${hooksDir} should be owned by root to prevent tampering`,
             remediation: `sudo chown root:root ${hooksDir}`,
+            context: { hooksDir },
           });
         }
 
@@ -108,18 +112,22 @@ export default {
           const exists = await fileExists(hookPath);
           if (!exists) {
             findings.push({
+              findingId: 'infrastructure-security/required-hook-missing',
               severity: 'critical',
               title: `Required git hook missing: ${hook}`,
               detail: `${hookPath} not found`,
               remediation: `Create ${hookPath} as root-owned executable script.`,
+              context: { hook, hookPath },
             });
           } else {
             const executable = await isExecutable(hookPath);
             if (!executable) {
               findings.push({
+                findingId: 'infrastructure-security/hook-not-executable',
                 severity: 'warning',
                 title: `Git hook not executable: ${hook}`,
                 remediation: `sudo chmod 755 ${hookPath}`,
+                context: { hook, hookPath },
               });
             } else {
               findings.push({ severity: 'pass', title: `Git hook present and executable: ${hook}` });
@@ -134,18 +142,22 @@ export default {
       const wrapperExists = await fileExists(gitWrapper);
       if (!wrapperExists) {
         findings.push({
+          findingId: 'infrastructure-security/git-wrapper-missing',
           severity: 'critical',
           title: 'Git safety wrapper missing',
           detail: `Expected root-owned git wrapper at ${gitWrapper}`,
           remediation: 'Install a git wrapper that strips --no-verify and blocks force push to main/master.',
+          context: { gitWrapper },
         });
       } else {
         const wrapperRootOwned = await isRootOwned(gitWrapper);
         if (!wrapperRootOwned) {
           findings.push({
+            findingId: 'infrastructure-security/git-wrapper-not-root-owned',
             severity: 'warning',
             title: 'Git wrapper not root-owned',
             detail: `${gitWrapper} should be root-owned to prevent tampering`,
+            context: { gitWrapper },
           });
         }
 
@@ -154,9 +166,11 @@ export default {
           findings.push({ severity: 'pass', title: 'Git wrapper strips --no-verify' });
         } else {
           findings.push({
+            findingId: 'infrastructure-security/git-wrapper-no-verify-bypass',
             severity: 'warning',
             title: 'Git wrapper does not strip --no-verify',
             detail: 'The wrapper should remove --no-verify flags to prevent hook bypass.',
+            context: { gitWrapper },
           });
         }
       }
@@ -169,10 +183,12 @@ export default {
         findings.push({ severity: 'pass', title: 'Shell safety guard present' });
       } else {
         findings.push({
+          findingId: 'infrastructure-security/safety-gates-missing',
           severity: 'info',
           title: 'Shell safety guard missing',
           detail: `No ${safetyGates} found. This blocks dangerous patterns like chmod 777.`,
           remediation: `Create ${safetyGates} with command wrappers for dangerous operations.`,
+          context: { safetyGates },
         });
       }
     }
@@ -184,18 +200,22 @@ export default {
       const output = await execSafe('lsattr', ['-d', dir]);
       if (output === null) {
         findings.push({
+          findingId: 'infrastructure-security/cannot-check-immutability',
           severity: 'info',
           title: `Cannot check immutability: ${path.basename(dir)}`,
           detail: 'lsattr not available or directory not found.',
+          context: { dir },
         });
       } else if (hasImmutableFlag(output)) {
         findings.push({ severity: 'pass', title: `Immutable flag set: ${path.basename(dir)}` });
       } else {
         findings.push({
+          findingId: 'infrastructure-security/immutable-flag-not-set',
           severity: 'warning',
           title: `Immutable flag not set: ${path.basename(dir)}`,
           detail: `${dir} should have chattr +i to prevent unauthorized modification.`,
           remediation: `sudo chattr -R +i ${dir}`,
+          context: { dir },
         });
       }
     }
@@ -218,6 +238,7 @@ export default {
 
     if (denyList === null) {
       findings.push({
+        findingId: 'infrastructure-security/no-deny-list',
         severity: 'warning',
         title: 'No deny list found in settings.json',
         detail: 'AI tool settings should include a deny list for dangerous commands.',
@@ -227,10 +248,12 @@ export default {
       const missing = REQUIRED_DENY_PATTERNS.filter(p => !denyStr.includes(p));
       if (missing.length > 0) {
         findings.push({
+          findingId: 'infrastructure-security/deny-list-missing-patterns',
           severity: 'warning',
           title: `Deny list missing ${missing.length} required pattern(s)`,
           detail: `Missing: ${missing.join(', ')}`,
           remediation: 'Add the missing patterns to permissions.deny in settings.json.',
+          context: { missing },
         });
       } else {
         findings.push({ severity: 'pass', title: 'Deny list contains all required patterns' });
@@ -254,6 +277,7 @@ export default {
       findings.push({ severity: 'pass', title: 'Sandbox gate registered in hooks' });
     } else {
       findings.push({
+        findingId: 'infrastructure-security/sandbox-gate-not-registered',
         severity: 'warning',
         title: 'Sandbox gate not registered',
         detail: 'sandbox-gate.py should be registered as a PreToolUse hook for Write/Edit/Bash protection.',

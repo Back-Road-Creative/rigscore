@@ -226,10 +226,12 @@ function analyzeContextBudget(files) {
 
     if (tokens > SINGLE_FILE_TOKEN_WARN) {
       findings.push({
+        findingId: 'instruction-effectiveness/single-file-over-budget',
         severity: 'warning',
         title: `Large instruction file: ${file.relPath}`,
         detail: `${file.relPath} is ~${tokens.toLocaleString()} estimated tokens. Large instruction files consume context budget and may reduce effective working memory.`,
         remediation: `Review ${file.relPath} for sections that can be condensed or moved to on-demand references.`,
+        context: { file: file.relPath, tokens },
       });
     }
   }
@@ -239,17 +241,21 @@ function analyzeContextBudget(files) {
 
   if (pctOfContext > BUDGET_WARN_PCT) {
     findings.push({
+      findingId: 'instruction-effectiveness/context-budget-warn',
       severity: 'warning',
       title: `Instruction files consume ${(pctOfContext * 100).toFixed(1)}% of context window`,
       detail: `${files.length} instruction files total ~${totalTokens.toLocaleString()} estimated tokens (${(pctOfContext * 100).toFixed(1)}% of ${(REFERENCE_CONTEXT / 1000)}K reference window). This leaves less room for code, tool output, and conversation.`,
       remediation: 'Consolidate redundant instructions, compress verbose sections, or split rarely-needed instructions into on-demand references.',
+      context: { totalTokens, pctOfContext },
     });
   } else if (pctOfContext > BUDGET_INFO_PCT) {
     findings.push({
+      findingId: 'instruction-effectiveness/context-budget-info',
       severity: 'info',
       title: `Instruction files consume ${(pctOfContext * 100).toFixed(1)}% of context window`,
       detail: `${files.length} instruction files total ~${totalTokens.toLocaleString()} estimated tokens (${(pctOfContext * 100).toFixed(1)}% of ${(REFERENCE_CONTEXT / 1000)}K reference window).`,
       remediation: 'Consider reviewing large instruction files for optimization opportunities.',
+      context: { totalTokens, pctOfContext },
     });
   }
 
@@ -317,10 +323,12 @@ function detectContradictions(file) {
       const jaccard = intersection.size / union.size;
       if (jaccard >= 0.5 && intersection.size >= 2) {
         findings.push({
+          findingId: 'instruction-effectiveness/contradiction',
           severity: 'info',
           title: `Possible contradiction in ${file.relPath}`,
           detail: `Line ${a.line}: "${a.text}" may contradict line ${n.line}: "${n.text}" (${intersection.size} overlapping terms).`,
           remediation: `Review these directives for consistency and reconcile the conflicting language.`,
+          context: { file: file.relPath, alwaysLine: a.line, neverLine: n.line },
         });
         break; // one finding per always-claim
       }
@@ -524,10 +532,12 @@ function detectVagueInstructions(file) {
         vagueCount++;
         if (vagueCount <= 3) { // cap individual findings
           findings.push({
+            findingId: 'instruction-effectiveness/vague-instruction',
             severity: 'info',
             title: `Vague instruction in ${file.relPath}`,
             detail: `Line ${i + 1}: "${line.trim().slice(0, 100)}" — delegates decision without specifying criteria.`,
             remediation: 'Add specific criteria, examples, or decision rules after vague directives.',
+            context: { file: file.relPath, line: i + 1 },
           });
         }
       }
@@ -537,10 +547,12 @@ function detectVagueInstructions(file) {
 
   if (vagueCount > 3) {
     findings.push({
+      findingId: 'instruction-effectiveness/vague-instruction-summary',
       severity: 'info',
       title: `${vagueCount} vague instructions in ${file.relPath}`,
       detail: `${file.relPath} contains ${vagueCount} directives that delegate decisions without criteria (showing first 3).`,
       remediation: 'Rewrite vague directives with concrete criteria, examples, or decision rules.',
+      context: { file: file.relPath, count: vagueCount },
     });
   }
 
@@ -558,17 +570,21 @@ function detectBloat(file) {
   const lineCount = file.content.split('\n').length;
   if (lineCount > BLOAT_WARN) {
     findings.push({
+      findingId: 'instruction-effectiveness/file-bloat',
       severity: 'warning',
       title: `Bloated instruction file: ${file.relPath} (${lineCount} lines)`,
       detail: `${file.relPath} exceeds ${BLOAT_WARN} lines. Large instruction files are harder to maintain and consume excessive context.`,
       remediation: `Split ${file.relPath} into focused files or archive completed/obsolete sections.`,
+      context: { file: file.relPath, lineCount },
     });
   } else if (lineCount > BLOAT_INFO) {
     findings.push({
+      findingId: 'instruction-effectiveness/file-bloat-info',
       severity: 'info',
       title: `Large instruction file: ${file.relPath} (${lineCount} lines)`,
       detail: `${file.relPath} is approaching the ${BLOAT_WARN}-line bloat threshold.`,
       remediation: `Review ${file.relPath} for sections that can be condensed.`,
+      context: { file: file.relPath, lineCount },
     });
   }
 
@@ -639,20 +655,24 @@ function analyzeRedundancy(files) {
       const truncated = normalized.length > 80 ? normalized.slice(0, 80) + '...' : normalized;
       const titleSnippet = normalized.length > 40 ? normalized.slice(0, 40) + '...' : normalized;
       findings.push({
+        findingId: 'instruction-effectiveness/redundant-instruction',
         severity: 'info',
         title: `Redundant instruction (${distinctFiles.size} files): "${titleSnippet}"`,
         detail: `"${truncated}" appears in: ${fileList}. Redundant instructions waste context budget.`,
         remediation: 'Consolidate into a single governance file or use includes/references.',
+        context: { files: [...distinctFiles] },
       });
     }
   }
 
   if (count > MAX_REDUNDANCY_FINDINGS) {
     findings.push({
+      findingId: 'instruction-effectiveness/redundant-instruction-summary',
       severity: 'info',
       title: `${count} redundant instructions detected (showing ${MAX_REDUNDANCY_FINDINGS})`,
       detail: `Found ${count} instruction lines duplicated across files.`,
       remediation: 'Consolidate overlapping governance and skill files to reduce context budget waste.',
+      context: { count },
     });
   }
 
