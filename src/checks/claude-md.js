@@ -84,7 +84,7 @@ const LENGTH_THRESHOLD = 50;
 // C7: anti-patterns that dismantle a nearby governance header.
 // Matched against a line within REVERSAL_WINDOW_LINES of a header that
 // contains one of the QUALITY_CHECKS keywords.
-const REVERSAL_ANTIPATTERN_RE = /\b(all (paths?|actions?|shells?) are (allowed|available|permitted|open|free)|no restrictions|no restriction|all paths are available|everything is (allowed|permitted)|removed (all )?(restrictions?|limits?|gates?)|skip (approval|review|verification|checks?)|bypass (approval|gates?|checks?)|override (default|safety|security)|feel free|go ahead|just ship|no shell commands are restricted|testing is optional|ship fast|trust all|streamlined — just|encouraged for)\b/i;
+const REVERSAL_ANTIPATTERN_RE = /\b(all (paths?|actions?|shells?) are (allowed|available|permitted|open|free)|no restrictions|no restriction|all paths are available|everything is (allowed|permitted)|removed (all )?(restrictions?|limits?|gates?)|skip (approval|review|verification|checks?)|bypass (approval|gates?|checks?)|override (default|safety|security)|feel free|go ahead|just ship|no shell commands are restricted|testing is optional|ship fast|trust all|streamlined — just|encouraged for|nothing is (forbidden|prohibited|restricted|off.?limits)|no (actions?|paths?|commands?) (is|are) (forbidden|prohibited|restricted))\b/i;
 
 const REVERSAL_WINDOW_LINES = 5;
 const HEADER_LINE_RE = /^#{1,6}\s+\S/;

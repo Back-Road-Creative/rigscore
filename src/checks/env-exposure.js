@@ -165,10 +165,12 @@ export default {
         const result = scanLineForSecrets(line, trimmed);
         if (result.matched && result.severity === 'critical') {
           findings.push({
+            findingId: 'env-exposure/real-secret-in-template',
             severity: 'warning',
             title: `Real secret found in ${tmpl}`,
             detail: `Template file ${tmpl} contains what appears to be a real secret, not a placeholder.`,
             remediation: `Replace the real secret in ${tmpl} with a placeholder like "your_key_here".`,
+            context: { file: tmpl },
           });
           break; // one finding per template file
         }
@@ -182,10 +184,12 @@ export default {
       if (!content) continue;
       if (content.includes('"type"') && content.includes('service_account') && content.includes('"private_key"')) {
         findings.push({
+          findingId: 'env-exposure/gcp-service-account-key',
           severity: 'critical',
           title: `GCP service account key in ${configFile}`,
           detail: `File contains both "type": "service_account" and "private_key" — this is a GCP credential file.`,
           remediation: 'Remove the service account key file from the project. Use workload identity or environment-based auth.',
+          context: { file: configFile },
         });
       }
     }
@@ -226,7 +230,13 @@ export default {
             const rank = SEVERITY_RANK[severity] || 0;
             if (rank > worstRank) {
               worstRank = rank;
+              const findingId = isComment
+                ? 'env-exposure/api-key-in-comment'
+                : isExample
+                  ? 'env-exposure/api-key-example-placeholder'
+                  : 'env-exposure/hardcoded-api-key';
               worstFinding = {
+                findingId,
                 severity,
                 title: isComment
                   ? `API key pattern in comment in ${configFile}`
@@ -239,6 +249,7 @@ export default {
                     ? `A secret pattern resembling a placeholder was found in ${configFile}. Verify it is not a real key.`
                     : `A secret matching pattern ${pattern.source.slice(0, 20)}... was found in ${configFile}.`,
                 remediation: 'Move secrets to .env and reference via environment variables.',
+                context: { file: configFile },
               };
             }
             break; // one pattern match per line is enough
@@ -274,10 +285,12 @@ export default {
 
       if (secretsInHistory > 0) {
         findings.push({
+          findingId: 'env-exposure/shell-history-secrets',
           severity: 'warning',
           title: `Secrets found in ${histFile}`,
           detail: `Found ${secretsInHistory} potential secret(s) in shell history (~/${histFile}). These can be exposed via terminal shoulder-surfing or history file theft.`,
           remediation: `Clear secrets from history: edit ~/${histFile} or run history -c. Consider using a secrets manager.`,
+          context: { file: histFile, count: secretsInHistory },
         });
       }
     }

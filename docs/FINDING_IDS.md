@@ -37,44 +37,277 @@ output it is the `findingId` field on each finding. `--ignore
 - **Check-level IDs** (the bare `<check-id>`, no slash) are also stable and
   usable with `--ignore` to silence an entire check.
 
-## Current state — partial enforcement (v1.x)
+## Full enforcement (v2.x)
 
-**This is a known gap.** The stability contract above is the intended
-behavior. Today, only a subset of checks emit explicit stable IDs; for the
-rest, SARIF derives a ruleId by slugifying the finding title (see
-`src/sarif.js` → `deriveFindingRuleId`). Title-derived IDs are **not**
-guaranteed to survive a title reword.
+As of v2.x the stability contract applies to **every** non-pass,
+non-skipped finding emitted by the built-in checks. The SARIF title-slug
+fallback in `src/sarif.js::deriveFindingRuleId` is retained only as a
+defensive safety net for plugin-authored checks that skip explicit IDs —
+no built-in check should rely on it.
 
-If you are writing a long-lived `--ignore` list, a `suppress:` stanza in
-`.rigscorerc.json`, or a finding-ID-based fixer: prefer the explicitly
-emitted IDs listed below. Everything else, treat as a best-effort handle
-until a future release promotes it.
+Suppressing a finding via `--ignore <id>`, `suppress:` in
+`.rigscorerc.json`, or a baseline file is safe for any ID listed below.
 
-This gap is tracked for enforcement under the regression net (Track E) —
-the goal is that every check emits an explicit `findingId` on every
-non-pass finding, and the SARIF title-slug fallback becomes dead code.
+For IDs whose slug includes a dynamic fragment (e.g.
+`claude-md/actively-negates-<category>`,
+`claude-md/missing-<category>`,
+`skill-files/escalation-<patternId>`,
+`documentation/docs-gate-<reason>`,
+`skill-coherence/constraint-unaware-<constraint-id>`) the dynamic
+fragment is also stable — it is derived from a closed enumeration
+(QUALITY_CHECKS names, ESCALATION pattern ids, docs-gate reasons, and
+user-provided constraint ids respectively).
 
-## Explicitly emitted finding IDs (v1.x)
+## Explicitly emitted finding IDs
 
-These IDs are written directly in the check source and are safe to pin.
+Grouped by check. Each ID is stable within the current major.
 
-| ID | Check | Default severity | What it means |
-|---|---|---|---|
-| `skill-files/injection` | skill-files | critical | Instruction-override / injection pattern in a skill file. |
-| `skill-files/injection-defensive` | skill-files | info | Injection pattern detected but context is defensive (e.g. an anti-injection rule). |
-| `skill-files/shell-exec` | skill-files | warning | Shell-execution instructions embedded in a skill file. |
-| `skill-files/exfiltration` | skill-files | warning | Data-exfiltration pattern in a skill file. |
-| `skill-files/escalation-<patternId>` | skill-files | warning | Privilege-escalation pattern. `<patternId>` is derived from the matching pattern (e.g. `sudo`, `chmod-777`). |
-| `skill-files/persistence` | skill-files | warning | Persistence pattern (cron/autorun/login-hook style) in a skill file. |
-| `skill-files/indirect-injection` | skill-files | critical | Fetch-and-execute remote-code instructions. |
-| `skill-files/trust-exploitation` | skill-files | warning | Instructions to skip tool-output verification (CVE-2025-54136 class). |
-| `skill-files/world-writable` | skill-files | warning | A skill file is world-writable on disk. |
-| `env-exposure/env-not-gitignored` | env-exposure | warning | A `.env` file exists and is not gitignored. |
-| `env-exposure/env-world-readable` | env-exposure | warning | An `.env` file has world-readable permissions. |
-| `permissions-hygiene/ssh-dir-permissions` | permissions-hygiene | warning | `~/.ssh` is not mode `700`. |
-| `permissions-hygiene/ssh-key-permissions` | permissions-hygiene | warning | An SSH private key is not mode `600`. |
-| `permissions-hygiene/sensitive-file-world-readable` | permissions-hygiene | warning | A sensitive project file (`.pem`, `.key`, `*credentials*`) is world-readable. |
-| `instruction-effectiveness/dead-file-reference` | instruction-effectiveness | info | Instruction file references a path that does not exist on disk. |
+### claude-md
+
+- `claude-md/no-governance-file` (critical) — no CLAUDE.md or equivalent found.
+- `claude-md/governance-file-short` (warning) — governance file < 50 lines.
+- `claude-md/actively-negates-<category>` (critical) — negated governance keyword (category slugified from QUALITY_CHECKS name).
+- `claude-md/missing-<category>` (warning) — missing governance category.
+- `claude-md/governance-reversal-detected` (warning) — keyword-stuffed header dismantled in body (C7).
+- `claude-md/injection-pattern` (critical) — instruction-override pattern found in governance file.
+- `claude-md/governance-file-gitignored` (critical) — governance file listed in .gitignore.
+- `claude-md/governance-file-untracked` (warning) — governance file not tracked in git.
+
+### claude-settings
+
+- `claude-settings/mcp-auto-approve-enabled` (critical) — `enableAllProjectMcpServers: true`.
+- `claude-settings/anthropic-base-url-redirected` (critical) — CVE-2026-21852-class API base-URL override.
+- `claude-settings/bypass-plus-skip-prompt` (critical) — `bypassPermissions` + `skipDangerousModePermissionPrompt`.
+- `claude-settings/dangerous-hook-command` (critical) — hook runs curl/wget/nc/eval/rm -rf/etc.
+- `claude-settings/hook-script-missing` (warning) — hook references a path that does not exist.
+- `claude-settings/wildcard-tool-permission` (warning) — `allowedTools` includes `"*"`.
+- `claude-settings/dangerous-allow-list-entry` (warning) — allow-list pattern grants sudo-bash / unrestricted docker / raw pip.
+- `claude-settings/lifecycle-hook-missing` (info) — one of PreToolUse/PostToolUse/Stop/UserPromptSubmit is not configured.
+- `claude-settings/no-lifecycle-hooks` (info) — no Claude Code hooks configured at all.
+
+### coherence
+
+- `coherence/network-claim-vs-mcp-transport` (warning)
+- `coherence/path-claim-vs-broad-filesystem` (warning)
+- `coherence/forbidden-claim-vs-privileged-docker` (warning)
+- `coherence/multi-client-drift-no-governance` (warning)
+- `coherence/shell-claim-vs-skill-shell-exec` (warning)
+- `coherence/anti-injection-claim-vs-skill-injection` (critical)
+- `coherence/exfiltration-plus-broad-filesystem` (critical)
+- `coherence/governance-gitignored-echo` (info) — echoed from claude-md.
+- `coherence/governance-untracked-echo` (info) — echoed from claude-md.
+- `coherence/undeclared-mcp-server` (warning) — MCP server not mentioned in governance.
+- `coherence/no-approved-tools-declaration` (info) — broad-capability MCP server without an "Approved Tools" declaration.
+- `coherence/approval-claim-vs-bypass-no-hook` (warning) — bypassPermissions + approval-gate claim + no PreToolUse hook.
+- `coherence/allow-list-contradicts-governance` (warning) — default ID for author-configured governance pairings.
+
+### credential-storage
+
+- `credential-storage/plaintext-credential-in-client-config` (critical)
+- `credential-storage/example-credential-in-client-config` (info)
+
+### deep-secrets
+
+- `deep-secrets/gcp-service-account-key` (critical)
+- `deep-secrets/hardcoded-secret` (critical)
+- `deep-secrets/possible-secret-comment` (warning)
+- `deep-secrets/symlink-loop-skipped` (info)
+- `deep-secrets/no-source-files` (info)
+- `deep-secrets/file-cap-reached` (info)
+- `deep-secrets/oversize-skipped` (info)
+
+### docker-security (compose)
+
+- `docker-security/container-running-with-privileged-true` (critical)
+- `docker-security/container-uses-host-network-mode` (warning)
+- `docker-security/container-uses-ipc-host` (critical)
+- `docker-security/container-uses-pid-host` (critical)
+- `docker-security/container-uses-volumes-from` (warning)
+- `docker-security/container-adds-dangerous-capability` (critical)
+- `docker-security/container-mounts-docker-socket` (critical)
+- `docker-security/container-volume-mount-uses-path-traversal` (warning)
+- `docker-security/container-mounts-sensitive-path` (critical)
+- `docker-security/container-missing-cap-drop-all` (warning)
+- `docker-security/container-missing-no-new-privileges` (info)
+- `docker-security/container-has-no-user-directive` (warning)
+- `docker-security/container-has-no-memory-limit` (info)
+- `docker-security/failed-to-parse` (warning)
+- `docker-security/failed-to-parse-included-file` (info)
+- `docker-security/no-container-configuration-found` (info)
+
+### docker-security (Kubernetes)
+
+- `docker-security/k8s-hostnetwork-enabled` (warning)
+- `docker-security/k8s-hostpid-enabled` (warning)
+- `docker-security/k8s-hostipc-enabled` (warning)
+- `docker-security/k8s-no-pod-level-runasnonroot` (info)
+- `docker-security/k8s-privileged-container` (critical)
+- `docker-security/k8s-capabilities-not-dropped` (info)
+- `docker-security/k8s-allowprivilegeescalation-is-true` (warning)
+- `docker-security/k8s-no-resource-limits` (info)
+- `docker-security/k8s-hostpath-mounts` (critical)
+
+### docker-security (Dockerfile / devcontainer)
+
+- `docker-security/has-no-user-directive` (warning)
+- `docker-security/unpinned-base-image` (warning)
+- `docker-security/add-with-remote-url` (warning)
+- `docker-security/copies-sensitive-file` (warning)
+- `docker-security/multi-stage-build-runs-as-root-in-final-stage` (warning)
+- `docker-security/pipe-to-shell-in-run-instruction` (warning)
+- `docker-security/secret-in-run-instruction` (critical)
+- `docker-security/chmod-777-in-run-instruction` (warning)
+- `docker-security/apt-get-install-without-no-install-recommends` (info)
+- `docker-security/apk-add-without-no-cache` (info)
+- `docker-security/exposes-ssh-port-22` (warning)
+- `docker-security/devcontainer-uses-privileged-mode` (critical)
+- `docker-security/devcontainer-adds-capabilities` (warning)
+- `docker-security/devcontainer-mounts-docker-socket` (critical)
+
+### documentation
+
+- `documentation/docs-gate-<reason>` (warning) — reason ∈ `missing`, `incomplete`, `weight-drift`, `h1-mismatch`.
+- `documentation/orphan-doc` (info)
+
+### env-exposure
+
+- `env-exposure/env-not-gitignored` (warning)
+- `env-exposure/env-world-readable` (warning)
+
+### git-hooks
+
+- `git-hooks/not-a-git-repo` (info)
+- `git-hooks/hook-empty` (warning)
+- `git-hooks/hook-not-executable` (info)
+- `git-hooks/hook-noop` (warning)
+- `git-hooks/hook-lacks-substance` (info)
+- `git-hooks/no-hooks-installed` (warning)
+- `git-hooks/no-secret-scanning` (warning)
+
+### infrastructure-security
+
+- `infrastructure-security/hooks-dir-missing` (critical)
+- `infrastructure-security/hooks-dir-not-root-owned` (critical)
+- `infrastructure-security/required-hook-missing` (critical)
+- `infrastructure-security/hook-not-executable` (warning)
+- `infrastructure-security/git-wrapper-missing` (critical)
+- `infrastructure-security/git-wrapper-not-root-owned` (warning)
+- `infrastructure-security/git-wrapper-no-verify-bypass` (warning)
+- `infrastructure-security/safety-gates-missing` (info)
+- `infrastructure-security/cannot-check-immutability` (info)
+- `infrastructure-security/immutable-flag-not-set` (warning)
+- `infrastructure-security/no-deny-list` (warning)
+- `infrastructure-security/deny-list-missing-patterns` (warning)
+- `infrastructure-security/sandbox-gate-not-registered` (warning)
+
+### instruction-effectiveness
+
+- `instruction-effectiveness/dead-file-reference` (info)
+
+### mcp-config
+
+- `mcp-config/no-config-found` (info)
+- `mcp-config/env-wildcard-passthrough` (warning)
+- `mcp-config/localhost-server` (info)
+- `mcp-config/network-transport` (warning)
+- `mcp-config/broad-filesystem-access` (critical)
+- `mcp-config/relative-path-traversal` (warning)
+- `mcp-config/unsafe-permission-flag` (warning)
+- `mcp-config/env-wildcard-sensitive-vars` (critical)
+- `mcp-config/env-sensitive-vars` (warning)
+- `mcp-config/anthropic-base-url-redirect` (critical)
+- `mcp-config/unpinned-unstable-tag` (warning)
+- `mcp-config/unpinned-npx-package` (warning)
+- `mcp-config/inline-credentials` (critical)
+- `mcp-config/typosquat-curated` (warning)
+- `mcp-config/typosquat-registry` (critical)
+- `mcp-config/npm-package-not-found` (critical)
+- `mcp-config/npm-package-very-new` (warning)
+- `mcp-config/registry-fallback` (info)
+- `mcp-config/mcp-auto-approve-enabled` (critical) — mirrors claude-settings ID for the same condition surfaced via mcp-config scan.
+- `mcp-config/dangerous-hook-command` (critical)
+- `mcp-config/cve-2025-59536-auto-approve-on-clone` (critical)
+- `mcp-config/cross-client-drift` (warning)
+- `mcp-config/single-client-server` (info)
+- `mcp-config/state-file-corrupted` (info)
+- `mcp-config/server-hash-drift` (warning)
+- `mcp-config/runtime-tool-pin-recorded` (info)
+- `mcp-config/runtime-tool-pin-missing` (info)
+
+### network-exposure
+
+- `network-exposure/mcp-url-malformed` (info)
+- `network-exposure/mcp-non-loopback-host` (critical)
+- `network-exposure/docker-port-no-loopback-bind` (warning)
+- `network-exposure/ollama-systemd-all-interfaces` (warning)
+- `network-exposure/ollama-config-all-interfaces` (warning)
+- `network-exposure/live-listener-non-loopback` (warning)
+
+### permissions-hygiene
+
+- `permissions-hygiene/ssh-dir-permissions` (warning)
+- `permissions-hygiene/ssh-key-permissions` (warning)
+- `permissions-hygiene/sensitive-file-world-readable` (warning)
+
+### site-security
+
+- `site-security/cannot-reach` (warning)
+- `site-security/missing-security-header` (critical)
+- `site-security/missing-advisory-header` (warning)
+- `site-security/x-powered-by-disclosed` (warning)
+- `site-security/server-header-version` (warning)
+- `site-security/exposed-path-accessible` (critical)
+- `site-security/pii-email-leak` (critical)
+- `site-security/pii-phone-leak` (warning)
+- `site-security/secret-in-page-source` (critical)
+- `site-security/internal-ip-disclosed` (warning)
+- `site-security/generator-tag-disclosed` (warning)
+- `site-security/ssl-check-failed` (warning)
+- `site-security/ssl-certificate-expired` (critical)
+- `site-security/ssl-certificate-expiring-soon` (warning)
+
+### skill-coherence
+
+- `skill-coherence/settings-allow-deny-conflict` (info)
+- `skill-coherence/hook-settings-allow-conflict` (warning) — default ID for config-driven hook/settings pairings.
+- `skill-coherence/constraint-unaware-<constraint-id>` (varies) — derived from user-configured constraint `id`.
+
+### skill-files
+
+- `skill-files/injection` (critical)
+- `skill-files/injection-defensive` (info)
+- `skill-files/shell-exec` (warning)
+- `skill-files/exfiltration` (warning)
+- `skill-files/escalation-<patternId>` (warning) — patternId ∈ `sudo`, `run-as-root`, `run-as-admin`, `elevated-privilege`, `chmod-777`, `chmod-plus-x`, `chmod-a-plus`, `disable-security`, `disable-firewall`, `disable-antivirus`, `escalation` (fallback).
+- `skill-files/persistence` (warning)
+- `skill-files/indirect-injection` (critical)
+- `skill-files/trust-exploitation` (warning)
+- `skill-files/world-writable` (warning)
+
+### unicode-steganography
+
+- `unicode-steganography/bidi-override` (critical)
+- `unicode-steganography/zero-width` (warning)
+- `unicode-steganography/homoglyph` (warning)
+- `unicode-steganography/tag-chars` (warning)
+
+### windows-security
+
+- `windows-security/wsl-interop-exposes-path` (warning)
+- `windows-security/wsl-interop-enabled` (info)
+- `windows-security/wsl-mirrored-networking` (info)
+- `windows-security/wsl-firewall-not-enabled` (info)
+- `windows-security/defender-excludes-project-paths` (warning)
+- `windows-security/ntfs-permissions-advisory` (info)
+
+### workflow-maturity
+
+- `workflow-maturity/skill-no-eval` (info)
+- `workflow-maturity/skill-compound-responsibility` (info)
+- `workflow-maturity/mcp-single-consumer` (warning)
+- `workflow-maturity/memory-orphan` (warning)
+- `workflow-maturity/pipeline-step-overload` (info)
+- `workflow-maturity/stage-dir-overload` (info)
 
 ### Stable check-level IDs
 
@@ -88,15 +321,6 @@ Every check id in `src/checks/` is stable. These work in `--ignore` and
 `skill-coherence`, `skill-files`, `unicode-steganography`,
 `windows-security`, `workflow-maturity`.
 
-## Everything else — title-derived (not stable)
-
-Findings from the remaining checks currently reach SARIF as
-`<check-id>/<title-slug>` via `deriveFindingRuleId`. Pinning these in
-long-lived config is risky: a minor title reword changes the slug. If you
-need a stable suppression today for a title-derived finding, suppress at
-the check level (e.g. `--ignore docker-security`) and narrow later when
-the explicit ID lands.
-
 ## How to discover IDs you're seeing right now
 
 ```bash
@@ -106,12 +330,10 @@ npx github:Back-Road-Creative/rigscore --json | jq '.results[].findings[] | {che
 npx github:Back-Road-Creative/rigscore --sarif | jq '.runs[0].results[] | {ruleId, level, message}'
 ```
 
-The `findingId` on a finding without an explicit one will be `undefined`
-in JSON; SARIF fills in the derived ruleId either way.
-
 ## See also
 
-- `src/sarif.js` — `deriveFindingRuleId` is the fallback source of truth.
+- `src/sarif.js` — `deriveFindingRuleId` — remaining fallback for plugin
+  checks that don't emit explicit IDs.
 - `src/fixer.js` — fixers prefer `findingIds: string[]` equality over title
   substring for the same reason.
 - [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — operational FAQ.

@@ -13,6 +13,7 @@
  * check-surface changes are a reviewable diff.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,14 +50,13 @@ const EXPECTED = {
 // (fallback until Agent A's findingId convention lands on main).
 const CRITICAL_ASSERTIONS = [
   {
-    // TODO(post-agent-a): swap to strict findingId equality once Agent A's
-    // findingId convention is merged — keep the substring fallback for now
-    // so this assertion is resilient to per-check id-slug churn.
-    findingId: 'env-exposure/env-file-found-but-not-in-gitignore',
+    // Post-Track E: now strictly asserted via findingId. The `titleContains`
+    // fallback remains as belt-and-suspenders for plugin-authored variants.
+    findingId: 'env-exposure/env-not-gitignored',
     titleContains: '.env file found but NOT in .gitignore',
   },
   {
-    findingId: 'mcp-config/mcp-server-env-wildcard-receives-4-sensitive-env-vars',
+    findingId: 'mcp-config/env-wildcard-sensitive-vars',
     titleContains: 'env-wildcard" receives 4 sensitive env vars',
   },
 ];
@@ -161,6 +161,60 @@ describe('dogfood fixture: scored-project', () => {
       }
     } finally {
       try { fs.rmSync(emptyHome, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  // E7 (Track E): library-vs-CLI divergence guard. A regression where the
+  // programmatic `scan()` and `bin/rigscore.js --json` produce different
+  // overall scores has bitten rigscore twice in v1.x (pass-2 check
+  // ordering, then suppress-semantics). Assert parity from the fixture.
+  it('E7: CLI --json score matches library scan() score (divergence guard)', async () => {
+    const emptyHome = fs.mkdtempSync(path.join(__dirname, 'fixtures', '_fixture-home-e7-'));
+    cleanFixtureState();
+    try {
+      const bin = path.resolve(__dirname, '..', 'bin', 'rigscore.js');
+      // Use --fail-under 0 so a low fixture score doesn't make the CLI
+      // exit non-zero; we just want to capture the emitted JSON.
+      const cliRes = spawnSync(
+        process.execPath,
+        [bin, FIXTURE, '--json', '--fail-under', '0'],
+        {
+          env: { ...process.env, HOME: emptyHome, USERPROFILE: emptyHome },
+          encoding: 'utf8',
+          timeout: 30_000,
+        },
+      );
+      // Non-zero on --fail-under=0 is a genuine failure worth surfacing
+      // verbatim so the regression is debuggable.
+      expect(
+        cliRes.status,
+        `CLI exited ${cliRes.status}\nstderr:\n${cliRes.stderr || '(empty)'}\nstdout head:\n${(cliRes.stdout || '').slice(0, 500)}`,
+      ).toBe(0);
+      const cliOut = JSON.parse(cliRes.stdout);
+
+      cleanFixtureState();
+      const libRes = await import('../src/scanner.js').then((m) => m.scan({ cwd: FIXTURE, homedir: emptyHome }));
+
+      // Headline score must match. If a future refactor splits "what the
+      // CLI shows" from "what the library computes", decide deliberately
+      // here — not by accident.
+      expect(cliOut.score, 'CLI score and library score must agree').toBe(libRes.score);
+
+      // Actionable finding counts must also agree (pass/skipped sentinels
+      // excluded on both sides). This catches divergences where one path
+      // suppresses a category the other emits.
+      const libCount = countActionableFindings(libRes.results);
+      let cliCount = 0;
+      for (const r of cliOut.results || []) {
+        for (const f of r.findings || []) {
+          if (f.severity === 'pass' || f.severity === 'skipped') continue;
+          cliCount++;
+        }
+      }
+      expect(cliCount, 'CLI and library finding counts must agree').toBe(libCount);
+    } finally {
+      try { fs.rmSync(emptyHome, { recursive: true, force: true }); } catch { /* ignore */ }
+      cleanFixtureState();
     }
   });
 });
