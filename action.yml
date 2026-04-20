@@ -36,9 +36,27 @@ runs:
       with:
         node-version: '20'
 
+    # Validate that the caller pinned to a tag (vX.Y.Z), not a branch.
+    # Floating refs like `@main` let any default-branch compromise flow
+    # into every consumer — refuse and instruct the caller to pin.
+    - name: Validate pinned ref
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        if [ -z "${ACTION_REF}" ]; then
+          echo "::error::github.action_ref is empty. Pin this action to a tag, e.g. Back-Road-Creative/rigscore@v1.0.0." >&2
+          exit 1
+        fi
+        if ! printf '%s' "${ACTION_REF}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$'; then
+          echo "::error::github.action_ref='${ACTION_REF}' is not a semver tag. Pin to a tag like @v1.0.0 — branches and floating refs are rejected to prevent supply-chain drift." >&2
+          exit 1
+        fi
+
     # Check out the rigscore source at the ref the caller pinned
-    # (e.g. Back-Road-Creative/rigscore@v0.8.0 → clones v0.8.0 here).
-    # `github.action_ref` resolves to the ref used in the caller's `uses:` line.
+    # (e.g. Back-Road-Creative/rigscore@v1.0.0 → clones v1.0.0 here).
+    # `github.action_ref` resolves to the ref used in the caller's `uses:` line
+    # and has been tag-validated in the previous step.
     # We clone into a sibling path so we don't clobber the caller's checkout.
     - name: Check out rigscore source
       uses: actions/checkout@v4
@@ -52,10 +70,21 @@ runs:
       working-directory: .rigscore-action-src
       run: npm ci --no-audit --no-fund
 
+    # rigscore --ci emits SARIF on stdout and exits non-zero when findings
+    # breach --fail-under. This step is allowed to fail with a non-zero
+    # exit so SARIF still uploads for failing scans — the separate
+    # "Check threshold" step below re-runs rigscore and is the single
+    # source of truth for the job's exit status. Unlike the previous
+    # `2>/dev/null || true`, we no longer silently discard stderr or
+    # swallow hard crashes outside the scanner's expected exit codes:
+    # actions/runner surfaces any non-zero exit as a step failure that
+    # propagates via the final gating step.
     - name: Run rigscore
       shell: bash
       id: scan
+      continue-on-error: true
       run: |
+        set -eo pipefail
         ARGS="--ci --fail-under ${{ inputs.fail-under }} --profile ${{ inputs.profile }}"
         if [ "${{ inputs.recursive }}" = "true" ]; then
           ARGS="$ARGS --recursive --depth ${{ inputs.depth }}"
@@ -63,7 +92,7 @@ runs:
         if [ "${{ inputs.deep }}" = "true" ]; then
           ARGS="$ARGS --deep"
         fi
-        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" $ARGS . > rigscore-results.sarif 2>/dev/null || true
+        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" $ARGS . > rigscore-results.sarif
         cat rigscore-results.sarif
 
     - name: Upload SARIF

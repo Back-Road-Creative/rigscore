@@ -129,6 +129,11 @@ export async function run(args) {
 
   if (options.initHook) {
     const path = await import('node:path');
+    const { createRequire } = await import('node:module');
+    const require = createRequire(import.meta.url);
+    const pkg = require('../package.json');
+    const version = pkg.version;
+
     const hooksDir = path.default.join(cwd, '.git', 'hooks');
     const hookPath = path.default.join(hooksDir, 'pre-commit');
 
@@ -144,21 +149,36 @@ export async function run(args) {
     let existing = '';
     try { existing = fs.readFileSync(hookPath, 'utf8'); } catch {}
 
+    // Detect an older pinned version and nudge the user to re-init rather
+    // than silently appending a second line that shadows the first.
+    const pinnedMatch = existing.match(/rigscore@v(\d+\.\d+\.\d+)/);
     if (existing.includes('rigscore')) {
-      process.stderr.write('rigscore hook already installed in .git/hooks/pre-commit\n');
+      if (pinnedMatch && pinnedMatch[1] !== version) {
+        process.stderr.write(
+          `rigscore hook already installed (pinned to v${pinnedMatch[1]}; ` +
+          `current version v${version}). Re-run 'rigscore --init-hook' after ` +
+          `editing the old line out of .git/hooks/pre-commit to re-pin.\n`,
+        );
+      } else {
+        process.stderr.write('rigscore hook already installed in .git/hooks/pre-commit\n');
+      }
       process.exit(0);
     }
 
     // Create hooks dir if needed
     fs.mkdirSync(hooksDir, { recursive: true });
 
-    const hookContent = '#!/bin/sh\nnpx github:Back-Road-Creative/rigscore --fail-under 70 --no-cta || exit 1\n';
+    // Pin to the release tag matching the currently-installed rigscore
+    // version. An unpinned npx github:… install would let any default-branch
+    // compromise propagate to every adopter on their next commit.
+    const pinnedCmd = `npx -y github:Back-Road-Creative/rigscore@v${version} --fail-under 70 --no-cta || exit 1`;
+    const pinnedComment = `# rigscore pinned to v${version}. Re-run 'rigscore --init-hook' after upgrading to re-pin.`;
 
     if (existing) {
       // Append to existing hook
-      fs.appendFileSync(hookPath, '\n# rigscore hygiene check\nnpx github:Back-Road-Creative/rigscore --fail-under 70 --no-cta || exit 1\n');
+      fs.appendFileSync(hookPath, `\n${pinnedComment}\n${pinnedCmd}\n`);
     } else {
-      fs.writeFileSync(hookPath, hookContent);
+      fs.writeFileSync(hookPath, `#!/bin/sh\n${pinnedComment}\n${pinnedCmd}\n`);
     }
 
     fs.chmodSync(hookPath, 0o755);
