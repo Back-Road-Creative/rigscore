@@ -33,13 +33,16 @@ export function deduplicateFindings(results) {
 
       if (seen.has(key)) {
         const prev = seen.get(key);
+        // Same check — preserve both. Within-check findings that normalize to
+        // the same key are per-file variants (e.g., one finding per skill file
+        // hitting a pattern); collapsing them hides real triage signal.
+        if (prev.resultIdx === ri) continue;
+        // Cross-check — collapse to the higher-weighted check.
         if (weight >= prev.weight) {
-          // Current check has higher weight — remove from previous
           results[prev.resultIdx].findings.splice(prev.findingIdx, 1);
           touched.add(prev.resultIdx);
           seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
         } else {
-          // Previous check has higher weight — remove current
           findings.splice(fi, 1);
           touched.add(ri);
         }
