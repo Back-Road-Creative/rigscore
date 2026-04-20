@@ -8,7 +8,7 @@ inputs:
     required: false
     default: '70'
   profile:
-    description: 'Scoring profile (default, minimal, ci)'
+    description: 'Scoring profile (default, minimal, ci, home, monorepo)'
     required: false
     default: 'default'
   recursive:
