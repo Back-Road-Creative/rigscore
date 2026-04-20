@@ -177,3 +177,37 @@ describe('fixer self-registration', () => {
     }
   });
 });
+
+describe('fixer findingId matching (Moat & Ship Agent A)', () => {
+  beforeAll(async () => {
+    await loadChecks();
+  });
+
+  it('matches a fix by findingId even if the title is reworded', () => {
+    const results = [{
+      id: 'env-exposure',
+      findings: [{
+        severity: 'critical',
+        findingId: 'env-exposure/env-not-gitignored',
+        // Deliberately reword the title — legacy substring match would fail.
+        title: 'Your .env file is stowing away secrets and WILL be committed',
+      }],
+    }];
+    const fixes = findApplicableFixes(results);
+    expect(fixes.some((f) => f.id === 'env-not-gitignored')).toBe(true);
+  });
+
+  it('legacy title-substring fallback still matches when findingId is absent', () => {
+    // Pre-existing finding shape (no findingId) — legacy matchers must
+    // continue to resolve so the migration is non-breaking.
+    const results = [{
+      id: 'env-exposure',
+      findings: [{
+        severity: 'warning',
+        title: '.env.local is world-readable',
+      }],
+    }];
+    const fixes = findApplicableFixes(results);
+    expect(fixes.some((f) => f.id === 'env-world-readable')).toBe(true);
+  });
+});
