@@ -224,10 +224,12 @@ export default {
       }
       if (uids.size > 1) {
         findings.push({
+          findingId: 'permissions-hygiene/governance-mixed-ownership',
           severity: 'warning',
           title: 'Governance files have mixed file ownership',
           detail: `Found ${uids.size} different UIDs across governance files. This may indicate unauthorized modifications.`,
           remediation: 'Ensure all governance files are owned by the same user.',
+          context: { uidCount: uids.size },
         });
       }
     }

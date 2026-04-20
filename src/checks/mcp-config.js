@@ -123,10 +123,12 @@ function checkNpmRegistry(packageName) {
         try {
           if (res.statusCode === 404) {
             resolve({
+              findingId: 'mcp-config/npm-package-not-found',
               severity: 'critical',
               title: `MCP package "${packageName}" not found on npm`,
               detail: 'This package does not exist on the npm registry. It may be a private package or a typo.',
               remediation: 'Verify the package name and source.',
+              context: { packageName },
             });
             return;
           }
@@ -141,10 +143,12 @@ function checkNpmRegistry(packageName) {
 
           if (daysSinceCreated < 30) {
             resolve({
+              findingId: 'mcp-config/npm-package-very-new',
               severity: 'warning',
               title: `MCP package "${packageName}" is very new (${Math.round(daysSinceCreated)} days old)`,
               detail: 'New packages have less community vetting and could be malicious.',
               remediation: 'Review the package source code and maintainer reputation before using.',
+              context: { packageName, daysSinceCreated: Math.round(daysSinceCreated) },
             });
             return;
           }
@@ -528,10 +532,12 @@ export default {
       // Check enableAllProjectMcpServers
       if (settings.enableAllProjectMcpServers === true) {
         findings.push({
+          findingId: 'mcp-config/mcp-auto-approve-enabled',
           severity: 'critical',
           title: `MCP auto-approve enabled in ${relPath}`,
           detail: 'enableAllProjectMcpServers is true — all project MCP servers are auto-approved without user consent.',
           remediation: 'Remove enableAllProjectMcpServers or set it to false.',
+          context: { file: relPath },
         });
       }
 
@@ -544,10 +550,12 @@ export default {
             for (const pattern of DANGEROUS_HOOK_PATTERNS) {
               if (pattern.test(cmd)) {
                 findings.push({
+                  findingId: 'mcp-config/dangerous-hook-command',
                   severity: 'critical',
                   title: `Dangerous hook command in ${relPath} (${hookName})`,
                   detail: `Hook "${hookName}" runs a potentially dangerous command: ${cmd.slice(0, 80)}`,
                   remediation: 'Review and remove dangerous hook commands. Hooks execute on every collaborator who clones this project.',
+                  context: { file: relPath, hookName },
                 });
                 break;
               }
@@ -563,6 +571,7 @@ export default {
         const settings = await readJsonSafe(settingsPath);
         if (settings?.enableAllProjectMcpServers === true) {
           findings.push({
+            findingId: 'mcp-config/cve-2025-59536-auto-approve-on-clone',
             severity: 'critical',
             title: 'CVE-2025-59536: repo MCP servers auto-approved on clone',
             detail: 'This project has .mcp.json with MCP servers AND enableAllProjectMcpServers is true in settings. Anyone cloning this repo will auto-approve all MCP servers without consent — a compound settings bypass vulnerability.',
@@ -602,17 +611,21 @@ export default {
           if (unique.size > 1) {
             driftDetected = true;
             findings.push({
+              findingId: 'mcp-config/cross-client-drift',
               severity: 'warning',
               title: `Cross-client drift: "${serverName}" configured differently across clients`,
               detail: `Server "${serverName}" has divergent configurations in: ${configs.map(c => c.clientPath).join(', ')}.`,
               remediation: 'Align MCP server configurations across all AI clients.',
+              context: { serverName, clients: configs.map(c => c.clientPath) },
             });
           }
         } else if (configs.length === 1) {
           findings.push({
+            findingId: 'mcp-config/single-client-server',
             severity: 'info',
             title: `MCP server "${serverName}" only configured in ${configs[0].clientPath}`,
             detail: 'This server is not configured in all detected AI clients.',
+            context: { serverName, client: configs[0].clientPath },
           });
         }
       }
@@ -630,6 +643,7 @@ export default {
       const { state, corrupt } = await loadState(cwd);
       if (corrupt) {
         findings.push({
+          findingId: 'mcp-config/state-file-corrupted',
           severity: 'info',
           title: `Corrupted ${STATE_FILENAME} — resetting`,
           detail: 'Could not parse the rigscore state file. Rewriting with current MCP server hashes.',
@@ -646,11 +660,13 @@ export default {
           const prev = previousHashes[name];
           if (typeof prev === 'string' && prev !== hash) {
             findings.push({
+              findingId: 'mcp-config/server-hash-drift',
               severity: 'warning',
               title: `MCP server "${name}" changed shape between scans (possible rug-pull)`,
               detail: `The configured command/args/env-key-set for "${name}" differs from the recorded hash in ${STATE_FILENAME}. This is how MCPoison-class attacks (CVE-2025-54136) pivot trusted MCP servers.`,
               remediation: `Review the diff in ${path.join(cwd, '.mcp.json')} against version control. If the change is intentional, re-run rigscore to update the state file.`,
               learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+              context: { serverName: name, prevHash: prev, currentHash: hash },
             });
           }
         }
@@ -682,16 +698,20 @@ export default {
         if (hasRuntimeHash && pinnedAt) {
           const date = pinnedAt.slice(0, 10); // ISO YYYY-MM-DD
           findings.push({
+            findingId: 'mcp-config/runtime-tool-pin-recorded',
             severity: 'info',
             title: `MCP server "${name}": runtime tool pin recorded ${date}`,
             detail: `Runtime tool hash pinned (pinnedAt ${pinnedAt}). Verify before trusting tool descriptions with: rigscore mcp-verify ${name}.`,
+            context: { serverName: name, pinnedAt },
           });
         } else {
           findings.push({
+            findingId: 'mcp-config/runtime-tool-pin-missing',
             severity: 'info',
             title: `MCP server "${name}": runtime tool pin not recorded`,
             detail: 'Pin a snapshot of the server\'s tool descriptions to detect CVE-2025-54136-class drift between scans. rigscore does NOT execute the server — user must pipe tools/list JSON into stdin.',
             remediation: `Run: npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin ${name}`,
+            context: { serverName: name },
           });
         }
       }

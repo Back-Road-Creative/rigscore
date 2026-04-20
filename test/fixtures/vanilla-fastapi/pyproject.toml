@@ -1,0 +1,13 @@
+[project]
+name = "vanilla-fastapi-fixture"
+version = "0.1.0"
+description = "Minimal FastAPI project with no AI tooling"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

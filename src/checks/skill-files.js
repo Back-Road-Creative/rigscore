@@ -309,6 +309,7 @@ export default {
     }
     if (skillLoopDetected) {
       findings.push({
+        findingId: 'skill-files/symlink-loop-skipped',
         severity: 'info',
         title: 'Symlink loop detected in skill directory — safely skipped',
         detail: 'A symlink cycle was encountered during skill-file traversal and skipped.',
@@ -317,6 +318,7 @@ export default {
 
     if (filesToScan.length === 0) {
       findings.push({
+        findingId: 'skill-files/no-skill-files',
         severity: 'info',
         title: 'No skill files found',
         detail: 'No AI agent instruction files detected.',
@@ -584,20 +586,24 @@ export default {
       // Bidi override detection — CRITICAL (can make text render differently)
       if (hasBidiOverrides(file.content)) {
         findings.push({
+          findingId: 'skill-files/bidi-override',
           severity: 'critical',
           title: `Bidirectional override characters in ${file.path}`,
           detail: 'File contains Unicode bidi override characters (U+202A-202E, U+2066-2069) that can make text render differently than stored, hiding malicious instructions.',
           remediation: 'Remove all bidirectional override characters from the file.',
+          context: { file: file.path },
         });
       }
 
       // Zero-width character detection — WARNING (invisible content)
       if (hasZeroWidthChars(file.content)) {
         findings.push({
+          findingId: 'skill-files/zero-width',
           severity: 'warning',
           title: `Zero-width characters detected in ${file.path}`,
           detail: 'File contains invisible zero-width characters (ZWJ, ZWNJ, ZWS, BOM, ZWNBS) that could hide malicious content between visible text.',
           remediation: 'Remove zero-width characters. Run: cat -v <file> to reveal hidden characters.',
+          context: { file: file.path },
         });
       }
 
@@ -609,10 +615,12 @@ export default {
           ? `${classicDetail} Detected ranges: ${modernRanges.join(', ')}.`
           : classicDetail;
         findings.push({
+          findingId: 'skill-files/homoglyph',
           severity: 'warning',
           title: `Homoglyph characters detected in ${file.path}`,
           detail,
           remediation: 'Replace homoglyph characters with their ASCII equivalents.',
+          context: { file: file.path, modernRanges },
         });
       } else {
         // Modern prompt-injection ranges that NFKC-normalize to ASCII — must be detected
@@ -621,10 +629,12 @@ export default {
         const modernRanges = detectModernHomoglyphRanges(file.content);
         if (modernRanges.length > 0) {
           findings.push({
+            findingId: 'skill-files/homoglyph',
             severity: 'warning',
             title: `Homoglyph characters detected in ${file.path}`,
             detail: `File contains Unicode characters from ranges used in prompt-injection attacks: ${modernRanges.join(', ')}. These visually resemble Latin letters and can disguise malicious instructions.`,
             remediation: 'Replace homoglyph characters with their ASCII equivalents.',
+            context: { file: file.path, modernRanges },
           });
         }
       }
@@ -636,18 +646,22 @@ export default {
         const httpsUrls = urls.filter((u) => u.startsWith('https://'));
         if (httpUrls.length > 0) {
           findings.push({
+            findingId: 'skill-files/non-tls-urls',
             severity: 'warning',
             title: `Non-TLS URLs found in ${file.path}`,
             detail: `${httpUrls.length} HTTP URL(s) found. Non-TLS URLs could be intercepted.`,
             remediation: 'Use HTTPS for all external URLs.',
+            context: { file: file.path, count: httpUrls.length },
           });
         }
         if (httpsUrls.length > 0) {
           findings.push({
+            findingId: 'skill-files/https-urls',
             severity: 'info',
             title: `HTTPS URLs found in ${file.path}`,
             detail: `${httpsUrls.length} HTTPS URL(s) found.`,
             remediation: 'Verify all URLs are legitimate and necessary.',
+            context: { file: file.path, count: httpsUrls.length },
           });
         }
       }
@@ -655,10 +669,12 @@ export default {
       // Check base64 content
       if (BASE64_PATTERN.test(file.content)) {
         findings.push({
+          findingId: 'skill-files/possible-base64',
           severity: 'warning',
           title: `Possible encoded content in ${file.path}`,
           detail: 'File contains what appears to be base64-encoded content.',
           remediation: 'Decode and review the content. Remove if not needed.',
+          context: { file: file.path },
         });
       }
 

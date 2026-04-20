@@ -88,7 +88,12 @@ async function checkSecurityHeaders(url) {
   const findings = [];
   const resp = await fetchHeaders(url);
   if (!resp) {
-    findings.push({ severity: 'warning', title: `Cannot reach ${url}` });
+    findings.push({
+      findingId: 'site-security/cannot-reach',
+      severity: 'warning',
+      title: `Cannot reach ${url}`,
+      context: { url },
+    });
     return findings;
   }
 
@@ -97,10 +102,12 @@ async function checkSecurityHeaders(url) {
       findings.push({ severity: 'pass', title: `Header present: ${header}` });
     } else {
       findings.push({
+        findingId: 'site-security/missing-security-header',
         severity: 'critical',
         title: `Missing security header: ${header}`,
         detail: `${url} does not set ${header}`,
         remediation: `Add ${header} to your server/CDN response headers.`,
+        context: { url, header },
       });
     }
   }
@@ -108,9 +115,11 @@ async function checkSecurityHeaders(url) {
   for (const header of ADVISORY_HEADERS) {
     if (!resp.headers[header]) {
       findings.push({
+        findingId: 'site-security/missing-advisory-header',
         severity: 'warning',
         title: `Missing advisory header: ${header}`,
         detail: `${url} does not set ${header}`,
+        context: { url, header },
       });
     }
   }
@@ -119,20 +128,24 @@ async function checkSecurityHeaders(url) {
   const poweredBy = resp.headers['x-powered-by'];
   if (poweredBy) {
     findings.push({
+      findingId: 'site-security/x-powered-by-disclosed',
       severity: 'warning',
       title: 'Server discloses X-Powered-By',
       detail: `Value: ${poweredBy}`,
       remediation: 'Remove or suppress X-Powered-By header.',
+      context: { url, value: poweredBy },
     });
   }
 
   const server = resp.headers['server'];
   if (server && /\d/.test(server)) {
     findings.push({
+      findingId: 'site-security/server-header-version',
       severity: 'warning',
       title: 'Server header discloses version',
       detail: `Value: ${server}`,
       remediation: 'Suppress version numbers from Server header.',
+      context: { url, value: server },
     });
   }
 
@@ -151,10 +164,12 @@ async function checkExposedPaths(baseUrl) {
   for (const { path: p, status } of results) {
     if (status === 200 && !EXPECTED_ACCESSIBLE.has(p)) {
       findings.push({
+        findingId: 'site-security/exposed-path-accessible',
         severity: 'critical',
         title: `Exposed path accessible: /${p}`,
         detail: `${url}/${p} returned HTTP 200`,
         remediation: `Block access to /${p} via server config or CDN rules.`,
+        context: { url, path: p },
       });
     }
   }
@@ -177,9 +192,11 @@ async function checkPiiAndSecrets(url) {
   const realEmails = emails.filter((e) => !EMAIL_ALLOWLIST.some((d) => e.endsWith(`@${d}`)));
   if (realEmails.length > 0) {
     findings.push({
+      findingId: 'site-security/pii-email-leak',
       severity: 'critical',
       title: `PII leak: ${realEmails.length} email(s) found in HTML`,
       detail: `Found: ${realEmails.slice(0, 3).join(', ')}${realEmails.length > 3 ? '...' : ''}`,
+      context: { url, count: realEmails.length },
     });
   }
 
@@ -188,8 +205,10 @@ async function checkPiiAndSecrets(url) {
   const phones = body.match(phoneRegex) || [];
   if (phones.length > 0) {
     findings.push({
+      findingId: 'site-security/pii-phone-leak',
       severity: 'warning',
       title: `PII: ${phones.length} phone number(s) found in HTML`,
+      context: { url, count: phones.length },
     });
   }
 
@@ -201,10 +220,12 @@ async function checkPiiAndSecrets(url) {
       const isAllowlisted = JS_ALLOWLIST_PATTERNS.some((ap) => ap.test(value));
       if (!isAllowlisted) {
         findings.push({
+          findingId: 'site-security/secret-in-page-source',
           severity: 'critical',
           title: 'Secret pattern found in page source',
           detail: `Matched: ${value.substring(0, 12)}...`,
           remediation: 'Remove secrets from client-side code. Use server-side environment variables.',
+          context: { url },
         });
       }
     }
@@ -215,8 +236,10 @@ async function checkPiiAndSecrets(url) {
   const ips = [...new Set((body.match(internalIpRegex) || []))];
   if (ips.length > 0) {
     findings.push({
+      findingId: 'site-security/internal-ip-disclosed',
       severity: 'warning',
       title: `Internal IP address(es) found in HTML: ${ips.slice(0, 3).join(', ')}`,
+      context: { url, ips: ips.slice(0, 5) },
     });
   }
 
@@ -224,9 +247,11 @@ async function checkPiiAndSecrets(url) {
   const generatorMatch = body.match(/<meta\s+name=["']generator["']\s+content=["']([^"']+)["']/i);
   if (generatorMatch) {
     findings.push({
+      findingId: 'site-security/generator-tag-disclosed',
       severity: 'warning',
       title: `Generator tag discloses build tool: ${generatorMatch[1]}`,
       remediation: 'Remove the <meta name="generator"> tag.',
+      context: { url, generator: generatorMatch[1] },
     });
   }
 
@@ -240,20 +265,26 @@ async function checkSsl(url) {
     const cert = await checkCertExpiry(hostname);
     if (!cert) {
       findings.push({
+        findingId: 'site-security/ssl-check-failed',
         severity: 'warning',
         title: 'Cannot check SSL certificate',
         detail: `Could not connect to ${hostname}:443`,
+        context: { url, hostname },
       });
     } else if (cert.daysUntilExpiry < 0) {
       findings.push({
+        findingId: 'site-security/ssl-certificate-expired',
         severity: 'critical',
         title: `SSL certificate expired ${Math.abs(cert.daysUntilExpiry)} day(s) ago`,
+        context: { url, daysPastExpiry: Math.abs(cert.daysUntilExpiry) },
       });
     } else if (cert.daysUntilExpiry < 30) {
       findings.push({
+        findingId: 'site-security/ssl-certificate-expiring-soon',
         severity: 'warning',
         title: `SSL certificate expires in ${cert.daysUntilExpiry} day(s)`,
         detail: `Expires: ${cert.validTo}`,
+        context: { url, daysUntilExpiry: cert.daysUntilExpiry },
       });
     } else {
       findings.push({ severity: 'pass', title: `SSL certificate valid (${cert.daysUntilExpiry} days remaining)` });

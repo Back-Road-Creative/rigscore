@@ -27,6 +27,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     // Check privileged
     if (service.privileged === true) {
       findings.push({
+        findingId: 'docker-security/container-running-with-privileged-true',
         severity: 'critical',
         title: `Container "${name}" running with privileged: true`,
         detail: `Privileged containers have full access to the host system. Found in ${sourceLabel}.`,
@@ -37,6 +38,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     // Check network_mode
     if (service.network_mode === 'host') {
       findings.push({
+        findingId: 'docker-security/container-uses-host-network-mode',
         severity: 'warning',
         title: `Container "${name}" uses host network mode`,
         detail: `Host network mode exposes all host ports to the container. Found in ${sourceLabel}.`,
@@ -47,6 +49,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     // Check ipc: host (breaks container IPC isolation)
     if (service.ipc === 'host') {
       findings.push({
+        findingId: 'docker-security/container-uses-ipc-host',
         severity: 'critical',
         title: `Container "${name}" uses ipc: host`,
         detail: `Host IPC namespace allows full inter-process communication with the host. Found in ${sourceLabel}.`,
@@ -57,6 +60,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     // Check pid: host (breaks container PID isolation)
     if (service.pid === 'host') {
       findings.push({
+        findingId: 'docker-security/container-uses-pid-host',
         severity: 'critical',
         title: `Container "${name}" uses pid: host`,
         detail: `Host PID namespace allows the container to see and signal all host processes. Found in ${sourceLabel}.`,
@@ -67,6 +71,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     // Check volumes_from (inherits all mounts from another container)
     if (service.volumes_from && Array.isArray(service.volumes_from) && service.volumes_from.length > 0) {
       findings.push({
+        findingId: 'docker-security/container-uses-volumes-from',
         severity: 'warning',
         title: `Container "${name}" uses volumes_from`,
         detail: `volumes_from inherits all volume mounts from another container, which may include sensitive paths. Found in ${sourceLabel}.`,
@@ -80,6 +85,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     for (const cap of capAdd) {
       if (dangerousCaps.includes(cap)) {
         findings.push({
+          findingId: 'docker-security/container-adds-dangerous-capability',
           severity: 'critical',
           title: `Container "${name}" adds dangerous capability: ${cap}`,
           detail: `${cap} capability can enable privilege escalation or container escape. Found in ${sourceLabel}.`,
@@ -95,6 +101,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
 
       if (volStr.includes('/docker.sock') || volStr.includes('/podman.sock')) {
         findings.push({
+          findingId: 'docker-security/container-mounts-docker-socket',
           severity: 'critical',
           title: `Container "${name}" mounts Docker socket`,
           detail: `Docker socket access allows container escape and full host control. Found in ${sourceLabel}.`,
@@ -108,6 +115,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
       // Check for path traversal in host path
       if (hostPath.includes('..')) {
         findings.push({
+          findingId: 'docker-security/container-volume-mount-uses-path-traversal',
           severity: 'warning',
           title: `Container "${name}" volume mount uses path traversal`,
           detail: `Host path "${hostPath}" contains ".." which may escape the project scope. Found in ${sourceLabel}.`,
@@ -118,6 +126,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
       for (const sensitive of SENSITIVE_MOUNTS) {
         if (hostPath === sensitive) {
           findings.push({
+            findingId: 'docker-security/container-mounts-sensitive-path',
             severity: 'critical',
             title: `Container "${name}" mounts sensitive path: ${sensitive}`,
             detail: `Mounting ${sensitive} gives the container broad host filesystem access. Found in ${sourceLabel}.`,
@@ -131,6 +140,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     const capDrop = service.cap_drop || [];
     if (!capDrop.includes('ALL')) {
       findings.push({
+        findingId: 'docker-security/container-missing-cap-drop-all',
         severity: 'warning',
         title: `Container "${name}" missing cap_drop: [ALL]`,
         detail: `Without dropping all capabilities, the container retains default Linux capabilities. Found in ${sourceLabel}.`,
@@ -142,6 +152,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     const securityOpt = service.security_opt || [];
     if (!securityOpt.some((opt) => opt.startsWith('no-new-privileges'))) {
       findings.push({
+        findingId: 'docker-security/container-missing-no-new-privileges',
         severity: 'info',
         title: `Container "${name}" missing no-new-privileges`,
         detail: `Without no-new-privileges, processes inside the container can escalate privileges. Found in ${sourceLabel}.`,
@@ -152,6 +163,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     // Check for user directive
     if (!service.user) {
       findings.push({
+        findingId: 'docker-security/container-has-no-user-directive',
         severity: 'warning',
         title: `Container "${name}" has no user directive`,
         detail: `Container will run as root by default. Found in ${sourceLabel}.`,
@@ -163,6 +175,7 @@ function analyzeComposeServices(services, findings, sourceLabel) {
     const hasMemLimit = service.mem_limit || service.deploy?.resources?.limits?.memory;
     if (!hasMemLimit) {
       findings.push({
+        findingId: 'docker-security/container-has-no-memory-limit',
         severity: 'info',
         title: `Container "${name}" has no memory limit`,
         detail: `Without memory limits, a runaway container can exhaust host memory. Found in ${sourceLabel}.`,
@@ -195,6 +208,7 @@ async function resolveComposeIncludes(compose, composeDir, findings) {
       analyzeComposeServices(services, findings, label);
     } catch {
       findings.push({
+        findingId: 'docker-security/failed-to-parse-included-file',
         severity: 'info',
         title: `Failed to parse included file: ${path.basename(resolvedPath)}`,
         detail: `The included compose file ${resolvedPath} has invalid YAML syntax and could not be analyzed.`,
@@ -230,6 +244,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
   // hostNetwork
   if (podSpec.hostNetwork === true) {
     findings.push({
+      findingId: 'docker-security/k8s-hostnetwork-enabled',
       severity: 'warning',
       title: `K8s ${label}: hostNetwork enabled`,
       detail: 'Pod shares the host network namespace, exposing all host ports.',
@@ -240,6 +255,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
   // hostPID
   if (podSpec.hostPID === true) {
     findings.push({
+      findingId: 'docker-security/k8s-hostpid-enabled',
       severity: 'warning',
       title: `K8s ${label}: hostPID enabled`,
       detail: 'Pod shares the host PID namespace, allowing visibility into host processes.',
@@ -250,6 +266,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
   // hostIPC
   if (podSpec.hostIPC === true) {
     findings.push({
+      findingId: 'docker-security/k8s-hostipc-enabled',
       severity: 'warning',
       title: `K8s ${label}: hostIPC enabled`,
       detail: 'Pod shares the host IPC namespace.',
@@ -261,6 +278,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
   const podSecCtx = podSpec.securityContext || {};
   if (podSecCtx.runAsNonRoot !== true && !podSecCtx.runAsUser) {
     findings.push({
+      findingId: 'docker-security/k8s-no-pod-level-runasnonroot',
       severity: 'info',
       title: `K8s ${label}: no pod-level runAsNonRoot`,
       detail: 'Pod does not enforce non-root execution at the pod level.',
@@ -277,6 +295,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
     // privileged
     if (secCtx.privileged === true) {
       findings.push({
+        findingId: 'docker-security/k8s-privileged-container',
         severity: 'critical',
         title: `K8s ${cLabel}: privileged container`,
         detail: 'Container runs in privileged mode with full host access.',
@@ -289,6 +308,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
     const dropAll = (caps.drop || []).some((c) => c === 'ALL' || c === 'all');
     if (!dropAll) {
       findings.push({
+        findingId: 'docker-security/k8s-capabilities-not-dropped',
         severity: 'info',
         title: `K8s ${cLabel}: capabilities not dropped`,
         detail: 'Container does not drop all capabilities.',
@@ -299,6 +319,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
     // allowPrivilegeEscalation
     if (secCtx.allowPrivilegeEscalation === true) {
       findings.push({
+        findingId: 'docker-security/k8s-allowprivilegeescalation-is-true',
         severity: 'warning',
         title: `K8s ${cLabel}: allowPrivilegeEscalation is true`,
         detail: 'Container allows privilege escalation.',
@@ -309,6 +330,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
     // Resource limits
     if (!container.resources?.limits) {
       findings.push({
+        findingId: 'docker-security/k8s-no-resource-limits',
         severity: 'info',
         title: `K8s ${cLabel}: no resource limits`,
         detail: 'Container has no CPU/memory limits set.',
@@ -325,6 +347,7 @@ function analyzeK8sPodSpec(podSpec, resourceName, kind, fileName, findings) {
       for (const sensitive of SENSITIVE_MOUNTS) {
         if (hp === sensitive) {
           findings.push({
+            findingId: 'docker-security/k8s-hostpath-mounts',
             severity: 'critical',
             title: `K8s ${label}: hostPath mounts ${sensitive}`,
             detail: `Volume "${vol.name}" mounts sensitive host path ${sensitive}.`,
@@ -451,6 +474,7 @@ export default {
 
     if (composeFiles.length === 0 && dockerfiles.length === 0 && !devcontainer && !hasK8s) {
       findings.push({
+        findingId: 'docker-security/no-container-configuration-found',
         severity: 'info',
         title: 'No container configuration found',
         detail: 'No docker-compose, Dockerfile, devcontainer.json, or Kubernetes manifests found.',
@@ -465,6 +489,7 @@ export default {
         compose = YAML.parse(cf.content);
       } catch {
         findings.push({
+          findingId: 'docker-security/failed-to-parse',
           severity: 'warning',
           title: `Failed to parse ${cf.file}`,
           detail: 'The compose file has invalid YAML syntax.',
@@ -487,6 +512,7 @@ export default {
       // No USER directive — container runs as root
       if (!/^USER\s+/m.test(content)) {
         findings.push({
+          findingId: 'docker-security/has-no-user-directive',
           severity: 'warning',
           title: `${df} has no USER directive`,
           detail: 'Container will run as root by default.',
@@ -506,6 +532,7 @@ export default {
         const isLatest = image.endsWith(':latest');
         if (!hasDigest && (!hasTag || isLatest)) {
           findings.push({
+            findingId: 'docker-security/unpinned-base-image',
             severity: 'warning',
             title: `${df}: unpinned base image "${image}"`,
             detail: 'Unpinned or :latest base images can change unexpectedly and introduce vulnerabilities.',
@@ -518,6 +545,7 @@ export default {
       const addLines = content.match(/^ADD\s+https?:\/\//gm) || [];
       if (addLines.length > 0) {
         findings.push({
+          findingId: 'docker-security/add-with-remote-url',
           severity: 'warning',
           title: `${df}: ADD with remote URL`,
           detail: 'ADD with remote URLs can fetch unverified content. Use COPY with explicit download and checksum verification.',
@@ -535,6 +563,7 @@ export default {
           if (sfp.test(line)) {
             const matched = line.match(sfp)?.[0] || 'sensitive file';
             findings.push({
+              findingId: 'docker-security/copies-sensitive-file',
               severity: 'warning',
               title: `${df}: copies sensitive file (${matched})`,
               detail: `COPY/ADD of ${matched} bakes secrets into the image layer.`,
@@ -555,6 +584,7 @@ export default {
           const alreadyFlagged = findings.some((f) => f.title === `${df} has no USER directive`);
           if (!alreadyFlagged) {
             findings.push({
+              findingId: 'docker-security/multi-stage-build-runs-as-root-in-final-stage',
               severity: 'warning',
               title: `${df}: multi-stage build runs as root in final stage`,
               detail: 'The final stage of a multi-stage Dockerfile has no USER directive.',
@@ -574,6 +604,7 @@ export default {
         // Pipe-to-shell
         if (/\b(curl|wget)\b.*\|\s*(ba)?sh\b/.test(runLine)) {
           findings.push({
+            findingId: 'docker-security/pipe-to-shell-in-run-instruction',
             severity: 'warning',
             title: `${df}: pipe-to-shell in RUN instruction`,
             detail: 'Piping curl/wget output directly to a shell executes unverified remote code.',
@@ -585,6 +616,7 @@ export default {
         for (const pattern of KEY_PATTERNS) {
           if (pattern.test(runLine)) {
             findings.push({
+              findingId: 'docker-security/secret-in-run-instruction',
               severity: 'critical',
               title: `${df}: secret in RUN instruction`,
               detail: 'A secret or API key pattern was detected in a RUN instruction. This will be baked into the image layer.',
@@ -597,6 +629,7 @@ export default {
         // chmod 777
         if (/\bchmod\s+(-R\s+)?777\b/.test(runLine)) {
           findings.push({
+            findingId: 'docker-security/chmod-777-in-run-instruction',
             severity: 'warning',
             title: `${df}: chmod 777 in RUN instruction`,
             detail: 'chmod 777 grants read/write/execute to all users, which is overly permissive.',
@@ -607,6 +640,7 @@ export default {
         // apt-get install without --no-install-recommends
         if (/\bapt-get\s+install\b/.test(runLine) && !/--no-install-recommends/.test(runLine)) {
           findings.push({
+            findingId: 'docker-security/apt-get-install-without-no-install-recommends',
             severity: 'info',
             title: `${df}: apt-get install without --no-install-recommends`,
             detail: 'Installing recommended packages increases image size and attack surface.',
@@ -617,6 +651,7 @@ export default {
         // apk add without --no-cache
         if (/\bapk\s+add\b/.test(runLine) && !/--no-cache/.test(runLine)) {
           findings.push({
+            findingId: 'docker-security/apk-add-without-no-cache',
             severity: 'info',
             title: `${df}: apk add without --no-cache`,
             detail: 'Without --no-cache, apk stores the package index in the image, increasing its size.',
@@ -628,6 +663,7 @@ export default {
       // EXPOSE 22 (SSH port) — check original content
       if (/^EXPOSE\s+.*\b22\b/m.test(content)) {
         findings.push({
+          findingId: 'docker-security/exposes-ssh-port-22',
           severity: 'warning',
           title: `${df}: exposes SSH port (22)`,
           detail: 'Exposing SSH port in a container is generally unnecessary and increases attack surface.',
@@ -643,6 +679,7 @@ export default {
 
       if (runArgs.includes('--privileged')) {
         findings.push({
+          findingId: 'docker-security/devcontainer-uses-privileged-mode',
           severity: 'critical',
           title: 'Devcontainer uses --privileged mode',
           detail: 'The devcontainer.json has --privileged in runArgs, granting full host access.',
@@ -654,6 +691,7 @@ export default {
       const addedDangerous = capAdd.filter((c) => dangerousCaps.includes(c));
       if (addedDangerous.length > 0) {
         findings.push({
+          findingId: 'docker-security/devcontainer-adds-capabilities',
           severity: 'warning',
           title: `Devcontainer adds capabilities: ${addedDangerous.join(', ')}`,
           detail: 'Adding broad capabilities to devcontainers increases attack surface.',
@@ -666,6 +704,7 @@ export default {
         const mountStr = typeof mount === 'string' ? mount : mount.source || '';
         if (mountStr.includes('/docker.sock') || mountStr.includes('/podman.sock')) {
           findings.push({
+            findingId: 'docker-security/devcontainer-mounts-docker-socket',
             severity: 'critical',
             title: 'Devcontainer mounts Docker socket',
             detail: 'Docker socket access in devcontainer allows container escape.',
