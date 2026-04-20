@@ -2,3 +2,7 @@
 node_modules/
 dist/
 *.log
+# State file is written by the scanner on every run. The dogfood test cleans
+# it between runs, but this guards against accidental commits of a per-machine
+# state file that would contaminate CI on the next contributor's scan.
+.rigscore-state.json
