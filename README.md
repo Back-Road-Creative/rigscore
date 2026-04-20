@@ -470,6 +470,64 @@ There is a visible step at the W = 50 threshold: a project at W = 49 is scaled d
 
 See `docs/profiles/` for full weight tables. Custom weights can be set in `.rigscorerc.json`. Advisory (weight-0) checks NEVER affect the overall score — they are excluded from the coverage-penalty denominator so adding a new advisory cannot shift existing scores.
 
+### Promoting advisory checks
+
+Advisory checks ship at weight `0` — they never affect the score. If your
+team cares about a specific advisory signal (e.g. prompt bloat from
+`instruction-effectiveness`, workflow maturity, skill↔governance
+coherence), promote it via `.rigscorerc.json`:
+
+```json
+{
+  "weights": {
+    "instruction-effectiveness": 5
+  }
+}
+```
+
+Promoting an advisory to a non-zero weight moves it out of the advisory
+lane and into the scored lane in full. Specifically:
+
+- It now contributes to the overall score with whatever weight you set.
+- It now counts toward **coverage** — the denominator that drives
+  coverage-scaling for low-applicability projects. Before promotion, a
+  weight-0 check is explicitly excluded from coverage math (see
+  `src/scoring.js` — `scoringApplicable` filter). After promotion, an N/A
+  verdict on that check (e.g. a project with no skills dir for
+  `skill-coherence`) will redistribute weight like any other N/A check.
+- If you promote an advisory across a whole org, document it in your
+  `.rigscorerc.json` comment so the delta from the public default score
+  is traceable.
+
+Demoting a scored check (setting `weights.<id>: 0`) is the inverse and has
+the same coverage semantics.
+
+## First run
+
+rigscore is offline and stateless by default. A few paths may be written
+on first scan — all are local, none phone home.
+
+| Path | When written | Purpose |
+|---|---|---|
+| `<cwd>/.rigscore-state.json` | Only when the project has a repo-level `.mcp.json`. | Stores SHA-256 hashes of each MCP server's `{command, args, envKeys}` shape. Detects silent MCPoison-class (CVE-2025-54136) pivots on subsequent scans. **Values are never hashed — only env-var keys.** |
+| `$XDG_CACHE_HOME/rigscore/mcp-registry.json` (falls back to `~/.cache/rigscore/mcp-registry.json`) | Only with `--online` or `--refresh-mcp-registry`. | Caches the official MCP registry response. 24h TTL. Used to augment typosquat detection. |
+
+Recommendations:
+
+- **Commit `.rigscore-state.json`.** Supply-chain drift becomes visible in
+  review, and cross-collaborator divergence resolves via git. See the
+  [State file](#state-file) section for the diff rules.
+- **Or `.gitignore` it** for local-only rug-pull detection on your machine.
+- **Nothing else is persisted.** No telemetry, no accounts, no outbound
+  traffic unless you pass `--online`.
+
+To purge all rigscore state:
+
+```bash
+rm -f .rigscore-state.json
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/rigscore"
+```
+
 ## Limitations
 
 rigscore is a configuration presence checker, not a security enforcement tool. Understanding its scope helps you use it effectively. Read this section before you rely on rigscore as a governance quality signal.

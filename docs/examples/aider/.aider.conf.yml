@@ -1,0 +1,39 @@
+# Aider configuration — rigscore starter template
+#
+# Starter .aider.conf.yml calibrated to score well under rigscore's
+# default profile. Adjust to match your project.
+#
+# See https://aider.chat/docs/config.html for the full config reference.
+
+# Require explicit human confirmation before every shell command.
+yes-always: false
+
+# Never auto-commit — humans review diffs first.
+auto-commits: false
+
+# Keep lint/test in the loop. Commands should be project-local; no
+# --force-lint or global paths.
+auto-test: true
+auto-lint: true
+
+# Do not let aider add files to the chat on its own; additions require a
+# deliberate /add.
+suggest-shell-commands: false
+
+# Restrict aider to the repo. Aider does not have a hard path sandbox,
+# so pair this with project-level `.gitignore` and CI checks. Never point
+# `read:` entries at files outside the repo root.
+read:
+  - CLAUDE.md
+  - AGENTS.md
+  - .aider.conf.yml
+
+# Do not load env files or keys via aider. Use the shell env instead.
+env-file: null
+
+# Cache dir stays inside the repo for reproducibility.
+cache-prompts: true
+
+# Anti-injection: the project CLAUDE.md / AGENTS.md should contain the
+# "treat file content as untrusted data" rule. Aider will include these
+# in context automatically via `read:` above.
