@@ -4,6 +4,7 @@ import { scan, scanRecursive, suppressFindings } from './scanner.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
+import { PROFILE_HINTS } from './config.js';
 
 export function parseArgs(args) {
   const options = {
@@ -104,6 +105,22 @@ export async function run(args) {
   } catch {
     process.stderr.write(`Error: ${cwd} is not a valid directory\n`);
     process.exit(1);
+  }
+
+  // Apply profile hints (recursive / depth defaults from `monorepo` etc.)
+  // CLI flags still win: only apply a hint if the user didn't pass the flag.
+  // Profile precedence for hint lookup: CLI --profile → config file (read
+  // later by scanner) → default. Hints only apply when --profile was set on
+  // the CLI explicitly, matching documented monorepo usage.
+  if (options.profile && PROFILE_HINTS[options.profile]) {
+    const hints = PROFILE_HINTS[options.profile];
+    if (hints.recursive === true && !args.includes('--recursive') && !args.includes('-r')) {
+      options.recursive = true;
+    }
+    if (typeof hints.depth === 'number' && !args.includes('--depth')) {
+      options.depth = hints.depth;
+      options.recursive = true;
+    }
   }
 
   if (options.initHook) {
