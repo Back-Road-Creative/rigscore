@@ -1,0 +1,59 @@
+# Docker image publish workflow — DRAFT (v1.1.0 scope).
+#
+# Intentionally gated on `workflow_dispatch` only so no auto-publish happens
+# on tag pushes until the user explicitly decides to ship the image. When
+# ready, change the `on:` block to:
+#
+#   on:
+#     push:
+#       tags: ['v*.*.*']
+#     workflow_dispatch:
+#
+# The image target is ghcr.io/back-road-creative/rigscore.
+# See Dockerfile at repo root and CHANGELOG.md [Unreleased] for context.
+name: Docker Publish (draft)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (e.g. v1.0.0, latest, dry-run)'
+        required: true
+        default: 'dry-run'
+      push:
+        description: 'Push to GHCR? (false = build only)'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: inputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and optionally push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ inputs.push == 'true' }}
+          tags: |
+            ghcr.io/back-road-creative/rigscore:${{ inputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Back-Road-Creative/rigscore
+            org.opencontainers.image.description=AI dev environment hygiene checker
+            org.opencontainers.image.licenses=MIT

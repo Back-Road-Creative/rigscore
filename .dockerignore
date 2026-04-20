@@ -1,0 +1,17 @@
+node_modules
+test
+docs
+scripts
+.github
+.git
+.worktrees
+.moat-ship-agent-*
+worktree-agent-*
+**/*.test.js
+**/*.md
+!README.md
+.rigscore-action-src
+.DS_Store
+coverage
+.rigscore-state.json
+.release-notes-*.md
