@@ -32,12 +32,41 @@ function extractFilePath(text) {
 }
 
 /**
+ * Derive a per-finding SARIF ruleId of the form `<checkId>/<slug>`.
+ *
+ * Priority:
+ *   1. `finding.findingId` (already in `<checkId>/<slug>` form — preferred).
+ *   2. Slugify `finding.title` and prefix with `checkId`.
+ *   3. Fall back to bare `checkId` (tool-component rule).
+ *
+ * The bare `checkId` remains available as a SARIF rule definition (see
+ * `rules` array) so consumers that ignore per-finding ruleIds still work.
+ */
+function deriveFindingRuleId(checkId, finding) {
+  if (finding && typeof finding.findingId === 'string' && finding.findingId.length > 0) {
+    return finding.findingId.includes('/') ? finding.findingId : `${checkId}/${finding.findingId}`;
+  }
+  if (finding && typeof finding.title === 'string' && finding.title.length > 0) {
+    const slug = finding.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60);
+    if (slug) return `${checkId}/${slug}`;
+  }
+  return checkId;
+}
+
+/**
  * Convert rigscore scan results to SARIF v2.1.0 format.
  */
 export function formatSarif(result) {
   const { results } = result;
 
-  // Build rule definitions from check IDs
+  // Build tool-component rule definitions. The check-level rule is kept as
+  // the "anchor" rule so ruleIds of the form `<checkId>` (used as a fallback
+  // when a finding has no findingId/title) still resolve. Per-finding rules
+  // are added on demand below.
   const rules = results.map((r) => ({
     id: r.id,
     shortDescription: { text: r.name },
@@ -45,6 +74,7 @@ export function formatSarif(result) {
       level: 'warning',
     },
   }));
+  const knownRuleIds = new Set(rules.map((r) => r.id));
 
   // Build results from findings
   const sarifResults = [];
@@ -75,13 +105,28 @@ export function formatSarif(result) {
         };
       }
 
+      // Per-finding ruleId: <checkId>/<slug-or-findingId>. Register it in the
+      // tool-component rules array so SARIF viewers can resolve the id.
+      const ruleId = deriveFindingRuleId(r.id, finding);
+      if (!knownRuleIds.has(ruleId)) {
+        knownRuleIds.add(ruleId);
+        rules.push({
+          id: ruleId,
+          shortDescription: { text: finding.title || r.name },
+          defaultConfiguration: { level: 'warning' },
+        });
+      }
+
+      const properties = { tags };
+      if (finding.evidence) properties.evidence = finding.evidence;
+
       sarifResults.push({
-        ruleId: r.id,
+        ruleId,
         level,
         message: {
           text: finding.detail ? `${finding.title}: ${finding.detail}` : finding.title,
         },
-        properties: { tags },
+        properties,
         locations: [location],
       });
     }

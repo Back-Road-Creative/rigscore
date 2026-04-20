@@ -32,10 +32,11 @@ What `--fix --yes` does for this check, finding by finding. If no auto-fix is su
 ## SARIF
 
 - Tool component: `rigscore`
-- Rule ID emitted: the check id (e.g. `env-exposure`). See `src/sarif.js` — the current implementation emits one ruleId per check, with per-finding discrimination carried in the message text.
-- The `SARIF ruleId` column in the Triggers table above is the **logical** per-finding identifier, matching the `findingId` shown in terminal / JSON output and used by `.rigscorerc.json` `suppress[]` entries. Per-finding ruleIds in SARIF output are a target state (tracked as a follow-up) and not yet emitted.
+- Rule IDs emitted: per-finding `<checkId>/<slug-or-findingId>` (as of Moat & Ship, 2026-04-20). The bare `<checkId>` remains registered as a tool-component rule fallback for consumers that key on check-level ids. See `src/sarif.js` → `deriveFindingRuleId()`.
+- The `SARIF ruleId` column in the Triggers table above matches the `findingId` shown in terminal / JSON output and used by `.rigscorerc.json` `suppress[]` entries.
 - Level mapping: CRITICAL→`error`, WARNING→`warning`, INFO→`note`.
 - Location data: relative path + line number when available; otherwise project root.
+- Evidence: when the finding emits an `evidence` field, it appears as `properties.evidence` on the SARIF result (≤120 char snippet).
 
 ## Example
 
