@@ -26,7 +26,11 @@ const QUALITY_CHECKS = [
   },
   {
     name: 'anti-injection',
-    pattern: /\b(ignore previous|prompt.?injection|instruction.?override|injection)\b/i,
+    // C2: narrowed from bare `injection` to require security-domain
+    // qualifiers. Previously `injection` alone matched "dependency injection"
+    // in a DI-framework README, giving it credit for anti-injection
+    // governance.
+    pattern: /\b(prompt.?injection|instruction.?override|injection.?attack|ignore previous|disregard.?instructions?)\b/i,
     points: 3,
   },
   {

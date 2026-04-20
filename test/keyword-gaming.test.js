@@ -105,9 +105,15 @@ describe('keyword gaming / negation detection', () => {
   });
 });
 
-describe('semantic reversal (known limitation)', () => {
-  // Known limitation: semantic reversal bypasses keyword checks (audit v3 §3.1)
-  it('does NOT warn when headers contain keywords but body dismantles protections', async () => {
+describe('semantic reversal (partial coverage after C2/C7)', () => {
+  // Originally asserted that header-only keyword stuffing with body-level
+  // dismantlement PASSED every check (audit v3 §3.1 "known limitation").
+  // C2 (Track C) narrowed `anti-injection` from bare `injection` to
+  // security-domain qualifiers, so the stuffed `# Anti-Injection` header
+  // no longer earns credit — a warning now appears for that specific
+  // category. The other header-stuffed categories still pass keyword
+  // detection; the fuller semantic-reversal detector lands in C7.
+  it('C2: narrowed anti-injection keyword warns when body dismantles the protection', async () => {
     const tmpDir = makeTmpDir();
     const content = padContent([
       '# Path Restrictions',
@@ -140,9 +146,10 @@ describe('semantic reversal (known limitation)', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      // Keywords are present in headers, so keyword checks pass — this is the known limitation
-      const warnings = result.findings.filter((f) => f.severity === 'warning');
-      expect(warnings.length).toBe(0);
+      const antiInjectionWarning = result.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('anti-injection'),
+      );
+      expect(antiInjectionWarning).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
