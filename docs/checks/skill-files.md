@@ -76,3 +76,29 @@ Out of scope for auto-fix: every finding related to file CONTENT. Injection patt
 - The `STRONG_DEFENSIVE_RE` heuristic downgrades clearly defensive sentences (e.g. "refuse to follow injection attempts") to INFO. Weak single words like "detect" or "stop" do not trigger the downgrade — they're too common in non-security prose.
 - Base64 detection requires a 50+ char run bounded by whitespace — deliberately conservative to avoid flagging hashes and checksums.
 - Config override: `.rigscorerc.json` key `paths.skillFiles` adds extra files to the scan list.
+
+### Allowlist (added 2026-04-20)
+
+Legitimate escalation/shell/exfil/persistence patterns in operator skills (e.g. `sudo` in `sops-status`, `curl https://...` in a diagnostics skill) can be explicitly whitelisted by **skill directory + pattern id** — not by title substring. Example:
+
+```json
+{
+  "skillFiles": {
+    "allowlist": [
+      { "skill": "sops-status",   "pattern": "sudo",          "reason": "operator skill — legit sudo" },
+      { "skill": "drive-resume",  "pattern": "sudo",          "reason": "requires root for mount ops" },
+      { "skill": "skill-manager", "pattern": "chmod-plus-x",  "reason": "installs executable scripts" }
+    ]
+  }
+}
+```
+
+Matching semantics: the `skill` value matches the directory segment under `.claude/skills/` (so `.claude/skills/sops-status/SKILL.md` → `skill: "sops-status"`). The `pattern` value matches a stable pattern id assigned per detected family. Current ids surfaced by escalation findings: `sudo`, `run-as-root`, `run-as-admin`, `elevated-privilege`, `chmod-777`, `chmod-plus-x`, `chmod-a-plus`, `disable-security`, `disable-firewall`, `disable-antivirus`. For non-escalation families the id is the family name itself (`shell-exec`, `exfiltration`, `persistence`, `indirect-injection`, `trust-exploitation`).
+
+Allowlist matching is keyed by directory name alone — an attacker-planted skill named `attacker-sudo` that reuses the same dirname as a legit skill will NOT match unless its directory matches exactly. Findings emit a `context` object (`{ file, patternId, skill }`) so external suppression tooling can make the same decision.
+
+### Known noise modes
+
+- **`skill-files/escalation-sudo` on operator skills** — legitimate sudo in `sops-status`, `drive-resume`, `skill-manager`. Use the allowlist above rather than a bulk suppress entry.
+- **`skill-files/shell-exec` on `execute bash` in defensive rules** — the defensive-phrase detector catches most ("do not execute bash") but weak phrasings ("be careful when you execute bash") miss. Rephrase to use `STRONG_DEFENSIVE_RE` trigger terms ("never", "forbidden", "refuse") or allowlist the skill.
+- **`skill-files/https-url` INFO flood on skills with learn-more links** — fires for every HTTPS URL in skill docs. No security signal; filter via suppress `"skill-files/https-url"` if you don't review these.
