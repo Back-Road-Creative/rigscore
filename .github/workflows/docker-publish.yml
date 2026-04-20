@@ -32,15 +32,19 @@ jobs:
         id: meta
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
-            # Tag push: strip leading 'v', publish <version> and 'latest'.
             VERSION="${GITHUB_REF_NAME#v}"
-            echo "push=true" >> "$GITHUB_OUTPUT"
-            echo "tags=ghcr.io/back-road-creative/rigscore:${VERSION}
-          ghcr.io/back-road-creative/rigscore:latest" >> "$GITHUB_OUTPUT"
+            {
+              echo "push=true"
+              echo "tags<<RIGSCORE_EOF"
+              echo "ghcr.io/back-road-creative/rigscore:${VERSION}"
+              echo "ghcr.io/back-road-creative/rigscore:latest"
+              echo "RIGSCORE_EOF"
+            } >> "$GITHUB_OUTPUT"
           else
-            # workflow_dispatch: honour inputs.push / inputs.tag.
-            echo "push=${{ inputs.push }}" >> "$GITHUB_OUTPUT"
-            echo "tags=ghcr.io/back-road-creative/rigscore:${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            {
+              echo "push=${{ inputs.push }}"
+              echo "tags=ghcr.io/back-road-creative/rigscore:${{ inputs.tag }}"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Docker Buildx
