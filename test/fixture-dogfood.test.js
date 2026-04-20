@@ -12,7 +12,7 @@
  * regenerates the locked count/score directly in this file so intentional
  * check-surface changes are a reviewable diff.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,16 @@ import { scan } from '../src/scanner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(__dirname, 'fixtures', 'scored-project');
+
+// The scanner writes `.rigscore-state.json` into the scan target. If a prior
+// run left one behind (especially with restrictive permissions from a
+// different user), the next scan's `saveState` fails with EACCES, the
+// mcp-config check crashes, and the dogfood assertions drift. Scrub the
+// state file around every test so the fixture stays idempotent.
+function cleanFixtureState() {
+  const statePath = path.join(FIXTURE, '.rigscore-state.json');
+  try { fs.rmSync(statePath, { force: true }); } catch { /* ignore */ }
+}
 
 // Locked expectations — updated via UPDATE_FIXTURES=1.
 // Keep these tight enough to catch regressions, loose enough to absorb
@@ -79,6 +89,9 @@ function hasFindingMatching(findings, matcher) {
 }
 
 describe('dogfood fixture: scored-project', () => {
+  beforeEach(cleanFixtureState);
+  afterEach(cleanFixtureState);
+
   it('scans cleanly and produces a stable report shape', async () => {
     // Use a throwaway HOME so homedir skills/CLAUDE.md don't leak in.
     const emptyHome = fs.mkdtempSync(path.join(__dirname, 'fixtures', '_fixture-home-'));
