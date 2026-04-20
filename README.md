@@ -141,6 +141,19 @@ npx github:Back-Road-Creative/rigscore --watch
 npx github:Back-Road-Creative/rigscore --init-hook
 ```
 
+## Platform notes
+
+| Platform | Status | Notes |
+|---|---|---|
+| **macOS** | Supported | CI runs `macos-latest`. Homebrew Node is fine. `infrastructure-security` returns N/A (Linux-only). |
+| **Linux** | Supported | Native. All checks apply, including `infrastructure-security`. |
+| **WSL2** | Supported | Treat as Linux. See WSL2 gotcha below. |
+| **Docker Desktop** | Supported | Pull the image, bind-mount the target dir. See [CI Integration](#ci-integration) and the `Dockerfile` in the repo. |
+| **Git Bash / MSYS2** | Unsupported | POSIX-only permission checks fail silently. Use WSL. |
+| **Windows native** | Out of scope | POSIX permission assumptions and shell-command calls mean behavior can't be made reliable. Use WSL2. |
+
+**WSL2 gotcha — NTFS-mounted paths.** When you scan a project under `/mnt/c/...` (Windows-owned NTFS), POSIX permission bits don't map cleanly. `permissions-hygiene` may emit spurious world-readable / mixed-UID findings on files owned by the Windows side. Workaround: keep projects inside the WSL filesystem (e.g., `~/projects/...`) and scan there. If you must scan a `/mnt/` path, suppress the affected finding via `--ignore permissions-hygiene/sensitive-file-world-readable` or via `.rigscorerc.json` `suppress:`.
+
 ## Distribution
 
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
@@ -506,6 +519,19 @@ npx github:Back-Road-Creative/rigscore --verbose                 # Show pass/ski
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help
 ```
+
+### Exit codes
+
+rigscore exits with a stable code so CI can branch cleanly:
+
+| Code | Meaning |
+|---|---|
+| `0` | Scan completed. Score is at or above `--fail-under`. In baseline/diff mode: no new findings vs baseline. |
+| `1` | Scan completed. Score is below `--fail-under`, OR (baseline mode) new findings were detected. |
+| `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, unreadable baseline file, or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. |
+| `3` | Reserved for subcommand pre-conditions. Currently used by `rigscore mcp-verify <server>` when no runtime tool hash is pinned for that server. The main scan path does not emit `3`. |
+
+A runtime crash inside a check surfaces as exit `2` with `Error: scan failed: ...` on stderr; it does not currently use a distinct code. CI authors should treat non-zero as failure and branch only on `0` vs `1` for score-gating logic.
 
 ### Watch mode
 
