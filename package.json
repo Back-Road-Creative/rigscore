@@ -18,7 +18,7 @@
     "verify:docs": "node scripts/verify-docs.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.17.0"
   },
   "keywords": [
     "ai",
