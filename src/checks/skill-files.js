@@ -28,7 +28,9 @@ const INJECTION_PATTERNS = [
 const EXFILTRATION_PATTERNS = [
   /\bsend\s+.*\s+to\s+https?/i,
   /\bpost\s+.*\s+to\s+https?/i,
-  /\bupload\s+.*\s+to\b/i,
+  // Require tight proximity (≤6 words between upload and to) so noun-form
+  // mentions like "Drive upload errors, … run again to resume" don't trip.
+  /\bupload\s+\S+(?:\s+\S+){0,5}\s+to\b/i,
   /\bcurl\s+.*-d\b/i,
   /\bcurl\s+.*--data\b/i,
   /\bpipe\s+.*\s+to\s+external/i,
@@ -82,7 +84,10 @@ const TRUST_EXPLOITATION_PATTERNS = [
 ];
 
 const SHELL_EXEC_PATTERNS = [
-  /\brun\s+`[^`]*`/i,
+  // Only flag `run \`<cmd>\`` when the backticked command contains dangerous
+  // content — pipes/redirects, network fetches, eval, sudo, rm -rf, or
+  // world-writable chmod. Benign "Run `git status`" style docs don't trip.
+  /\brun\s+`[^`]*(?:\||>|\bcurl\s|\bwget\s|\beval\s|\bsudo\s|\brm\s+-rf|\bchmod\s+[0-9]*[2367])[^`]*`/i,
   /\bexecute\s+(the\s+)?(shell|bash|command)/i,
   /\bcurl\s+http/i,
   /\bwget\s+http/i,
@@ -93,7 +98,7 @@ const URL_PATTERN = /https?:\/\/[^\s"')\]]+/g;
 const BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m;
 
 // Strong defensive phrases — clearly about security, always suppress
-const STRONG_DEFENSIVE_RE = /\b(defend against|prevent .{0,30}(attack|injection|escalat|exfiltrat|use of|access)|guard against|block .{0,20}(injection|attack|use of)|reject .{0,20}instruction|refuse .{0,20}(to|attempt|request)|protect against|disallow .{0,20}(sudo|curl|wget|shell)|prohibit .{0,20}(sudo|curl|wget|shell)|never .{0,10}(use|run|allow|execute) .{0,20}(sudo|curl|wget|rm ))\b/i;
+const STRONG_DEFENSIVE_RE = /\b(defend against|prevent .{0,30}(attack|injection|escalat|exfiltrat|use of|access)|guard against|block .{0,20}(injection|attack|use of)|reject .{0,20}instruction|refuse .{0,20}(to|attempt|request)|protect against|disallow .{0,20}(sudo|curl|wget|shell)|prohibit .{0,20}(sudo|curl|wget|shell)|never .{0,10}(use|run|allow|execute) .{0,20}(sudo|curl|wget|rm )|no\s+(sudo|curl|wget|shell|root\s+access|force\s+push)|(sudo|curl|wget|shell|force\s+push)\s+is\s+(forbidden|banned|prohibited|disallowed|not\s+allowed)|(do\s+not|don'?t)\s+(use|run|allow|execute|call)\s+(sudo|curl|wget|shell|rm))\b/i;
 
 // Weak single words — only suppress when combined with a strong phrase
 // Words like "detect", "flag", "catch", "stop" are too common in non-security contexts
