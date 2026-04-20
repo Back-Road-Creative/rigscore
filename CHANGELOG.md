@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-04-20
+
+Public-release hardening pass. Four parallel tracks landed across PRs
+[#95](https://github.com/Back-Road-Creative/rigscore/pull/95),
+[#96](https://github.com/Back-Road-Creative/rigscore/pull/96),
+[#97](https://github.com/Back-Road-Creative/rigscore/pull/97),
+[#98](https://github.com/Back-Road-Creative/rigscore/pull/98),
+plus a dogfood-fixture fix in [#94](https://github.com/Back-Road-Creative/rigscore/pull/94).
+The scoring change in Track C is the reason this is a major bump.
+
+### Security (Track A)
+- **ANSI escape injection closed** in `src/reporter.js` and `src/sarif.js`.
+  `stripAnsi` is now applied to every file-sourced `title` / `detail` /
+  `evidence` / `remediation` / `learnMore` before Chalk wrapping, blocking
+  terminal-hijack payloads (OSC 8, clear-screen, set-title) planted in
+  scanned skill files. Track A — A1.
+- **Atomic `saveState`** (`src/state.js`): writes go to `<path>.<pid>.<hex>.tmp`
+  and are `rename()`'d in place. Prevents SIGINT / concurrent-scan corruption
+  of `.rigscore-state.json` and the silent loss of MCP pin hashes that
+  followed. Track A — A2.
+- **Strict config parsing.** New `ConfigParseError` + `readJsonStrict` in
+  `src/utils.js`; `loadConfig`, the `diff` subcommand, and `saveState` all
+  propagate the structured error. The CLI catches it and exits `2` with
+  `rigscore: <file> is not valid JSON (<err>). Fix and retry.` instead of a
+  bare Node stack. Track A — A3.
+- **Symlink-loop defense.** A shared `walkDirSafe` (`src/utils.js`) uses
+  `lstat` + visited-inode set + `opts.maxDepth` (default 50, overridable via
+  `config.limits.maxWalkDepth`). `deep-secrets`, `skill-files`, and the
+  `k8s/` enumeration in `docker-security` all use it. An `info` finding
+  surfaces once per scan when a cycle is skipped. Track A — A4.
+- **Network timeout + per-file cap.** `fetch` calls in `src/http.js` and
+  `src/mcp-registry.js` now wrap an `AbortController` with a 5s default
+  (`config.limits.networkTimeoutMs`); the deep scanner skips files over 512 KB
+  (`config.limits.maxFileBytes`) with an `info` finding. Track A — A5.
+- **`windows-security`** replaces synchronous `execSync` with the promisified
+  `execSafe` used elsewhere; same 5s timeout, no event-loop blocking. Track A — A6.
+
+### Distribution (Track B)
+- **Lockfile regenerated** against `package.json` 1.0.0. `npm ci` is once
+  again reproducible; the previous `0.6.3` `lockfileVersion` header is gone.
+  Track B — B1.
+- **Runtime + dev dependencies pinned** to exact versions — the caret
+  ranges on `chalk`, `yaml`, and `vitest` are gone, closing the self-own
+  of a supply-chain scanner re-resolving deps on every install. Track B — B2.
+- **`engines.node` floor raised to `>=18.17.0`** so `fs.promises.readdir({
+  recursive: true })` is guaranteed. Track B — B3.
+- **User-Agent derived from `package.json`** via `createRequire` at module
+  load. No more hardcoded `rigscore/0.8.0` drift across releases. Track B — B4.
+- **`--init-hook` pins `@v${pkg.version}`** when writing `.git/hooks/pre-commit`.
+  The installed hook leads with a comment documenting the pin and the
+  re-init workflow; older pinned versions found during re-install trigger
+  a warning rather than a silent append. Track B — B5.
+- **CI expanded:** `.github/workflows/ci.yml` matrices Node `18.17`, `20`, `22`
+  across `ubuntu-latest` and `macos-latest`, with a lockfile-drift guard
+  (`npm ci && git diff --exit-code package-lock.json`) to prevent future
+  B1-class regressions. Track B — B6.
+- **Dockerfile hardened.** A non-root `rigscore` user runs the scan,
+  `ARG VERSION` + `org.opencontainers.image.*` labels replace the stale
+  `v1.1.0` comment, and the image no longer reads the mounted `/workspace`
+  as root. Track B — B7.
+- **`action.yml`** stops swallowing scan crashes (`2>/dev/null || true`
+  removed) and validates that callers pin the action to a semver tag
+  rather than `@main`. Track B — B8.
+
+### Docs (Track D)
+- New **Platform notes** and **Exit codes** sections in `README.md` so
+  WSL / macOS / Git Bash / Docker Desktop behaviour is documented honestly
+  and CI authors can branch on exit codes without reading the source.
+  Track D — D1, D2.
+- New `docs/FINDING_IDS.md` enumerates every explicitly-emitted `findingId`
+  today, documents the `<check>/<slug>` schema, and states the stability
+  contract: explicit `findingId`s do not change within a major version; the
+  remaining checks still use a title-slug fallback and are a follow-up.
+  Track D — D3.
+- New **Advisory escalation**, **First run**, and **Documentation** sections
+  in `README.md`; new `docs/TROUBLESHOOTING.md`; new starter governance
+  templates under `docs/examples/` for Cursor, Cline, Continue, Windsurf,
+  and Aider. Track D — D4–D8.
+
+### Test-hygiene
+- `test/fixture-dogfood.test.js` now scrubs `.rigscore-state.json` from the
+  fixture directory `beforeEach` / `afterEach`, and the fixture's
+  `.gitignore` lists the state file, so a prior run's per-user mode-0600
+  state file can no longer mask the `mcp-config` check and drift the
+  locked finding count. PR #94.
+
 ### Changed
 - **BREAKING (scoring recalibration):** coverage scaling is now continuous.
   The previous step at `totalApplicableWeight < 50` has been replaced with
