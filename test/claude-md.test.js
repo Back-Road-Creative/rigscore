@@ -21,10 +21,33 @@ describe('claude-md check', () => {
     expect(WEIGHTS[check.id]).toBe(10);
   });
 
-  it('CRITICAL when no CLAUDE.md exists', async () => {
+  it('NOT_APPLICABLE when no CLAUDE.md and no AI tooling markers at cwd', async () => {
+    // C1 (Track C): a directory with neither governance files nor AI-tooling
+    // markers (.claude/, .cursor/, .mcp.json, etc.) is not "ungoverned" — it's
+    // a vanilla project that happens not to use AI tooling. Returning CRITICAL
+    // here previously dragged create-react-app / FastAPI / Rust repos to
+    // Grade F in a hostile-demo screenshot.
+    const { NOT_APPLICABLE_SCORE } = await import('../src/constants.js');
     const result = await check.run({ cwd: fixture('claude-none'), homedir: '/tmp/nonexistent', config: defaultConfig });
+    expect(result.score).toBe(NOT_APPLICABLE_SCORE);
     const critical = result.findings.find((f) => f.severity === 'critical');
-    expect(critical).toBeDefined();
+    expect(critical).toBeUndefined();
+  });
+
+  it('CRITICAL when AI tooling is present but no governance file exists', async () => {
+    // With AI tooling markers present (.claude/ directory), missing governance
+    // remains a CRITICAL finding — that's the actual "ungoverned AI agent"
+    // failure mode the check is designed to surface.
+    const tmpDir = makeTmpDir();
+    fs.mkdirSync(path.join(tmpDir, '.claude'));
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeDefined();
+      expect(critical.title).toMatch(/No governance file/i);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
   });
 
   it('WARNING when CLAUDE.md is nearly empty', async () => {

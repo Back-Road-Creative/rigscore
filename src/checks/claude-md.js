@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-import { GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, execSafe } from '../utils.js';
+import { GOVERNANCE_FILES, NOT_APPLICABLE_SCORE } from '../constants.js';
+import { readFileSafe, execSafe, hasAnyAITooling } from '../utils.js';
 
 const QUALITY_CHECKS = [
   {
@@ -133,6 +133,21 @@ export default {
     }
 
     if (contents.length === 0) {
+      // C1: if no AI tooling is detected project-wide, this check is
+      // NOT_APPLICABLE. Returning CRITICAL here previously dragged vanilla
+      // Next.js / FastAPI / Rust repos to Grade F even though they never
+      // claimed to be AI-tooled — perfect screenshot fodder for hostile
+      // reviewers ("look, rigscore roasts create-react-app").
+      if (!(await hasAnyAITooling(cwd))) {
+        return {
+          score: NOT_APPLICABLE_SCORE,
+          findings: [{
+            severity: 'info',
+            title: 'No AI tooling detected — governance check skipped',
+            detail: 'No CLAUDE.md, .cursorrules, .claude/, .cursor/, MCP config, or other AI tooling markers found in cwd. Governance rules are evaluated only when AI tooling is actually in use.',
+          }],
+        };
+      }
       findings.push({
         severity: 'critical',
         title: 'No governance file found',
