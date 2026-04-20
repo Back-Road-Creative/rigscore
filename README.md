@@ -141,6 +141,19 @@ npx github:Back-Road-Creative/rigscore --watch
 npx github:Back-Road-Creative/rigscore --init-hook
 ```
 
+## Platform notes
+
+| Platform | Status | Notes |
+|---|---|---|
+| **macOS** | Supported | CI runs `macos-latest`. Homebrew Node is fine. `infrastructure-security` returns N/A (Linux-only). |
+| **Linux** | Supported | Native. All checks apply, including `infrastructure-security`. |
+| **WSL2** | Supported | Treat as Linux. See WSL2 gotcha below. |
+| **Docker Desktop** | Supported | Pull the image, bind-mount the target dir. See [CI Integration](#ci-integration) and the `Dockerfile` in the repo. |
+| **Git Bash / MSYS2** | Unsupported | POSIX-only permission checks fail silently. Use WSL. |
+| **Windows native** | Out of scope | POSIX permission assumptions and shell-command calls mean behavior can't be made reliable. Use WSL2. |
+
+**WSL2 gotcha — NTFS-mounted paths.** When you scan a project under `/mnt/c/...` (Windows-owned NTFS), POSIX permission bits don't map cleanly. `permissions-hygiene` may emit spurious world-readable / mixed-UID findings on files owned by the Windows side. Workaround: keep projects inside the WSL filesystem (e.g., `~/projects/...`) and scan there. If you must scan a `/mnt/` path, suppress the affected finding via `--ignore permissions-hygiene/sensitive-file-world-readable` or via `.rigscorerc.json` `suppress:`.
+
 ## Distribution
 
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
@@ -219,6 +232,8 @@ rigscore recognizes governance files for all major AI coding clients: CLAUDE.md,
 - Does it define TDD/pipeline lock, Definition of Done, and git workflow rules?
 
 **A good CLAUDE.md is not a wishlist** — it should define specific, enforceable boundaries. rigscore checks that your governance file documents key security dimensions; enforcement depends on your tooling (hooks, permissions, container isolation). {#claude-md-hardening}
+
+**Starter templates** for each AI client (Cursor, Cline, Continue, Windsurf, Aider) live in [`docs/examples/`](docs/examples/) — copy the one for your client and customize.
 
 **What to fix:** Create a governance file with explicit execution boundaries, forbidden actions, file access restrictions, and approval gates. Be specific — "don't access sensitive files" is too vague. List the exact directories and operations that are off-limits.
 
@@ -457,6 +472,64 @@ There is a visible step at the W = 50 threshold: a project at W = 49 is scaled d
 
 See `docs/profiles/` for full weight tables. Custom weights can be set in `.rigscorerc.json`. Advisory (weight-0) checks NEVER affect the overall score — they are excluded from the coverage-penalty denominator so adding a new advisory cannot shift existing scores.
 
+### Promoting advisory checks
+
+Advisory checks ship at weight `0` — they never affect the score. If your
+team cares about a specific advisory signal (e.g. prompt bloat from
+`instruction-effectiveness`, workflow maturity, skill↔governance
+coherence), promote it via `.rigscorerc.json`:
+
+```json
+{
+  "weights": {
+    "instruction-effectiveness": 5
+  }
+}
+```
+
+Promoting an advisory to a non-zero weight moves it out of the advisory
+lane and into the scored lane in full. Specifically:
+
+- It now contributes to the overall score with whatever weight you set.
+- It now counts toward **coverage** — the denominator that drives
+  coverage-scaling for low-applicability projects. Before promotion, a
+  weight-0 check is explicitly excluded from coverage math (see
+  `src/scoring.js` — `scoringApplicable` filter). After promotion, an N/A
+  verdict on that check (e.g. a project with no skills dir for
+  `skill-coherence`) will redistribute weight like any other N/A check.
+- If you promote an advisory across a whole org, document it in your
+  `.rigscorerc.json` comment so the delta from the public default score
+  is traceable.
+
+Demoting a scored check (setting `weights.<id>: 0`) is the inverse and has
+the same coverage semantics.
+
+## First run
+
+rigscore is offline and stateless by default. A few paths may be written
+on first scan — all are local, none phone home.
+
+| Path | When written | Purpose |
+|---|---|---|
+| `<cwd>/.rigscore-state.json` | Only when the project has a repo-level `.mcp.json`. | Stores SHA-256 hashes of each MCP server's `{command, args, envKeys}` shape. Detects silent MCPoison-class (CVE-2025-54136) pivots on subsequent scans. **Values are never hashed — only env-var keys.** |
+| `$XDG_CACHE_HOME/rigscore/mcp-registry.json` (falls back to `~/.cache/rigscore/mcp-registry.json`) | Only with `--online` or `--refresh-mcp-registry`. | Caches the official MCP registry response. 24h TTL. Used to augment typosquat detection. |
+
+Recommendations:
+
+- **Commit `.rigscore-state.json`.** Supply-chain drift becomes visible in
+  review, and cross-collaborator divergence resolves via git. See the
+  [State file](#state-file) section for the diff rules.
+- **Or `.gitignore` it** for local-only rug-pull detection on your machine.
+- **Nothing else is persisted.** No telemetry, no accounts, no outbound
+  traffic unless you pass `--online`.
+
+To purge all rigscore state:
+
+```bash
+rm -f .rigscore-state.json
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/rigscore"
+```
+
 ## Limitations
 
 rigscore is a configuration presence checker, not a security enforcement tool. Understanding its scope helps you use it effectively. Read this section before you rely on rigscore as a governance quality signal.
@@ -472,7 +545,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 
 rigscore runs on rigscore in CI. Transparency about what that score means:
 
-- **Self-score: 35/100 (Grade F).** This is the real score, not a vanity baseline. Rigscore is an npm package; 10 of 19 checks legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior.
+- **Self-score: 35/100 (Grade F).** This is the real score, not a vanity baseline. Rigscore is an npm package; 10 of 19 checks legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. If your project is seeing similar — see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for the diagnostic walk-through.
 - **CI threshold: `--fail-under 30`.** Calibrated to the observed baseline with a 5-point regression buffer. The public default is 70 — the 40-point gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
 - **`.rigscorerc.json` disables three checks** (`infrastructure-security`, `skill-coherence`, `workflow-maturity`) that require workspace-oriented artifacts rigscore doesn't ship. These are per-check disables at the profile level, not ignore-rules on individual findings — the distinction matters when auditing the config.
 
@@ -501,11 +574,24 @@ npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fix
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
-npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-file-found-but-not-in-gitignore,docker-security/docker-socket-mount" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). Title-substring still works as a legacy fallback.
+npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-not-gitignored,skill-files/shell-exec" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). See docs/FINDING_IDS.md for the stable ID list. Title-substring still works as a legacy fallback.
 npx github:Back-Road-Creative/rigscore --verbose                 # Show pass/skipped findings in terminal output
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help
 ```
+
+### Exit codes
+
+rigscore exits with a stable code so CI can branch cleanly:
+
+| Code | Meaning |
+|---|---|
+| `0` | Scan completed. Score is at or above `--fail-under`. In baseline/diff mode: no new findings vs baseline. |
+| `1` | Scan completed. Score is below `--fail-under`, OR (baseline mode) new findings were detected. |
+| `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, unreadable baseline file, or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. |
+| `3` | Reserved for subcommand pre-conditions. Currently used by `rigscore mcp-verify <server>` when no runtime tool hash is pinned for that server. The main scan path does not emit `3`. |
+
+A runtime crash inside a check surfaces as exit `2` with `Error: scan failed: ...` on stderr; it does not currently use a distinct code. CI authors should treat non-zero as failure and branch only on `0` vs `1` for score-gating logic.
 
 ### Watch mode
 
@@ -630,6 +716,8 @@ npx github:Back-Road-Creative/rigscore --sarif > results.sarif
 
 rigscore runs entirely on your local machine by default. No telemetry, no accounts, no API calls. The `--online` flag opts in to outbound HTTP probes for the site-security check and MCP supply-chain verification — those explicitly reach out, and only to the URLs and packages you have already configured.
 
+For details on what rigscore writes to disk on first scan and how to purge it, see the [First run](#first-run) section above.
+
 ## State file
 
 When your project has a repo-level `.mcp.json`, rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
@@ -663,6 +751,25 @@ During normal scans, each MCP server in `.mcp.json` produces an INFO finding sho
 ```
 
 The runtime hash is stored under `servers[<name>].runtimeToolHash` / `runtimeToolPinnedAt` in `.rigscore-state.json`, alongside the existing `mcpServers` config-shape map. State schema version stays at 1.
+
+## Documentation
+
+Supplementary docs live under `docs/`:
+
+- [`docs/FINDING_IDS.md`](docs/FINDING_IDS.md) — stable finding-ID
+  reference. Use when pinning `--ignore` patterns, writing
+  `.rigscorerc.json` `suppress:` entries, or ingesting SARIF ruleIds.
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — operational FAQ.
+  Why is my score an F, what changed after upgrading, WSL2 gotchas, how
+  to re-pin the pre-commit hook, baseline diff behavior.
+- [`docs/examples/`](docs/examples/) — starter skill / rules templates
+  for Cursor, Cline, Continue, Windsurf, and Aider. Calibrated to pass
+  rigscore's default profile.
+- [`docs/checks/`](docs/checks/) — per-check reference with Purpose,
+  Triggers, Weight rationale, Fix semantics, SARIF, and Example. One
+  page per module in `src/checks/`.
+- [`docs/profiles/`](docs/profiles/) — weight tables for each scoring
+  profile (`default`, `minimal`, `ci`, `home`, `monorepo`).
 
 ## Contributing
 
