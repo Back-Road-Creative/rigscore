@@ -46,14 +46,15 @@ describe('SARIF output', () => {
     const sarif = formatSarif(mockResult);
     const errorResults = sarif.runs[0].results.filter(r => r.level === 'error');
     expect(errorResults.length).toBe(1);
-    expect(errorResults[0].ruleId).toBe('claude-md');
+    // Per-finding ruleId: `<checkId>/<slug>` when no findingId is supplied.
+    expect(errorResults[0].ruleId.startsWith('claude-md/')).toBe(true);
   });
 
   it('maps warning severity to warning', () => {
     const sarif = formatSarif(mockResult);
     const warningResults = sarif.runs[0].results.filter(r => r.level === 'warning');
     expect(warningResults.length).toBe(1);
-    expect(warningResults[0].ruleId).toBe('mcp-config');
+    expect(warningResults[0].ruleId.startsWith('mcp-config/')).toBe(true);
   });
 
   it('excludes pass findings from results', () => {
@@ -62,12 +63,52 @@ describe('SARIF output', () => {
     expect(sarif.runs[0].results.length).toBe(2); // 1 warning + 1 critical
   });
 
-  it('includes rule definitions', () => {
+  it('includes rule definitions (check-level + per-finding)', () => {
     const sarif = formatSarif(mockResult);
     const rules = sarif.runs[0].tool.driver.rules;
-    expect(rules.length).toBe(2);
-    expect(rules.map(r => r.id)).toContain('mcp-config');
-    expect(rules.map(r => r.id)).toContain('claude-md');
+    const ids = rules.map(r => r.id);
+    // Check-level (tool-component) rules stay as fallback.
+    expect(ids).toContain('mcp-config');
+    expect(ids).toContain('claude-md');
+    // Per-finding rules are registered alongside the check-level entries.
+    expect(ids.some((id) => id.startsWith('claude-md/'))).toBe(true);
+    expect(ids.some((id) => id.startsWith('mcp-config/'))).toBe(true);
+  });
+
+  it('per-finding ruleId uses findingId when present', () => {
+    const result = {
+      score: 50,
+      results: [{
+        id: 'env-exposure',
+        name: 'Secret exposure',
+        category: 'secrets',
+        weight: 8,
+        score: 0,
+        findings: [
+          { severity: 'critical', title: '.env tracked', findingId: 'env-exposure/env-tracked' },
+        ],
+      }],
+    };
+    const sarif = formatSarif(result);
+    expect(sarif.runs[0].results[0].ruleId).toBe('env-exposure/env-tracked');
+  });
+
+  it('evidence field is surfaced on SARIF result.properties', () => {
+    const result = {
+      score: 50,
+      results: [{
+        id: 'claude-md',
+        name: 'CLAUDE.md governance',
+        category: 'governance',
+        weight: 10,
+        score: 0,
+        findings: [
+          { severity: 'warning', title: 'Weak rule', evidence: 'Line 42: always use your judgment' },
+        ],
+      }],
+    };
+    const sarif = formatSarif(result);
+    expect(sarif.runs[0].results[0].properties.evidence).toBe('Line 42: always use your judgment');
   });
 
   it('includes logical locations', () => {
