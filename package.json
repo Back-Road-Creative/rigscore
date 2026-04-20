@@ -1,6 +1,6 @@
 {
   "name": "rigscore",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Configuration hygiene checker for AI dev environments. Scans locally, no external calls.",
   "type": "module",
   "bin": {
