@@ -47,8 +47,45 @@ const MARKDOWN_LINK_RE = /\[.*?\]\(([^)]{3,200})\)/g;
 
 // Patterns that indicate a path is not a real file reference
 const NOT_A_PATH_RE = /^(http|mailto:|#|<|{|\$\{|__|\*|\.{3}|~\/)/;
-const PLACEHOLDER_RE = /\b(example|your|placeholder|foo|bar|baz|path\/to)\b/i;
+const PLACEHOLDER_RE = /\b(example|your|placeholder|foo|bar|baz|path\/to|YYYY|MM|DD|<[a-z-]+>)\b/i;
 const GLOB_RE = /[*?{]/;
+
+// File-line-range suffix: strip `:123` or `:123-456` (and `#L123-L456`) before existence check.
+// Captured group keeps the bare path portion.
+const FILE_LINE_RANGE_RE = /^([^:#\s]+?)(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$/;
+
+/**
+ * Strip a trailing `:line` / `:line-line` / `#L123-L456` suffix so the filesystem
+ * existence check only sees the bare path. Preserves the original ref when no
+ * suffix is present.
+ */
+function stripLineRange(ref) {
+  const m = ref.match(FILE_LINE_RANGE_RE);
+  return m ? m[1] : ref;
+}
+
+/**
+ * Build a cross-repo ref matcher from config. Returns a predicate that
+ * returns true for any ref matching a glob in `crossRepoRefs`. Globs support
+ * `*` (segment) and `**` (any) — pragmatic, not full glob syntax.
+ */
+function buildCrossRepoMatcher(config) {
+  const globs = Array.isArray(config?.instructionEffectiveness?.crossRepoRefs)
+    ? config.instructionEffectiveness.crossRepoRefs
+    : [];
+  if (globs.length === 0) return () => false;
+
+  const regexes = globs.map((g) => {
+    // Escape regex specials, then turn ** and * into regex
+    const escaped = g.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    const withStars = escaped
+      .replace(/\*\*/g, '::DOUBLESTAR::')
+      .replace(/\*/g, '[^/]*')
+      .replace(/::DOUBLESTAR::/g, '.*');
+    return new RegExp(`^${withStars}$`);
+  });
+  return (ref) => regexes.some((re) => re.test(ref));
+}
 
 /**
  * Discover all instruction-bearing files in the project and homedir.
@@ -295,12 +332,39 @@ function detectContradictions(file) {
 
 /**
  * Detect references to files that don't exist.
+ *
+ * Noise controls (added Moat & Ship Agent A):
+ *   - Strips `foo.py:123` / `foo.py:123-456` / `foo.md#L10-L20` line-range
+ *     suffixes before the existence check (so a valid file with a cited line
+ *     range isn't flagged).
+ *   - Honours `config.instructionEffectiveness.crossRepoRefs: [glob, ...]`
+ *     which exempts refs that point at sibling repos / external projects the
+ *     current scan can't see.
+ *   - Skips dead-ref scanning entirely for project-scoped memory files
+ *     (`~/.claude/projects/<slug>/memory/*.md`) — those describe OTHER projects
+ *     by design and their references live outside the scanned cwd.
  */
-async function detectDeadReferences(file, cwd) {
+async function detectDeadReferences(file, cwd, config) {
   const findings = [];
+
+  // Project-scoped memory files describe other projects; their paths are
+  // inherently cross-repo and can't be validated from the current cwd.
+  if (file.relPath.includes('.claude/projects/') && file.category === 'memory') {
+    return findings;
+  }
+
+  // Slash-command files (`.claude/commands/*`) and skill acceptance-criteria
+  // files (`.claude/skills/*/evals/*`) describe operations over arbitrary
+  // target projects — their path refs (`pyproject.toml`, `lib-skill-utils/*.sh`,
+  // `SKILL.md`) exist in invocation context, not the scanner's cwd. Skipping
+  // dead-ref for these keeps the signal focused on author-authored governance.
+  if (/\.claude\/commands\//.test(file.relPath)) return findings;
+  if (/\.claude\/skills\/.*\/evals\//.test(file.relPath)) return findings;
+
   const codeBlocks = buildCodeBlockSet(file.content);
   const lines = file.content.split('\n');
   const checked = new Set();
+  const crossRepoMatch = buildCrossRepoMatcher(config);
 
   const extractedPaths = [];
 
@@ -332,15 +396,21 @@ async function detectDeadReferences(file, cwd) {
     if (checked.has(ref)) continue;
     checked.add(ref);
 
+    // Strip `:123`, `:123-456`, and `#L123-L456` before existence check.
+    const bareRef = stripLineRange(ref);
+
+    // Exempt configured cross-repo refs (both the suffixed and bare form).
+    if (crossRepoMatch(ref) || crossRepoMatch(bareRef)) continue;
+
     // Resolve relative to CWD and file's directory
     const candidates = [
-      path.resolve(cwd, ref),
-      path.resolve(path.dirname(file.fullPath), ref),
+      path.resolve(cwd, bareRef),
+      path.resolve(path.dirname(file.fullPath), bareRef),
     ];
 
     // Also try without leading ./ or /
-    const stripped = ref.replace(/^\.\//, '').replace(/^\//, '');
-    if (stripped !== ref) {
+    const stripped = bareRef.replace(/^\.\//, '').replace(/^\//, '');
+    if (stripped !== bareRef) {
       candidates.push(path.resolve(cwd, stripped));
     }
 
@@ -353,11 +423,15 @@ async function detectDeadReferences(file, cwd) {
     }
 
     if (!found) {
+      const findingId = 'instruction-effectiveness/dead-file-reference';
       findings.push({
+        findingId,
         severity: 'warning',
         title: `Dead file reference in ${file.relPath}`,
         detail: `Line ${line}: "${ref}" — referenced file not found.`,
-        remediation: `Update or remove the reference to "${ref}" in ${file.relPath}.`,
+        evidence: `${file.relPath}:${line} \`${ref.slice(0, 80)}\``,
+        remediation: `Update or remove the reference, or add "${bareRef}" to \`instructionEffectiveness.crossRepoRefs\` in .rigscorerc.json if it points to a sibling repo.`,
+        context: { file: file.relPath, line, ref, bareRef },
       });
     }
   }
@@ -365,10 +439,29 @@ async function detectDeadReferences(file, cwd) {
   return findings;
 }
 
+// Recognised file extensions — a bare "word.ext" without `/` must use one of
+// these to count as a file reference. Keeps `data.filesDiscovered`,
+// `r.findings`, `err.message` style property-access strings from registering
+// as dead refs.
+const KNOWN_FILE_EXTS = new Set([
+  'md', 'sh', 'py', 'js', 'ts', 'tsx', 'jsx', 'json', 'jsonl',
+  'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf',
+  'txt', 'log', 'csv', 'tsv', 'sql', 'html', 'css', 'scss',
+  'lock', 'bak', 'env', 'gitignore', 'gitmodules', 'gitkeep',
+  'rs', 'go', 'java', 'rb', 'c', 'cpp', 'h', 'hpp',
+  'png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'ico',
+  'pdf', 'zip', 'tar', 'gz', 'tgz',
+  'dockerfile', 'makefile',
+]);
+
 /**
  * Check if a string looks like a file path (not a URL, command, etc.).
  */
 function looksLikeFilePath(str) {
+  // Normalise line-range suffix up front so the heuristics below see the
+  // bare path. "missing.py:42" → "missing.py" for pattern-matching purposes;
+  // detectDeadReferences also strips it before filesystem lookup.
+  str = stripLineRange(str);
   if (NOT_A_PATH_RE.test(str)) return false;
   if (PLACEHOLDER_RE.test(str)) return false;
   if (GLOB_RE.test(str)) return false;
@@ -382,13 +475,27 @@ function looksLikeFilePath(str) {
   if (str.includes('=')) return false;
   // Trailing whitespace → shell fragment like "grep ", "grep -c "
   if (/\s$/.test(str)) return false;
-  // Shell-command prefix: "git -C ...", "find ~/path", "grep -E pattern"
-  if (/^(git|bash|sh|zsh|node|npm|npx|pip|cargo|make|find|grep|sed|awk|cat|head|tail|less|more|echo|ls|cd|rm|cp|mv|sudo|curl|wget)\s/.test(str)) return false;
+  // Shell-command prefix: "git -C ...", "find ~/path", "grep -E pattern".
+  // \d? catches trailing version digits (python3, node22, bash5).
+  if (/^(git|bash|sh|zsh|node\d*|npm|npx|pnpm|yarn|pip\d*|python\d*|cargo|make|find|grep|sed|awk|cat|head|tail|less|more|echo|ls|cd|rm|cp|mv|sudo|curl|wget|chmod|chown|kill|ps|top)\s/.test(str)) return false;
   if (str.includes(' ') && !str.includes('/')) return false;
   // Must contain a path separator or file extension
   if (!str.includes('/') && !str.includes('.')) return false;
   // Must have a file extension or end with /
   if (!str.includes('.') && !str.endsWith('/')) return false;
+
+  // Bare extension reference ("Files ending in `.md`") — not a path.
+  if (/^\.[a-zA-Z0-9]{1,10}$/.test(str)) return false;
+
+  // "word.ext" style: if there's no path separator AND the extension isn't
+  // a known file type, assume it's a JS/Python property access (data.foo,
+  // err.message, r.findings) rather than a filename.
+  if (!str.includes('/')) {
+    const lastDot = str.lastIndexOf('.');
+    const ext = str.slice(lastDot + 1).toLowerCase();
+    if (!KNOWN_FILE_EXTS.has(ext)) return false;
+  }
+
   return true;
 }
 
@@ -471,7 +578,7 @@ function detectBloat(file) {
 /**
  * Analyze instruction quality across all files.
  */
-async function analyzeInstructionQuality(files, cwd) {
+async function analyzeInstructionQuality(files, cwd, config) {
   const findings = [];
 
   for (const file of files) {
@@ -479,7 +586,7 @@ async function analyzeInstructionQuality(files, cwd) {
     findings.push(...detectContradictions(file));
 
     // Dead file references
-    findings.push(...await detectDeadReferences(file, cwd));
+    findings.push(...await detectDeadReferences(file, cwd, config));
 
     // Vague instructions
     findings.push(...detectVagueInstructions(file));
@@ -577,7 +684,7 @@ export default {
     findings.push(...budget.findings);
 
     // 2. Instruction quality analysis
-    const qualityFindings = await analyzeInstructionQuality(files, cwd);
+    const qualityFindings = await analyzeInstructionQuality(files, cwd, config);
     findings.push(...qualityFindings);
 
     // 3. Redundancy analysis
