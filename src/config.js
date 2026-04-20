@@ -40,6 +40,21 @@ const DEFAULTS = {
     // Set to false to suppress the INFO findings in normal scans.
     surfaceRuntimeHashStatus: true,
   },
+  instructionEffectiveness: {
+    // Glob patterns for legitimate cross-repo file references. Refs matching
+    // any pattern are NOT flagged as dead even if the file can't be resolved
+    // from the current cwd. Supports `*` (segment) and `**` (any) globs.
+    // Example: ["_active/**", "lib-skill-utils/**", "_foundation/**"]
+    crossRepoRefs: [],
+  },
+  skillFiles: {
+    // Allowlist entries for patterns that would otherwise flag (e.g. `sudo` in
+    // an operator skill). Each entry: { skill, pattern, reason }.
+    //   skill   — directory name under `.claude/skills/` to match
+    //   pattern — pattern id: "sudo", "curl", "wget", "shell-exec", ...
+    //   reason  — human-readable justification (surfaced in suppressed output)
+    allowlist: [],
+  },
 };
 
 export const PROFILES = {
@@ -182,6 +197,18 @@ function mergeConfig(userConfig) {
   if (userConfig.mcpConfig && typeof userConfig.mcpConfig === 'object') {
     if (typeof userConfig.mcpConfig.surfaceRuntimeHashStatus === 'boolean') {
       result.mcpConfig.surfaceRuntimeHashStatus = userConfig.mcpConfig.surfaceRuntimeHashStatus;
+    }
+  }
+
+  if (userConfig.instructionEffectiveness && typeof userConfig.instructionEffectiveness === 'object') {
+    if (Array.isArray(userConfig.instructionEffectiveness.crossRepoRefs)) {
+      result.instructionEffectiveness.crossRepoRefs = userConfig.instructionEffectiveness.crossRepoRefs;
+    }
+  }
+
+  if (userConfig.skillFiles && typeof userConfig.skillFiles === 'object') {
+    if (Array.isArray(userConfig.skillFiles.allowlist)) {
+      result.skillFiles.allowlist = userConfig.skillFiles.allowlist;
     }
   }
 

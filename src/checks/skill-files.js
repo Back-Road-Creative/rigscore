@@ -109,6 +109,59 @@ function isDefensiveContext(text) {
   return STRONG_DEFENSIVE_RE.test(text);
 }
 
+/**
+ * Extract the skill directory name from a file path under `.claude/skills/`.
+ * Returns e.g. "sops-status" for `.claude/skills/sops-status/SKILL.md` or
+ * `~/.claude/skills/sops-status/evals/acceptance.md`. Returns null for files
+ * outside a skills directory.
+ */
+function extractSkillDir(relPath) {
+  const m = relPath.match(/\.claude\/skills\/([^/]+)\//);
+  return m ? m[1] : null;
+}
+
+/**
+ * Check whether a finding should be suppressed by the `skillFiles.allowlist`
+ * config. Match criteria: (skill directory name === entry.skill) AND
+ * (patternId === entry.pattern). Returns the matching entry or null.
+ *
+ * Allowlist shape (from `.rigscorerc.json`):
+ *   skillFiles.allowlist: [
+ *     { skill: "sops-status", pattern: "sudo", reason: "operator skill" },
+ *     ...
+ *   ]
+ */
+function findAllowlistMatch(allowlist, filePath, patternId) {
+  if (!Array.isArray(allowlist) || allowlist.length === 0) return null;
+  const skill = extractSkillDir(filePath);
+  if (!skill) return null;
+  for (const entry of allowlist) {
+    if (entry && entry.skill === skill && entry.pattern === patternId) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+/**
+ * Map an escalation-pattern source string to a stable pattern id for the
+ * allowlist. Patterns are small and well-known, so a source-snippet switch
+ * keeps the mapping obvious without parsing the RegExp.
+ */
+function patternIdForEscalation(source) {
+  if (source.includes('sudo')) return 'sudo';
+  if (source.includes('run\\s+as\\s+root') || source.includes('run as root')) return 'run-as-root';
+  if (source.includes('run\\s+as\\s+admin') || source.includes('run as admin')) return 'run-as-admin';
+  if (source.includes('elevat')) return 'elevated-privilege';
+  if (source.includes('chmod\\s+777') || source.includes('chmod 777')) return 'chmod-777';
+  if (source.includes('chmod\\s+\\+x') || source.includes('chmod +x')) return 'chmod-plus-x';
+  if (source.includes('chmod') && source.includes('a\\+')) return 'chmod-a-plus';
+  if (source.includes('disable') && source.includes('security')) return 'disable-security';
+  if (source.includes('firewall')) return 'disable-firewall';
+  if (source.includes('antivirus')) return 'disable-antivirus';
+  return 'escalation';
+}
+
 // Characters from non-Latin scripts that look like Latin — check AFTER NFKC normalization
 // Covers: Greek, Cyrillic, Cyrillic Supplement, Armenian, Georgian, Cherokee
 // (Cherokee U+13A0-13FF has letterforms matching Latin A/D/E/G/H/etc.)
@@ -165,6 +218,7 @@ function hasBidiOverrides(text) {
 export const fixes = [
   {
     id: 'skill-file-world-writable',
+    findingIds: ['skill-files/world-writable'],
     match: (f) => f.severity === 'warning' && f.title?.includes('world-writable') && f.title?.includes('Skill file'),
     description: 'chmod 644 on world-writable skill files',
     async apply(cwd) {
@@ -257,6 +311,8 @@ export default {
       return { score: NOT_APPLICABLE_SCORE, findings, data: { filesScanned: 0, injectionFindings: 0, exfiltrationFindings: 0 } };
     }
 
+    const allowlist = config?.skillFiles?.allowlist || [];
+
     for (const file of filesToScan) {
       const lines = file.content.split('\n');
 
@@ -268,6 +324,7 @@ export default {
           if (pattern.test(normalizedLine)) {
             const isDefensive = isDefensiveContext(normalizedLine);
             findings.push({
+              findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
               severity: isDefensive ? 'info' : 'critical',
               title: isDefensive
                 ? `Defensive injection reference in ${file.path}`
@@ -275,9 +332,11 @@ export default {
               detail: isDefensive
                 ? 'File references injection patterns in a defensive context.'
                 : 'File contains instruction override patterns that could hijack AI agent behavior.',
+              evidence: line.trim().slice(0, 120),
               remediation: isDefensive
                 ? 'No action needed — this appears to be a defensive rule.'
                 : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
+              context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
             });
             injectionFound = true;
             break;
@@ -294,6 +353,7 @@ export default {
             if (pattern.test(twoLines)) {
               const isDefensive = isDefensiveContext(twoLines);
               findings.push({
+                findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
                 severity: isDefensive ? 'info' : 'critical',
                 title: isDefensive
                   ? `Defensive injection reference in ${file.path}`
@@ -301,9 +361,11 @@ export default {
                 detail: isDefensive
                   ? 'File references injection patterns in a defensive context.'
                   : 'File contains instruction override patterns that could hijack AI agent behavior.',
+                evidence: (lines[i] + ' ' + lines[i + 1]).trim().slice(0, 120),
                 remediation: isDefensive
                   ? 'No action needed — this appears to be a defensive rule.'
                   : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
+                context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
               });
               injectionFound = true;
               break;
@@ -316,12 +378,18 @@ export default {
       // Check shell execution patterns
       for (const pattern of SHELL_EXEC_PATTERNS) {
         if (pattern.test(file.content)) {
-          findings.push({
-            severity: 'warning',
-            title: `Shell execution instructions in ${file.path}`,
-            detail: 'File contains instructions to execute shell commands.',
-            remediation: 'Review shell execution instructions carefully for security.',
-          });
+          const allowed = findAllowlistMatch(allowlist, file.path, 'shell-exec');
+          if (!allowed) {
+            findings.push({
+              findingId: 'skill-files/shell-exec',
+              severity: 'warning',
+              title: `Shell execution instructions in ${file.path}`,
+              detail: 'File contains instructions to execute shell commands.',
+              evidence: (file.content.split('\n').find(l => pattern.test(l)) || '').trim().slice(0, 120),
+              remediation: 'Review shell execution instructions carefully for security.',
+              context: { file: file.path, patternId: 'shell-exec', skill: extractSkillDir(file.path) },
+            });
+          }
           break;
         }
       }
@@ -329,29 +397,42 @@ export default {
       // Check exfiltration patterns
       for (const pattern of EXFILTRATION_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
-          if (!isDefensive) {
+          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
+          const isDefensive = isDefensiveContext(matchLine);
+          const allowed = findAllowlistMatch(allowlist, file.path, 'exfiltration');
+          if (!isDefensive && !allowed) {
             findings.push({
+              findingId: 'skill-files/exfiltration',
               severity: 'warning',
               title: `Data exfiltration pattern in ${file.path}`,
               detail: 'File contains instructions that could exfiltrate data to external services.',
+              evidence: matchLine.trim().slice(0, 120),
               remediation: 'Remove or restrict data transfer instructions.',
+              context: { file: file.path, patternId: 'exfiltration', skill: extractSkillDir(file.path) },
             });
           }
           break;
         }
       }
 
-      // Check privilege escalation patterns
+      // Check privilege escalation patterns — finer-grained pattern ids so
+      // the allowlist can whitelist `sudo` in an operator skill without
+      // permitting `chmod 777` in the same skill.
       for (const pattern of ESCALATION_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
-          if (!isDefensive) {
+          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
+          const isDefensive = isDefensiveContext(matchLine);
+          const patternId = patternIdForEscalation(pattern.source);
+          const allowed = findAllowlistMatch(allowlist, file.path, patternId);
+          if (!isDefensive && !allowed) {
             findings.push({
+              findingId: `skill-files/escalation-${patternId}`,
               severity: 'warning',
               title: `Privilege escalation pattern in ${file.path}`,
               detail: 'File contains instructions that could escalate privileges.',
+              evidence: matchLine.trim().slice(0, 120),
               remediation: 'Remove privilege escalation instructions from skill files.',
+              context: { file: file.path, patternId, skill: extractSkillDir(file.path) },
             });
           }
           break;
@@ -361,13 +442,18 @@ export default {
       // Check persistence patterns
       for (const pattern of PERSISTENCE_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
-          if (!isDefensive) {
+          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
+          const isDefensive = isDefensiveContext(matchLine);
+          const allowed = findAllowlistMatch(allowlist, file.path, 'persistence');
+          if (!isDefensive && !allowed) {
             findings.push({
+              findingId: 'skill-files/persistence',
               severity: 'warning',
               title: `Persistence pattern in ${file.path}`,
               detail: 'File contains instructions that could establish persistent access.',
+              evidence: matchLine.trim().slice(0, 120),
               remediation: 'Remove persistence instructions from skill files.',
+              context: { file: file.path, patternId: 'persistence', skill: extractSkillDir(file.path) },
             });
           }
           break;
@@ -377,13 +463,18 @@ export default {
       // Check indirect injection patterns (CRITICAL severity)
       for (const pattern of INDIRECT_INJECTION_PATTERNS) {
         if (pattern.test(file.content)) {
-          const isDefensive = isDefensiveContext(file.content.split('\n').find(l => pattern.test(l)) || '');
-          if (!isDefensive) {
+          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
+          const isDefensive = isDefensiveContext(matchLine);
+          const allowed = findAllowlistMatch(allowlist, file.path, 'indirect-injection');
+          if (!isDefensive && !allowed) {
             findings.push({
+              findingId: 'skill-files/indirect-injection',
               severity: 'critical',
               title: `Indirect injection pattern in ${file.path}`,
               detail: 'File contains instructions to fetch and execute remote code.',
+              evidence: matchLine.trim().slice(0, 120),
               remediation: 'Remove dynamic code execution instructions.',
+              context: { file: file.path, patternId: 'indirect-injection', skill: extractSkillDir(file.path) },
             });
           }
           break;
@@ -395,13 +486,17 @@ export default {
         if (pattern.test(file.content)) {
           const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
           const isDefensive = isDefensiveContext(matchLine);
-          if (!isDefensive) {
+          const allowed = findAllowlistMatch(allowlist, file.path, 'trust-exploitation');
+          if (!isDefensive && !allowed) {
             findings.push({
+              findingId: 'skill-files/trust-exploitation',
               severity: 'warning',
               title: `Trust exploitation pattern in ${file.path}`,
               detail: 'File contains instructions to blindly trust tool outputs without verification, which can be exploited via name-based trust attacks (CVE-2025-54136).',
+              evidence: matchLine.trim().slice(0, 120),
               remediation: 'Remove instructions to skip verification. Always validate tool outputs before acting on them.',
               learnMore: 'https://research.checkpoint.com/2025/cursor-vulnerability-mcpoison/',
+              context: { file: file.path, patternId: 'trust-exploitation', skill: extractSkillDir(file.path) },
             });
           }
           break;
@@ -497,10 +592,13 @@ export default {
           // World-writable check: "others" write bit
           if (mode & 0o002) {
             findings.push({
+              findingId: 'skill-files/world-writable',
               severity: 'warning',
               title: `Skill file ${file.path} is world-writable`,
               detail: `${file.path} has mode ${mode.toString(8)}. World-writable skill files can be tampered with.`,
+              evidence: `${file.path} mode ${mode.toString(8)}`,
               remediation: `Run: chmod 644 ${file.path}`,
+              context: { file: file.path },
             });
           }
         }

@@ -25,6 +25,7 @@ function matchesGlob(filename, pattern) {
 export const fixes = [
   {
     id: 'ssh-dir-permissions',
+    findingIds: ['permissions-hygiene/ssh-dir-permissions'],
     match: (f) => f.severity === 'warning' && f.title?.includes('.ssh') && f.title?.includes('permission'),
     description: 'chmod 700 on ~/.ssh',
     async apply(_cwd, homedir) {
@@ -40,6 +41,7 @@ export const fixes = [
   },
   {
     id: 'ssh-key-permissions',
+    findingIds: ['permissions-hygiene/ssh-key-permissions'],
     match: (f) => f.severity === 'critical' && f.title?.includes('SSH') && f.title?.includes('key') && f.title?.includes('permission'),
     description: 'chmod 600 on SSH private keys',
     async apply(_cwd, homedir) {
@@ -70,6 +72,7 @@ export const fixes = [
   },
   {
     id: 'gitignore-sensitive-patterns',
+    findingIds: ['permissions-hygiene/sensitive-file-world-readable'],
     match: (f) => f.severity === 'warning' && f.title?.includes('world-readable') && (f.title?.includes('.pem') || f.title?.includes('.key')),
     description: 'Add *.pem, *.key to .gitignore',
     async apply(cwd) {
@@ -119,9 +122,11 @@ export default {
         const sshMode = sshStat.mode & 0o777;
         if (sshMode !== 0o700) {
           findings.push({
+            findingId: 'permissions-hygiene/ssh-dir-permissions',
             severity: 'warning',
             title: '~/.ssh directory permissions too open',
             detail: `~/.ssh has mode ${sshMode.toString(8)}, expected 700.`,
+            evidence: `~/.ssh mode ${sshMode.toString(8)}`,
             remediation: 'Run: chmod 700 ~/.ssh',
           });
         }
@@ -137,9 +142,11 @@ export default {
             const keyMode = keyStat.mode & 0o777;
             if (keyMode !== 0o600) {
               findings.push({
+                findingId: 'permissions-hygiene/ssh-key-permissions',
                 severity: 'critical',
                 title: `SSH private key ${entry} permissions too open`,
                 detail: `${entry} has mode ${keyMode.toString(8)}, expected 600.`,
+                evidence: `~/.ssh/${entry} mode ${keyMode.toString(8)}`,
                 remediation: `Run: chmod 600 ~/.ssh/${entry}`,
               });
             }
@@ -162,9 +169,11 @@ export default {
           // World-readable means the "others" read bit is set
           if (mode & 0o004) {
             findings.push({
+              findingId: 'permissions-hygiene/sensitive-file-world-readable',
               severity: 'warning',
               title: `Sensitive file ${entry} is world-readable`,
               detail: `${entry} has mode ${mode.toString(8)}. Sensitive files should not be world-readable.`,
+              evidence: `${entry} mode ${mode.toString(8)}`,
               remediation: `Run: chmod 600 ${entry}`,
             });
           }
@@ -190,9 +199,11 @@ export default {
             const mode = fileStat.mode & 0o777;
             if (mode & 0o004) {
               findings.push({
+                findingId: 'permissions-hygiene/sensitive-file-world-readable',
                 severity: 'warning',
                 title: `Sensitive file ${entry.name}/${subEntry} is world-readable`,
                 detail: `${entry.name}/${subEntry} has mode ${mode.toString(8)}. Sensitive files should not be world-readable.`,
+                evidence: `${entry.name}/${subEntry} mode ${mode.toString(8)}`,
                 remediation: `Run: chmod 600 ${entry.name}/${subEntry}`,
               });
             }
