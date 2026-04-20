@@ -133,18 +133,20 @@ describe('scan integration', () => {
     // Create a minimal project with just a CLAUDE.md
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nBe safe.\n');
     try {
-      const result = await scan({ cwd: tmpDir });
-      // Verify no duplicate findings (same severity + title) across different checks
-      const findingKeys = new Set();
-      let dupes = 0;
+      const result = await scan({ cwd: tmpDir, homedir: tmpDir });
+      // No cross-check duplicates: same (severity, title) must not appear
+      // in two different checks. Within-check dupes are preserved by design
+      // (e.g., one finding per file hitting a pattern).
+      const seenByKey = new Map(); // key -> checkId
+      let crossCheckDupes = 0;
       for (const r of result.results) {
         for (const f of r.findings) {
           const key = `${f.severity}:${f.title}`;
-          if (findingKeys.has(key)) dupes++;
-          findingKeys.add(key);
+          if (seenByKey.has(key) && seenByKey.get(key) !== r.id) crossCheckDupes++;
+          else seenByKey.set(key, r.id);
         }
       }
-      expect(dupes).toBe(0);
+      expect(crossCheckDupes).toBe(0);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
