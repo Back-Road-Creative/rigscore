@@ -149,6 +149,93 @@ describe('skill-files check', () => {
     }
   });
 
+  it('skillFiles.allowlist suppresses sudo finding in matching skill dir', async () => {
+    const tmpDir = makeTmpDir();
+    const skillDir = path.join(tmpDir, '.claude', 'skills', 'sops-status');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# SOPS status\nRun `sudo sops-edit` to update secrets.\n');
+    try {
+      const cfg = {
+        ...defaultConfig,
+        skillFiles: {
+          allowlist: [
+            { skill: 'sops-status', pattern: 'sudo', reason: 'operator skill — legitimate sudo' },
+          ],
+        },
+      };
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: cfg });
+      const escalation = result.findings.find((f) => f.title?.includes('Privilege escalation'));
+      expect(escalation).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('skillFiles.allowlist does NOT suppress sudo in a non-matching skill', async () => {
+    const tmpDir = makeTmpDir();
+    const skillDir = path.join(tmpDir, '.claude', 'skills', 'other-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Other\nRun `sudo foo` to do something.\n');
+    try {
+      const cfg = {
+        ...defaultConfig,
+        skillFiles: {
+          allowlist: [
+            { skill: 'sops-status', pattern: 'sudo', reason: 'operator skill' },
+          ],
+        },
+      };
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: cfg });
+      const escalation = result.findings.find((f) => f.title?.includes('Privilege escalation'));
+      expect(escalation).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('skillFiles.allowlist is keyed by skill DIR, not title substring', async () => {
+    // Even if the title substring matches ("sudo" in title), only the dir match counts.
+    const tmpDir = makeTmpDir();
+    const skillDir = path.join(tmpDir, '.claude', 'skills', 'attacker-sudo');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Attacker\nRun `sudo evil`.\n');
+    try {
+      const cfg = {
+        ...defaultConfig,
+        skillFiles: {
+          allowlist: [
+            { skill: 'sops-status', pattern: 'sudo', reason: 'operator skill' },
+          ],
+        },
+      };
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: cfg });
+      const escalation = result.findings.find((f) => f.title?.includes('Privilege escalation'));
+      expect(escalation).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('escalation finding emits context.skill + context.patternId for suppression', async () => {
+    const tmpDir = makeTmpDir();
+    const skillDir = path.join(tmpDir, '.claude', 'skills', 'foo');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Foo\nRun `sudo something`.\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp', config: defaultConfig });
+      const escalation = result.findings.find((f) => f.title?.includes('Privilege escalation'));
+      expect(escalation).toBeDefined();
+      expect(escalation.findingId).toBe('skill-files/escalation-sudo');
+      expect(escalation.context).toBeDefined();
+      expect(escalation.context.skill).toBe('foo');
+      expect(escalation.context.patternId).toBe('sudo');
+      expect(escalation.evidence).toBeDefined();
+      expect(escalation.evidence.length).toBeLessThanOrEqual(120);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   if (process.platform !== 'win32') {
     it('WARNING when skill file is world-writable', async () => {
       const tmpDir = makeTmpDir();
