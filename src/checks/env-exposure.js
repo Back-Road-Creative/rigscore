@@ -38,6 +38,7 @@ async function isInGitignore(cwd) {
 export const fixes = [
   {
     id: 'env-not-gitignored',
+    findingIds: ['env-exposure/env-not-gitignored'],
     match: (f) => f.severity === 'critical' && f.title?.includes('.env') && f.title?.includes('.gitignore'),
     description: 'Add .env to .gitignore',
     async apply(cwd) {
@@ -58,6 +59,7 @@ export const fixes = [
   },
   {
     id: 'env-world-readable',
+    findingIds: ['env-exposure/env-world-readable'],
     match: (f) => f.severity === 'warning' && f.title?.includes('world-readable') && f.title?.includes('.env'),
     description: 'chmod 600 on .env files',
     async apply(cwd) {
@@ -106,9 +108,11 @@ export default {
       const ignored = await isInGitignore(cwd);
       if (!ignored) {
         findings.push({
+          findingId: 'env-exposure/env-not-gitignored',
           severity: 'critical',
           title: '.env file found but NOT in .gitignore',
           detail: 'Your API keys and secrets will be committed to version control.',
+          evidence: `.env present; .gitignore does not list .env`,
           remediation: 'Add .env to .gitignore immediately.',
           learnMore: 'https://headlessmode.com/tools/rigscore/#env-security',
         });
@@ -128,9 +132,11 @@ export default {
             // World-readable check: "others" read bit
             if (mode & 0o004) {
               findings.push({
+                findingId: 'env-exposure/env-world-readable',
                 severity: 'warning',
                 title: `${envFile} is world-readable`,
                 detail: `${envFile} has mode ${mode.toString(8)}. Secrets files should not be world-readable.`,
+                evidence: `${envFile} mode ${mode.toString(8)}`,
                 remediation: `Run: chmod 600 ${envFile}`,
               });
             }

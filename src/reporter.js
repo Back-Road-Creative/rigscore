@@ -168,6 +168,9 @@ export function formatTerminal(result, cwd, options = {}) {
       if (item.detail) {
         lines.push(`    ${chalk.dim('\u2192')} ${item.detail}`);
       }
+      if (item.evidence) {
+        lines.push(`    ${chalk.dim('\u2192')} Evidence: ${chalk.dim(item.evidence)}`);
+      }
       if (item.remediation) {
         lines.push(`    ${chalk.dim('\u2192')} Fix: ${item.remediation}`);
       }

@@ -155,3 +155,49 @@ describe('stripAnsi', () => {
     expect(stripAnsi(input)).toBe('red');
   });
 });
+
+describe('formatTerminal evidence field (Moat & Ship Agent A)', () => {
+  it('renders evidence line when a finding has one', () => {
+    const result = {
+      score: 50,
+      results: [
+        {
+          id: 'env-exposure',
+          name: 'Secret exposure',
+          weight: 8,
+          score: 0,
+          findings: [
+            {
+              severity: 'critical',
+              title: '.env file found but NOT in .gitignore',
+              detail: 'secret exposed',
+              evidence: '.env present; .gitignore does not list .env',
+              remediation: 'add it',
+            },
+          ],
+        },
+      ],
+    };
+    const output = stripAnsi(formatTerminal(result, '/x'));
+    expect(output).toContain('Evidence: .env present; .gitignore does not list .env');
+  });
+
+  it('omits evidence line when not present (no empty label)', () => {
+    const result = {
+      score: 50,
+      results: [
+        {
+          id: 'env-exposure',
+          name: 'Secret exposure',
+          weight: 8,
+          score: 0,
+          findings: [
+            { severity: 'critical', title: 'No governance file' },
+          ],
+        },
+      ],
+    };
+    const output = stripAnsi(formatTerminal(result, '/x'));
+    expect(output).not.toContain('Evidence:');
+  });
+});
