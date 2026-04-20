@@ -79,9 +79,10 @@ describe('additive scoring model', () => {
     });
   });
 
-  describe('coverage penalty', () => {
-    it('no penalty when applicable weight >= 60', () => {
-      // All checks present = weight 100
+  describe('coverage penalty (C6 continuous scaling)', () => {
+    it('7-check standard subset (weight 54) scales to 54 at full scores', () => {
+      // Under C6, coverage scaling is always applied. Summed weights here
+      // equal 54, so `scale = 0.54` and `round(100 * 0.54) = 54`.
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: 100 },
@@ -91,7 +92,7 @@ describe('additive scoring model', () => {
         { id: 'skill-files', score: 100 },
         { id: 'permissions-hygiene', score: 100 },
       ];
-      expect(calculateOverallScore(results)).toBe(100);
+      expect(calculateOverallScore(results)).toBe(54);
     });
 
     it('penalty applies when applicable weight < 60', () => {
@@ -139,8 +140,9 @@ describe('additive scoring model', () => {
       expect(calculateOverallScore(results)).toBe(22);
     });
 
-    it('no penalty at weight 52 (above threshold)', () => {
-      // claude-md:10 + mcp:16 + env:8 + deep-secrets:8 + skill-files:10 = 52
+    it('C6: weight-50 subset scales by 0.50 at full scores (continuous, no cliff)', () => {
+      // claude-md:10 + mcp-config:14 + env-exposure:8 + skill-files:10 +
+      // deep-secrets:8 = 50. Under C6, scale = 0.50 → final = 50.
       const results = [
         { id: 'claude-md', score: 100 },
         { id: 'mcp-config', score: 100 },
@@ -152,7 +154,7 @@ describe('additive scoring model', () => {
         { id: 'coherence', score: NOT_APPLICABLE_SCORE },
         { id: 'deep-secrets', score: 100 },
       ];
-      expect(calculateOverallScore(results)).toBe(100);
+      expect(calculateOverallScore(results)).toBe(50);
     });
 
     it('penalty applies at weight 28', () => {

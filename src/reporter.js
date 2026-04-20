@@ -119,6 +119,22 @@ export function formatTerminal(result, cwd, options = {}) {
   lines.push(`  Scanning ${cwd} ...`);
   lines.push('');
 
+  // C1 banner: when NO AI-tooling governance/coherence surface was found,
+  // surface that fact at the top so users reading rigscore output for a
+  // vanilla project (create-react-app, FastAPI, Rust) understand that
+  // generic-hygiene checks still ran but AI-specific ones were skipped.
+  const aiToolingSurfaceIds = new Set(['claude-md', 'skill-files', 'mcp-config', 'coherence', 'claude-settings']);
+  const surfaceResults = results.filter((r) => aiToolingSurfaceIds.has(r.id));
+  const allSurfaceMissing = surfaceResults.length > 0 &&
+    surfaceResults.every((r) => r.score === NOT_APPLICABLE_SCORE);
+  if (allSurfaceMissing) {
+    lines.push(`  ${chalk.yellow('\u26A0')} ${chalk.yellow(`No AI tooling detected in ${cwd}.`)}`);
+    lines.push(`    ${chalk.dim('\u2192')} Run with ${chalk.cyan('--include-home-skills')} to scan user-level skills, or add a`);
+    lines.push(`      ${chalk.cyan('CLAUDE.md')} / ${chalk.cyan('.cursorrules')} / ${chalk.cyan('etc.')} to your project first.`);
+    lines.push(`    ${chalk.dim('\u2192')} Generic-hygiene checks (secrets, docker, permissions, git-hooks) still ran below.`);
+    lines.push('');
+  }
+
   // Check scores
   for (const r of results) {
     if (r.score === NOT_APPLICABLE_SCORE) {

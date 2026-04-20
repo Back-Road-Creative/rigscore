@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-import { GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, execSafe } from '../utils.js';
+import { GOVERNANCE_FILES, NOT_APPLICABLE_SCORE } from '../constants.js';
+import { readFileSafe, execSafe, hasAnyAITooling } from '../utils.js';
 
 const QUALITY_CHECKS = [
   {
@@ -26,7 +26,11 @@ const QUALITY_CHECKS = [
   },
   {
     name: 'anti-injection',
-    pattern: /\b(ignore previous|prompt.?injection|instruction.?override|injection)\b/i,
+    // C2: narrowed from bare `injection` to require security-domain
+    // qualifiers. Previously `injection` alone matched "dependency injection"
+    // in a DI-framework README, giving it credit for anti-injection
+    // governance.
+    pattern: /\b(prompt.?injection|instruction.?override|injection.?attack|ignore previous|disregard.?instructions?)\b/i,
     points: 3,
   },
   {
@@ -76,6 +80,55 @@ function normalizeForInjection(text) {
 }
 
 const LENGTH_THRESHOLD = 50;
+
+// C7: anti-patterns that dismantle a nearby governance header.
+// Matched against a line within REVERSAL_WINDOW_LINES of a header that
+// contains one of the QUALITY_CHECKS keywords.
+const REVERSAL_ANTIPATTERN_RE = /\b(all (paths?|actions?|shells?) are (allowed|available|permitted|open|free)|no restrictions|no restriction|all paths are available|everything is (allowed|permitted)|removed (all )?(restrictions?|limits?|gates?)|skip (approval|review|verification|checks?)|bypass (approval|gates?|checks?)|override (default|safety|security)|feel free|go ahead|just ship|no shell commands are restricted|testing is optional|ship fast|trust all|streamlined — just|encouraged for)\b/i;
+
+const REVERSAL_WINDOW_LINES = 5;
+const HEADER_LINE_RE = /^#{1,6}\s+\S/;
+
+/**
+ * C7: detect governance header-only keyword stuffing. For each header line
+ * whose text matches one of the QUALITY_CHECKS patterns (the keyword is
+ * "present" under the stuffing bypass), inspect the next 5 lines for
+ * anti-patterns that dismantle the claim. Returns an array of findings.
+ */
+function detectGovernanceReversals(contentLines) {
+  const findings = [];
+  for (let i = 0; i < contentLines.length; i++) {
+    const line = contentLines[i];
+    if (!HEADER_LINE_RE.test(line)) continue;
+    // Does this header mention any quality-check keyword?
+    let matchedCategory = null;
+    for (const check of QUALITY_CHECKS) {
+      if (check.pattern.test(line)) {
+        matchedCategory = check.name;
+        break;
+      }
+    }
+    if (!matchedCategory) continue;
+    // Look ahead up to REVERSAL_WINDOW_LINES for a dismantling statement.
+    const windowEnd = Math.min(contentLines.length, i + 1 + REVERSAL_WINDOW_LINES);
+    for (let j = i + 1; j < windowEnd; j++) {
+      const body = contentLines[j];
+      if (HEADER_LINE_RE.test(body)) break; // next header — end this section
+      if (REVERSAL_ANTIPATTERN_RE.test(body)) {
+        findings.push({
+          findingId: 'claude-md/governance-reversal-detected',
+          severity: 'warning',
+          title: `Governance reversal detected near "${matchedCategory}"`,
+          detail: `A "${matchedCategory}" governance header is followed within ${REVERSAL_WINDOW_LINES} lines by a statement that dismantles the protection.`,
+          evidence: `${line.trim().slice(0, 60)} → ${body.trim().slice(0, 100)}`,
+          remediation: 'Rewrite the section body so it enforces the rule instead of dismantling it, or remove the keyword-stuffed header.',
+        });
+        break; // one finding per header
+      }
+    }
+  }
+  return findings;
+}
 
 const NEGATION_RE = /\b(never|not|no|don't|doesn't|isn't|without|lack|none|nothing)\b/i;
 
@@ -133,6 +186,21 @@ export default {
     }
 
     if (contents.length === 0) {
+      // C1: if no AI tooling is detected project-wide, this check is
+      // NOT_APPLICABLE. Returning CRITICAL here previously dragged vanilla
+      // Next.js / FastAPI / Rust repos to Grade F even though they never
+      // claimed to be AI-tooled — perfect screenshot fodder for hostile
+      // reviewers ("look, rigscore roasts create-react-app").
+      if (!(await hasAnyAITooling(cwd))) {
+        return {
+          score: NOT_APPLICABLE_SCORE,
+          findings: [{
+            severity: 'info',
+            title: 'No AI tooling detected — governance check skipped',
+            detail: 'No CLAUDE.md, .cursorrules, .claude/, .cursor/, MCP config, or other AI tooling markers found in cwd. Governance rules are evaluated only when AI tooling is actually in use.',
+          }],
+        };
+      }
       findings.push({
         severity: 'critical',
         title: 'No governance file found',
@@ -163,6 +231,14 @@ export default {
         detail: 'A short governance file may not provide sufficient boundaries for AI agent behavior.',
         remediation: 'Add forbidden actions, approval gates, path restrictions, and anti-injection rules.',
       });
+    }
+
+    // C7: detect header-only keyword stuffing where the body dismantles the
+    // protection. Scan each governance content block independently so that
+    // a reversal in file A isn't falsely associated with a header in file B.
+    for (const content of contents) {
+      const reversalFindings = detectGovernanceReversals(content.split('\n'));
+      findings.push(...reversalFindings);
     }
 
     // Check quality patterns against combined content (with negation detection)

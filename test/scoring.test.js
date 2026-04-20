@@ -50,17 +50,19 @@ describe('calculateCheckScore', () => {
 });
 
 describe('calculateOverallScore', () => {
-  it('returns 100 when all checks score 100', () => {
+  it('C6: scales by applicable-weight coverage when all 7 standard checks score 100', () => {
     const results = [
-      { id: 'claude-md', score: 100 },
-      { id: 'mcp-config', score: 100 },
-      { id: 'env-exposure', score: 100 },
-      { id: 'docker-security', score: 100 },
-      { id: 'git-hooks', score: 100 },
-      { id: 'skill-files', score: 100 },
-      { id: 'permissions-hygiene', score: 100 },
+      { id: 'claude-md', score: 100 },              // 10
+      { id: 'mcp-config', score: 100 },             // 14
+      { id: 'env-exposure', score: 100 },           // 8
+      { id: 'docker-security', score: 100 },        // 6
+      { id: 'git-hooks', score: 100 },              // 2
+      { id: 'skill-files', score: 100 },            // 10
+      { id: 'permissions-hygiene', score: 100 },    // 4
     ];
-    expect(calculateOverallScore(results)).toBe(100);
+    // Total applicable weight = 10+14+8+6+2+10+4 = 54. Under C6 continuous
+    // scaling, final = round(100 * 0.54) = 54.
+    expect(calculateOverallScore(results)).toBe(54);
   });
 
   it('returns 0 when all checks score 0', () => {
@@ -78,17 +80,18 @@ describe('calculateOverallScore', () => {
 
   it('calculates weighted sum correctly', () => {
     const results = [
-      { id: 'claude-md', score: 50 },              // 50 * 12/72
-      { id: 'mcp-config', score: 80 },             // 80 * 18/72
-      { id: 'env-exposure', score: 100 },           // 100 * 10/72
-      { id: 'docker-security', score: 0 },          // 0 * 8/72
-      { id: 'git-hooks', score: 100 },              // 100 * 6/72
-      { id: 'skill-files', score: 60 },             // 60 * 12/72
-      { id: 'permissions-hygiene', score: 100 },    // 100 * 6/72
+      { id: 'claude-md', score: 50 },              // 10
+      { id: 'mcp-config', score: 80 },             // 14
+      { id: 'env-exposure', score: 100 },           // 8
+      { id: 'docker-security', score: 0 },          // 6
+      { id: 'git-hooks', score: 100 },              // 2
+      { id: 'skill-files', score: 60 },             // 10
+      { id: 'permissions-hygiene', score: 100 },    // 4
     ];
-    // totalApplicableWeight = 10+14+8+6+2+10+4 = 54 >= 50, no penalty
-    // (50*10+80*14+100*8+0*6+100*2+60*10+100*4)/54 = (500+1120+800+0+200+600+400)/54 = 3620/54 = 67.04 → 67
-    expect(calculateOverallScore(results)).toBe(67);
+    // totalApplicableWeight = 54; weighted-avg pre-scale:
+    //   (50*10+80*14+100*8+0*6+100*2+60*10+100*4)/54 = 3620/54 ≈ 67.04
+    // C6 continuous scale = 0.54 → round(67.04 * 0.54) = round(36.20) = 36.
+    expect(calculateOverallScore(results)).toBe(36);
   });
 
   it('rounds to integer', () => {
@@ -101,8 +104,9 @@ describe('calculateOverallScore', () => {
       { id: 'skill-files', score: 33 },
       { id: 'permissions-hygiene', score: 33 },
     ];
-    // 33 * (12+18+10+8+6+12+6)/72 = 33 * 72/72 = 33
-    expect(calculateOverallScore(results)).toBe(33);
+    // totalApplicableWeight = 54; raw weighted-avg = 33.
+    // C6 scale = 0.54 → round(33 * 0.54) = round(17.82) = 18.
+    expect(calculateOverallScore(results)).toBe(18);
   });
 
   it('accepts custom weights parameter', () => {

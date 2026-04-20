@@ -4,9 +4,16 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { scanLineForSecrets, walkDirSafe } from '../utils.js';
 
+// Directories skipped wholesale during deep scanning. Expanded beyond the
+// historical set so the removal of the blanket `startsWith('.')` guard below
+// doesn't recurse into machine-generated dotfolders like `.cache/` or `.idea/`.
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'vendor', 'dist', 'build', '__pycache__',
   'venv', '.venv', 'coverage', '.next', '.nuxt', 'out',
+  '.cache', '.idea', '.vscode', '.vs', '.gradle', '.mvn',
+  '.turbo', '.parcel-cache', '.yarn', '.pnpm-store', '.tox',
+  '.pytest_cache', '.mypy_cache', '.ruff_cache', '.ipynb_checkpoints',
+  '.svelte-kit', '.astro', '.angular', '.terraform', '.serverless',
 ]);
 
 const INCLUDE_EXTENSIONS = new Set([
@@ -52,7 +59,10 @@ export default {
       maxFiles,
       maxDepth,
       skipDirs: SKIP_DIRS,
-      skipHidden: true,
+      // C5: allow walking into dotfolders like `config/.env.production`'s
+      // parent or `.github/`. The expanded SKIP_DIRS (.cache, .idea, .venv,
+      // .next, etc.) is the authoritative allowlist for dangerous dotdirs.
+      skipHidden: false,
       shouldInclude: (_full, dirent) => shouldIncludeByName(dirent.name),
     });
 
