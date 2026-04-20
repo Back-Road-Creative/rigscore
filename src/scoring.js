@@ -92,12 +92,16 @@ export function calculateOverallScore(results, customWeights) {
     total += (result.score / 100) * scaledWeight;
   }
 
-  let score = Math.round(total);
-
-  // Coverage penalty: projects with low applicable weight get scaled down
-  if (totalApplicableWeight < COVERAGE_PENALTY_THRESHOLD) {
-    score = Math.round(score * (totalApplicableWeight / 100));
-  }
+  // C6: continuous coverage scaling. Previous formula applied
+  //   score *= (totalApplicableWeight / 100)
+  // ONLY when totalApplicableWeight < COVERAGE_PENALTY_THRESHOLD (50). That
+  // step created a gameable cliff: a single stub governance file that
+  // pushed applicable weight from 48 → 50 jumped the reported score from
+  // (scaled) to (unscaled). Now the scale factor is always applied, up to
+  // a ceiling of 1 (i.e. coverage >= 100 is a no-op). Partial coverage
+  // means partial confidence — every time.
+  const scale = Math.min(1, totalApplicableWeight / 100);
+  let score = Math.round(total * scale);
 
   // Compound risk penalty: coherence CRITICAL findings indicate systemic failure
   const coherenceResult = results.find((r) => r.id === 'coherence');

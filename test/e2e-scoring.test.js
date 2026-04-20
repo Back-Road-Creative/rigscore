@@ -89,7 +89,13 @@ describe('e2e scoring', () => {
       fs.chmodSync(path.join(tmpDir, '.env'), 0o600);
 
       const result = await scan({ cwd: tmpDir, homedir: '/tmp/nonexistent' });
-      expect(result.score).toBeGreaterThanOrEqual(90);
+      // C6 note: continuous coverage scaling depresses the absolute ceiling
+      // on projects that don't trigger every weighted check. The fixture
+      // here hits ~8 of the weight-bearing checks (weight ~80/100), so a
+      // perfect-per-check run now tops out in the mid-70s, not 90+. The
+      // meaningful signal is that this "perfect" fixture beats the
+      // terrible-fixture counterpart below.
+      expect(result.score).toBeGreaterThanOrEqual(50);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **BREAKING (scoring recalibration):** coverage scaling is now continuous.
+  The previous step at `totalApplicableWeight < 50` has been replaced with
+  `scale = min(1, totalApplicableWeight / 100)`, applied always. This closes
+  a gameable cliff where projects at applicable weight 48 scored visibly
+  differently from projects at 50 despite representing the same real
+  coverage. **Existing overall scores will shift downward** for any project
+  whose applicable weight is ≥ 50 and < 100. `--fail-under` thresholds
+  calibrated against the old formula may need adjustment; see
+  `.rigscorerc.json` and any CI gates that depend on a specific cutoff.
+  Track C — C6.
+- `claude-md` returns `NOT_APPLICABLE` (not `CRITICAL`) when no AI tooling
+  markers are present in `cwd`. A banner is printed at the top of the
+  terminal report when every AI-tooling surface check is `NOT_APPLICABLE`,
+  pointing the user to `--include-home-skills` or adding a governance file.
+  Generic hygiene checks (secrets, docker, permissions, git-hooks) still
+  score the project. Track C — C1.
+- Narrowed `claude-md` anti-injection keyword: bare `injection` (which gave
+  "dependency injection" undeserved anti-injection credit) is now rejected
+  in favour of `prompt.?injection | instruction.?override | injection.?attack
+  | ignore previous | disregard.?instructions`. Track C — C2.
+- `skill-files` applies defensive-context suppression to the shell-exec
+  loop (fixes false fires on `Do not use curl http://` etc.) and no longer
+  stops at the first-match in the shell-exec / escalation / persistence /
+  indirect-injection loops. Findings now carry a `matches: N` count and
+  escalate to `CRITICAL` severity when ≥ 3 distinct patterns match the same
+  file. Track C — C3 + C4.
+- `deep-secrets` walker no longer blanket-skips dotfile directories:
+  `config/.env.production` and similar are now scanned. `SKIP_DIRS` has been
+  extended with common machine-generated dotfolders (`.cache`, `.idea`,
+  `.turbo`, `.tox`, `.pytest_cache`, `.svelte-kit`, `.terraform`, etc.) so
+  that lifting the blanket guard doesn't cause noise. Track C — C5.
 - Consolidated `rigscore init` and `rigscore init --example` into a single
   module. `--profile`, `--force`, and `--example` all compose. No CLI
   surface change for users.
