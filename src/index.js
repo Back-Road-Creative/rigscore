@@ -29,6 +29,7 @@ export function parseArgs(args) {
     initHook: false,
     watch: false,
     ignore: null,
+    baseline: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -78,6 +79,8 @@ export function parseArgs(args) {
       options.watch = true;
     } else if (arg === '--ignore' && i + 1 < args.length) {
       options.ignore = args[++i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (arg === '--baseline' && i + 1 < args.length) {
+      options.baseline = args[++i];
     } else if (arg === '--ci') {
       options.sarif = true;
       options.noColor = true;
@@ -251,6 +254,41 @@ export async function run(args) {
           }
         }
       }
+    }
+
+    // Baseline mode: on first run write baseline + exit 0; on subsequent
+    // runs compare and gate exit code on the count of NEW findings.
+    if (options.baseline) {
+      const { buildBaseline, loadBaseline, writeBaseline, diffFindings, flattenFindings } =
+        await import('./cli/baseline.js');
+      const existing = loadBaseline(options.baseline);
+      if (!existing) {
+        const newBaseline = buildBaseline(result);
+        writeBaseline(options.baseline, newBaseline);
+        process.stderr.write(
+          `rigscore: wrote new baseline to ${options.baseline} ` +
+          `(${newBaseline.findings.length} findings pinned).\n`,
+        );
+        process.exit(0);
+      }
+      const currentFindings = flattenFindings(result.results);
+      const added = diffFindings(existing.findings, currentFindings);
+      if (added.length === 0) {
+        process.stderr.write(`rigscore: no new findings vs baseline (${existing.findings.length} pinned).\n`);
+        process.exit(0);
+      }
+      process.stderr.write(
+        `rigscore: ${added.length} new findings vs baseline ` +
+        `(baseline timestamp: ${existing.timestamp}):\n`,
+      );
+      for (const f of added) {
+        process.stderr.write(`  [${f.severity}] ${f.findingId} — ${f.title}\n`);
+      }
+      // Gate on new findings count vs fail-under interpreted as "max new".
+      // failUnder default is 70 (score-based); for baseline semantics we
+      // treat any new finding as failing unless the user passes an
+      // explicit non-default. Matches the "exit on new findings" contract.
+      process.exit(added.length > 0 ? 1 : 0);
     }
 
     if (options.watch) {
