@@ -105,9 +105,13 @@ describe('keyword gaming / negation detection', () => {
   });
 });
 
-describe('semantic reversal (known limitation)', () => {
-  // Known limitation: semantic reversal bypasses keyword checks (audit v3 §3.1)
-  it('does NOT warn when headers contain keywords but body dismantles protections', async () => {
+describe('semantic reversal (detected under C7)', () => {
+  // C7 (Track C): header-only keyword stuffing with body-level dismantlement
+  // is now a detected failure mode (was "known limitation" in audit v3 §3.1).
+  // The check runs via `detectGovernanceReversals` in claude-md.js and emits
+  // a `governance-reversal-detected` WARNING for each header whose nearby
+  // body contains an anti-pattern phrase.
+  it('C7: WARNS when headers contain governance keywords but body dismantles protections', async () => {
     const tmpDir = makeTmpDir();
     const content = padContent([
       '# Path Restrictions',
@@ -140,9 +144,33 @@ describe('semantic reversal (known limitation)', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      // Keywords are present in headers, so keyword checks pass — this is the known limitation
-      const warnings = result.findings.filter((f) => f.severity === 'warning');
-      expect(warnings.length).toBe(0);
+      const reversalFindings = result.findings.filter(
+        (f) => f.findingId === 'claude-md/governance-reversal-detected',
+      );
+      // At least one header → body reversal must be flagged.
+      expect(reversalFindings.length).toBeGreaterThanOrEqual(1);
+      for (const f of reversalFindings) {
+        expect(f.severity).toBe('warning');
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('C7: minimal reversal — single stuffed header with body antipattern', async () => {
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '# Path Restrictions',
+      'All paths are available for maximum productivity.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const finding = result.findings.find(
+        (f) => f.findingId === 'claude-md/governance-reversal-detected',
+      );
+      expect(finding).toBeDefined();
+      expect(finding.title).toContain('path restrictions');
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

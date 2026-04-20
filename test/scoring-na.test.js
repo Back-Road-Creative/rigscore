@@ -3,9 +3,10 @@ import { calculateOverallScore } from '../src/scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 
 describe('N/A score weight redistribution', () => {
-  it('redistributes weight when some checks are N/A (above threshold)', () => {
-    // claude-md(10) + mcp(14) + env(8) + git-hooks(2) + skill(10) + perms(4) + coherence(14) = 62
-    // Total applicable weight = 62 >= 50 — no penalty
+  it('C6: redistributes weight among applicable checks; continuous scaling applies', () => {
+    // Applicable: claude-md(10) + mcp(14) + env(8) + git-hooks(2) +
+    // skill(10) + perms(4) + coherence(14) = 62. C6 scale = 0.62 →
+    // round(100 * 0.62) = 62.
     const results = [
       { id: 'claude-md', score: 100 },
       { id: 'mcp-config', score: 100 },
@@ -16,7 +17,7 @@ describe('N/A score weight redistribution', () => {
       { id: 'skill-files', score: 100 },
       { id: 'permissions-hygiene', score: 100 },
     ];
-    expect(calculateOverallScore(results)).toBe(100);
+    expect(calculateOverallScore(results)).toBe(62);
   });
 
   it('returns 0 when all checks are N/A', () => {
@@ -65,7 +66,7 @@ describe('N/A score weight redistribution', () => {
     expect(calculateOverallScore(results)).toBe(22);
   });
 
-  it('gives same result as before when no checks are N/A', () => {
+  it('C6: 7-check subset (weight 54) with no N/A still scales continuously', () => {
     const results = [
       { id: 'claude-md', score: 50 },
       { id: 'mcp-config', score: 80 },
@@ -75,8 +76,8 @@ describe('N/A score weight redistribution', () => {
       { id: 'skill-files', score: 60 },
       { id: 'permissions-hygiene', score: 100 },
     ];
-    // totalApplicableWeight = 10+14+8+6+2+10+4 = 54 >= 50, no penalty
-    // (50*10+80*14+100*8+0*6+100*2+60*10+100*4)/54 = (500+1120+800+0+200+600+400)/54 = 3620/54 = 67.04 → 67
-    expect(calculateOverallScore(results)).toBe(67);
+    // totalApplicableWeight = 54; raw weighted-avg ≈ 67.04.
+    // C6 scale = 0.54 → round(67.04 * 0.54) = round(36.20) = 36.
+    expect(calculateOverallScore(results)).toBe(36);
   });
 });

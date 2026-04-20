@@ -388,22 +388,44 @@ export default {
         }
       }
 
-      // Check shell execution patterns
-      for (const pattern of SHELL_EXEC_PATTERNS) {
-        if (pattern.test(file.content)) {
-          const allowed = findAllowlistMatch(allowlist, file.path, 'shell-exec');
-          if (!allowed) {
-            findings.push({
-              findingId: 'skill-files/shell-exec',
-              severity: 'warning',
-              title: `Shell execution instructions in ${file.path}`,
-              detail: 'File contains instructions to execute shell commands.',
-              evidence: (file.content.split('\n').find(l => pattern.test(l)) || '').trim().slice(0, 120),
-              remediation: 'Review shell execution instructions carefully for security.',
-              context: { file: file.path, patternId: 'shell-exec', skill: extractSkillDir(file.path) },
-            });
+      // Check shell execution patterns.
+      // C3: apply isDefensiveContext so README lines like
+      //   Don't use `curl http://` — always use HTTPS
+      // or security-education skill files don't false-fire.
+      // C4: drop the first-match `break` cap so a file with many bad patterns
+      // doesn't score identically to a file with one. Emit a single finding
+      // with a `matches` count; escalate to CRITICAL at >= 3 matches.
+      if (!findAllowlistMatch(allowlist, file.path, 'shell-exec')) {
+        const matchedLines = [];
+        const matchedPatternSources = new Set();
+        for (const pattern of SHELL_EXEC_PATTERNS) {
+          const globalPattern = pattern.flags.includes('g')
+            ? pattern
+            : new RegExp(pattern.source, pattern.flags + 'g');
+          let match;
+          while ((match = globalPattern.exec(file.content)) !== null) {
+            const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
+            const lineEnd = file.content.indexOf('\n', match.index);
+            const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+            if (isDefensiveContext(line)) continue;
+            matchedLines.push(line.trim().slice(0, 120));
+            matchedPatternSources.add(pattern.source);
           }
-          break;
+        }
+        if (matchedPatternSources.size > 0) {
+          const matches = matchedLines.length;
+          const distinctPatterns = matchedPatternSources.size;
+          const severity = distinctPatterns >= 3 ? 'critical' : 'warning';
+          findings.push({
+            findingId: 'skill-files/shell-exec',
+            severity,
+            title: `Shell execution instructions in ${file.path}`,
+            detail: `File contains ${matches} shell-execution match(es) across ${distinctPatterns} distinct pattern(s).`,
+            evidence: matchedLines[0],
+            matches,
+            remediation: 'Review shell execution instructions carefully for security.',
+            context: { file: file.path, patternId: 'shell-exec', skill: extractSkillDir(file.path), matches, distinctPatterns },
+          });
         }
       }
 
@@ -428,69 +450,112 @@ export default {
         }
       }
 
-      // Check privilege escalation patterns — finer-grained pattern ids so
-      // the allowlist can whitelist `sudo` in an operator skill without
-      // permitting `chmod 777` in the same skill.
+      // C4: drop the first-match `break` cap. Emit one finding per escalation
+      // patternId, but include a `matches` count and bump severity to
+      // CRITICAL when the file hits >= 3 distinct escalation patterns. The
+      // allowlist entries remain finer-grained (e.g. allowlist `sudo` in an
+      // operator skill without permitting `chmod 777` in the same skill).
+      const escalationAcc = new Map(); // patternId → { matches, firstLine }
       for (const pattern of ESCALATION_PATTERNS) {
-        if (pattern.test(file.content)) {
-          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
-          const isDefensive = isDefensiveContext(matchLine);
+        const globalPattern = pattern.flags.includes('g')
+          ? pattern
+          : new RegExp(pattern.source, pattern.flags + 'g');
+        let match;
+        while ((match = globalPattern.exec(file.content)) !== null) {
+          const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
+          const lineEnd = file.content.indexOf('\n', match.index);
+          const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+          if (isDefensiveContext(line)) continue;
           const patternId = patternIdForEscalation(pattern.source);
-          const allowed = findAllowlistMatch(allowlist, file.path, patternId);
-          if (!isDefensive && !allowed) {
-            findings.push({
-              findingId: `skill-files/escalation-${patternId}`,
-              severity: 'warning',
-              title: `Privilege escalation pattern in ${file.path}`,
-              detail: 'File contains instructions that could escalate privileges.',
-              evidence: matchLine.trim().slice(0, 120),
-              remediation: 'Remove privilege escalation instructions from skill files.',
-              context: { file: file.path, patternId, skill: extractSkillDir(file.path) },
-            });
+          if (findAllowlistMatch(allowlist, file.path, patternId)) continue;
+          const existing = escalationAcc.get(patternId);
+          if (existing) {
+            existing.matches++;
+          } else {
+            escalationAcc.set(patternId, { matches: 1, firstLine: line.trim().slice(0, 120) });
           }
-          break;
+        }
+      }
+      const distinctEscalationIds = escalationAcc.size;
+      for (const [patternId, entry] of escalationAcc) {
+        const severity = distinctEscalationIds >= 3 ? 'critical' : 'warning';
+        findings.push({
+          findingId: `skill-files/escalation-${patternId}`,
+          severity,
+          title: `Privilege escalation pattern in ${file.path}`,
+          detail: `File contains ${entry.matches} escalation match(es) for pattern "${patternId}". File matches ${distinctEscalationIds} distinct escalation pattern(s) in total.`,
+          evidence: entry.firstLine,
+          matches: entry.matches,
+          remediation: 'Remove privilege escalation instructions from skill files.',
+          context: { file: file.path, patternId, skill: extractSkillDir(file.path), matches: entry.matches, distinctPatterns: distinctEscalationIds },
+        });
+      }
+
+      // Check persistence patterns — C4 aggregation
+      if (!findAllowlistMatch(allowlist, file.path, 'persistence')) {
+        const persistenceLines = [];
+        const persistencePatterns = new Set();
+        for (const pattern of PERSISTENCE_PATTERNS) {
+          const globalPattern = pattern.flags.includes('g')
+            ? pattern
+            : new RegExp(pattern.source, pattern.flags + 'g');
+          let match;
+          while ((match = globalPattern.exec(file.content)) !== null) {
+            const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
+            const lineEnd = file.content.indexOf('\n', match.index);
+            const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+            if (isDefensiveContext(line)) continue;
+            persistenceLines.push(line.trim().slice(0, 120));
+            persistencePatterns.add(pattern.source);
+          }
+        }
+        if (persistencePatterns.size > 0) {
+          const matches = persistenceLines.length;
+          const distinctPatterns = persistencePatterns.size;
+          const severity = distinctPatterns >= 3 ? 'critical' : 'warning';
+          findings.push({
+            findingId: 'skill-files/persistence',
+            severity,
+            title: `Persistence pattern in ${file.path}`,
+            detail: `File contains ${matches} persistence match(es) across ${distinctPatterns} distinct pattern(s).`,
+            evidence: persistenceLines[0],
+            matches,
+            remediation: 'Remove persistence instructions from skill files.',
+            context: { file: file.path, patternId: 'persistence', skill: extractSkillDir(file.path), matches, distinctPatterns },
+          });
         }
       }
 
-      // Check persistence patterns
-      for (const pattern of PERSISTENCE_PATTERNS) {
-        if (pattern.test(file.content)) {
-          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
-          const isDefensive = isDefensiveContext(matchLine);
-          const allowed = findAllowlistMatch(allowlist, file.path, 'persistence');
-          if (!isDefensive && !allowed) {
-            findings.push({
-              findingId: 'skill-files/persistence',
-              severity: 'warning',
-              title: `Persistence pattern in ${file.path}`,
-              detail: 'File contains instructions that could establish persistent access.',
-              evidence: matchLine.trim().slice(0, 120),
-              remediation: 'Remove persistence instructions from skill files.',
-              context: { file: file.path, patternId: 'persistence', skill: extractSkillDir(file.path) },
-            });
+      // Check indirect injection patterns — C4 aggregation (CRITICAL severity
+      // at any match; escalate detail when multiple distinct patterns present)
+      if (!findAllowlistMatch(allowlist, file.path, 'indirect-injection')) {
+        const indirectLines = [];
+        const indirectPatterns = new Set();
+        for (const pattern of INDIRECT_INJECTION_PATTERNS) {
+          const globalPattern = pattern.flags.includes('g')
+            ? pattern
+            : new RegExp(pattern.source, pattern.flags + 'g');
+          let match;
+          while ((match = globalPattern.exec(file.content)) !== null) {
+            const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
+            const lineEnd = file.content.indexOf('\n', match.index);
+            const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+            if (isDefensiveContext(line)) continue;
+            indirectLines.push(line.trim().slice(0, 120));
+            indirectPatterns.add(pattern.source);
           }
-          break;
         }
-      }
-
-      // Check indirect injection patterns (CRITICAL severity)
-      for (const pattern of INDIRECT_INJECTION_PATTERNS) {
-        if (pattern.test(file.content)) {
-          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
-          const isDefensive = isDefensiveContext(matchLine);
-          const allowed = findAllowlistMatch(allowlist, file.path, 'indirect-injection');
-          if (!isDefensive && !allowed) {
-            findings.push({
-              findingId: 'skill-files/indirect-injection',
-              severity: 'critical',
-              title: `Indirect injection pattern in ${file.path}`,
-              detail: 'File contains instructions to fetch and execute remote code.',
-              evidence: matchLine.trim().slice(0, 120),
-              remediation: 'Remove dynamic code execution instructions.',
-              context: { file: file.path, patternId: 'indirect-injection', skill: extractSkillDir(file.path) },
-            });
-          }
-          break;
+        if (indirectPatterns.size > 0) {
+          findings.push({
+            findingId: 'skill-files/indirect-injection',
+            severity: 'critical',
+            title: `Indirect injection pattern in ${file.path}`,
+            detail: `File contains ${indirectLines.length} indirect-injection match(es) across ${indirectPatterns.size} distinct pattern(s).`,
+            evidence: indirectLines[0],
+            matches: indirectLines.length,
+            remediation: 'Remove dynamic code execution instructions.',
+            context: { file: file.path, patternId: 'indirect-injection', skill: extractSkillDir(file.path), matches: indirectLines.length, distinctPatterns: indirectPatterns.size },
+          });
         }
       }
 

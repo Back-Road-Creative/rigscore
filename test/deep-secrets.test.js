@@ -184,4 +184,42 @@ describe('deep-secrets check', () => {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
+
+  // C5: blanket `entry.name.startsWith('.')` dir skip was removed. The
+  // walker must recurse into `config/` and find `config/.env.production`
+  // even though `.env.production` is dotfile-named.
+  it('C5: walks into subdirs and flags secrets in `config/.env.production`', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.mkdirSync(path.join(tmpDir, 'config'));
+      const key = ['sk', 'ant', 'deepdotfilescan0000000'].join('-');
+      fs.writeFileSync(path.join(tmpDir, 'config', '.env.production'), `API_KEY=${key}\n`);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      expect(result.score).toBe(0);
+      const critical = result.findings.find(f => f.severity === 'critical');
+      expect(critical).toBeDefined();
+      expect(critical.title).toContain('.env.production');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('C5: does NOT recurse into SKIP_DIRS like .git / .venv / .next', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.mkdirSync(path.join(tmpDir, '.git'));
+      fs.mkdirSync(path.join(tmpDir, '.venv'));
+      fs.mkdirSync(path.join(tmpDir, '.next'));
+      const key = ['sk', 'ant', 'shouldnotbefoundxxxxxx'].join('-');
+      fs.writeFileSync(path.join(tmpDir, '.git', 'config.js'), `const k = "${key}";`);
+      fs.writeFileSync(path.join(tmpDir, '.venv', 'config.py'), `KEY = "${key}"`);
+      fs.writeFileSync(path.join(tmpDir, '.next', 'app.js'), `const k = "${key}";`);
+      fs.writeFileSync(path.join(tmpDir, 'real.js'), 'const ok = true;');
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      // No secrets found — the SKIP_DIRS filter worked.
+      expect(result.score).toBe(100);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });
