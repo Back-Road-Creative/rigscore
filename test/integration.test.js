@@ -30,8 +30,11 @@ describe('CLI integration', () => {
 
   it('--json produces valid JSON to stdout', async () => {
     let stdout;
+    // Override HOME so the scan doesn't pick up the developer's real ~/.claude
+    // content (which can push JSON past execFile's default maxBuffer).
+    const env = { ...process.env, HOME: fixture('claude-full') };
     try {
-      ({ stdout } = await exec('node', [bin, '--json', fixture('claude-full')], { timeout: 10000 }));
+      ({ stdout } = await exec('node', [bin, '--json', fixture('claude-full')], { timeout: 10000, env, maxBuffer: 4 * 1024 * 1024 }));
     } catch (err) {
       stdout = err.stdout;
     }

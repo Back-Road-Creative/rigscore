@@ -270,6 +270,57 @@ describe('H2: deduplicateFindings recalculates scores', () => {
     expect(results[0].findings).toHaveLength(1);
     expect(results[1].findings).toHaveLength(1);
   });
+
+  it('T3.10: within-check per-file findings are NOT collapsed by dedup', async () => {
+    const { deduplicateFindings } = await import('../src/scanner.js');
+    if (typeof deduplicateFindings !== 'function') return;
+
+    // Same check, three findings whose titles share a normalized prefix but
+    // differ by file path. Dedup should preserve all three — collapsing would
+    // hide per-file triage information.
+    const results = [
+      {
+        id: 'skill-files',
+        score: 0,
+        findings: [
+          { severity: 'warning', title: 'Privilege escalation pattern in .claude/commands/a.md' },
+          { severity: 'warning', title: 'Privilege escalation pattern in .claude/commands/b.md' },
+          { severity: 'warning', title: 'Privilege escalation pattern in .claude/skills/c/SKILL.md' },
+        ],
+      },
+    ];
+    deduplicateFindings(results);
+    expect(results[0].findings).toHaveLength(3);
+    const paths = results[0].findings.map(f => f.title).sort();
+    expect(paths[0]).toContain('a.md');
+    expect(paths[1]).toContain('b.md');
+    expect(paths[2]).toContain('c/SKILL.md');
+  });
+
+  it('T3.11: cross-check dedup still collapses shared titles', async () => {
+    const { deduplicateFindings } = await import('../src/scanner.js');
+    if (typeof deduplicateFindings !== 'function') return;
+
+    // Different checks producing same normalized title → still deduped
+    // (higher-weighted check wins). This guards against the fix over-reaching.
+    const results = [
+      {
+        id: 'mcp-config', // weight 14
+        score: 0,
+        findings: [{ severity: 'critical', title: 'Shared finding X in path-a' }],
+      },
+      {
+        id: 'credential-storage', // weight 6
+        score: 0,
+        findings: [{ severity: 'critical', title: 'Shared finding X in path-b' }],
+      },
+    ];
+    deduplicateFindings(results);
+    const mcp = results.find(r => r.id === 'mcp-config');
+    const cred = results.find(r => r.id === 'credential-storage');
+    expect(mcp.findings).toHaveLength(1);
+    expect(cred.findings).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
