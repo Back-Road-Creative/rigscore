@@ -68,3 +68,12 @@ No auto-fix. The `coherence.js` module does not export a `fixes` array. Every fi
 - Returns `NOT_APPLICABLE_SCORE` when either governance or configuration data is missing; no findings are emitted in that case.
 - Custom governance/allow-list pairings must be declared in `.rigscorerc.json` under `coherence.allowGovernanceContradictions` as `{ allowRe, govRe, title?, detail?, remediation? }`. Default is empty — no author-specific pairings fire out of the box.
 - Does not re-parse governance prose; relies on `matchedPatterns` from `claude-md`. If that check's regex misses a phrase, coherence will not see it either.
+
+## Known noise modes
+
+Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat & Ship audit.
+
+- **`coherence/undeclared-server` on every utility server** — fires for any MCP server not mentioned by name in governance prose. On mature configs with 5+ servers this creates one WARNING per server, most of which the author considered "obvious" and didn't document. Add an "Approved Tools" section to `CLAUDE.md` with each server name; fastest win.
+- **`coherence/no-approved-tools-section` INFO** — fires whenever any broad-capability server (filesystem / browser / shell / database) exists without a dedicated approved-tools block. Pairs with `undeclared-server` — solving the latter usually silences this too.
+- **`coherence/network-contradiction` on governance using `"no external network"` loosely** — phrase matching is regex-driven (`matchedPatterns` from `claude-md`). Governance that says "no external network except MCP transports" still trips because the regex only matches the first half. Reword governance to explicitly allowlist MCP transports, or add a `coherence.allowGovernanceContradictions` entry.
+- **Inapplicable on single-check scans** — `--check=coherence` alone returns N/A because the check consumes `priorResults` from other checks. Not a bug; document via `rigscore --help`.

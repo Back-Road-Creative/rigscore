@@ -88,3 +88,12 @@ State writes (`.rigscore-state.json`) are not fixes — they are the detection s
 - Rug-pull detection requires at least one prior scan to have written `.rigscore-state.json`. First scan records hashes silently.
 - Runtime tool pin status is opt-out via `.rigscorerc.json` key `mcpConfig.surfaceRuntimeHashStatus: false`.
 - Additional config paths can be registered via `.rigscorerc.json` key `paths.mcpConfig`.
+
+## Known noise modes
+
+Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat & Ship audit. None currently produce findings that warrant check-code changes; tune via config where listed.
+
+- **`mcp-config/runtime-pin-missing` INFO spam** — fires for every server without a recorded runtime tool-hash. On fresh scans (no `.rigscore-state.json`) every server reports missing. Disable the INFO by setting `.rigscorerc.json` → `mcpConfig.surfaceRuntimeHashStatus: false`. Leave it on once you pin via `rigscore mcp-pin`.
+- **Typosquat 1-2 distance collisions on intentional forks** — Levenshtein 1–2 matches trigger on deliberate internal forks (e.g. `@my-org/filesystem` vs. `@modelcontextprotocol/server-filesystem`). The check can't tell intent apart from intent-imitation. Verify the package source, then add the fork name to your curated list via `paths.mcpConfig` (no dedicated allowlist yet).
+- **`mcp-config/localhost-transport` INFO** — always emitted when stdio isn't used and `url` is `localhost`/`127.0.0.1`. Intentional by design but noisy on local MCP dev setups. Currently not suppressible per-server — filter via the suppress list by findingId: `"mcp-config/localhost-transport"`.
+- **`mcp-config/cross-client-drift` on intentional per-client overrides** — fires when the same server has different args across Claude Code vs. Cursor vs. Cline. Legitimate when env budgets differ per client. No config knob yet; consider a reasoned suppress entry.

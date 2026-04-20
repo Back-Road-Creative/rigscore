@@ -58,3 +58,12 @@ Client → config path mapping:
 - Values starting with `op://` (1Password CLI) and values matching `^${…}$` (shell template) are intentionally excluded — they are secure references, not literal credentials. Note that `KEY_PATTERNS` still matches `op://…` for other checks, so the same string can be flagged by `env-exposure` in a public config while passing here.
 - Detection is regex-based against `KEY_PATTERNS`; secrets that do not match any provider-specific pattern (custom internal tokens, short API keys) are invisible to this check.
 - `NOT_APPLICABLE` when no client config file exists — the absence of MCP clients is not a scoring signal.
+
+## Known noise modes
+
+Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat & Ship audit.
+
+- **`op://` references with a path that pattern-matches a plaintext shape** — the check correctly excludes values starting with `op://`, but if an operator writes `"GITHUB_TOKEN": "see op://secrets/github/token"` (with free-form prefix) the regex may match the provider pattern against the suffix. Workaround: keep the value strictly `op://...`; don't embed it in prose.
+- **Example-file-passthrough** — users who copy `.env.example` into a real MCP client config verbatim keep `xxx`/`changeme` placeholders; these correctly downgrade to INFO (`credential-storage/example-credential`). If you're seeing many example-credential INFOs, the config was never filled in — remove or replace the server entry.
+- **N/A on headless / CI workspaces** — when `~/.cursor/mcp.json` etc. don't exist (fresh container, CI runner), the check returns N/A and contributes nothing to score. Expected, but can surprise users who assume "no findings" = "passed".
+- **Path-mapping lookup requires the docs table** — SARIF `physicalLocation` does NOT resolve the per-client config path automatically (finding titles name the client, not the file). Until `src/sarif.js` gains an explicit `locations[]` emit from this check, SARIF consumers must cross-reference the client→path table above manually. Tracked as backlog 3.4.
