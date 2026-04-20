@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readJsonSafe } from './utils.js';
+import { readJsonStrict } from './utils.js';
 import { WEIGHTS } from './constants.js';
 
 const DEFAULTS = {
@@ -164,10 +164,13 @@ export function resolveWeights(config) {
  * and have them additive with project-specific rules.
  */
 export async function loadConfig(cwd, homedir) {
+  // Strict parse — a malformed .rigscorerc.json surfaces a ConfigParseError
+  // (propagated to the CLI, which exits 2 with a friendly message) instead
+  // of silently falling back to defaults and confusing the user.
   const homeConfig = homedir
-    ? await readJsonSafe(path.join(homedir, '.rigscorerc.json'))
+    ? await readJsonStrict(path.join(homedir, '.rigscorerc.json'))
     : null;
-  const cwdConfig = await readJsonSafe(path.join(cwd, '.rigscorerc.json'));
+  const cwdConfig = await readJsonStrict(path.join(cwd, '.rigscorerc.json'));
 
   let merged = structuredClone(DEFAULTS);
   if (homeConfig) merged = mergeConfig(homeConfig, merged);

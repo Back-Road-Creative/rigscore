@@ -90,12 +90,18 @@ describe('loadConfig', () => {
     }
   });
 
-  it('handles malformed JSON gracefully', async () => {
+  // Behavior updated by Track A security hardening (A3). A malformed
+  // .rigscorerc.json used to silently fall back to defaults; that hid user
+  // typos and let broken configs run with surprising scoring. loadConfig
+  // now throws a structured ConfigParseError; the CLI catches it and exits
+  // 2 with a friendly one-liner (see test/malformed-config.test.js).
+  it('throws ConfigParseError on malformed JSON instead of silently defaulting', async () => {
+    const { ConfigParseError } = await import('../src/utils.js');
     const tmpDir = makeTmpDir();
     fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), 'not valid json{{{');
     try {
-      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
-      expect(config.paths.claudeMd).toEqual([]);
+      await expect(loadConfig(tmpDir, '/tmp/nonexistent'))
+        .rejects.toThrow(ConfigParseError);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

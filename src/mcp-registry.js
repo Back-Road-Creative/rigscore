@@ -24,6 +24,10 @@ import os from 'node:os';
 
 export const REGISTRY_URL = 'https://registry.modelcontextprotocol.io/v0/servers';
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// A5: hard deadline on the registry fetch so a hung TCP connection can't
+// stall a scan. Override via config.limits.networkTimeoutMs or
+// fetchRegistry({ timeoutMs: ... }).
+export const DEFAULT_NETWORK_TIMEOUT_MS = 5_000;
 
 /**
  * Default XDG-style cache path: `$XDG_CACHE_HOME/rigscore/mcp-registry.json`
@@ -128,11 +132,19 @@ function isFresh(fetchedAt, now = Date.now()) {
   return (now - t) < CACHE_TTL_MS;
 }
 
-function defaultFetch(url) {
+/**
+ * Default fetch wrapper: 5s AbortController deadline. If the caller injected
+ * their own fetchImpl (tests), honour it as-is — they take responsibility
+ * for their own timeouts.
+ */
+function defaultFetch(url, { timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS } = {}) {
   if (typeof globalThis.fetch !== 'function') {
     return Promise.reject(new Error('fetch is not available in this runtime'));
   }
-  return globalThis.fetch(url);
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(new Error('network-timeout')), timeoutMs);
+  return globalThis.fetch(url, { signal: ac.signal })
+    .finally(() => clearTimeout(t));
 }
 
 /**
@@ -149,7 +161,21 @@ function defaultFetch(url) {
  */
 export async function fetchRegistry(options = {}) {
   const cachePath = options.cachePath || getDefaultCachePath();
-  const fetchImpl = options.fetchImpl || defaultFetch;
+  const timeoutMs = typeof options.timeoutMs === 'number'
+    ? options.timeoutMs
+    : DEFAULT_NETWORK_TIMEOUT_MS;
+  const injected = options.fetchImpl;
+  // Wrap any fetch impl (real or injected) with a 5s AbortController so a
+  // hung TCP connection or a test fixture that never resolves can't stall
+  // the scan. Injected fetchImpls that ignore the second arg keep working.
+  const fetchImpl = injected
+    ? (u) => {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(new Error('network-timeout')), timeoutMs);
+        return Promise.resolve(injected(u, { signal: ac.signal }))
+          .finally(() => clearTimeout(t));
+      }
+    : (u) => defaultFetch(u, { timeoutMs });
   const url = options.url || REGISTRY_URL;
   const force = options.force === true;
 
@@ -169,6 +195,10 @@ export async function fetchRegistry(options = {}) {
   try {
     response = await fetchImpl(url);
   } catch (err) {
+    // A5: surface timeout distinctly so the CLI can emit a WARN
+    // `network-timeout` (vs. a generic unreachable INFO).
+    const isTimeout = (err && (err.name === 'AbortError' || /timeout/i.test(err.message || '')));
+    const kind = isTimeout ? 'network-timeout' : 'network-error';
     // Network error. If we have a stale cache, use it.
     if (cached) {
       const when = cached.fetchedAt.slice(0, 10);
@@ -177,14 +207,20 @@ export async function fetchRegistry(options = {}) {
         fetchedAt: cached.fetchedAt,
         fromCache: true,
         stale: true,
-        warning: `MCP registry refetch failed, using stale cache from ${when}`,
+        warning: isTimeout
+          ? `MCP registry network-timeout, using stale cache from ${when}`
+          : `MCP registry refetch failed, using stale cache from ${when}`,
+        errorKind: kind,
       };
     }
     return {
       servers: [],
       fetchedAt: null,
       fromCache: false,
-      warning: `MCP registry unreachable: ${err.message || 'unknown error'}`,
+      warning: isTimeout
+        ? 'MCP registry network-timeout'
+        : `MCP registry unreachable: ${err.message || 'unknown error'}`,
+      errorKind: kind,
     };
   }
 

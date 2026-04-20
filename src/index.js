@@ -5,6 +5,7 @@ import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
 import { PROFILE_HINTS } from './config.js';
+import { ConfigParseError } from './utils.js';
 
 export function parseArgs(args) {
   const options = {
@@ -181,8 +182,24 @@ export async function run(args) {
     profile: options.profile,
   };
 
+  // Surface malformed user config as a friendly one-liner + exit 2, rather
+  // than a Node stack trace. Anything else bubbles up as-is.
+  const handleFatal = (err) => {
+    if (err instanceof ConfigParseError) {
+      process.stderr.write(err.toUserMessage() + '\n');
+      process.exit(2);
+    }
+    throw err;
+  };
+
   if (options.recursive) {
-    const result = await scanRecursive({ ...scanOptions, depth: options.depth });
+    let result;
+    try {
+      result = await scanRecursive({ ...scanOptions, depth: options.depth });
+    } catch (err) {
+      handleFatal(err);
+      return; // unreachable — handleFatal either exits or rethrows
+    }
 
     if (result.error) {
       process.stderr.write(`Error: ${result.error}\n`);
@@ -206,6 +223,10 @@ export async function run(args) {
     try {
       result = await scan(scanOptions);
     } catch (err) {
+      if (err instanceof ConfigParseError) {
+        process.stderr.write(err.toUserMessage() + '\n');
+        process.exit(2);
+      }
       process.stderr.write(`Error: scan failed: ${err.message}\n`);
       process.exit(2);
     }

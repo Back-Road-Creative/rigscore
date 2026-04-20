@@ -1,9 +1,7 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { calculateCheckScore } from '../scoring.js';
-import { readFileSafe } from '../utils.js';
+import { readFileSafe, execSafe } from '../utils.js';
 
 export default {
   id: 'windows-security',
@@ -91,29 +89,33 @@ export default {
       // Can't read .wslconfig — skip
     }
 
-    // Check Windows Defender exclusions
-    try {
-      const output = execSync(
-        'powershell.exe -NoProfile -Command "Get-MpPreference | Select-Object -ExpandProperty ExclusionPath"',
-        { timeout: 5000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    // Check Windows Defender exclusions. A6: use execSafe (async, 5s
+    // timeout) so the event loop is never blocked on a hung PowerShell
+    // call. Argument list is explicit — no shell interpolation.
+    const output = await execSafe(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        'Get-MpPreference | Select-Object -ExpandProperty ExclusionPath',
+      ],
+      { timeout: 5000 },
+    );
+    if (output) {
+      const exclusions = output.split('\n').map((s) => s.trim()).filter(Boolean);
+      const riskyExclusions = exclusions.filter((p) =>
+        p.includes('node_modules') || p.includes(context.cwd),
       );
-      if (output) {
-        const exclusions = output.split('\n').map(s => s.trim()).filter(Boolean);
-        const riskyExclusions = exclusions.filter(p =>
-          p.includes('node_modules') || p.includes(context.cwd)
-        );
-        if (riskyExclusions.length > 0) {
-          findings.push({
-            severity: 'warning',
-            title: 'Windows Defender excludes project-related paths',
-            detail: `Exclusions found: ${riskyExclusions.join(', ')}. Malware in these directories won't be scanned.`,
-            remediation: 'Review Windows Defender exclusions and remove project directories if not needed for performance.',
-          });
-        }
+      if (riskyExclusions.length > 0) {
+        findings.push({
+          severity: 'warning',
+          title: 'Windows Defender excludes project-related paths',
+          detail: `Exclusions found: ${riskyExclusions.join(', ')}. Malware in these directories won't be scanned.`,
+          remediation: 'Review Windows Defender exclusions and remove project directories if not needed for performance.',
+        });
       }
-    } catch {
-      // PowerShell not available or command failed — skip
     }
+    // execSafe returns null on failure/timeout — nothing to handle here.
 
     if (findings.length === 0) {
       findings.push({

@@ -5,10 +5,31 @@ import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
 
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
+// Strip ALL ANSI escape sequences — not just SGR (color) sequences. A
+// malicious file could embed CSI control sequences (\x1b[2J clear screen,
+// \x1b[H cursor home), OSC hyperlinks (\x1b]8;;...\x07 or ...\x1b\\), or
+// other C0/C1 escapes that would execute in a reviewer's terminal when
+// file-sourced content is rendered unescaped. We also drop bare control
+// characters (BEL, backspace, form-feed, vertical-tab) and the DEL byte
+// that can manipulate terminal state or obscure output.
+//
+// CSI  — ESC [ ... final-byte (0x40–0x7E)
+// OSC  — ESC ] ... (ST = BEL or ESC \)
+// C1   — ESC (any byte 0x40–0x5F) for the remaining two-byte escapes
+const ANSI_RE = /\x1b\][\s\S]*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-Z\\-_]/g;
+// eslint-disable-next-line no-control-regex
+const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
 
 export function stripAnsi(str) {
-  return str.replace(ANSI_RE, '');
+  if (typeof str !== 'string') return str;
+  return str.replace(ANSI_RE, '').replace(CONTROL_RE, '');
+}
+
+/** Safely coerce a potentially untrusted finding field to a display-safe string. */
+function safeField(value) {
+  if (value == null) return value;
+  if (typeof value !== 'string') return value;
+  return stripAnsi(value);
 }
 
 function getGrade(score) {
@@ -164,18 +185,23 @@ export function formatTerminal(result, cwd, options = {}) {
 
     for (const item of items) {
       const icon = getSeverityIcon(severity);
-      lines.push(`  ${color(icon)} ${item.title}`);
-      if (item.detail) {
-        lines.push(`    ${chalk.dim('\u2192')} ${item.detail}`);
+      const title = safeField(item.title);
+      const detail = safeField(item.detail);
+      const evidence = safeField(item.evidence);
+      const remediation = safeField(item.remediation);
+      const learnMore = safeField(item.learnMore);
+      lines.push(`  ${color(icon)} ${title}`);
+      if (detail) {
+        lines.push(`    ${chalk.dim('\u2192')} ${detail}`);
       }
-      if (item.evidence) {
-        lines.push(`    ${chalk.dim('\u2192')} Evidence: ${chalk.dim(item.evidence)}`);
+      if (evidence) {
+        lines.push(`    ${chalk.dim('\u2192')} Evidence: ${chalk.dim(evidence)}`);
       }
-      if (item.remediation) {
-        lines.push(`    ${chalk.dim('\u2192')} Fix: ${item.remediation}`);
+      if (remediation) {
+        lines.push(`    ${chalk.dim('\u2192')} Fix: ${remediation}`);
       }
-      if (item.learnMore) {
-        lines.push(`    ${chalk.dim('\u2192')} Learn more: ${chalk.cyan(item.learnMore)}`);
+      if (learnMore) {
+        lines.push(`    ${chalk.dim('\u2192')} Learn more: ${chalk.cyan(learnMore)}`);
       }
       lines.push('');
     }
@@ -264,9 +290,11 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
         const color = getSeverityColor(severity);
         for (const item of items) {
           const icon = getSeverityIcon(severity);
-          lines.push(`    ${color(icon)} ${item.title}`);
-          if (item.remediation) {
-            lines.push(`      ${chalk.dim('\u2192')} Fix: ${item.remediation}`);
+          const title = safeField(item.title);
+          const remediation = safeField(item.remediation);
+          lines.push(`    ${color(icon)} ${title}`);
+          if (remediation) {
+            lines.push(`      ${chalk.dim('\u2192')} Fix: ${remediation}`);
           }
         }
       }

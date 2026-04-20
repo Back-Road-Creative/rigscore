@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { scanLineForSecrets } from '../utils.js';
+import { scanLineForSecrets, walkDirSafe } from '../utils.js';
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'vendor', 'dist', 'build', '__pycache__',
@@ -18,7 +18,7 @@ const INCLUDE_EXTENSIONS = new Set([
 // Skip test/spec files — they legitimately contain example secrets for pattern testing
 const TEST_FILE_RE = /\.(test|spec)\./;
 
-function shouldInclude(filename) {
+function shouldIncludeByName(filename) {
   if (TEST_FILE_RE.test(filename)) return false;
   const ext = path.extname(filename);
   if (INCLUDE_EXTENSIONS.has(ext)) return true;
@@ -26,34 +26,9 @@ function shouldInclude(filename) {
   return false;
 }
 
-async function walkFiles(dir, maxFiles) {
-  const files = [];
-
-  async function walk(current) {
-    if (files.length >= maxFiles) return;
-
-    let entries;
-    try {
-      entries = await fs.promises.readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (files.length >= maxFiles) return;
-
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
-        await walk(path.join(current, entry.name));
-      } else if (entry.isFile() && shouldInclude(entry.name)) {
-        files.push(path.join(current, entry.name));
-      }
-    }
-  }
-
-  await walk(dir);
-  return files;
-}
+// Per-file size cap (A5) — skip reading pathological huge files to keep
+// deep-scan bounded. Override via config.limits.maxFileBytes.
+const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
 
 export default {
   id: 'deep-secrets',
@@ -70,7 +45,24 @@ export default {
     }
 
     const maxFiles = config?.deepScan?.maxFiles || 1000;
-    const files = await walkFiles(cwd, maxFiles);
+    const maxDepth = config?.limits?.maxWalkDepth || 50;
+    const maxFileBytes = config?.limits?.maxFileBytes || DEFAULT_MAX_FILE_BYTES;
+
+    const { files, loopDetected } = await walkDirSafe(cwd, {
+      maxFiles,
+      maxDepth,
+      skipDirs: SKIP_DIRS,
+      skipHidden: true,
+      shouldInclude: (_full, dirent) => shouldIncludeByName(dirent.name),
+    });
+
+    if (loopDetected) {
+      findings.push({
+        severity: 'info',
+        title: 'Deep scan skipped one or more symlink loops',
+        detail: 'A symlink cycle was detected and safely skipped during traversal.',
+      });
+    }
 
     if (files.length === 0) {
       findings.push({
@@ -89,8 +81,21 @@ export default {
     }
 
     let secretCount = 0;
+    let oversizeCount = 0;
 
     for (const filePath of files) {
+      // A5: skip pathologically large files up front.
+      let stat;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        continue;
+      }
+      if (stat.size > maxFileBytes) {
+        oversizeCount++;
+        continue;
+      }
+
       let content;
       try {
         content = await fs.promises.readFile(filePath, 'utf-8');
@@ -134,6 +139,14 @@ export default {
           break; // one finding per file is enough
         }
       }
+    }
+
+    if (oversizeCount > 0) {
+      findings.push({
+        severity: 'info',
+        title: `Deep scan skipped ${oversizeCount} file(s) over ${maxFileBytes} bytes`,
+        detail: 'Large files were skipped for performance. Override via config.limits.maxFileBytes.',
+      });
     }
 
     if (secretCount === 0) {
