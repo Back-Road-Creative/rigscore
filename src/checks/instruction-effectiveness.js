@@ -372,6 +372,18 @@ function looksLikeFilePath(str) {
   if (NOT_A_PATH_RE.test(str)) return false;
   if (PLACEHOLDER_RE.test(str)) return false;
   if (GLOB_RE.test(str)) return false;
+  // Numeric literals / semver: "1.0.0", "-1.5", "2.4.1"
+  if (/^-?\d+(\.\d+)*$/.test(str)) return false;
+  // Method-call syntax: ".get()", "path.mkdir(parents=True)"
+  if (/\([^)]*\)\s*$/.test(str)) return false;
+  // Angle-bracket placeholders anywhere (NOT_A_PATH catches only leading <)
+  if (/<[A-Za-z_][A-Za-z0-9_-]*>/.test(str)) return false;
+  // Config/key=value assignments, not paths
+  if (str.includes('=')) return false;
+  // Trailing whitespace → shell fragment like "grep ", "grep -c "
+  if (/\s$/.test(str)) return false;
+  // Shell-command prefix: "git -C ...", "find ~/path", "grep -E pattern"
+  if (/^(git|bash|sh|zsh|node|npm|npx|pip|cargo|make|find|grep|sed|awk|cat|head|tail|less|more|echo|ls|cd|rm|cp|mv|sudo|curl|wget)\s/.test(str)) return false;
   if (str.includes(' ') && !str.includes('/')) return false;
   // Must contain a path separator or file extension
   if (!str.includes('/') && !str.includes('.')) return false;

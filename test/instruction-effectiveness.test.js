@@ -291,6 +291,110 @@ describe('instruction-effectiveness check', () => {
     }
   });
 
+  it('does not flag numeric literals or semver strings as dead references', async () => {
+    const tmpDir = makeTmpDir();
+    const content = [
+      '# Rules',
+      'Use `1.0.0` as the initial version.',
+      'Threshold is `-1.5` (negative float).',
+      'Release `2.4.1` ships next week.',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag method-call syntax as dead references', async () => {
+    const tmpDir = makeTmpDir();
+    const content = [
+      '# Rules',
+      'Call `.get()` to fetch the value.',
+      'Use `path.mkdir(parents=True)` for nested creation.',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag strings with angle-bracket placeholders mid-path', async () => {
+    const tmpDir = makeTmpDir();
+    const content = [
+      '# Rules',
+      'Report lives at `.data/health-reports/<project-slug>/YYYY-MM-DD-build.md`.',
+      'Stage path is `.data/skill-staging/<skill-name>/SKILL.md`.',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag config-assignment strings as dead references', async () => {
+    const tmpDir = makeTmpDir();
+    const content = [
+      '# Rules',
+      'Set `best_moments_percentile=75.0` in the config.',
+      'Override with `color.force_adaptive=True`.',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag shell-command fragments as dead references', async () => {
+    const tmpDir = makeTmpDir();
+    const content = [
+      '# Rules',
+      'Run `git -C _active/pkg log --oneline HEAD` to inspect.',
+      'Count with `find ~/.claude/skills -name SKILL.md | wc -l`.',
+      'Use `grep -E pattern` for extended regex.',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('still flags real dead references (tightening does not regress)', async () => {
+    const tmpDir = makeTmpDir();
+    // A clearly-path-shaped ref that legitimately does not exist.
+    const content = [
+      '# Rules',
+      'See `docs/nonexistent-reference.md` for details.',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('T4.4 — no finding references the author-only /instruction-audit slash command', async () => {
     // Build a workspace that triggers every code path with remediation strings:
     // - large single file (token threshold)
