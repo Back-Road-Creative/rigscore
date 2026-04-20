@@ -2,3 +2,9 @@ node_modules/
 coverage/
 .DS_Store
 *.log
+
+# Dogfood fixture artifacts
+test/fixtures/scored-project/.rigscore-state.json
+test/fixtures/scored-project/a-plain-file.txt
+test/fixtures/scored-project/.claude/skills/test-file.md
+test/fixtures/_fixture-home-*/
