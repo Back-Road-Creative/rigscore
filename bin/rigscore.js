@@ -22,11 +22,16 @@ if (args.length > 0 && MCP_SUBCOMMANDS.has(args[0])) {
   process.exit(0);
 }
 
+// `rigscore diff <baseline> <current>` — JSON diff of new findings.
+if (args.length > 0 && args[0] === 'diff') {
+  const mod = await import('../src/cli/baseline.js');
+  mod.runDiffSubcommand(args.slice(1));
+}
+
 // `init` subcommand: writes a starter .rigscorerc.json. With `--example`,
-// scaffolds a small demo project with intentional hygiene issues. Base
-// `init` is owned by Agent B (config-ergonomics) — this is a minimal
-// placeholder that Agent B's richer version will supersede. Preserve the
-// `--example` branch during that merge.
+// scaffolds a small demo project with intentional hygiene issues. Agent B's
+// richer `init` (next commit) supersedes this by switching to
+// `src/cli/init.js`; until then, Agent C's `init-subcommand.js` handles both.
 if (args.length > 0 && args[0] === 'init') {
   const rest = args.slice(1);
   const mod = await import('../src/cli/init-subcommand.js');
@@ -73,6 +78,9 @@ Options:
   --fix --yes        Apply safe auto-remediations
   --watch            Watch for changes and re-run automatically
   --init-hook        Install a pre-commit hook that runs rigscore
+  --baseline <path>  Baseline mode. On first run writes findings to <path>;
+                     on subsequent runs reports ONLY new findings vs baseline
+                     and exits 1 if any new finding is found
   --version          Show version
   --help, -h         Show this help
 
@@ -94,6 +102,12 @@ Checks (moat-heavy weighting):
   instruction-effectiveness Instruction quality & context budget (advisory)
   skill-coherence          Skill ↔ governance coherence (advisory)
   documentation            Check docs coverage against src/checks (advisory)
+
+Subcommands:
+  init [--profile <name>]          Write a commented .rigscorerc.json starter
+  explain <findingId>              Print docs/checks/<id>.md; targets the
+                                   finding-specific section when available
+  diff <baseline> <current>        JSON diff of new findings (exit 1 if any)
 
 Subcommands (MCP runtime tool pinning — print-and-paste, no exec):
   mcp-hash                         Hash a tools/list JSON read from stdin
