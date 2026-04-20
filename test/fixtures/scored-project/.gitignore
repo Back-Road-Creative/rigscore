@@ -1,0 +1,4 @@
+# Intentionally does NOT include .env — fires env-exposure critical finding.
+node_modules/
+dist/
+*.log

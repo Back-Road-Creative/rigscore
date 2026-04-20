@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "filesystem-pinned": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem@0.6.2", "./src"]
+    },
+    "filesystem-typo": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filestystem@latest", "./src"]
+    },
+    "env-wildcard": {
+      "command": "node",
+      "args": ["./scripts/mcp-helper.js"],
+      "env": {
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "DATABASE_URL": "${DATABASE_URL}",
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
