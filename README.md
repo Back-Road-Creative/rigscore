@@ -141,6 +141,13 @@ npx github:Back-Road-Creative/rigscore --watch
 npx github:Back-Road-Creative/rigscore --init-hook
 ```
 
+## Distribution
+
+- **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
+- **Docker image (v1.1.0, not yet published).** A `Dockerfile` and GHCR workflow are in the repo; the workflow is gated on `workflow_dispatch` only so it won't auto-publish. When the image ships, you'll pull it as `ghcr.io/back-road-creative/rigscore:latest`.
+- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v1`.
+- **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node 18/20. WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
+
 ## What it checks
 
 ### 1. MCP server configuration (14 points) {#mcp-permissions}
