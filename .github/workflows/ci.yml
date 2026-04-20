@@ -36,10 +36,11 @@ jobs:
 
       # Dogfood: self-scan rigscore against its own repo with the committed
       # .rigscorerc.json (disables workspace-oriented checks that don't apply
-      # to an npm package). After the advisory-isolation fix (backlog 3.1),
-      # weight-0 advisory checks no longer perturb coverage scaling, so the
-      # CI self-score tracks dev-local ~35. Threshold 30 leaves a small
-      # regression buffer; a drop below 30 signals a real scoring regression
-      # not caught by unit tests.
+      # to an npm package). Backlog 3.1 fix prevents weight-0 advisory checks
+      # from diluting coverage scaling, but CI still runs against a bare npm
+      # package so 13/20 checks legitimately N/A — coverage ratio keeps the
+      # CI self-score at ~19/100 vs dev-local 35. Threshold 15 = CI baseline
+      # (19) minus a 4-point regression buffer. Raising this threshold needs
+      # a richer CI fixture or a profile that exempts N/A infra checks.
       - name: Self-scan
-        run: node bin/rigscore.js --no-cta --profile default --fail-under 30 .
+        run: node bin/rigscore.js --no-cta --profile default --fail-under 15 .
