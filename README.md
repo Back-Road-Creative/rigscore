@@ -233,6 +233,8 @@ rigscore recognizes governance files for all major AI coding clients: CLAUDE.md,
 
 **A good CLAUDE.md is not a wishlist** — it should define specific, enforceable boundaries. rigscore checks that your governance file documents key security dimensions; enforcement depends on your tooling (hooks, permissions, container isolation). {#claude-md-hardening}
 
+**Starter templates** for each AI client (Cursor, Cline, Continue, Windsurf, Aider) live in [`docs/examples/`](docs/examples/) — copy the one for your client and customize.
+
 **What to fix:** Create a governance file with explicit execution boundaries, forbidden actions, file access restrictions, and approval gates. Be specific — "don't access sensitive files" is too vague. List the exact directories and operations that are off-limits.
 
 ### 5. Claude settings safety (8 points) {#claude-settings}
@@ -543,7 +545,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 
 rigscore runs on rigscore in CI. Transparency about what that score means:
 
-- **Self-score: 35/100 (Grade F).** This is the real score, not a vanity baseline. Rigscore is an npm package; 10 of 19 checks legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior.
+- **Self-score: 35/100 (Grade F).** This is the real score, not a vanity baseline. Rigscore is an npm package; 10 of 19 checks legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. If your project is seeing similar — see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for the diagnostic walk-through.
 - **CI threshold: `--fail-under 30`.** Calibrated to the observed baseline with a 5-point regression buffer. The public default is 70 — the 40-point gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
 - **`.rigscorerc.json` disables three checks** (`infrastructure-security`, `skill-coherence`, `workflow-maturity`) that require workspace-oriented artifacts rigscore doesn't ship. These are per-check disables at the profile level, not ignore-rules on individual findings — the distinction matters when auditing the config.
 
@@ -572,7 +574,7 @@ npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fix
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
-npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-file-found-but-not-in-gitignore,docker-security/docker-socket-mount" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). Title-substring still works as a legacy fallback.
+npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-not-gitignored,skill-files/shell-exec" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). See docs/FINDING_IDS.md for the stable ID list. Title-substring still works as a legacy fallback.
 npx github:Back-Road-Creative/rigscore --verbose                 # Show pass/skipped findings in terminal output
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help
@@ -714,6 +716,8 @@ npx github:Back-Road-Creative/rigscore --sarif > results.sarif
 
 rigscore runs entirely on your local machine by default. No telemetry, no accounts, no API calls. The `--online` flag opts in to outbound HTTP probes for the site-security check and MCP supply-chain verification — those explicitly reach out, and only to the URLs and packages you have already configured.
 
+For details on what rigscore writes to disk on first scan and how to purge it, see the [First run](#first-run) section above.
+
 ## State file
 
 When your project has a repo-level `.mcp.json`, rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
@@ -747,6 +751,25 @@ During normal scans, each MCP server in `.mcp.json` produces an INFO finding sho
 ```
 
 The runtime hash is stored under `servers[<name>].runtimeToolHash` / `runtimeToolPinnedAt` in `.rigscore-state.json`, alongside the existing `mcpServers` config-shape map. State schema version stays at 1.
+
+## Documentation
+
+Supplementary docs live under `docs/`:
+
+- [`docs/FINDING_IDS.md`](docs/FINDING_IDS.md) — stable finding-ID
+  reference. Use when pinning `--ignore` patterns, writing
+  `.rigscorerc.json` `suppress:` entries, or ingesting SARIF ruleIds.
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — operational FAQ.
+  Why is my score an F, what changed after upgrading, WSL2 gotchas, how
+  to re-pin the pre-commit hook, baseline diff behavior.
+- [`docs/examples/`](docs/examples/) — starter skill / rules templates
+  for Cursor, Cline, Continue, Windsurf, and Aider. Calibrated to pass
+  rigscore's default profile.
+- [`docs/checks/`](docs/checks/) — per-check reference with Purpose,
+  Triggers, Weight rationale, Fix semantics, SARIF, and Example. One
+  page per module in `src/checks/`.
+- [`docs/profiles/`](docs/profiles/) — weight tables for each scoring
+  profile (`default`, `minimal`, `ci`, `home`, `monorepo`).
 
 ## Contributing
 
