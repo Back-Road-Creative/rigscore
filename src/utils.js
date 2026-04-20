@@ -73,6 +73,49 @@ export async function readJsonSafe(p) {
   }
 }
 
+/**
+ * Structured error thrown by strict parsers. The CLI should catch this,
+ * print a friendly one-line message, and exit 2. Missing files are NOT a
+ * parse error — callers decide whether to surface absence.
+ */
+export class ConfigParseError extends Error {
+  constructor({ filePath, parseMessage, hint }) {
+    super(`${filePath}: ${parseMessage}`);
+    this.name = 'ConfigParseError';
+    this.filePath = filePath;
+    this.parseMessage = parseMessage;
+    this.hint = hint || 'Fix the syntax (check for trailing commas, unquoted keys, or unterminated strings) and retry.';
+  }
+
+  /** Format a user-facing one-liner: `rigscore: <file> is not valid JSON (<err>). <hint>` */
+  toUserMessage() {
+    return `rigscore: ${this.filePath} is not valid JSON (${this.parseMessage}). ${this.hint}`;
+  }
+}
+
+/**
+ * Strict variant of readJsonSafe: returns parsed JSON, null for a missing
+ * file, and throws ConfigParseError on malformed content. Comments/trailing
+ * commas are tolerated (matches readJsonSafe).
+ */
+export async function readJsonStrict(p) {
+  let content;
+  try {
+    content = await fs.promises.readFile(p, 'utf-8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    throw err;
+  }
+  try {
+    return JSON.parse(stripJsonComments(content));
+  } catch (parseErr) {
+    throw new ConfigParseError({
+      filePath: p,
+      parseMessage: parseErr.message,
+    });
+  }
+}
+
 export async function fileExists(p) {
   try {
     await fs.promises.access(p);
