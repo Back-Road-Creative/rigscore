@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Consolidated `rigscore init` and `rigscore init --example` into a single
+  module. `--profile`, `--force`, and `--example` all compose. No CLI
+  surface change for users.
+
 ## [1.0.0] - 2026-04-20
 
 First tagged `1.x` release. A packaging, quality, and distribution milestone —
