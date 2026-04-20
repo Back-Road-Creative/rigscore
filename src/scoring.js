@@ -71,14 +71,21 @@ export function calculateCheckScore(findings) {
  */
 export function calculateOverallScore(results, customWeights) {
   const w = customWeights || WEIGHTS;
-  const applicable = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
-  if (applicable.length === 0) return 0;
+  // Weight-0 advisory checks MUST NOT affect coverage math. A check that
+  // contributes 0 to the score should neither count toward applicable-check
+  // totals nor inflate/deflate the coverage-penalty denominator. Prior bug:
+  // adding the weight-0 `documentation` advisory shifted CI self-score from
+  // 35 → 19 because advisory N/A states drifted the applicable ratio.
+  const scoringApplicable = results.filter(
+    (r) => r.score !== NOT_APPLICABLE_SCORE && (w[r.id] || 0) > 0,
+  );
+  if (scoringApplicable.length === 0) return 0;
 
-  const totalApplicableWeight = applicable.reduce((sum, r) => sum + (w[r.id] || 0), 0);
+  const totalApplicableWeight = scoringApplicable.reduce((sum, r) => sum + (w[r.id] || 0), 0);
   if (totalApplicableWeight === 0) return 0;
 
   let total = 0;
-  for (const result of applicable) {
+  for (const result of scoringApplicable) {
     const weight = w[result.id] || 0;
     // Scale weight proportionally so applicable weights sum to 100
     const scaledWeight = (weight / totalApplicableWeight) * 100;

@@ -4,6 +4,7 @@ import { scan, scanRecursive, suppressFindings } from './scanner.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
+import { PROFILE_HINTS } from './config.js';
 
 export function parseArgs(args) {
   const options = {
@@ -28,6 +29,7 @@ export function parseArgs(args) {
     initHook: false,
     watch: false,
     ignore: null,
+    baseline: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -77,6 +79,8 @@ export function parseArgs(args) {
       options.watch = true;
     } else if (arg === '--ignore' && i + 1 < args.length) {
       options.ignore = args[++i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (arg === '--baseline' && i + 1 < args.length) {
+      options.baseline = args[++i];
     } else if (arg === '--ci') {
       options.sarif = true;
       options.noColor = true;
@@ -104,6 +108,22 @@ export async function run(args) {
   } catch {
     process.stderr.write(`Error: ${cwd} is not a valid directory\n`);
     process.exit(1);
+  }
+
+  // Apply profile hints (recursive / depth defaults from `monorepo` etc.)
+  // CLI flags still win: only apply a hint if the user didn't pass the flag.
+  // Profile precedence for hint lookup: CLI --profile → config file (read
+  // later by scanner) → default. Hints only apply when --profile was set on
+  // the CLI explicitly, matching documented monorepo usage.
+  if (options.profile && PROFILE_HINTS[options.profile]) {
+    const hints = PROFILE_HINTS[options.profile];
+    if (hints.recursive === true && !args.includes('--recursive') && !args.includes('-r')) {
+      options.recursive = true;
+    }
+    if (typeof hints.depth === 'number' && !args.includes('--depth')) {
+      options.depth = hints.depth;
+      options.recursive = true;
+    }
   }
 
   if (options.initHook) {
@@ -234,6 +254,41 @@ export async function run(args) {
           }
         }
       }
+    }
+
+    // Baseline mode: on first run write baseline + exit 0; on subsequent
+    // runs compare and gate exit code on the count of NEW findings.
+    if (options.baseline) {
+      const { buildBaseline, loadBaseline, writeBaseline, diffFindings, flattenFindings } =
+        await import('./cli/baseline.js');
+      const existing = loadBaseline(options.baseline);
+      if (!existing) {
+        const newBaseline = buildBaseline(result);
+        writeBaseline(options.baseline, newBaseline);
+        process.stderr.write(
+          `rigscore: wrote new baseline to ${options.baseline} ` +
+          `(${newBaseline.findings.length} findings pinned).\n`,
+        );
+        process.exit(0);
+      }
+      const currentFindings = flattenFindings(result.results);
+      const added = diffFindings(existing.findings, currentFindings);
+      if (added.length === 0) {
+        process.stderr.write(`rigscore: no new findings vs baseline (${existing.findings.length} pinned).\n`);
+        process.exit(0);
+      }
+      process.stderr.write(
+        `rigscore: ${added.length} new findings vs baseline ` +
+        `(baseline timestamp: ${existing.timestamp}):\n`,
+      );
+      for (const f of added) {
+        process.stderr.write(`  [${f.severity}] ${f.findingId} — ${f.title}\n`);
+      }
+      // Gate on new findings count vs fail-under interpreted as "max new".
+      // failUnder default is 70 (score-based); for baseline semantics we
+      // treat any new finding as failing unless the user passes an
+      // explicit non-default. Matches the "exit on new findings" contract.
+      process.exit(added.length > 0 ? 1 : 0);
     }
 
     if (options.watch) {

@@ -57,14 +57,33 @@ describe('loadConfig', () => {
     }
   });
 
-  it('cwd config takes precedence over homedir config', async () => {
+  it('cwd and homedir configs merge — arrays concat, scalars cwd wins', async () => {
+    // New behavior (Moat & Ship): home + project configs merge. Arrays
+    // concatenate and dedupe so users can keep personal suppressions /
+    // paths in ~/.rigscorerc.json without losing them when a project
+    // specifies its own. Scalars (like `profile`) let the project win.
     const cwdDir = makeTmpDir();
     const homeDir = makeTmpDir();
-    fs.writeFileSync(path.join(cwdDir, '.rigscorerc.json'), JSON.stringify({ paths: { claudeMd: ['/cwd/CLAUDE.md'] } }));
-    fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify({ paths: { claudeMd: ['/home/CLAUDE.md'] } }));
+    fs.writeFileSync(
+      path.join(cwdDir, '.rigscorerc.json'),
+      JSON.stringify({
+        paths: { claudeMd: ['/cwd/CLAUDE.md'] },
+        profile: 'minimal',
+      }),
+    );
+    fs.writeFileSync(
+      path.join(homeDir, '.rigscorerc.json'),
+      JSON.stringify({
+        paths: { claudeMd: ['/home/CLAUDE.md'] },
+        profile: 'default',
+      }),
+    );
     try {
       const config = await loadConfig(cwdDir, homeDir);
-      expect(config.paths.claudeMd).toEqual(['/cwd/CLAUDE.md']);
+      // Arrays concat (home first, then cwd); dedupe preserves order
+      expect(config.paths.claudeMd).toEqual(['/home/CLAUDE.md', '/cwd/CLAUDE.md']);
+      // Scalars: project (cwd) wins
+      expect(config.profile).toBe('minimal');
     } finally {
       fs.rmSync(cwdDir, { recursive: true });
       fs.rmSync(homeDir, { recursive: true });
