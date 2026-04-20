@@ -2,7 +2,9 @@ import https from 'node:https';
 import http from 'node:http';
 import tls from 'node:tls';
 
-const DEFAULT_TIMEOUT = 10_000;
+// A5: 5s default network timeout (was 10s). Overridable per-call via the
+// `timeout` argument; scanner passes config.limits.networkTimeoutMs when set.
+const DEFAULT_TIMEOUT = 5_000;
 
 /**
  * Fetch HTTP/HTTPS response headers for a URL.

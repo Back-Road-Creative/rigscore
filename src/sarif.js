@@ -1,8 +1,14 @@
 import { createRequire } from 'node:module';
 import { OWASP_AGENTIC_MAP } from './constants.js';
+import { stripAnsi } from './reporter.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
+
+function safeText(value) {
+  if (value == null || typeof value !== 'string') return value;
+  return stripAnsi(value);
+}
 
 const SEVERITY_MAP = {
   critical: 'error',
@@ -108,23 +114,25 @@ export function formatSarif(result) {
       // Per-finding ruleId: <checkId>/<slug-or-findingId>. Register it in the
       // tool-component rules array so SARIF viewers can resolve the id.
       const ruleId = deriveFindingRuleId(r.id, finding);
+      const safeTitle = safeText(finding.title);
+      const safeDetail = safeText(finding.detail);
       if (!knownRuleIds.has(ruleId)) {
         knownRuleIds.add(ruleId);
         rules.push({
           id: ruleId,
-          shortDescription: { text: finding.title || r.name },
+          shortDescription: { text: safeTitle || r.name },
           defaultConfiguration: { level: 'warning' },
         });
       }
 
       const properties = { tags };
-      if (finding.evidence) properties.evidence = finding.evidence;
+      if (finding.evidence) properties.evidence = safeText(finding.evidence);
 
       sarifResults.push({
         ruleId,
         level,
         message: {
-          text: finding.detail ? `${finding.title}: ${finding.detail}` : finding.title,
+          text: safeDetail ? `${safeTitle}: ${safeDetail}` : safeTitle,
         },
         properties,
         locations: [location],

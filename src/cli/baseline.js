@@ -95,7 +95,15 @@ export function runDiffSubcommand(args) {
   let current;
   try {
     const raw = fs.readFileSync(args[1], 'utf8');
-    current = JSON.parse(raw);
+    try {
+      current = JSON.parse(raw);
+    } catch (parseErr) {
+      process.stderr.write(
+        `rigscore: ${args[1]} is not valid JSON (${parseErr.message}). ` +
+        `Fix the syntax and retry.\n`,
+      );
+      process.exit(2);
+    }
   } catch (err) {
     process.stderr.write(`Error: could not load current at ${args[1]}: ${err.message}\n`);
     process.exit(2);

@@ -52,10 +52,29 @@ export async function loadState(cwd) {
 }
 
 /**
- * Write state to <cwd>/.rigscore-state.json (pretty-printed, 2-space indent).
+ * Write state to <cwd>/.rigscore-state.json atomically.
+ *
+ * A single `writeFile` is a truncate-then-write — a SIGINT mid-write (or a
+ * concurrent scanner racing on the same file) leaves a zero-byte file and
+ * silently drops pinned MCP hashes on the next load. Write to a sibling
+ * `.tmp` file in the same directory (POSIX rename(2) is atomic only within
+ * a single filesystem), then rename over the target. On any error, best-
+ * effort unlink the tmp before propagating.
+ *
+ * A random suffix on the tmp name protects concurrent writers from
+ * clobbering each other's in-flight payloads — last rename wins, no writer
+ * ever sees a half-written file.
  */
 export async function saveState(cwd, state) {
   const p = path.join(cwd, STATE_FILENAME);
   const body = JSON.stringify(state, null, 2) + '\n';
-  await fs.promises.writeFile(p, body, 'utf-8');
+  const rand = crypto.randomBytes(6).toString('hex');
+  const tmp = `${p}.${process.pid}.${rand}.tmp`;
+  try {
+    await fs.promises.writeFile(tmp, body, { encoding: 'utf-8', mode: 0o600 });
+    await fs.promises.rename(tmp, p);
+  } catch (err) {
+    try { await fs.promises.unlink(tmp); } catch { /* tmp may not exist */ }
+    throw err;
+  }
 }

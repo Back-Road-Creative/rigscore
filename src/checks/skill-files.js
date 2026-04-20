@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, statSafe } from '../utils.js';
+import { readFileSafe, statSafe, walkDirSafe } from '../utils.js';
 
 // Skill file paths = governance files minus CLAUDE.md (handled by claude-md check)
 const SKILL_FILE_PATHS = GOVERNANCE_FILES.filter((f) => f !== 'CLAUDE.md');
@@ -280,26 +280,39 @@ export default {
     const searchRoots = [cwd];
     if (includeHomeSkills && homedir && homedir !== cwd) searchRoots.push(homedir);
 
+    // A4: symlink-loop-safe walk (was readdir({recursive:true}) which follows
+    // symlinks and recurses forever on `ln -s . self`).
+    const maxDepth = config?.limits?.maxWalkDepth || 50;
+    let skillLoopDetected = false;
     for (const root of searchRoots) {
       for (const dir of SKILL_DIRS) {
         const dirPath = path.join(root, dir);
-        try {
-          const entries = await fs.promises.readdir(dirPath, { recursive: true });
-          for (const entry of entries) {
-            if (entry.startsWith('.')) continue;
-            const fullPath = path.join(dirPath, entry);
-            const stat = await statSafe(fullPath);
-            if (!stat || stat.isDirectory()) continue;
-            const content = await readFileSafe(fullPath);
-            if (content) {
-              const relLabel = root === cwd ? path.join(dir, entry) : path.join('~', dir, entry);
-              filesToScan.push({ path: relLabel, fullPath, content });
-            }
+        const exists = await statSafe(dirPath);
+        if (!exists || !exists.isDirectory()) continue;
+        const { files, loopDetected } = await walkDirSafe(dirPath, {
+          maxDepth,
+          skipHidden: true,
+          shouldInclude: (_full, dirent) => !dirent.name.startsWith('.'),
+        });
+        if (loopDetected) skillLoopDetected = true;
+        for (const fullPath of files) {
+          const entryRel = path.relative(dirPath, fullPath);
+          const content = await readFileSafe(fullPath);
+          if (content) {
+            const relLabel = root === cwd
+              ? path.join(dir, entryRel)
+              : path.join('~', dir, entryRel);
+            filesToScan.push({ path: relLabel, fullPath, content });
           }
-        } catch {
-          // Directory doesn't exist, skip
         }
       }
+    }
+    if (skillLoopDetected) {
+      findings.push({
+        severity: 'info',
+        title: 'Symlink loop detected in skill directory — safely skipped',
+        detail: 'A symlink cycle was encountered during skill-file traversal and skipped.',
+      });
     }
 
     if (filesToScan.length === 0) {
