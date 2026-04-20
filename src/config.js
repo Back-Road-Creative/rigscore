@@ -71,6 +71,44 @@ export const PROFILES = {
     'permissions-hygiene': 0,
   },
   ci: { ...WEIGHTS },
+  // `home` — single-user dev boxes (e.g. ~/ as the project). Governance,
+  // skill files, CLAUDE.md, and MCP config dominate; infra/docker/windows
+  // checks are turned off so coverage-scaling doesn't punish home users for
+  // N/A infrastructure surfaces that don't apply to a personal home dir.
+  home: {
+    'mcp-config': 20,
+    'skill-files': 20,
+    'claude-md': 20,
+    'coherence': 15,
+    'claude-settings': 10,
+    'deep-secrets': 5,
+    'env-exposure': 5,
+    'credential-storage': 5,
+    'docker-security': 0,
+    'infrastructure-security': 0,
+    'unicode-steganography': 0,
+    'git-hooks': 0,
+    'permissions-hygiene': 0,
+    'windows-security': 0,
+    'network-exposure': 0,
+    'site-security': 0,
+    'instruction-effectiveness': 0,
+    'skill-coherence': 0,
+    'workflow-maturity': 0,
+    'documentation': 0,
+  },
+  // `monorepo` — default weights, but hints callers toward recursive=true
+  // and a higher depth tolerance. Weights identical to default; the
+  // difference is behavioral (see resolveProfileHints).
+  monorepo: { ...WEIGHTS },
+};
+
+/**
+ * Non-weight profile defaults (recursive mode, depth). Applied as hints
+ * when the CLI doesn't override them explicitly.
+ */
+export const PROFILE_HINTS = {
+  monorepo: { recursive: true, depth: 3 },
 };
 
 /**

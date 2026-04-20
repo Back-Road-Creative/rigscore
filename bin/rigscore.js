@@ -54,7 +54,7 @@ Options:
   --badge            Generate a markdown badge
   --ci               CI mode (--sarif --no-color --no-cta)
   --fail-under <N>   Exit code 1 if score < N (default: 70)
-  --profile <name>   Scoring profile (default, minimal, ci)
+  --profile <name>   Scoring profile (default, minimal, ci, home, monorepo)
   --no-color         Disable colored output
   --cta              Show the promotional call-to-action (off by default)
   --no-cta           Deprecated alias — CTA is already off by default; kept
