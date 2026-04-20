@@ -14,6 +14,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:fixture": "vitest run test/fixture-dogfood.test.js",
     "verify:docs": "node scripts/verify-docs.js"
   },
   "engines": {

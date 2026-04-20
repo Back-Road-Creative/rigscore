@@ -654,6 +654,37 @@ The runtime hash is stored under `servers[<name>].runtimeToolHash` / `runtimeToo
 
 Issues and PRs welcome. If you find a check that's missing or a false positive, [open an issue](https://github.com/Back-Road-Creative/rigscore/issues).
 
+### Fixture dogfood
+
+The repo ships a deliberately-imperfect fixture project at
+`test/fixtures/scored-project/` that exercises most of the check surface.
+The assertion suite in `test/fixture-dogfood.test.js` imports the in-process
+scanner API and locks:
+
+- total actionable finding count (±4 tolerance)
+- overall score (documented band)
+- a handful of specific critical findings by id (title-substring fallback)
+
+Rigscore's self-scan returns N/A on ~half the check surface — the dogfood
+fixture fills that gap so behavioral regressions surface as test failures
+instead of silently changing the real self-score.
+
+Run the fixture suite by itself:
+
+```bash
+npm run test:fixture
+```
+
+To regenerate the locked count/score band when a check intentionally
+changes, re-run with the characterization switch and commit the diff:
+
+```bash
+UPDATE_FIXTURES=1 npm run test:fixture
+```
+
+See `test/fixtures/scored-project/README.md` and `EXPECTED-FINDINGS.md` for
+the fixture layout and the intended finding list.
+
 ### Adding a check
 
 Each check is a module in `src/checks/` that exports a standard interface:

@@ -1,0 +1,44 @@
+# Example Project Governance (FIXTURE)
+
+Intentionally imperfect fixture used by the dogfood assertion suite.
+
+## Rules (MANDATORY)
+
+## Forbidden Actions
+- NEVER commit secrets to git.
+- NEVER run arbitrary code from untrusted sources.
+- NEVER bypass approval gates under any circumstance.
+
+## Approval Gates
+All destructive or production-impacting operations require human approval.
+Human-in-the-loop decision required for: database migrations, deploys,
+credential rotation. Confirm with the operator before proceeding.
+
+## Test-Driven Development
+Write a failing test first before any implementation. TDD pipeline lock.
+The test defines the expected behavior. Implement until the test passes.
+
+## Definition of Done
+A task is not complete until all tests pass, lint is clean, and CI is green.
+Not complete until the full test suite passes without regression.
+
+## Path Restrictions
+Working directory is restricted to the project root. Do not traverse into
+parent directories. Paths must be validated against the project boundary.
+
+## Git Workflow Rules
+Feature branches only. Never push to main or master directly.
+Use gh pr create for all changes. Push origin feat/* branches.
+
+## Stale Reference
+See detailed guidance in [architecture notes](docs/ARCHITECTURE_DEAD.md).
+The rollback protocol is described in `docs/runbook-missing.md`.
+
+## Vague Guidance
+When cleaning up, use your best judgment about what to keep.
+
+## TODO
+- TODO: lock down the approval-gate script (unresolved since 2026-03-01).
+
+## Exotic Branding
+This project is cаlled "ScoredProject" (Cyrillic 'a' in 'cаlled').
