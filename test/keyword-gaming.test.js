@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import check from '../src/checks/claude-md.js';
+import uniCheck from '../src/checks/unicode-steganography.js';
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-negation-'));
@@ -171,6 +172,155 @@ describe('semantic reversal (detected under C7)', () => {
       );
       expect(finding).toBeDefined();
       expect(finding.title).toContain('path restrictions');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+});
+
+// E2 (Track E): expanded adversarial governance-gaming matrix.
+// Each case represents a concrete bypass pattern a hostile operator might try
+// to score well on governance coverage while dismantling the protection in
+// practice. The C7 reversal detector + governance quality checks must each
+// catch the relevant shape.
+describe('E2: adversarial governance reversal / keyword-gaming matrix', () => {
+  it('1. header-only stuffing — body reverses in one line', async () => {
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '# Path Restrictions',
+      'All paths are available.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const rev = result.findings.find((f) => f.findingId === 'claude-md/governance-reversal-detected');
+      expect(rev).toBeDefined();
+      expect(rev.severity).toBe('warning');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('2. body-level reversal — explicit "none" dismantlement', async () => {
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '## Path Restrictions',
+      '',
+      'Our path restrictions are: none. All paths are allowed.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const rev = result.findings.find((f) => f.findingId === 'claude-md/governance-reversal-detected');
+      expect(rev).toBeDefined();
+      expect(rev.title).toContain('path restrictions');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('3. negated dismantler — "Nothing is forbidden" after a "Forbidden Actions" header', async () => {
+    // Without padding including "Additional rule line", the header's own
+    // keyword would also count as a genuine match. We isolate to the header
+    // + body only (padding uses plain lines that don't hit any QUALITY_CHECK
+    // pattern) so the bypass surface is cleanly exercised.
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '# Forbidden Actions',
+      '',
+      'Nothing is forbidden to this agent.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const rev = result.findings.find(
+        (f) => f.findingId === 'claude-md/governance-reversal-detected' && f.title.includes('forbidden actions'),
+      );
+      expect(rev).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('4. quoted reversal — quoting the old rule to superficially satisfy keyword scan', async () => {
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '# Forbidden Actions',
+      '',
+      '> "forbidden actions" — that is what our old process said.',
+      '> Now all actions are allowed.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const rev = result.findings.find(
+        (f) => f.findingId === 'claude-md/governance-reversal-detected' && f.title.includes('forbidden actions'),
+      );
+      expect(rev).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('5. Cyrillic lookalike header — governance keyword match fails; unicode-stego flags it', async () => {
+    // Cyrillic с (U+0441) in "Path Restriсtions" — visually identical but the
+    // keyword regex does NOT match, so governance DOES NOT give the author
+    // credit for the "path restrictions" category. Unicode-stego MUST flag
+    // the homoglyph.
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '# Path Restri\u0441tions',
+      '',
+      'All paths are allowed everywhere.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const govResult = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      // No credit for path restrictions — still flagged missing.
+      const missing = govResult.findings.find(
+        (f) => f.severity === 'warning' && f.title === 'Governance file missing: path restrictions',
+      );
+      expect(missing).toBeDefined();
+      // No spurious governance-reversal — the keyword header didn't match, so
+      // the reversal detector had no anchor to attach a finding to.
+      const rev = govResult.findings.find((f) => f.findingId === 'claude-md/governance-reversal-detected');
+      expect(rev).toBeUndefined();
+
+      const uniResult = await uniCheck.run({ cwd: tmpDir });
+      const homoglyph = uniResult.findings.find(
+        (f) => f.severity === 'warning' && f.title.includes('Homoglyph'),
+      );
+      expect(homoglyph).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('6. layered — one section legit, another reverses in the same file', async () => {
+    // Forbidden Actions is enforced ("Never delete production data") but
+    // Path Restrictions is dismantled ("No restrictions on paths").
+    // The reversal detector must catch the latter without false-firing on
+    // the former.
+    const tmpDir = makeTmpDir();
+    const content = padContent([
+      '# Forbidden Actions',
+      '',
+      'Never delete production data.',
+      '',
+      '# Path Restrictions',
+      '',
+      'No restrictions on paths — go anywhere.',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const reversals = result.findings.filter(
+        (f) => f.findingId === 'claude-md/governance-reversal-detected',
+      );
+      // Exactly one reversal — the path-restrictions section, not the
+      // forbidden-actions section.
+      expect(reversals.length).toBe(1);
+      expect(reversals[0].title).toContain('path restrictions');
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
