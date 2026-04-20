@@ -68,3 +68,27 @@ No `fixes` export. `--fix --yes` is a no-op.
 - Extra governance paths via `config.paths.claudeMd` and `config.paths.governanceDirs`.
 - Token estimation is char-count / 4 — a rough conservative heuristic, not a tokenizer.
 - Contradiction detection is intra-file only; it does not catch "CLAUDE.md says always X, skill.md says never X."
+
+### Dead-reference noise controls (added 2026-04-20)
+
+- **Line-range suffix stripping** — refs of the form `foo.py:123`, `foo.py:123-456`, and `foo.md#L10-L20` have the suffix stripped before the filesystem existence check, so a valid file with a cited line range is not flagged.
+- **Cross-repo exemption via config** — add globs to `.rigscorerc.json`:
+
+  ```json
+  {
+    "instructionEffectiveness": {
+      "crossRepoRefs": ["_active/**", "lib-skill-utils/**", "_foundation/**"]
+    }
+  }
+  ```
+
+  Refs matching any pattern are suppressed even if they don't resolve from the current cwd. Supports `*` (segment) and `**` (any).
+- **Project-scoped memory files are exempt** — dead-ref scanning is skipped for files under `~/.claude/projects/<slug>/memory/`. Those describe OTHER projects by design; their references live outside the scanner's cwd.
+- **Slash-command + skill-eval exemption** — `.claude/commands/*` and `.claude/skills/*/evals/*` files describe operations over arbitrary target projects. Their references (`pyproject.toml`, `SKILL.md`, `lib-skill-utils/*.sh`) exist in invocation context, not here.
+- **Tighter path heuristics** — bare extensions (`.md`, `.sh`), JS property-access strings (`data.filesDiscovered`, `r.findings`), and `python3`/`pip3`/`node22` shell fragments no longer register as file references.
+
+### Known noise modes
+
+- **`instruction-effectiveness/dead-file-reference` across skill `SKILL.md` files** — skills often reference report output paths like `./skill-audit-report.md` that don't exist until the skill runs. These remain flagged. Add the relative form (or a glob) to `crossRepoRefs` if intentional.
+- **`Redundant instruction` cross-skill** — sibling skills (e.g. `workflow-maturity` + `instruction-audit`) that share a prelude (`detect project`, `parse the json output`) produce INFO noise proportional to how many skills share prose. Advisory only; consider consolidating into a shared include.
+- **`Possible contradiction` from memory file titles** — memory file titles that embed keywords ("Always cache, never recall when rate-limited") match the contradiction regex against themselves. Jaccard threshold catches most of these but a same-line always/never trips the current detector.

@@ -395,6 +395,152 @@ describe('instruction-effectiveness check', () => {
     }
   });
 
+  it('strips file-line-range suffix (foo.py:123) before existence check', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'real.py'), 'print(1)\n');
+      const content = [
+        '# Rules',
+        'See `real.py:42` for the implementation.',
+        'Range: `real.py:10-20`.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('still flags missing file even with :line suffix', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const content = [
+        '# Rules',
+        'See `missing.py:42` for the implementation.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('honours instructionEffectiveness.crossRepoRefs glob exemption', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const content = [
+        '# Rules',
+        'See `lib-skill-utils/foo.sh` for the helper.',
+        'And `_active/other/bar.py` for cross-repo code.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const cfg = {
+        ...defaultConfig,
+        instructionEffectiveness: {
+          crossRepoRefs: ['lib-skill-utils/**', '_active/**'],
+        },
+      };
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: cfg });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag bare file extensions (.md, .sh) as dead refs', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const content = [
+        '# Rules',
+        'Files ending in `.md` are governance.',
+        'Scripts use `.sh` extensions.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag JS property-access strings (data.filesDiscovered) as dead refs', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const content = [
+        '# Rules',
+        'Parse `data.filesDiscovered` from the JSON result.',
+        'Read `r.findings` for the per-check list.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag python3/pip-with-version shell fragments', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const content = [
+        '# Rules',
+        'Run `python3 -c "print(1)"` to test.',
+        'Use `pip3 install foo.py` to install.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('skips dead-ref check for .claude/commands/ and skill evals/', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.mkdirSync(path.join(tmpDir, '.claude', 'commands'), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, '.claude', 'skills', 'foo', 'evals'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpDir, '.claude', 'commands', 'test.md'),
+        'Check `pyproject.toml` then `package.json`.',
+      );
+      fs.writeFileSync(
+        path.join(tmpDir, '.claude', 'skills', 'foo', 'evals', 'acceptance-criteria.md'),
+        'Read `lib-skill-utils/get-slug.sh` and `lib-skill-utils/scan.py`.',
+      );
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nFollow conventions.\n');
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('dead-ref finding includes findingId, evidence, remediation, context', async () => {
+    const result = await check.run({
+      cwd: fixture('instruction-dead-refs'),
+      homedir: '/tmp/nonexistent-home-ie',
+      config: defaultConfig,
+    });
+    const dead = result.findings.find(f => f.title?.includes('Dead file reference'));
+    expect(dead).toBeDefined();
+    expect(dead.findingId).toBe('instruction-effectiveness/dead-file-reference');
+    expect(typeof dead.evidence).toBe('string');
+    expect(dead.evidence.length).toBeLessThanOrEqual(120);
+    expect(dead.remediation).toContain('crossRepoRefs');
+    expect(dead.context).toBeDefined();
+    expect(dead.context.file).toBeDefined();
+  });
+
   it('T4.4 — no finding references the author-only /instruction-audit slash command', async () => {
     // Build a workspace that triggers every code path with remediation strings:
     // - large single file (token threshold)
