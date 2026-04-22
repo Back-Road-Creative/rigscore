@@ -97,6 +97,7 @@ export const fixes = [
 
 export default {
   id: 'permissions-hygiene',
+  enforcementGrade: 'mechanical',
   name: 'Permissions hygiene',
   category: 'process',
 

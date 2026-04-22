@@ -152,6 +152,7 @@ function isNegatedMatch(content, matchIndex) {
 
 export default {
   id: 'claude-md',
+  enforcementGrade: 'pattern',
   name: 'CLAUDE.md governance',
   category: 'governance',
 

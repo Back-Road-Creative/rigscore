@@ -247,6 +247,7 @@ export const fixes = [
 
 export default {
   id: 'skill-files',
+  enforcementGrade: 'pattern',
   name: 'Skill file safety',
   category: 'supply-chain',
 

@@ -87,6 +87,7 @@ export const fixes = [
 
 export default {
   id: 'env-exposure',
+  enforcementGrade: 'mechanical',
   name: 'Secret exposure',
   category: 'secrets',
 

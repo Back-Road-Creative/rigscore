@@ -45,6 +45,7 @@ function hasImmutableFlag(lsattrOutput) {
 
 export default {
   id: 'infrastructure-security',
+  enforcementGrade: 'mechanical',
   name: 'Infrastructure security',
   category: 'process',
 

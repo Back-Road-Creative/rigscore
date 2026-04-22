@@ -35,6 +35,7 @@ function offenderDetail(off) {
 
 export default {
   id: SELF_ID,
+  enforcementGrade: 'mechanical',
   name: 'Check documentation coverage',
   category: 'process',
 

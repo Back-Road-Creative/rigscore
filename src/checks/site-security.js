@@ -297,6 +297,7 @@ async function checkSsl(url) {
 
 export default {
   id: 'site-security',
+  enforcementGrade: 'mechanical',
   name: 'Site security',
   category: 'isolation',
 

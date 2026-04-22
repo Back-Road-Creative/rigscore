@@ -25,13 +25,9 @@
  *     reporter branches must both show the grade column.
  *
  * The Phase 1A authoritative classification lives at
- * `.data/plans/enforcement-grade-classification.md`. Until Phase 1A
- * publishes, this file uses the Phase 0 validation report's inventory
- * as the source of truth (Phase 0 already affirmed the classification
- * for all 20 existing check modules). If Phase 1A amends any grade,
- * only the EXPECTED_GRADES map below needs updating.
- * TODO(Phase 1A): replace EXPECTED_GRADES with the final classification
- * table once `.data/plans/enforcement-grade-classification.md` lands.
+ * `.data/plans/enforcement-grade-classification.md`. The EXPECTED_GRADES
+ * map below is synced to that table (Phase 2 reconciliation); update it
+ * here and in every `src/checks/*.js` module if a grade is reclassified.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -47,8 +43,8 @@ const FIXTURE = path.join(__dirname, 'fixtures', 'claude-full');
 
 const VALID_GRADES = ['mechanical', 'pattern', 'keyword'];
 
-// Authoritative mapping from Phase 0 validation report.
-// Phase 1A will supersede this; swap this map and re-run when it lands.
+// Authoritative mapping synced with Phase 1A classification at
+// `.data/plans/enforcement-grade-classification.md`.
 const EXPECTED_GRADES = {
   'mcp-config': 'mechanical',
   'claude-settings': 'mechanical',
@@ -104,7 +100,7 @@ describe('enforcement-grade: per-check module export', () => {
     });
   }
 
-  it(`classification matches Phase 0 inventory (placeholder — Phase 1A supersedes)`, async () => {
+  it(`classification matches Phase 1A authoritative table`, async () => {
     for (const file of checkFiles) {
       const mod = await import(path.join(CHECKS_DIR, file));
       const id = mod.default && mod.default.id;

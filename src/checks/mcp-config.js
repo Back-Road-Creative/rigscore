@@ -175,6 +175,7 @@ function checkNpmRegistry(packageName) {
 
 export default {
   id: 'mcp-config',
+  enforcementGrade: 'mechanical',
   name: 'MCP server configuration',
   category: 'supply-chain',
 
