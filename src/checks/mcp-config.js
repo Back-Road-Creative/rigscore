@@ -250,6 +250,7 @@ export default {
       if (rawText && /process\.env\b/.test(rawText)) {
         const relPath = path.relative(cwd, configPath) || configPath;
         findings.push({
+          findingId: 'mcp-config/env-wildcard-passthrough',
           severity: 'warning',
           title: `Wildcard env passthrough detected in ${relPath}`,
           detail: 'Config references process.env which may pass all environment variables to MCP servers.',
@@ -285,6 +286,7 @@ export default {
 
           if (isLocal) {
             findings.push({
+              findingId: 'mcp-config/localhost-server',
               severity: 'info',
               title: `MCP server "${name}" is a localhost server`,
               detail: `Server uses ${transport || 'network'} transport targeting ${host} in ${relPath}.`,
@@ -292,6 +294,7 @@ export default {
           } else {
             hasNetworkTransport = true;
             findings.push({
+              findingId: 'mcp-config/network-transport',
               severity: 'warning',
               title: `MCP server "${name}" uses network transport`,
               detail: `Server uses ${transport || 'network'} transport in ${relPath}. Network-based MCP servers have a larger attack surface than stdio.`,
@@ -309,6 +312,7 @@ export default {
         if (sensitivePaths.length > 0) {
           hasBroadFilesystemAccess = true;
           findings.push({
+            findingId: 'mcp-config/broad-filesystem-access',
             severity: 'critical',
             title: `MCP server "${name}" has broad filesystem access: ${sensitivePaths.join(', ')}`,
             detail: `Server can access sensitive path(s). Found in ${relPath}.`,
@@ -321,6 +325,7 @@ export default {
         const hasTraversal = args.some(a => typeof a === 'string' && a.includes('../'));
         if (hasTraversal) {
           findings.push({
+            findingId: 'mcp-config/relative-path-traversal',
             severity: 'warning',
             title: `MCP server "${name}" uses relative path traversal`,
             detail: `Arguments contain "../" which may escape project scope. Found in ${relPath}.`,
@@ -333,6 +338,7 @@ export default {
           const lowerArg = typeof arg === 'string' ? arg.toLowerCase() : '';
           if (UNSAFE_PERMISSION_FLAGS.some(flag => lowerArg.startsWith(flag))) {
             findings.push({
+              findingId: 'mcp-config/unsafe-permission-flag',
               severity: 'warning',
               title: `MCP server "${name}" uses unsafe permission flag: ${arg}`,
               detail: `Overly broad permissions detected in ${relPath}.`,
@@ -348,6 +354,7 @@ export default {
         const sensitiveKeys = envKeys.filter((k) => SENSITIVE_ENV_KEYS.includes(k));
         if (sensitiveKeys.length >= 3) {
           findings.push({
+            findingId: 'mcp-config/env-wildcard-sensitive-vars',
             severity: 'critical',
             title: `MCP server "${name}" receives ${sensitiveKeys.length} sensitive env vars`,
             detail: `Sensitive environment variables (${sensitiveKeys.join(', ')}) are passed to this server.`,
@@ -355,6 +362,7 @@ export default {
           });
         } else if (sensitiveKeys.length > 0) {
           findings.push({
+            findingId: 'mcp-config/env-sensitive-vars',
             severity: 'warning',
             title: `MCP server "${name}" receives sensitive env var(s): ${sensitiveKeys.join(', ')}`,
             detail: `Sensitive keys passed in ${relPath}.`,
@@ -366,6 +374,7 @@ export default {
         const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
         if (envBaseUrl && !envBaseUrl.includes('api.anthropic.com') && !envBaseUrl.includes('127.0.0.1') && !envBaseUrl.includes('localhost')) {
           findings.push({
+            findingId: 'mcp-config/anthropic-base-url-redirect',
             severity: 'critical',
             title: `ANTHROPIC_BASE_URL redirect in MCP server "${name}" env`,
             detail: `MCP server "${name}" sets API base to ${envBaseUrl.slice(0, 60)} — this can exfiltrate API keys and intercept requests (CVE-2026-21852). Found in ${relPath}.`,
@@ -382,6 +391,7 @@ export default {
             const tag = arg.slice(atIdx + 1).toLowerCase();
             if (UNSTABLE_TAGS.has(tag)) {
               findings.push({
+                findingId: 'mcp-config/unpinned-unstable-tag',
                 severity: 'warning',
                 title: `MCP server "${name}" uses unpinned version (@${tag})`,
                 detail: 'Unstable distribution tags can introduce breaking changes or supply chain attacks.',
@@ -405,6 +415,7 @@ export default {
         if ((server.command === 'npx' || server.command === 'npx.cmd') &&
             args.length > 0 && !hasVersionPin) {
           findings.push({
+            findingId: 'mcp-config/unpinned-npx-package',
             severity: 'warning',
             title: `MCP server "${name}" uses unpinned npx package`,
             detail: `npx without a version pin (e.g. @1.0.0) runs whatever version is latest. Found in ${relPath}.`,
@@ -417,6 +428,7 @@ export default {
         for (const pattern of KEY_PATTERNS) {
           if (pattern.test(fullCommand)) {
             findings.push({
+              findingId: 'mcp-config/inline-credentials',
               severity: 'critical',
               title: `MCP server "${name}" has inline credentials in command`,
               detail: 'API keys or tokens are embedded directly in the MCP server command.',
@@ -458,6 +470,7 @@ export default {
           if (match) {
             hadCuratedMatch = true;
             findings.push({
+              findingId: 'mcp-config/typosquat-curated',
               severity: 'warning',
               title: `MCP server "${name}": package "${packageName}" is similar to known "${match}"`,
               detail: `Levenshtein distance 1-2 from an official MCP server package. This could be a typosquat.`,
@@ -477,6 +490,7 @@ export default {
           const regMatch = findRegistryTyposquatMatch(packageName, registryResult.servers, levenshtein);
           if (regMatch) {
             findings.push({
+              findingId: 'mcp-config/typosquat-registry',
               severity: 'critical',
               title: `MCP server "${name}": package "${packageName}" typosquats registry server "${regMatch}"`,
               detail: `Package name is 1-2 edits from "${regMatch}" in the official MCP registry at https://registry.modelcontextprotocol.io. Source: MCP registry.`,
@@ -501,6 +515,7 @@ export default {
     // materially move the score (floor applies for INFO-only).
     if (registryResult && registryResult.warning) {
       findings.push({
+        findingId: 'mcp-config/registry-fallback',
         severity: 'info',
         title: registryResult.warning,
         detail: registryResult.stale
@@ -511,6 +526,7 @@ export default {
 
     if (!foundAny) {
       findings.push({
+        findingId: 'mcp-config/no-config-found',
         severity: 'info',
         title: 'No MCP configuration found',
         detail: 'No MCP server configuration files detected.',
