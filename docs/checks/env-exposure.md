@@ -1,5 +1,7 @@
 # env-exposure
 
+**Enforcement grade:** `mechanical` — file-existence + structural `.gitignore` inspection + parsed env-file key checks. Determined by filesystem state, not prose.
+
 ## Purpose
 
 Catches the single most common credential-leak vector in AI dev repos: `.env` files that are not gitignored, templates that got filled with real secrets, GCP service-account JSON dropped into the project root, API keys hardcoded into AI-client config files, and secrets echoed into shell history. Maps to **OWASP Agentic Top 10 ASI03 — Identity & Privilege Abuse**: an agent that reads config files as part of normal operation will propagate any leaked key downstream (MCP server env, subprocess env, SARIF artifact). A passing check guarantees that `.env` files are ignored and `chmod 600`, template files contain only placeholders, and no AI-client config file has a literal provider key.

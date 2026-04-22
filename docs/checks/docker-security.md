@@ -1,5 +1,7 @@
 # docker-security
 
+**Enforcement grade:** `mechanical` — parses Compose YAML / Dockerfile / K8s manifests and compares flags, mounts, and capabilities to deterministic known-bad constants.
+
 ## Purpose
 
 Scans container configuration — `docker-compose.yml` / `compose.yaml`, `Dockerfile` / `Dockerfile.*`, `.devcontainer/devcontainer.json`, and Kubernetes workload manifests (`Pod`, `Deployment`, `StatefulSet`, `DaemonSet`, `ReplicaSet`, `Job`, `CronJob`) — for container-escape and weak-isolation patterns. Maps to **OWASP Agentic ASI05 — Unexpected Code Execution**: an AI agent with access to a privileged or socket-mounted container can break out of the sandbox and execute arbitrary code on the host. A pass guarantees that no privileged containers, Docker socket mounts, host namespaces, dangerous capabilities, or sensitive host-path mounts were found, and that Dockerfiles pin base images, run as non-root, and don't bake secrets into image layers. A failure typically means an attacker — or a hijacked agent — inside the container can reach the host filesystem, signal host processes, or pull an unverified image.

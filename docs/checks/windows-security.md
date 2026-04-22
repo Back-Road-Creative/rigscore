@@ -1,5 +1,7 @@
 # windows-security
 
+**Enforcement grade:** `mechanical` — parses INI-grammar keys in `/etc/wsl.conf` / `.wslconfig` and compares Defender exclusion-path sets to deterministic invariants. Not prose keyword matching.
+
 ## Purpose
 
 Surfaces Windows- and WSL-specific isolation weaknesses that aren't covered by the cross-platform hygiene checks: WSL interop bridging Windows and Linux process space, `.wslconfig` networking modes that collapse the host/guest boundary, Windows Defender exclusions that silently disable scanning for project paths, and an NTFS permissions advisory for sensitive files. A passing check means either (a) the host is non-Windows and the check short-circuits to N/A, or (b) WSL interop is scoped, `.wslconfig` uses NAT + firewall, and Defender has no project-path exclusions. A failure means one of those guardrails is open — typically the highest-impact one is `appendWindowsPath=true` under interop, which lets WSL processes execute Windows binaries directly. No OWASP Agentic Top 10 mapping: this check is about host-level isolation, not agent behavior.

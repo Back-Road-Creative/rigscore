@@ -1,5 +1,7 @@
 # permissions-hygiene
 
+**Enforcement grade:** `mechanical` — `stat()`s sensitive files and compares POSIX mode bits and ownership to expected invariants. Deterministic file-system inspection.
+
 ## Purpose
 
 Verifies POSIX file-permission invariants for identity material and governance files: `~/.ssh` is `700`, SSH private keys (`id_*` excluding `*.pub`) are `600`, sensitive files in the project (`*.pem`, `*.key`, `*credentials*`) are not world-readable, and governance files (`AI_CONFIG_FILES` from `src/constants.js`) have consistent ownership. Maps to **OWASP Agentic ASI03 — Identity & Privilege Abuse**: an agent running under the developer's uid inherits any permission the filesystem grants — a `644` private key or a `credentials.json` readable by `others` is exfiltrable by any process the agent spawns, and mixed ownership across governance files is a classic signal of unauthorized modification. A pass guarantees all scanned paths have tight, consistent POSIX modes and uniform ownership. A failure means at least one identity or secret artifact is more reachable than it should be.
