@@ -237,7 +237,10 @@ export async function run(args) {
 
     // Fail if ANY project is below threshold (fail-fast on worst)
     const allPassed = result.projects.every((p) => p.score >= options.failUnder);
-    process.exit(allPassed ? 0 : 1);
+    // Use exitCode + return so Node flushes piped stdout before exiting.
+    // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
+    process.exitCode = allPassed ? 0 : 1;
+    return;
   } else {
     let result;
     try {
@@ -340,7 +343,10 @@ export async function run(args) {
       const { startWatching } = await import('./watcher.js');
       await startWatching(cwd, args, options);
     } else {
-      process.exit(result.score >= options.failUnder ? 0 : 1);
+      // Use exitCode + return so Node flushes piped stdout before exiting.
+      // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
+      process.exitCode = result.score >= options.failUnder ? 0 : 1;
+      return;
     }
   }
 }
