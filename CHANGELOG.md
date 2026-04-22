@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Enforcement-grade labels per check.** Every check now carries an
+  `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
+  `[grade]` tag in the reporter score line and as
+  `properties.enforcementGrade` on every SARIF result. A legend line renders
+  below the score box in terminal mode (suppressed in `--json` and `--sarif`
+  output). This is a transparency / display change — **no scoring changes**,
+  no weight changes, no new dependencies. Users can now see *how* each point
+  was earned (deterministic config check vs. regex/structural vs. presence
+  detection) and calibrate trust accordingly. `keyword`-graded checks are
+  the most gameable surface — see [`THREAT-MODEL.md`](THREAT-MODEL.md) §3.1
+  and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for
+  specifics. Classification rationale lives in
+  `.data/plans/enforcement-grade-classification.md`.
+
 ## [2.0.0] - 2026-04-20
 
 Public-release hardening pass. Four parallel tracks landed across PRs

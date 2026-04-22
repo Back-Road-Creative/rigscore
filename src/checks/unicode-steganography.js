@@ -31,6 +31,7 @@ const CONFIG_FILES = [
 
 export default {
   id: 'unicode-steganography',
+  enforcementGrade: 'pattern',
   name: 'Unicode steganography detection',
   category: 'governance',
 

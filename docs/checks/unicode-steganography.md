@@ -1,5 +1,7 @@
 # unicode-steganography
 
+**Enforcement grade:** `pattern` — structural codepoint-class scan (zero-width, bidi-override, homoglyph ranges, tag chars). Deterministic for the enumerated ranges; novel ranges require an update.
+
 ## Purpose
 
 Scans governance files (`CLAUDE.md`, agent/skill markdown under `_governance/` — the set is defined by `GOVERNANCE_FILES` in `src/constants.js`) and MCP/Claude config files (`.mcp.json`, `.vscode/mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`) for hidden Unicode characters that render identically to legitimate text but instruct the agent differently. Maps to **OWASP Agentic ASI01 — Agent Goal Hijack**: homoglyphs, zero-width characters, bidirectional overrides, and language-tag characters are the core primitives behind the ToxicSkills and Rules File Backdoor injection classes — they smuggle instructions past human review because the rendered glyphs look like ordinary English. A pass guarantees none of the scanned files contain characters from the flagged ranges. A failure means at least one governance or config file contains text that reads one way to a human reviewer and potentially another way to the model.

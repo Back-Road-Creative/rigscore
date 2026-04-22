@@ -1,5 +1,7 @@
 # git-hooks
 
+**Enforcement grade:** `mechanical` — inspects `.git/hooks/*` existence and executable bits plus hook-manager config presence. Determined by filesystem state.
+
 ## Purpose
 
 Verifies that a git repository has **substantive** commit-time enforcement in place: a validated native `pre-commit` / `pre-push` hook, a recognised hook manager (Husky, lefthook), a `package.json` dev-dep on Husky/lint-staged, Claude Code hooks configured in `settings.json`, a `pushurl = no_push` guard in `.git/config`, or an external hook directory listed in `.rigscorerc.json` → `paths.hookDirs`. Native hooks are additionally validated for emptiness, executable bit, no-op content (only `exit 0`, `echo`, etc.), and lack of substantive patterns (lint, test, secret-scan, exit-1). The check also emits a warning when none of the detected hooks contains a known secret-scanning tool (`gitleaks`, `trufflehog`, `detect-secrets`). Maps to **OWASP Agentic ASI02 — Tool Misuse**: without commit-time gates, an agent with `git commit` authority can push secrets, broken governance files, or force-push rewrites with zero local friction. A pass guarantees at least one real hook surface is installed and validated. A failure means commits will leave the machine unchecked.

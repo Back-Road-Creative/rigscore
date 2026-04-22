@@ -681,6 +681,7 @@ function analyzeRedundancy(files) {
 
 export default {
   id: 'instruction-effectiveness',
+  enforcementGrade: 'keyword',
   name: 'Instruction effectiveness',
   category: 'governance',
 

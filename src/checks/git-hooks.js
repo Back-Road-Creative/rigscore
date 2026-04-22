@@ -127,6 +127,7 @@ async function validateNativeHook(hookPath, hookName) {
 
 export default {
   id: 'git-hooks',
+  enforcementGrade: 'mechanical',
   name: 'Git hooks',
   category: 'process',
 

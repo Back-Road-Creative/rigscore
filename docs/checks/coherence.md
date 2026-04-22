@@ -1,5 +1,7 @@
 # coherence
 
+**Enforcement grade:** `keyword` — pass/fail is driven by substring and phrase presence against governance prose (e.g. governance must mention each MCP server name; must contain an "approved tools" phrase). Gameable by keyword-stuffing; see [`test/keyword-gaming.test.js`](../../test/keyword-gaming.test.js) and [`THREAT-MODEL.md`](../../THREAT-MODEL.md) §3.1.
+
 ## Purpose
 
 Cross-config coherence check. Runs AFTER `claude-md`, `mcp-config`, `docker-security`, `skill-files`, `env-exposure`, and `claude-settings`, then looks for contradictions between what governance text CLAIMS and what configuration actually PERMITS. Maps to OWASP Agentic Top 10 `ASI01` (Agent Goal Hijack) — goal hijacks most often succeed through the gap between stated policy and enforced policy. A passing check guarantees: governance claims (network restrictions, path restrictions, forbidden actions, shell restrictions, anti-injection, approval gates) are consistent with actual MCP/Docker/settings configuration; every configured MCP server is declared somewhere in governance text (reverse coherence); any broad-capability server (filesystem/browser/shell/database/code/exec/terminal) is backed by an approved-tools section; and no author-specified allow-list entries violate repo-specific governance pairings.

@@ -1,5 +1,7 @@
 # site-security
 
+**Enforcement grade:** `mechanical` — issues HTTPS probes and compares response headers, TLS cert fields, and structured path-status codes against known-good invariants. Deterministic for a given remote response.
+
 ## Purpose
 
 Probes deployed web endpoints listed in `.rigscorerc.json` under `sites: [...]` for four classes of exposure: missing or weak HTTP security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, plus advisory Referrer-Policy and Permissions-Policy), sensitive paths reachable with HTTP 200 (`.env`, `.git/config`, `wp-admin/`, backup archives, admin panels — 30+ paths), PII and secret patterns leaking into HTML or JS served to browsers (emails outside an allowlist, phone numbers, API key patterns, internal IPs, `<meta name="generator">` fingerprints), and SSL certificate expiry via a direct TLS probe. Unlike every other rigscore check, this one is out-of-process: it requires `--online` and makes outbound HTTPS/TCP calls to the configured URLs. No OWASP Agentic Top 10 mapping — the threats here are classic web hygiene (OWASP Top 10 2021 A05/A01), not agentic-specific.

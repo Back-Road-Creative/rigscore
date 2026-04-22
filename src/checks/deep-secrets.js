@@ -39,6 +39,7 @@ const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
 
 export default {
   id: 'deep-secrets',
+  enforcementGrade: 'pattern',
   name: 'Deep source secrets',
   category: 'secrets',
 

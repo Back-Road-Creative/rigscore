@@ -5,6 +5,7 @@ import { readFileSafe, execSafe } from '../utils.js';
 
 export default {
   id: 'windows-security',
+  enforcementGrade: 'mechanical',
   name: 'Windows/WSL security',
   category: 'isolation',
 

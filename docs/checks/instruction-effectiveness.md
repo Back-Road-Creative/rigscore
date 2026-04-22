@@ -1,5 +1,7 @@
 # instruction-effectiveness
 
+**Enforcement grade:** `keyword` — detects vague directives, contradictions, and forbidden-action language via phrase / substring presence against instruction-file prose. Evadable by rewording; advisory only.
+
 ## Purpose
 
 Audits the quality and cost of instruction files — `CLAUDE.md` chains, `.claude/skills/*/SKILL.md`, `.claude/commands/*`, project `MEMORY.md` and files it links — along three axes: context-budget consumption, internal coherence, and link integrity. The check estimates token cost against a 200K reference window, flags files that cross bloat thresholds, catches within-file contradictions ("always X" vs. "never X"), finds dead markdown references, detects vague directives that delegate decisions without criteria, and surfaces instruction lines duplicated across files. Maps to OWASP Agentic Top 10 **ASI01 — Agent Authorization & Control Hijacking** in the sense that incoherent or bloated instruction context creates surface area for hijacking (contradictions become exploitable ambiguity), but the primary framing is quality-of-instructions, not a concrete vulnerability. A passing check means instruction files are within budget, internally consistent, and referentially intact.

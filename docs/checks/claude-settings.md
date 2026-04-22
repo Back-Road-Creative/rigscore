@@ -1,5 +1,7 @@
 # claude-settings
 
+**Enforcement grade:** `mechanical` — parses `.claude/settings.json` and compares permissions / hook configuration to known-bad constants. Deterministic; not influenced by prose wording.
+
 ## Purpose
 
 Scans `.claude/settings.json` and `.claude/settings.local.json` (both project-local and `~/`-level) for settings that weaken or eliminate Claude Code's safety gates. Maps to **OWASP Agentic Top 10 ASI02 — Tool Misuse & Exploitation**: settings files are the runtime authority that determines which tool calls require user consent, which MCP servers auto-attach, and which shell commands run on tool-use lifecycle events. A passing check guarantees that no single setting (or combination of settings) auto-approves untrusted MCP servers, redirects API traffic, or eliminates the permission prompt. A failure means the governance layer no longer has a human in the loop — deny-list gaps become direct exploitation paths.
