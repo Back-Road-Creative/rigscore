@@ -65,6 +65,7 @@ async function validateNativeHook(hookPath, hookName) {
   // Empty hook — exists but does nothing
   if (!content || content.trim().length === 0) {
     findings.push({
+      findingId: 'git-hooks/hook-empty',
       severity: 'warning',
       title: `${hookName} hook is empty`,
       detail: `${hookPath} exists but contains no logic. An empty hook provides no protection.`,
@@ -81,6 +82,7 @@ async function validateNativeHook(hookPath, hookName) {
       const isExecutable = (mode & 0o111) !== 0;
       if (!isExecutable) {
         findings.push({
+          findingId: 'git-hooks/hook-not-executable',
           severity: 'info',
           title: `${hookName} hook is not executable`,
           detail: `${hookPath} has mode ${mode.toString(8)} — git will not run it.`,
@@ -94,6 +96,7 @@ async function validateNativeHook(hookPath, hookName) {
   // No-op hook — has content but does nothing meaningful
   if (isNoOpHook(content)) {
     findings.push({
+      findingId: 'git-hooks/hook-noop',
       severity: 'warning',
       title: `${hookName} hook is a no-op`,
       detail: `${hookPath} exists but contains only trivial commands (exit 0, echo, etc.). It provides no protection.`,
@@ -105,6 +108,7 @@ async function validateNativeHook(hookPath, hookName) {
   // Hook has content and passes no-op filter, but check for substance
   if (!hasSubstance(content)) {
     findings.push({
+      findingId: 'git-hooks/hook-lacks-substance',
       severity: 'info',
       title: `${hookName} hook may lack substance`,
       detail: `${hookPath} has content but no recognized linting, scanning, or testing patterns were detected.`,
@@ -133,6 +137,7 @@ export default {
     const hasGitDir = await fileExists(path.join(cwd, '.git'));
     if (!hasGitDir) {
       findings.push({
+        findingId: 'git-hooks/not-a-git-repo',
         severity: 'info',
         title: 'Not a git repository',
         detail: 'No .git directory found. Git hooks check skipped.',
@@ -234,6 +239,7 @@ export default {
 
     if (!hasHooks) {
       findings.push({
+        findingId: 'git-hooks/no-hooks-installed',
         severity: 'warning',
         title: 'No pre-commit hooks installed',
         detail: 'Without commit hooks, secrets and governance file changes can be committed unchecked.',
@@ -266,6 +272,7 @@ export default {
 
       if (!hasSecretScanning) {
         findings.push({
+          findingId: 'git-hooks/no-secret-scanning',
           severity: 'warning',
           title: 'Pre-commit hooks lack secret scanning',
           detail: 'No gitleaks, trufflehog, or detect-secrets integration detected in hooks.',

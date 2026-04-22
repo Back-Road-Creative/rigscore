@@ -68,6 +68,7 @@ export default {
 
     if (loopDetected) {
       findings.push({
+        findingId: 'deep-secrets/symlink-loop-skipped',
         severity: 'info',
         title: 'Deep scan skipped one or more symlink loops',
         detail: 'A symlink cycle was detected and safely skipped during traversal.',
@@ -76,6 +77,7 @@ export default {
 
     if (files.length === 0) {
       findings.push({
+        findingId: 'deep-secrets/no-source-files',
         severity: 'info',
         title: 'No source files found for deep scanning',
       });
@@ -84,6 +86,7 @@ export default {
 
     if (files.length >= maxFiles) {
       findings.push({
+        findingId: 'deep-secrets/file-cap-reached',
         severity: 'info',
         title: `Deep scan capped at ${maxFiles} files`,
         detail: `Reached file limit. Configure deepScan.maxFiles in .rigscorerc.json to increase.`,
@@ -122,6 +125,7 @@ export default {
           content.includes('"private_key"')) {
         secretCount++;
         findings.push({
+          findingId: 'deep-secrets/gcp-service-account-key',
           severity: 'critical',
           title: `GCP service account key in ${relPath}`,
           detail: 'File contains both "type": "service_account" and "private_key".',
@@ -139,6 +143,7 @@ export default {
         if (result.matched) {
           secretCount++;
           findings.push({
+            findingId: result.severity === 'critical' ? 'deep-secrets/hardcoded-secret' : 'deep-secrets/possible-secret-comment',
             severity: result.severity,
             title: result.severity === 'critical'
               ? `Hardcoded secret in ${relPath}:${i + 1}`
@@ -153,6 +158,7 @@ export default {
 
     if (oversizeCount > 0) {
       findings.push({
+        findingId: 'deep-secrets/oversize-skipped',
         severity: 'info',
         title: `Deep scan skipped ${oversizeCount} file(s) over ${maxFileBytes} bytes`,
         detail: 'Large files were skipped for performance. Override via config.limits.maxFileBytes.',

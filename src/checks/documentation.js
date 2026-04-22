@@ -76,6 +76,7 @@ export default {
       if (off.id === SELF_ID && off.reason === 'missing') continue;
 
       findings.push({
+        findingId: `documentation/docs-gate-${off.reason}`,
         severity: 'warning',
         title: `Docs gate: ${off.id} — ${reasonLabel(off.reason)}`,
         detail: offenderDetail(off),
@@ -85,6 +86,7 @@ export default {
 
     for (const orphan of result.orphans) {
       findings.push({
+        findingId: 'documentation/orphan-doc',
         severity: 'info',
         title: `Orphan doc: docs/checks/${orphan}.md`,
         detail: `docs/checks/${orphan}.md has no matching src/checks/${orphan}.js. Remove the doc or add the check module.`,

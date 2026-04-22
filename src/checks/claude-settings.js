@@ -54,6 +54,7 @@ export default {
       // enableAllProjectMcpServers
       if (settings.enableAllProjectMcpServers === true) {
         findings.push({
+          findingId: 'claude-settings/mcp-auto-approve-enabled',
           severity: 'critical',
           title: `MCP auto-approve enabled in ${rel}`,
           detail: 'enableAllProjectMcpServers is true — all project MCP servers are auto-approved without user consent.',
@@ -66,6 +67,7 @@ export default {
       const baseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
       if (baseUrl && !baseUrl.includes('api.anthropic.com') && !baseUrl.includes('127.0.0.1') && !baseUrl.includes('localhost')) {
         findings.push({
+          findingId: 'claude-settings/anthropic-base-url-redirected',
           severity: 'critical',
           title: `ANTHROPIC_BASE_URL redirected in ${rel}`,
           detail: `API calls redirected to ${baseUrl.slice(0, 60)} — this can exfiltrate API keys (CVE-2026-21852).`,
@@ -77,6 +79,7 @@ export default {
       // bypassPermissions + skipDangerousModePermissionPrompt combo
       if (settings.defaultMode === 'bypassPermissions' && settings.skipDangerousModePermissionPrompt === true) {
         findings.push({
+          findingId: 'claude-settings/bypass-plus-skip-prompt',
           severity: 'critical',
           title: `bypassPermissions + skipDangerousModePermissionPrompt in ${rel}`,
           detail: 'Both flags set together eliminate all user confirmation — the deny list is the sole defense. Any command not explicitly denied executes automatically.',
@@ -104,6 +107,7 @@ export default {
             for (const pattern of DANGEROUS_HOOK_RE) {
               if (pattern.test(cmd)) {
                 findings.push({
+                  findingId: 'claude-settings/dangerous-hook-command',
                   severity: 'critical',
                   title: `Dangerous hook in ${rel} (${hookName})`,
                   detail: `Hook runs: ${cmd.slice(0, 80)}`,
@@ -120,6 +124,7 @@ export default {
               const exists = await fs.promises.access(resolved).then(() => true).catch(() => false);
               if (!exists) {
                 findings.push({
+                  findingId: 'claude-settings/hook-script-missing',
                   severity: 'warning',
                   title: `Hook script not found in ${rel} (${hookName})`,
                   detail: `Hook references '${firstToken}' which does not exist on disk. The hook will silently fail.`,
@@ -135,6 +140,7 @@ export default {
       const allowed = settings.allowedTools || settings.permissions?.allow || [];
       if (Array.isArray(allowed) && allowed.includes('*')) {
         findings.push({
+          findingId: 'claude-settings/wildcard-tool-permission',
           severity: 'warning',
           title: `Wildcard tool permissions in ${rel}`,
           detail: 'allowedTools contains "*" which permits all tools without approval.',
@@ -149,6 +155,7 @@ export default {
           for (const { re, msg } of DANGEROUS_ALLOW_PATTERNS) {
             if (re.test(entry)) {
               findings.push({
+                findingId: 'claude-settings/dangerous-allow-list-entry',
                 severity: 'warning',
                 title: `Dangerous allow list entry in ${rel}`,
                 detail: `Entry '${entry.slice(0, 80)}' ${msg}.`,
@@ -177,6 +184,7 @@ export default {
       // Hooks exist but some lifecycle events are uncovered
       for (const missing of missingLifecycleHooks) {
         findings.push({
+          findingId: 'claude-settings/lifecycle-hook-missing',
           severity: 'info',
           title: `Claude Code lifecycle hook not configured: ${missing}`,
           detail: `No ${missing} hook found. This lifecycle event is unmonitored — tool calls, stops, or prompts in this phase execute without any hook interception.`,
@@ -185,6 +193,7 @@ export default {
       }
     } else if (allConfiguredHooks.size === 0) {
       findings.push({
+        findingId: 'claude-settings/no-lifecycle-hooks',
         severity: 'info',
         title: 'No Claude Code lifecycle hooks configured',
         detail: 'No hooks defined in settings.json. PreToolUse, PostToolUse, Stop, and UserPromptSubmit hooks enable enforcement of governance rules at runtime.',

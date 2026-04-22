@@ -56,6 +56,7 @@ export default {
       if (BIDI_RE.test(content)) {
         hasIssue = true;
         findings.push({
+          findingId: 'unicode-steganography/bidi-override',
           severity: 'critical',
           title: `Bidirectional override characters in ${rel}`,
           detail: 'File contains bidi override characters (U+202A-202E, U+2066-2069) that can make text appear different from what is stored.',
@@ -67,6 +68,7 @@ export default {
       if (ZERO_WIDTH_RE.test(content)) {
         hasIssue = true;
         findings.push({
+          findingId: 'unicode-steganography/zero-width',
           severity: 'warning',
           title: `Zero-width characters in ${rel}`,
           detail: 'File contains invisible zero-width characters that could hide malicious content.',
@@ -90,6 +92,7 @@ export default {
           parts.push(`characters from ${modernRanges.join(', ')} ranges`);
         }
         findings.push({
+          findingId: 'unicode-steganography/homoglyph',
           severity: 'warning',
           title: `Homoglyph characters in ${rel}`,
           detail: `File contains ${parts.join(' and ')} that visually resemble Latin letters.`,
@@ -101,6 +104,7 @@ export default {
       if (TAG_CHARS_RE.test(content)) {
         hasIssue = true;
         findings.push({
+          findingId: 'unicode-steganography/tag-chars',
           severity: 'warning',
           title: `Unicode tag characters in ${rel}`,
           detail: 'File contains Unicode tag characters (U+E0001-E007F) used for steganographic encoding.',

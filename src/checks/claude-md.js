@@ -202,6 +202,7 @@ export default {
         };
       }
       findings.push({
+        findingId: 'claude-md/no-governance-file',
         severity: 'critical',
         title: 'No governance file found',
         detail: 'No CLAUDE.md, .cursorrules, .windsurfrules, .continuerules, AGENTS.md, or other AI governance file found. AI agents operate without explicit boundaries.',
@@ -226,6 +227,7 @@ export default {
     // Check content length (based on longest file)
     if (lines.length < LENGTH_THRESHOLD) {
       findings.push({
+        findingId: 'claude-md/governance-file-short',
         severity: 'warning',
         title: 'Governance file is short (under 50 lines)',
         detail: 'A short governance file may not provide sufficient boundaries for AI agent behavior.',
@@ -272,6 +274,7 @@ export default {
 
         if (hasNegatedMatch) {
           findings.push({
+            findingId: `claude-md/actively-negates-${check.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
             severity: 'critical',
             title: `Governance file actively negates: ${check.name}`,
             detail: `Governance contains ${check.name} keywords in a negated context — actively contradicts best practices.`,
@@ -280,6 +283,7 @@ export default {
           });
         } else {
           findings.push({
+            findingId: `claude-md/missing-${check.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
             severity: 'warning',
             title: `Governance file missing: ${check.name}`,
             detail: `No ${check.name} rules detected in your governance file(s).`,
@@ -301,6 +305,7 @@ export default {
         for (const pattern of CLAUDE_INJECTION_PATTERNS) {
           if (pattern.test(normalized) && !INJECTION_DEFENSIVE_RE.test(normalized)) {
             findings.push({
+              findingId: 'claude-md/injection-pattern',
               severity: 'critical',
               title: 'Injection pattern found in governance file',
               detail: 'Governance file contains instruction-override patterns that could hijack AI agent behavior.',
@@ -320,6 +325,7 @@ export default {
           for (const pattern of CLAUDE_INJECTION_PATTERNS) {
             if (pattern.test(twoLines) && !INJECTION_DEFENSIVE_RE.test(twoLines)) {
               findings.push({
+                findingId: 'claude-md/injection-pattern',
                 severity: 'critical',
                 title: 'Injection pattern found in governance file',
                 detail: 'Governance file contains instruction-override patterns split across lines that could hijack AI agent behavior.',
@@ -349,6 +355,7 @@ export default {
 
         if (gitignoreLines.includes(govFile)) {
           findings.push({
+            findingId: 'claude-md/governance-file-gitignored',
             severity: 'critical',
             title: `Governance file ${govFile} is in .gitignore`,
             detail: 'Gitignored governance files are ephemeral — they leave no audit trail and can be silently modified.',
@@ -370,6 +377,7 @@ export default {
         if (tracked !== null && tracked.trim() === '') {
           // File exists but is not tracked
           findings.push({
+            findingId: 'claude-md/governance-file-untracked',
             severity: 'warning',
             title: `Governance file ${govFile} is not tracked in git`,
             detail: 'Untracked governance files can be silently modified without audit trail.',

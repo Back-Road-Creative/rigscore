@@ -34,6 +34,7 @@ function checkReverseCoherence(governanceContent, serverNames) {
     const mentioned = governanceContent.toLowerCase().includes(serverName.toLowerCase());
     if (!mentioned) {
       findings.push({
+        findingId: 'coherence/undeclared-mcp-server',
         severity: 'warning',
         title: `Undeclared MCP server: ${serverName}`,
         detail: `Server '${serverName}' is configured but not mentioned in any governance document. Undeclared capabilities create hidden exposure that static reviews miss.`,
@@ -49,6 +50,7 @@ function checkReverseCoherence(governanceContent, serverNames) {
     const hasApprovedToolsSection = /approved\s+tools|allowed\s+tools|permitted\s+tools/i.test(governanceContent);
     if (!hasApprovedToolsSection) {
       findings.push({
+        findingId: 'coherence/no-approved-tools-declaration',
         severity: 'info',
         title: 'No approved-tools declaration for broad-capability MCP server',
         detail: 'One or more MCP servers with filesystem, browser, shell, or code-execution capabilities are configured without an approved-tools governance declaration.',
@@ -104,6 +106,7 @@ export default {
     // Check: governance claims "no external network" but MCP uses network transport
     if (matchedPatterns.includes('network restrictions') && hasNetworkTransport) {
       findings.push({
+        findingId: 'coherence/network-claim-vs-mcp-transport',
         severity: 'warning',
         title: 'Governance claims network restrictions but MCP uses network transport',
         detail: 'Your governance file restricts external network access, but an MCP server uses SSE/HTTP transport to a non-localhost host.',
@@ -114,6 +117,7 @@ export default {
     // Check: governance claims "path restrictions" but MCP has broad filesystem access
     if (matchedPatterns.includes('path restrictions') && hasBroadFilesystemAccess) {
       findings.push({
+        findingId: 'coherence/path-claim-vs-broad-filesystem',
         severity: 'warning',
         title: 'Governance claims path restrictions but MCP has broad filesystem access',
         detail: 'Your governance file restricts paths, but an MCP server has access to sensitive paths (/, /home, /etc, etc.).',
@@ -124,6 +128,7 @@ export default {
     // Check: governance claims "forbidden actions" but Docker is privileged
     if (matchedPatterns.includes('forbidden actions') && hasPrivilegedContainer) {
       findings.push({
+        findingId: 'coherence/forbidden-claim-vs-privileged-docker',
         severity: 'warning',
         title: 'Governance claims forbidden actions but Docker container is privileged',
         detail: 'Your governance file defines forbidden actions, but a container runs in privileged mode with full host access.',
@@ -134,6 +139,7 @@ export default {
     // Check: multi-client MCP drift detected — governance should mention multi-client management
     if (driftDetected && mcpClientCount >= 2) {
       findings.push({
+        findingId: 'coherence/multi-client-drift-no-governance',
         severity: 'warning',
         title: 'MCP configuration drifts across AI clients without governance guidance',
         detail: `${mcpClientCount} AI clients have divergent MCP configs, but governance does not address multi-client alignment.`,
@@ -144,6 +150,7 @@ export default {
     // Check: governance claims shell restrictions but skill files have shell execution findings
     if (matchedPatterns.includes('shell restrictions') && skillShellFindings > 0) {
       findings.push({
+        findingId: 'coherence/shell-claim-vs-skill-shell-exec',
         severity: 'warning',
         title: 'Governance claims shell restrictions but skill files contain shell execution instructions',
         detail: `Governance file restricts shell/bash usage, but ${skillShellFindings} shell execution pattern(s) were found in skill files.`,
@@ -154,6 +161,7 @@ export default {
     // Check: governance claims anti-injection but skill files have injection findings
     if (matchedPatterns.includes('anti-injection') && skillInjectionFindings > 0) {
       findings.push({
+        findingId: 'coherence/anti-injection-claim-vs-skill-injection',
         severity: 'critical',
         title: 'Governance claims anti-injection rules but skill files contain injection patterns',
         detail: `Governance file includes anti-injection rules, but ${skillInjectionFindings} injection pattern(s) were found in skill files.`,
@@ -164,6 +172,7 @@ export default {
     // Check: skill files have exfiltration patterns — escalate if broad filesystem also
     if (skillExfiltrationFindings > 0 && hasBroadFilesystemAccess) {
       findings.push({
+        findingId: 'coherence/exfiltration-plus-broad-filesystem',
         severity: 'critical',
         title: 'Compound risk: data exfiltration patterns + broad filesystem access',
         detail: 'Skill files contain data exfiltration instructions AND MCP servers have broad filesystem access — a high-risk combination.',
@@ -179,6 +188,7 @@ export default {
       );
       if (gitignoreFinding) {
         findings.push({
+          findingId: 'coherence/governance-gitignored-echo',
           severity: 'info',
           title: 'Governance file is gitignored — ephemeral governance',
           detail: 'A governance file listed in .gitignore has no audit trail and can be silently modified or removed. (Scored by claude-md check.)',
@@ -194,6 +204,7 @@ export default {
       );
       if (untrackedFinding) {
         findings.push({
+          findingId: 'coherence/governance-untracked-echo',
           severity: 'info',
           title: 'Governance file exists but is not version-controlled',
           detail: 'Untracked governance files can be silently modified without an audit trail. (Scored by claude-md check.)',
@@ -216,6 +227,7 @@ export default {
       // Governance says "require approval" but settings skip all confirmation without a PreToolUse hook
       if (hasBypassPermissions && matchedPatterns.includes('approval gates') && missingLifecycleHooks.includes('PreToolUse')) {
         findings.push({
+          findingId: 'coherence/approval-claim-vs-bypass-no-hook',
           severity: 'warning',
           title: 'Governance claims approval gates but bypassPermissions has no PreToolUse hook',
           detail: 'bypassPermissions mode with no PreToolUse hook means all tool calls execute automatically — governance approval-gate rules have no enforcement mechanism.',
@@ -236,6 +248,7 @@ export default {
         const forbiddenInGovernance = governanceText && govRe.test(governanceText);
         if (inAllowList && forbiddenInGovernance) {
           findings.push({
+            findingId: pairing.findingId || 'coherence/allow-list-contradicts-governance',
             severity: 'warning',
             title: pairing.title || 'Allow list entry contradicts governance',
             detail: pairing.detail || 'settings.json allow-list entry is forbidden by governance.',
