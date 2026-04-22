@@ -1,5 +1,7 @@
 # skill-coherence
 
+**Enforcement grade:** `keyword` — checks that each skill's SKILL.md contains phrases acknowledging the governance constraints it would exercise. Presence of the right words passes; gameable by stuffing. Advisory only.
+
 ## Purpose
 
 Checks that skills and agents act consistently with the governance text that claims to control them, and that permission configurations don't internally contradict themselves. Three sub-checks: (1) **constraint awareness** — when governance declares a rule (e.g. "branch protection enabled"), every skill that performs the corresponding operation (e.g. pushes to git) must reference the rule. (2) **hook↔settings conflicts** — a `PreToolUse` hook that blocks a command pattern while `.claude/settings*.json` `allow` list permits the same pattern is a governance conflict. (3) **settings allow↔deny overlap** — the same `Bash(cmd:*)` prefix appearing in both lists. Maps to OWASP Agentic Top 10 **ASI01 — Agent Authorization & Control Hijacking**: governance–skill drift is how authorized operations bypass declared controls. A passing check means every configured constraint is acknowledged by every skill that would exercise it, and permission config has no self-contradictions.

@@ -27,6 +27,7 @@ const CLAUDE_LIFECYCLE_HOOKS = ['PreToolUse', 'PostToolUse', 'Stop', 'UserPrompt
 
 export default {
   id: 'claude-settings',
+  enforcementGrade: 'mechanical',
   name: 'Claude settings safety',
   category: 'governance',
 

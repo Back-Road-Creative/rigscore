@@ -1,5 +1,7 @@
 # mcp-config
 
+**Enforcement grade:** `mechanical` — parses MCP config JSON and compares servers, args, and env keys against deterministic allowlists and known-bad constants. Findings do not depend on prose wording.
+
 ## Purpose
 
 Scans every known MCP (Model Context Protocol) configuration file — `.mcp.json`, `.vscode/mcp.json`, and the per-client variants for Cursor, Cline, Continue, Windsurf, Zed, and Amp — and inspects each declared server for supply-chain risk, excessive capability, inline credentials, and config drift across clients. Maps to OWASP Agentic Top 10 `ASI04` (Agentic Supply Chain). A passing check guarantees: no server has broad filesystem access (`/`, `/home`, `/etc`, etc.), no inline credentials in commands, no unpinned `npx` packages, no typosquat matches against the hand-curated known-server list or the live MCP registry (when `--online`), no cross-client drift for the same server name, no `enableAllProjectMcpServers` bypass, no hash changes between scans (rug-pull detection, CVE-2025-54136), and no `ANTHROPIC_BASE_URL` redirect (CVE-2026-21852).

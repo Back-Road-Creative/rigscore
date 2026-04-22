@@ -1,5 +1,7 @@
 # deep-secrets
 
+**Enforcement grade:** `pattern` — regex signatures for ~40 provider credential shapes matched across scanned files. Catches canonical key formats; novel / obfuscated encodings can evade.
+
 ## Purpose
 
 Recursively walks the project tree looking for hardcoded credentials in source files — beyond the root-level config files that `env-exposure` and `credential-storage` already cover. Maps to **OWASP Agentic Top 10 ASI03 — Identity & Privilege Abuse**: a leaked provider key in source is a direct identity-takeover vector for any agent or human who reads the repo. A passing check guarantees that within the files scanned, no line matches the ~40 provider-specific secret patterns in `KEY_PATTERNS` and no file looks like a GCP service-account JSON. A failure usually means a key was committed during prototyping and never rotated — treat any CRITICAL here as an active credential leak and rotate before remediating the commit.

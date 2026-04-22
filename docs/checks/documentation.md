@@ -1,5 +1,7 @@
 # documentation
 
+**Enforcement grade:** `mechanical` — directory-entry set comparison between `src/checks/*.js` and `docs/checks/*.md`, plus H1 / weight structural checks. Deterministic.
+
 ## Purpose
 
 Advisory check for rigscore maintainers and plugin authors. This is not a user-facing security check on arbitrary projects — it ensures every `src/checks/<id>.js` module in a rigscore-shaped repo has a matching `docs/checks/<id>.md` reference page, preventing silent undocumented checks from shipping.

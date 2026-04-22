@@ -1,5 +1,7 @@
 # infrastructure-security
 
+**Enforcement grade:** `mechanical` — checks host-level invariants (root-owned hooks, immutable governance dirs, deny-list entries, wrapper binaries) via structured filesystem inspection.
+
 ## Purpose
 
 Validates host-level backstops that sit underneath a single project: a root-owned global git-hooks directory, a git wrapper that strips `--no-verify` and blocks force-push, a shell safety guard, immutable governance directories, a deny-list in Claude Code `settings.json`, and a registered sandbox gate. Maps to **OWASP Agentic ASI02 — Tool Misuse**: when per-project hooks are missing or bypassed, an agent with shell access can still run dangerous commands; infrastructure-level guards are the enforcement layer of last resort. A pass guarantees that the configured hooks directory, wrapper, safety gates, immutable directories, deny-list, and sandbox gate are in place and properly owned. A failure typically means an agent could bypass project hooks (`git commit --no-verify`), force-push to main, or run `rm -rf /`-style commands without intervention.

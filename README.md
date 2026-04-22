@@ -21,25 +21,25 @@ npx github:Back-Road-Creative/rigscore
 
   Scanning /home/user/my-project ...
 
-  ✓ CLAUDE.md governance.......... 10/10
-  ✓ Claude settings safety........ 8/8
-  ✓ Cross-config coherence........ 14/14
-  ✓ Credential storage hygiene.... 6/6
-  ↷ Deep source secrets........... N/A
-  ✓ Docker security............... 6/6
-  ✓ Secret exposure............... 8/8
-  ✓ Git hooks..................... 2/2
-  ✓ Infrastructure security....... 5/6
-  ⚠ Instruction effectiveness..... advisory
-  ✗ MCP server configuration...... 0/14
-  ✓ Permissions hygiene........... 4/4
-  ↷ Site security................. N/A
-  ✓ Skill file safety............. 10/10
-  ✓ Unicode steganography......... 4/4
-  ↷ Windows/WSL security.......... N/A
-  ✓ Skill ↔ governance coherence.. advisory
-  ✓ Workflow maturity............. advisory
-  ↷ Network exposure.............. N/A
+  ✓ CLAUDE.md governance.......... [pattern] 10/10
+  ✓ Claude settings safety........ [mechanical] 8/8
+  ✓ Cross-config coherence........ [keyword] 14/14
+  ✓ Credential storage hygiene.... [mechanical] 6/6
+  ↷ Deep source secrets........... [pattern] N/A
+  ✓ Docker security............... [mechanical] 6/6
+  ✓ Secret exposure............... [mechanical] 8/8
+  ✓ Git hooks..................... [mechanical] 2/2
+  ✓ Infrastructure security....... [mechanical] 5/6
+  ⚠ Instruction effectiveness..... [keyword] advisory
+  ✗ MCP server configuration...... [mechanical] 0/14
+  ✓ Permissions hygiene........... [mechanical] 4/4
+  ↷ Site security................. [mechanical] N/A
+  ✓ Skill file safety............. [pattern] 10/10
+  ✓ Unicode steganography......... [pattern] 4/4
+  ↷ Windows/WSL security.......... [mechanical] N/A
+  ✓ Skill ↔ governance coherence.. [keyword] advisory
+  ✓ Workflow maturity............. [keyword] advisory
+  ↷ Network exposure.............. [mechanical] N/A
 
   ╭────────────────────────────────────────╮
   │                                        │
@@ -48,6 +48,8 @@ npx github:Back-Road-Creative/rigscore
   │         Risk: Standard                 │
   │                                        │
   ╰────────────────────────────────────────╯
+
+  mechanical = deterministic config check · pattern = regex/structural · keyword = presence detection
 
   CRITICAL (1)
   ✗ MCP server "filesystem" has broad filesystem access: /
@@ -89,6 +91,14 @@ rigscore isn't the only AI-agent config scanner. The April-2026 landscape has re
 **Where Semgrep is a better fit:** you want to scan your application source for vulnerabilities, not validate your AI-agent configuration. rigscore does not replace Semgrep — it runs upstream of it.
 
 **Picking one:** run rigscore as a pre-commit / PR-gate hygiene check. Run Snyk Agent Scan in CI if you need tool pinning and enterprise reporting. Run Semgrep against your application code. They are complementary.
+
+### What the grades mean
+
+Every check in rigscore's output carries an enforcement-grade label so you can see *how* each point was earned, not just how many. The label is display-only — it does not affect scoring.
+
+- **`[mechanical]`** — deterministic config inspection. Parses JSON/YAML/file state and compares to known-bad constants, file modes, or structural invariants. Cannot be gamed by wording. 12 of 20 checks.
+- **`[pattern]`** — regex or structural scan against file content. Secret signatures, Unicode codepoint classes, markdown structural patterns. Resistant to simple wording tricks but evadable by novel obfuscation. 4 of 20 checks.
+- **`[keyword]`** — presence of words or phrases in governance prose. These checks pass if the right words appear, which means a CLAUDE.md can keyword-stuff its way to green while substantively reversing intent. 4 of 20 checks — see [`THREAT-MODEL.md`](THREAT-MODEL.md) for the gameability gap and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for concrete bypasses.
 
 ## Install and run
 

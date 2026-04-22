@@ -1,5 +1,7 @@
 # workflow-maturity
 
+**Enforcement grade:** `keyword` — graduation signals derived from phrase presence against governance / process prose (taxonomy markers, graduation signals, eval-coverage language). Evadable by rewording; advisory only.
+
 ## Purpose
 
 Measures how well a project's AI-dev artifacts (skills, MCP servers, memory, pipelines) line up with graduation and decomposition signals from the AI development taxonomy (thresholds are inlined in `src/checks/workflow-maturity.js` — see `## Scope and limitations` below). Five sub-checks: (1) **eval-coverage** — every discovered skill should have at least one eval or test, since graduation from skill → code requires coverage. (2) **skill-compound-responsibility** — skills with ≥8 trigger keywords likely handle multiple concerns and should be split. (3) **mcp-single-consumer** — an MCP server referenced by ≤1 skill doesn't justify the MCP overhead versus a library. (4) **memory-orphan** — `.md` files in a memory directory that aren't linked from `MEMORY.md` bias the model silently. (5) **pipeline-step-overload** — Python pipeline files with ≥10 stage markers, or stage/phase directories with ≥10 modules, indicate orchestration breadth that warrants sub-pipeline decomposition. Maps to OWASP Agentic Top 10 **ASI01 — Agent Authorization & Control Hijacking** loosely (sprawling, unevaluated agents are harder to constrain), but the primary frame is maturity and refactor signal, not vulnerability.

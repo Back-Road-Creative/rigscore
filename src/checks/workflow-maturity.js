@@ -331,6 +331,7 @@ function extractLinkedFiles(content) {
 
 export default {
   id: 'workflow-maturity',
+  enforcementGrade: 'keyword',
   name: 'Workflow maturity',
   category: 'governance',
 

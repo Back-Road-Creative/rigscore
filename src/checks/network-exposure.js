@@ -368,6 +368,7 @@ function isSafeAddress(addr, safeHosts) {
 
 export default {
   id: 'network-exposure',
+  enforcementGrade: 'mechanical',
   name: 'Network exposure',
   category: 'isolation',
   pass: 2,

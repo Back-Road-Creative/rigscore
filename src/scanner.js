@@ -182,6 +182,11 @@ export async function runChecks(checks, context, options = {}) {
     filtered.map(async (check) => {
       const result = await check.run(context);
 
+      // Defensive default — third-party `rigscore-check-*` plugins may not
+      // declare `enforcementGrade`. Fall back to 'pattern' so reporter/SARIF
+      // rendering does not crash on undefined grades.
+      const enforcementGrade = check.enforcementGrade || 'pattern';
+
       // Validate result shape: must have numeric score and findings array
       if (!result || typeof result.score !== 'number' || !Array.isArray(result.findings)) {
         return {
@@ -189,6 +194,7 @@ export async function runChecks(checks, context, options = {}) {
           name: check.name,
           category: check.category,
           weight: WEIGHTS[check.id] || check.weight || 0,
+          enforcementGrade,
           score: 0,
           findings: [{
             severity: 'critical',
@@ -203,6 +209,7 @@ export async function runChecks(checks, context, options = {}) {
         name: check.name,
         category: check.category,
         weight: WEIGHTS[check.id] || check.weight || 0,
+        enforcementGrade,
         score: result.score,
         findings: result.findings,
         ...(result.data !== undefined && { data: result.data }),
@@ -221,6 +228,7 @@ export async function runChecks(checks, context, options = {}) {
       name: check.name,
       category: check.category,
       weight: WEIGHTS[check.id] || check.weight || 0,
+      enforcementGrade: check.enforcementGrade || 'pattern',
       score: 0,
       findings: [
         {

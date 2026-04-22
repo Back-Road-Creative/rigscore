@@ -433,6 +433,7 @@ async function scanK8sManifests(cwd, findings) {
 
 export default {
   id: 'docker-security',
+  enforcementGrade: 'mechanical',
   name: 'Docker security',
   category: 'isolation',
 

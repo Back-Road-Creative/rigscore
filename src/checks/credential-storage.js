@@ -32,6 +32,7 @@ function matchesSecretPattern(value) {
 
 export default {
   id: 'credential-storage',
+  enforcementGrade: 'mechanical',
   name: 'Credential storage hygiene',
   category: 'secrets',
 

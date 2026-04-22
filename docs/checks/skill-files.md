@@ -1,5 +1,7 @@
 # skill-files
 
+**Enforcement grade:** `pattern` — structural regex catalog + Unicode normalization pass over skill-file content. Catches canonical injection / shell-exec / exfil patterns; novel phrasing or encoded payloads can evade (see [`THREAT-MODEL.md`](../../THREAT-MODEL.md) §3.4, §3.6).
+
 ## Purpose
 
 Scans every skill / command / sub-agent instruction file visible to the project — all governance files other than `CLAUDE.md`, plus every file under `.claude/commands/` and `.claude/skills/` (recursive) — for patterns that would hijack, exfiltrate, escalate, persist, or disguise instructions. Optionally extends to `~/.claude/commands/**` and `~/.claude/skills/**` via `--include-home-skills`. Maps to OWASP Agentic Top 10 `ASI01` (Agent Goal Hijack). A passing check guarantees: no instruction-override patterns (single-line or 2-line sliding window), no shell execution directives, no outbound data exfiltration, no privilege escalation, no persistence instructions, no indirect injection (`eval`, `new Function`, "download and run"), no trust-exploitation phrases (CVE-2025-54136 class), no Unicode steganography (bidi overrides, zero-width, homoglyphs including Mathematical Bold / Fullwidth Latin / Cherokee), no plaintext HTTP URLs, no suspicious base64 blobs, and no world-writable skill files.

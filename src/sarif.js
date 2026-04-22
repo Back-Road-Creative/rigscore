@@ -127,6 +127,10 @@ export function formatSarif(result) {
 
       const properties = { tags };
       if (finding.evidence) properties.evidence = safeText(finding.evidence);
+      // Enforcement-grade label per result — plugin-safe fallback to 'pattern'
+      // mirrors scanner.js behavior for third-party `rigscore-check-*` modules
+      // that don't declare the field.
+      properties.enforcementGrade = r.enforcementGrade || 'pattern';
 
       sarifResults.push({
         ruleId,

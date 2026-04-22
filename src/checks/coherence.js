@@ -69,6 +69,7 @@ function checkReverseCoherence(governanceContent, serverNames) {
  */
 export default {
   id: 'coherence',
+  enforcementGrade: 'keyword',
   name: 'Cross-config coherence',
   category: 'governance',
 

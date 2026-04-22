@@ -224,6 +224,7 @@ async function readSettingsPermissions(cwd, homedir) {
 
 export default {
   id: 'skill-coherence',
+  enforcementGrade: 'keyword',
   name: 'Skill ↔ governance coherence',
   category: 'governance',
   pass: 2,

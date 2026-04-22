@@ -58,6 +58,21 @@ function getRiskColor(profile) {
   }
 }
 
+/**
+ * Format the enforcement-grade label column for a per-check line.
+ * Returns a chalk-colored `[mechanical]` / `[pattern]` / `[keyword]` token.
+ * Falls back to `[pattern]` for plugin checks that did not declare a grade.
+ */
+function formatGradeLabel(grade) {
+  const g = typeof grade === 'string' ? grade : 'pattern';
+  switch (g) {
+    case 'mechanical': return chalk.cyan('[mechanical]');
+    case 'pattern': return chalk.blue('[pattern]');
+    case 'keyword': return chalk.dim('[keyword]');
+    default: return chalk.blue('[pattern]');
+  }
+}
+
 function getScoreColor(score) {
   if (score >= 90) return chalk.greenBright;
   if (score >= 75) return chalk.green;
@@ -137,20 +152,21 @@ export function formatTerminal(result, cwd, options = {}) {
 
   // Check scores
   for (const r of results) {
+    const gradeLabel = formatGradeLabel(r.enforcementGrade);
     if (r.score === NOT_APPLICABLE_SCORE) {
       const icon = chalk.dim('\u21B7');
       const name = r.name.padEnd(30, '.');
-      lines.push(`  ${icon} ${name} N/A`);
+      lines.push(`  ${icon} ${name} ${gradeLabel} N/A`);
     } else if (r.weight === 0) {
       // Advisory check — no score contribution. Mark clearly, don't use critical red.
       const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.yellow('\u26A0');
       const name = r.name.padEnd(30, '.');
-      lines.push(`  ${icon} ${name} ${chalk.dim('advisory')}`);
+      lines.push(`  ${icon} ${name} ${gradeLabel} ${chalk.dim('advisory')}`);
     } else {
       const checkScore = Math.round((r.score / 100) * r.weight);
       const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.red('\u2717');
       const name = r.name.padEnd(30, '.');
-      lines.push(`  ${icon} ${name} ${checkScore}/${r.weight}`);
+      lines.push(`  ${icon} ${name} ${gradeLabel} ${checkScore}/${r.weight}`);
     }
   }
 
@@ -171,6 +187,11 @@ export function formatTerminal(result, cwd, options = {}) {
     `        ${riskStr}`,
     '',
   ]));
+  lines.push('');
+
+  // Enforcement-grade legend — terminal-only; suppressed in JSON/SARIF paths
+  // because formatJson/formatSarif do not call formatTerminal.
+  lines.push(`  ${chalk.dim('mechanical = deterministic config check \u00B7 pattern = regex/structural \u00B7 keyword = presence detection')}`);
   lines.push('');
 
   // Coverage messaging

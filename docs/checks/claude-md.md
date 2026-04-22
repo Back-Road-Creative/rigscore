@@ -1,5 +1,7 @@
 # claude-md
 
+**Enforcement grade:** `pattern` — regex-matches a fixed catalog of quality and injection markers against governance prose, with structural file-presence and negation-context checks. More than naive keyword matching, but still evadable by semantic reversal; see [`THREAT-MODEL.md`](../../THREAT-MODEL.md) §3.1.
+
 ## Purpose
 
 Scans every known AI-client governance file — `CLAUDE.md` (project + `~/.claude/` + `~`), `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `copilot-instructions.md`, `.github/copilot-instructions.md`, `AGENTS.md`, `.aider.conf.yml` — for presence, length, quality coverage across nine governance patterns, active negation ("never require approval"), embedded instruction-override injection, and git tracking status. Maps to OWASP Agentic Top 10 `ASI01` (Agent Goal Hijack). A passing check guarantees: at least one governance file exists and is substantive (≥50 lines), all nine quality patterns appear non-negated (forbidden actions, approval gates, path restrictions, network restrictions, anti-injection, shell restrictions, test-driven development, definition of done, git workflow rules), no injection pattern appears in a non-defensive context (single-line or 2-line sliding window), no governance file is listed in `.gitignore`, and every governance file that exists is tracked in git.
