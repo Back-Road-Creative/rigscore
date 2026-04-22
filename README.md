@@ -14,7 +14,7 @@ npx github:Back-Road-Creative/rigscore
 ```
   ╭────────────────────────────────────────╮
   │                                        │
-  │        rigscore v0.8.0                 │
+  │        rigscore v2.0.0                 │
   │   AI Dev Environment Hygiene Check     │
   │                                        │
   ╰────────────────────────────────────────╯
