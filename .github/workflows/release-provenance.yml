@@ -1,0 +1,84 @@
+name: Release (signed + provenance)
+
+# Triggered by pushing a v* tag (e.g. v0.9.0-rc1). Distinct from release.yml,
+# which handles version-bump-on-main releases without provenance. This workflow
+# exists so a maintainer can opt into a signed, attested, SBOM-bundled release
+# by cutting a tag manually. npm publish stays disabled — `npx github:` is the
+# sole distribution channel and provenance works on the GitHub tarball.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Pack, attest, and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # create GitHub release + upload assets
+      id-token: write       # sigstore OIDC for attestation
+      attestations: write   # actions/attest-build-provenance
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Pack tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          FILE=$(npm pack --silent)
+          echo "tarball=${FILE}" >> "$GITHUB_OUTPUT"
+          echo "Packed: ${FILE}"
+          sha256sum "${FILE}"
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          set -euo pipefail
+          npx --yes @cyclonedx/cyclonedx-npm \
+            --output-format JSON \
+            --output-file sbom.cdx.json
+          test -s sbom.cdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            ${{ steps.pack.outputs.tarball }}
+            sbom.cdx.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          name: rigscore ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Signed release with build provenance + CycloneDX SBOM.
+
+            Verify locally with:
+            ```bash
+            scripts/verify-release.sh ${{ github.ref_name }}
+            ```
+          files: |
+            ${{ steps.pack.outputs.tarball }}
+            sbom.cdx.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
