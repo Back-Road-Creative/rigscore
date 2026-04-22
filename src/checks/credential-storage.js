@@ -55,6 +55,7 @@ export default {
             secretsFound++;
             const isExample = EXAMPLE_RE.test(value);
             findings.push({
+              findingId: isExample ? 'credential-storage/example-credential-in-client-config' : 'credential-storage/plaintext-credential-in-client-config',
               severity: isExample ? 'info' : 'critical',
               title: isExample
                 ? `Example credential in ${client.name} config (${serverName})`

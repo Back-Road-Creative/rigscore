@@ -32,6 +32,7 @@ export default {
 
         if (interopEnabled && appendPath) {
           findings.push({
+            findingId: 'windows-security/wsl-interop-exposes-path',
             severity: 'warning',
             title: 'WSL interop exposes Windows PATH',
             detail: 'WSL is configured with interop enabled and appendWindowsPath=true. Windows executables are accessible from WSL, which expands the attack surface.',
@@ -39,6 +40,7 @@ export default {
           });
         } else if (interopEnabled) {
           findings.push({
+            findingId: 'windows-security/wsl-interop-enabled',
             severity: 'info',
             title: 'WSL interop is enabled',
             detail: 'WSL interop allows calling Windows executables from Linux. appendWindowsPath is disabled, limiting exposure.',
@@ -65,6 +67,7 @@ export default {
 
           if (networkingMode && networkingMode[1].toLowerCase() === 'mirrored') {
             findings.push({
+              findingId: 'windows-security/wsl-mirrored-networking',
               severity: 'info',
               title: 'WSL uses mirrored networking mode',
               detail: 'Mirrored networking shares the host network stack with WSL. Consider NAT mode for better isolation.',
@@ -73,6 +76,7 @@ export default {
 
           if (!hasFirewall) {
             findings.push({
+              findingId: 'windows-security/wsl-firewall-not-enabled',
               severity: 'info',
               title: 'WSL firewall not explicitly enabled',
               detail: 'Consider adding firewall=true to .wslconfig for additional network isolation.',
@@ -108,6 +112,7 @@ export default {
       );
       if (riskyExclusions.length > 0) {
         findings.push({
+          findingId: 'windows-security/defender-excludes-project-paths',
           severity: 'warning',
           title: 'Windows Defender excludes project-related paths',
           detail: `Exclusions found: ${riskyExclusions.join(', ')}. Malware in these directories won't be scanned.`,
@@ -126,6 +131,7 @@ export default {
 
     // NTFS permissions advisory — always shown on Windows
     findings.push({
+      findingId: 'windows-security/ntfs-permissions-advisory',
       severity: 'info',
       title: 'NTFS permissions advisory',
       detail: 'On Windows, use icacls to verify that sensitive files (credentials, keys, .env) are not accessible to other users.',

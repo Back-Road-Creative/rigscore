@@ -83,6 +83,7 @@ function checkHookSettingsConflicts(hookContent, settingsData, conflictPatterns 
 
     if (hookBlocks && settingsAllows) {
       findings.push({
+        findingId: conflict.findingId || 'skill-coherence/hook-settings-allow-conflict',
         severity: conflict.severity || 'warning',
         title: conflict.title || 'Hook/settings allow-list conflict',
         detail: conflict.detail || 'PreToolUse hook blocks a command that settings allow-list permits.',
@@ -119,6 +120,7 @@ function checkSettingsConflicts(settingsData) {
       // Check if allow is a more specific version of deny (or exact match)
       if (allowCmd === denyCmd || allowCmd.startsWith(denyCmd + ' ')) {
         findings.push({
+          findingId: 'skill-coherence/settings-allow-deny-conflict',
           severity: 'info',
           title: `Settings allow/deny conflict: ${allowCmd}`,
           detail: `"${allow}" in allow list overlaps with "${deny}" in deny list. Resolution depends on specificity and which settings file has precedence.`,
@@ -284,6 +286,7 @@ export default {
           if (!isAware) {
             findings.push({
               ...constraint.finding,
+              findingId: constraint.finding.findingId || `skill-coherence/constraint-unaware-${constraint.id}`,
               title: `${constraint.finding.title}: ${skill.name}`,
               detail: `${constraint.finding.detail} (skill: ${skill.relPath})`,
             });
