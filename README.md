@@ -4,6 +4,9 @@
 
 One command. 13 scored checks plus 7 advisory checks. A hygiene score out of 100. Know where you stand before something breaks.
 
+> **Scope.** rigscore measures **configuration hygiene**, not runtime security. It inspects the files on disk — governance docs, MCP configs, Docker settings, skill files, permissions — and scores what those files *say*. It does not observe the running agent, intercept tool calls, or hash live MCP tool descriptions. It complements [Snyk Agent Scan](https://github.com/snyk/agent-scan) and [Semgrep](https://semgrep.dev); it does not replace them. See [known limits](#known-limits) for what rigscore does not catch.
+> <!-- TODO: repoint `#known-limits` to `THREAT-MODEL.md` / `docs/known-limits.md` once Stream D lands. -->
+
 ```bash
 npx github:Back-Road-Creative/rigscore
 ```
@@ -530,7 +533,7 @@ rm -f .rigscore-state.json
 rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/rigscore"
 ```
 
-## Limitations
+## Limitations {#known-limits}
 
 rigscore is a configuration presence checker, not a security enforcement tool. Understanding its scope helps you use it effectively. Read this section before you rely on rigscore as a governance quality signal.
 
