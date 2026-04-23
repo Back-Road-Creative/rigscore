@@ -107,6 +107,77 @@ describe('loadConfig', () => {
     }
   });
 
+  it('concatenates instructionEffectiveness.crossRepoRefs from home + project', async () => {
+    // Previously, project .rigscorerc.json crossRepoRefs REPLACED the
+    // home-level array — users running multiple projects lost their home
+    // suppressions the moment a project config introduced its own refs.
+    // Docstring on loadConfig already promised array concatenation; this
+    // test pins the policy for crossRepoRefs specifically.
+    const cwdDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    fs.writeFileSync(
+      path.join(homeDir, '.rigscorerc.json'),
+      JSON.stringify({
+        instructionEffectiveness: { crossRepoRefs: ['AGENTS.md', 'MEMORY.md'] },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(cwdDir, '.rigscorerc.json'),
+      JSON.stringify({
+        instructionEffectiveness: { crossRepoRefs: ['_active/**', 'AGENTS.md'] },
+      }),
+    );
+    try {
+      const config = await loadConfig(cwdDir, homeDir);
+      const refs = config.instructionEffectiveness.crossRepoRefs;
+      expect(refs).toContain('AGENTS.md');
+      expect(refs).toContain('MEMORY.md');
+      expect(refs).toContain('_active/**');
+      // Dedup: AGENTS.md appears in both, should only land once
+      expect(refs.filter(r => r === 'AGENTS.md')).toHaveLength(1);
+    } finally {
+      fs.rmSync(cwdDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
+  it('concatenates skillFiles.allowlist entries from home + project by skill+pattern', async () => {
+    const cwdDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    fs.writeFileSync(
+      path.join(homeDir, '.rigscorerc.json'),
+      JSON.stringify({
+        skillFiles: {
+          allowlist: [
+            { skill: 'sops-status', pattern: 'sudo', reason: 'home reason' },
+          ],
+        },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(cwdDir, '.rigscorerc.json'),
+      JSON.stringify({
+        skillFiles: {
+          allowlist: [
+            { skill: 'sops-status', pattern: 'sudo', reason: 'project reason — duplicate key, dropped' },
+            { skill: 'build', pattern: 'curl', reason: 'project-specific' },
+          ],
+        },
+      }),
+    );
+    try {
+      const config = await loadConfig(cwdDir, homeDir);
+      const list = config.skillFiles.allowlist;
+      // Home entry preserved, project-unique entry appended, duplicate dropped
+      expect(list).toHaveLength(2);
+      expect(list.find(e => e.skill === 'sops-status').reason).toBe('home reason');
+      expect(list.find(e => e.skill === 'build')).toBeDefined();
+    } finally {
+      fs.rmSync(cwdDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
   it('concatenates and deduplicates network.safeHosts', async () => {
     const tmpDir = makeTmpDir();
     const rc = { network: { safeHosts: ['10.0.0.5', 'localhost'] } };
