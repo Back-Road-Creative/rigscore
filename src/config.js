@@ -274,13 +274,36 @@ function mergeConfig(userConfig, baseline) {
 
   if (userConfig.instructionEffectiveness && typeof userConfig.instructionEffectiveness === 'object') {
     if (Array.isArray(userConfig.instructionEffectiveness.crossRepoRefs)) {
-      result.instructionEffectiveness.crossRepoRefs = userConfig.instructionEffectiveness.crossRepoRefs;
+      // Concatenate-and-dedupe so a project .rigscorerc.json composes with
+      // ~/.rigscorerc.json instead of clobbering it. The loadConfig header
+      // documents this policy ("Arrays concatenate (deduplicated)") — this
+      // branch previously replaced, which broke users running multiple
+      // projects under one home config.
+      result.instructionEffectiveness.crossRepoRefs = [
+        ...new Set([
+          ...(result.instructionEffectiveness.crossRepoRefs || []),
+          ...userConfig.instructionEffectiveness.crossRepoRefs,
+        ]),
+      ];
     }
   }
 
   if (userConfig.skillFiles && typeof userConfig.skillFiles === 'object') {
     if (Array.isArray(userConfig.skillFiles.allowlist)) {
-      result.skillFiles.allowlist = userConfig.skillFiles.allowlist;
+      // Allowlist entries are objects, not strings — dedupe by a composite
+      // (skill + pattern) key so identical entries in home + project don't
+      // double-count but distinct project-specific entries are appended.
+      const seen = new Set(
+        (result.skillFiles.allowlist || []).map((e) => `${e.skill}::${e.pattern}`),
+      );
+      const merged = [...(result.skillFiles.allowlist || [])];
+      for (const entry of userConfig.skillFiles.allowlist) {
+        const key = `${entry.skill}::${entry.pattern}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(entry);
+      }
+      result.skillFiles.allowlist = merged;
     }
   }
 
