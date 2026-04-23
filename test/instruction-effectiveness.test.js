@@ -75,6 +75,21 @@ describe('instruction-effectiveness check', () => {
     expect(deadRefs[0].severity).toBe('warning');
   });
 
+  it('does not flag YAML frontmatter keys as redundant across skill files', async () => {
+    const result = await check.run({
+      cwd: fixture('instruction-frontmatter-dupes'),
+      homedir: '/tmp/nonexistent-home-ie',
+      config: defaultConfig,
+    });
+    const redundant = result.findings.filter(f =>
+      f.title?.includes('Redundant instruction') || f.title?.includes('redundant'),
+    );
+    // Three skill files share `status: graduated-code`, `version: 1.0.0`,
+    // etc. in their frontmatter. Before the fix these would each surface as
+    // redundant-instruction findings. With frontmatter stripping, zero.
+    expect(redundant).toHaveLength(0);
+  });
+
   it('detects redundant instructions across files', async () => {
     const result = await check.run({
       cwd: fixture('instruction-redundant'),
