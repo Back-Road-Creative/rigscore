@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+# rigscore pre-commit — secret scanning + smoke test
+#
+# Runs gitleaks on staged diff to block committed secrets before they land.
+# Falls back to a stub warning if gitleaks isn't installed locally so
+# contributors know to add it (CI enforces via the GitHub action).
+set -e
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact --no-banner
+else
+  echo "warn: gitleaks not installed — skipping local secret scan."
+  echo "      install with 'brew install gitleaks' (or equivalent) to enable."
+fi

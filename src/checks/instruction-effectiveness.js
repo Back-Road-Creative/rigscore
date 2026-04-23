@@ -617,6 +617,20 @@ async function analyzeInstructionQuality(files, cwd, config) {
 /**
  * Detect redundant instructions across files.
  */
+/**
+ * Find the line range [start, end) covered by a leading YAML frontmatter
+ * block (`---` … `---`). Frontmatter keys legitimately repeat across files
+ * (e.g. `status: graduated-code`) and would otherwise inflate redundancy
+ * findings. Returns [0, 0) when no frontmatter is present.
+ */
+function frontmatterRange(lines) {
+  if (lines.length < 2 || lines[0].trim() !== '---') return [0, 0];
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '---') return [0, i + 1];
+  }
+  return [0, 0];
+}
+
 function analyzeRedundancy(files) {
   const findings = [];
   const lineMap = new Map(); // normalized line → [{ relPath, lineNumber }]
@@ -624,8 +638,10 @@ function analyzeRedundancy(files) {
   for (const file of files) {
     const lines = file.content.split('\n');
     const codeBlocks = buildCodeBlockSet(file.content);
+    const [fmStart, fmEnd] = frontmatterRange(lines);
 
     for (let i = 0; i < lines.length; i++) {
+      if (i >= fmStart && i < fmEnd) continue;
       if (codeBlocks.has(i)) continue;
       const raw = lines[i];
       const normalized = raw.trim().toLowerCase().replace(/\s+/g, ' ');
