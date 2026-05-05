@@ -12,7 +12,7 @@
       "/home/dev/workspaces/_governance"
     ],
     "hookFiles": [
-      "~/.claude/hooks/sandbox-gate.py"
+      "/etc/claude-hooks/sandbox-gate.py"
     ]
   },
   "coherence": {
