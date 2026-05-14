@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time and never reached the dispatcher.
 - env-exposure: use `git check-ignore` instead of exact-string match — fixes
   false positives on monorepos with path-prefixed .env entries.
+- **constants: anchor `KEY_PATTERNS` with `\b` boundaries and enforce
+  realistic minimum lengths.** Several historical patterns were regex
+  theatre — `/xoxb-[a-zA-Z0-9-]+/` matched `xoxb-a`, and `/AKIA[0-9A-Z]{16}/`
+  fired on an `AKIA…` substring buried inside a JWT or base64 blob. Every
+  pattern is now anchored with `\b` on both sides where the prefix/suffix
+  are word-shaped, and Slack tokens (`xoxb-`, `xoxp-`, `xox[aers]-`) require
+  at least 30 trailing chars in line with real Slack token formats. Reduces
+  false positives on base64 blobs / JWTs / identifiers that happen to
+  contain a prefix substring.
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an

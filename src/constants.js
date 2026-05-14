@@ -130,46 +130,55 @@ export const MCP_SSE_PORT_RANGE = [3000, 3999];
  * INVARIANT: No pattern may use the /g flag — scanLineForSecrets calls
  * pattern.test() which advances lastIndex on global regexes, causing
  * intermittent false negatives on subsequent calls.
+ *
+ * ANCHORING POLICY: Every pattern is anchored with `\b` (or an equivalent
+ * non-word lookaround) on at least the side that begins/ends in word
+ * characters. This prevents substring matches inside JWTs, base64 blobs, and
+ * identifiers — e.g. an `AKIA...` substring buried in a JWT payload must not
+ * trip the AWS access-key signature. Minimum-length quantifiers are taken
+ * from vendor docs or canonical specimens; when in doubt the length is left
+ * generous to avoid false negatives on real credentials.
  * @type {RegExp[]}
  */
 export const KEY_PATTERNS = [
-  /sk-ant-[a-zA-Z0-9_-]{10,}/,         // Anthropic
-  /AKIA[0-9A-Z]{16}/,                   // AWS access key
-  /ghp_[a-zA-Z0-9]{36}/,               // GitHub PAT
-  /gho_[a-zA-Z0-9]{36}/,               // GitHub OAuth
-  /xoxb-[a-zA-Z0-9-]+/,               // Slack bot token
-  /xoxp-[a-zA-Z0-9-]+/,               // Slack user token
-  /sk-(?:proj|svcacct)-[a-zA-Z0-9_-]{20,}/, // OpenAI (current format)
-  /glpat-[a-zA-Z0-9_-]{20,}/,          // GitLab PAT
-  /sk_live_[a-zA-Z0-9]{24,}/,          // Stripe secret key
-  /sk_test_[a-zA-Z0-9]{24,}/,          // Stripe test secret key
-  /rk_live_[a-zA-Z0-9]{24,}/,          // Stripe restricted key
-  /pk_live_[a-zA-Z0-9]{24,}/,          // Stripe publishable key
-  /SG\.[a-zA-Z0-9_-]{22,}\.[a-zA-Z0-9_-]{22,}/, // SendGrid
-  /SK[0-9a-f]{32}/,                     // Twilio
-  /AIzaSy[a-zA-Z0-9_-]{33}/,           // Firebase/Google
-  /dop_v1_[a-f0-9]{64}/,               // DigitalOcean
-  /key-[a-f0-9]{32}/,                   // Mailgun
-  /npm_[a-zA-Z0-9]{36}/,                // npm access token
-  /pypi-[a-zA-Z0-9_-]{16,}/,            // PyPI API token
-  /hf_[a-zA-Z0-9]{34}/,                 // Hugging Face token
-  /mongodb\+srv:\/\/[^\s"']+/,          // MongoDB connection string
-  /vercel_[a-zA-Z0-9_-]{24,}/,          // Vercel token
-  /sbp_[a-f0-9]{40}/,                    // Supabase service role key
-  /eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[a-zA-Z0-9_-]{50,}/, // Supabase JWT (anon/service)
-  /cf_[a-zA-Z0-9_-]{37,}/,              // Cloudflare API token
-  /railway_[a-zA-Z0-9_-]{24,}/,         // Railway token
-  /pscale_tkn_[a-zA-Z0-9_-]{30,}/,      // PlanetScale token
-  /neon_[a-zA-Z0-9_-]{30,}/,            // Neon API key
-  /lin_api_[a-zA-Z0-9]{40,}/,           // Linear API key
-  /r8_[a-zA-Z0-9]{37,}/,               // Replicate API token
-  /tvly-[a-zA-Z0-9]{32,}/,             // Tavily API key
-  /whsec_[a-zA-Z0-9_-]{24,}/,           // Webhook signing secret (Svix/Clerk)
-  /AGE-SECRET-KEY-1[A-Z0-9]{58}/,       // AGE encryption key
-  /dd[a-z]*_[a-f0-9]{32,40}/i,          // Datadog API/app key
-  /op:\/\/[^\s"']+/,                     // 1Password CLI reference
-  /ASIA[0-9A-Z]{16}/,                    // AWS temporary credentials (STS)
-  /hvs\.[a-zA-Z0-9_-]{24,}/,            // HashiCorp Vault token
-  /AKCp[a-zA-Z0-9]{10,}/,               // JFrog Artifactory token
-  /"auth"\s*:\s*"[A-Za-z0-9+/=]{20,}"/, // Docker registry auth token
+  /\bsk-ant-[a-zA-Z0-9_-]{10,}\b/,                    // Anthropic
+  /\bAKIA[0-9A-Z]{16}\b/,                             // AWS access key
+  /\bghp_[a-zA-Z0-9]{36}\b/,                          // GitHub PAT
+  /\bgho_[a-zA-Z0-9]{36}\b/,                          // GitHub OAuth
+  /\bxoxb-[a-zA-Z0-9-]{30,}\b/,                       // Slack bot token (real tokens are 50+ chars)
+  /\bxoxp-[a-zA-Z0-9-]{30,}\b/,                       // Slack user token (real tokens are 50+ chars)
+  /\bxox[aers]-[a-zA-Z0-9-]{30,}\b/,                  // Slack other tokens (app/refresh/etc.)
+  /\bsk-(?:proj|svcacct)-[a-zA-Z0-9_-]{20,}\b/,       // OpenAI (current format)
+  /\bglpat-[a-zA-Z0-9_-]{20,}\b/,                     // GitLab PAT
+  /\bsk_live_[a-zA-Z0-9]{24,}\b/,                     // Stripe secret key
+  /\bsk_test_[a-zA-Z0-9]{24,}\b/,                     // Stripe test secret key
+  /\brk_live_[a-zA-Z0-9]{24,}\b/,                     // Stripe restricted key
+  /\bpk_live_[a-zA-Z0-9]{24,}\b/,                     // Stripe publishable key
+  /\bSG\.[a-zA-Z0-9_-]{22,}\.[a-zA-Z0-9_-]{22,}\b/,   // SendGrid
+  /\bSK[0-9a-f]{32}\b/,                               // Twilio
+  /\bAIzaSy[a-zA-Z0-9_-]{33}\b/,                      // Firebase/Google
+  /\bdop_v1_[a-f0-9]{64}\b/,                          // DigitalOcean
+  /\bkey-[a-f0-9]{32}\b/,                             // Mailgun
+  /\bnpm_[a-zA-Z0-9]{36}\b/,                          // npm access token
+  /\bpypi-[a-zA-Z0-9_-]{16,}\b/,                      // PyPI API token
+  /\bhf_[a-zA-Z0-9]{34}\b/,                           // Hugging Face token
+  /\bmongodb\+srv:\/\/[^\s"']+/,                      // MongoDB connection string (URL-shaped)
+  /\bvercel_[a-zA-Z0-9_-]{24,}\b/,                    // Vercel token
+  /\bsbp_[a-f0-9]{40}\b/,                             // Supabase service role key
+  /\beyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[a-zA-Z0-9_-]{50,}\b/, // Supabase JWT (anon/service)
+  /\bcf_[a-zA-Z0-9_-]{37,}\b/,                        // Cloudflare API token
+  /\brailway_[a-zA-Z0-9_-]{24,}\b/,                   // Railway token
+  /\bpscale_tkn_[a-zA-Z0-9_-]{30,}\b/,                // PlanetScale token
+  /\bneon_[a-zA-Z0-9_-]{30,}\b/,                      // Neon API key
+  /\blin_api_[a-zA-Z0-9]{40,}\b/,                     // Linear API key
+  /\br8_[a-zA-Z0-9]{37,}\b/,                          // Replicate API token
+  /\btvly-[a-zA-Z0-9]{32,}\b/,                        // Tavily API key
+  /\bwhsec_[a-zA-Z0-9_-]{24,}\b/,                     // Webhook signing secret (Svix/Clerk)
+  /\bAGE-SECRET-KEY-1[A-Z0-9]{58}\b/,                 // AGE encryption key
+  /\bdd[a-z]*_[a-f0-9]{32,40}\b/i,                    // Datadog API/app key
+  /\bop:\/\/[^\s"']+/,                                // 1Password CLI reference (URL-shaped)
+  /\bASIA[0-9A-Z]{16}\b/,                             // AWS temporary credentials (STS)
+  /\bhvs\.[a-zA-Z0-9_-]{24,}\b/,                      // HashiCorp Vault token
+  /\bAKCp[a-zA-Z0-9]{10,}\b/,                         // JFrog Artifactory token
+  /"auth"\s*:\s*"[A-Za-z0-9+/=]{20,}"/,               // Docker registry auth token (already anchored by quotes)
 ];

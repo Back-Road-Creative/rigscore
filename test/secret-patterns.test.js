@@ -8,9 +8,11 @@ function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-secrets-'));
 }
 
-// Build fake keys dynamically to avoid GitHub push protection
+// Build fake keys dynamically to avoid GitHub push protection.
+// Specimens use canonical lengths so the pattern's \b end-anchor + fixed
+// quantifiers still match (a Firebase API key is exactly AIzaSy + 33 chars).
 const fakeStripeKey = ['sk', 'live', 'abcdefghijklmnopqrstuvwx'].join('_');
-const fakeFirebaseKey = 'AIzaSy' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ12345678';
+const fakeFirebaseKey = 'AIzaSy' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567';
 const fakeSendGridKey = 'SG.' + 'abcdefghijklmnopqrstuv' + '.' + 'abcdefghijklmnopqrstuv';
 
 const defaultConfig = { paths: {}, network: {} };
@@ -312,7 +314,9 @@ describe('expanded secret patterns', () => {
   it('scanLineForSecrets handles hypothetical global regex safely', async () => {
     const { scanLineForSecrets } = await import('../src/utils.js');
     const { KEY_PATTERNS } = await import('../src/constants.js');
-    const awsPattern = KEY_PATTERNS.find(p => p.source.startsWith('AKIA'));
+    // Patterns are anchored with a leading `\b`; match on the literal AKIA
+    // prefix after stripping it.
+    const awsPattern = KEY_PATTERNS.find((p) => p.source.replace(/^\\b/, '').startsWith('AKIA'));
     awsPattern.lastIndex = 999;
     const line = 'AKIA' + 'A'.repeat(16);
     const result = scanLineForSecrets(line, line.trim());
