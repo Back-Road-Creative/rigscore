@@ -82,16 +82,25 @@ export async function startWatching(cwd, args, options) {
 
   const debouncedRescan = createDebouncer(rescan, 500);
 
+  let watcher;
   try {
-    const watcher = fs.watch(cwd, { recursive: true }, (eventType, filename) => {
+    watcher = fs.watch(cwd, { recursive: true }, (eventType, filename) => {
       if (shouldTrigger(filename)) {
         debouncedRescan();
       }
     });
 
-    // Keep process alive
+    const cleanup = () => {
+      watcher.close();
+      process.exit(0);
+    };
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+    // Keep process alive until signal
     await new Promise(() => {});
   } catch (err) {
+    if (watcher) watcher.close();
     process.stderr.write(`Watch error: ${err.message}\n`);
     process.exit(1);
   }

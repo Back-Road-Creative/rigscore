@@ -16,7 +16,7 @@ import { loadConfig, resolveWeights } from './config.js';
  */
 export function deduplicateFindings(results) {
   const seen = new Map(); // "severity:normalizedTitle" → { resultIdx, findingIdx, weight }
-  const touched = new Set(); // indices of results that had findings removed
+  const toRemove = [];    // { resultIdx, findingIdx } pairs to batch-remove after scan
 
   for (let ri = 0; ri < results.length; ri++) {
     const r = results[ri];
@@ -39,12 +39,12 @@ export function deduplicateFindings(results) {
         if (prev.resultIdx === ri) continue;
         // Cross-check — collapse to the higher-weighted check.
         if (weight >= prev.weight) {
-          results[prev.resultIdx].findings.splice(prev.findingIdx, 1);
-          touched.add(prev.resultIdx);
+          // Current check has higher weight — mark previous for removal
+          toRemove.push({ resultIdx: prev.resultIdx, findingIdx: prev.findingIdx });
           seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
         } else {
-          findings.splice(fi, 1);
-          touched.add(ri);
+          // Previous check has higher weight — mark current for removal
+          toRemove.push({ resultIdx: ri, findingIdx: fi });
         }
       } else {
         seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
@@ -52,9 +52,22 @@ export function deduplicateFindings(results) {
     }
   }
 
-  // Recalculate scores for every result whose findings were mutated.
-  for (const idx of touched) {
-    results[idx].score = calculateCheckScore(results[idx].findings);
+  // Group by resultIdx, sort findingIdx descending, then splice safely.
+  // Sorting descending prevents earlier removals from shifting indices of
+  // later removals within the same result.
+  const grouped = new Map();
+  for (const { resultIdx, findingIdx } of toRemove) {
+    if (!grouped.has(resultIdx)) grouped.set(resultIdx, []);
+    grouped.get(resultIdx).push(findingIdx);
+  }
+  for (const [ri, indices] of grouped) {
+    indices.sort((a, b) => b - a);
+    for (const fi of indices) {
+      results[ri].findings.splice(fi, 1);
+    }
+    // Recalculate this result's score so stale pre-dedup scores don't stick
+    // (matches the behavior of suppressFindings).
+    results[ri].score = calculateCheckScore(results[ri].findings);
   }
 }
 
@@ -331,7 +344,7 @@ export async function discoverProjects(rootDir, maxDepth = 1) {
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch (err) {
-      console.warn(`rigscore: could not read directory ${dir}: ${err.message}`);
+      process.stderr.write(`rigscore: could not read directory ${dir}: ${err.message}\n`);
       return;
     }
 
@@ -350,7 +363,7 @@ export async function discoverProjects(rootDir, maxDepth = 1) {
       try {
         subEntries = await fs.promises.readdir(subPath);
       } catch (err) {
-        console.warn(`rigscore: could not read directory ${subPath}: ${err.message}`);
+        process.stderr.write(`rigscore: could not read directory ${subPath}: ${err.message}\n`);
         continue;
       }
 
@@ -429,8 +442,8 @@ export async function scanRecursive(options = {}) {
     ? projects.reduce((worst, p) => (p.score < worst.score ? p : worst), projects[0])
     : null;
 
-  // allPassed: every project individually meets a reasonable threshold (70)
-  const allPassed = projects.every((p) => p.score >= 70);
+  const failUnder = options.failUnder || 70;
+  const allPassed = projects.every((p) => p.score >= failUnder);
 
   return { score: avgScore, projects, worstProject, allPassed };
 }

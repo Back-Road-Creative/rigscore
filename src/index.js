@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import { scan, scanRecursive, suppressFindings } from './scanner.js';
+import { calculateOverallScore } from './scoring.js';
+import { resolveWeights } from './config.js';
+import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
@@ -215,7 +218,7 @@ export async function run(args) {
   if (options.recursive) {
     let result;
     try {
-      result = await scanRecursive({ ...scanOptions, depth: options.depth });
+      result = await scanRecursive({ ...scanOptions, depth: options.depth, failUnder: options.failUnder });
     } catch (err) {
       handleFatal(err);
       return; // unreachable — handleFatal either exits or rethrows
@@ -258,6 +261,17 @@ export async function run(args) {
     const suppressPatterns = [...(result.config?.suppress || []), ...(options.ignore || [])];
     if (suppressPatterns.length > 0) {
       suppressFindings(result.results, suppressPatterns);
+      // Mirror scan()'s scoring branch so --check + suppress doesn't fall back
+      // to weighted scoring (which dilutes the single-check score).
+      if (options.checkFilter) {
+        const applicable = result.results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
+        const avg = applicable.length > 0
+          ? applicable.reduce((sum, r) => sum + r.score, 0) / applicable.length
+          : 0;
+        result.score = Math.round(avg);
+      } else {
+        result.score = calculateOverallScore(result.results, resolveWeights(result.config));
+      }
     }
 
     if (options.sarif) {
