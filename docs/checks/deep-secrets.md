@@ -52,5 +52,5 @@ No auto-fix — the module does not export a `fixes` array. Every CRITICAL here 
 - Included extensions: `.js .ts .jsx .tsx .py .go .rb .java .yaml .yml .json .toml .sh`, plus any file whose name starts with `.env.` (e.g. `.env.production`).
 - Skipped directories: `node_modules`, `.git`, `vendor`, `dist`, `build`, `__pycache__`, `venv`, `.venv`, `coverage`, `.next`, `.nuxt`, `out`, and any dotfile-named directory.
 - Skipped files: anything matching `.test.` or `.spec.` — test fixtures legitimately contain example keys.
-- At most one line-level finding per file (walker `break`s after the first match) to keep output actionable. The GCP-JSON detector short-circuits line scanning for that file.
+- At most one line-level finding per file to keep output actionable. The walker tracks the highest severity seen across the file: an INFO match (comment / example / placeholder) does **not** stop scanning — if a CRITICAL match appears later in the same file the critical one is reported and the info is dropped, so a leading `// Old key: …` comment cannot silently downgrade a real hardcoded secret a few lines below. The walker exits early once a CRITICAL is recorded. The GCP-JSON detector short-circuits line scanning for that file entirely.
 - File cap defaults to 1000 (`config.deepScan.maxFiles`). Once reached, an INFO finding is emitted and walking stops.

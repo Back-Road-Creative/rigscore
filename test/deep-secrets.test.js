@@ -204,6 +204,32 @@ describe('deep-secrets check', () => {
     }
   });
 
+  // Regression: the per-file line loop used to `break` on any match,
+  // including an INFO match from a comment line. If a comment match
+  // came BEFORE a real critical secret, the critical was swallowed and
+  // only the info was reported — silently downgrading a real leak.
+  it('escalates to CRITICAL when a real secret follows a comment match in the same file', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const oldKey = ['sk', 'ant', 'api03', 'AAAAAAAAAAAAAAAA'].join('-');
+      const newKey = ['sk', 'ant', 'api03', 'BBBBBBBBBBBBBBBB'].join('-');
+      const content = [
+        `// Old API key: ${oldKey}`,
+        '',
+        `const key = "${newKey}";`,
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'config.js'), content);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      const critical = result.findings.find(f => f.severity === 'critical');
+      expect(critical).toBeDefined();
+      expect(critical.title).toContain('config.js');
+      // And the info-only finding for the comment line must NOT shadow it.
+      expect(result.score).toBe(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('C5: does NOT recurse into SKIP_DIRS like .git / .venv / .next', async () => {
     const tmpDir = makeTmpDir();
     try {
