@@ -336,4 +336,8 @@ npx github:Back-Road-Creative/rigscore --sarif | jq '.runs[0].results[] | {ruleI
   checks that don't emit explicit IDs.
 - `src/fixer.js` — fixers prefer `findingIds: string[]` equality over title
   substring for the same reason.
+- `src/checks/index.js` — at load time, a fixer registers when it has an `id`
+  and an `apply` function plus EITHER a `match` predicate OR a non-empty
+  `findingIds` array. Fixers declaring only `findingIds` (no `match`) are
+  fully supported by the dispatcher and no longer dropped at registration.
 - [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — operational FAQ.
