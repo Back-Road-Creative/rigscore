@@ -1,8 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { calculateCheckScore } from '../scoring.js';
 import { KEY_PATTERNS, AI_CONFIG_FILES } from '../constants.js';
 import { readFileSafe, fileExists, statSafe, scanLineForSecrets } from '../utils.js';
+
+const execFileAsync = promisify(execFile);
 
 const CONFIG_FILES = AI_CONFIG_FILES;
 
@@ -19,20 +23,71 @@ const ENV_GITIGNORE_PATTERNS = [
 // Negation patterns that are safe — they un-ignore example/template files, not real .env
 const SAFE_NEGATION_RE = /^!\.env\.(example|sample|template)$/;
 
-async function isInGitignore(cwd) {
+/**
+ * Run `git check-ignore --quiet --no-index <file>` to ask git itself whether
+ * a path matches gitignore rules. `--no-index` is required: without it, git
+ * reports tracked files as "not ignored" even when `.gitignore` would match
+ * them, which is the wrong semantic for a hygiene scanner (a `.env` checked
+ * in by mistake is exactly what we want to flag, or recognize as gitignored
+ * when the rule is in place).
+ *
+ * Git's exit codes:
+ *   0   = path is ignored
+ *   1   = path is NOT ignored
+ *   128 = not a git repo (or other fatal error)
+ * Returns 'ignored' | 'not-ignored' | 'unknown'. 'unknown' lets callers fall
+ * back to the legacy exact-string match when git itself is unavailable.
+ */
+async function gitCheckIgnore(cwd, file) {
+  try {
+    await execFileAsync('git', ['check-ignore', '--quiet', '--no-index', file], {
+      cwd,
+      timeout: 5000,
+    });
+    return 'ignored';
+  } catch (err) {
+    // execFile rejects with an Error carrying a numeric `code` for the exit
+    // status. 1 = not ignored (definitive). 128 (or anything else, including
+    // ENOENT when git is missing) = fall back to the legacy parser.
+    if (err && err.code === 1) return 'not-ignored';
+    return 'unknown';
+  }
+}
+
+// Legacy fallback: parse .gitignore in `cwd` and look for an exact-string
+// match against a known set of `.env` patterns. Used when git is unavailable
+// or `cwd` is not inside a working tree.
+function legacyGitignoreContains(content) {
+  const lines = content.split('\n').map((l) => l.trim());
+  return lines.some((l) => ENV_GITIGNORE_PATTERNS.includes(l));
+}
+
+async function isInGitignore(cwd, envFile = '.env') {
+  // Dangerous-negation guard runs first against the local .gitignore. Even if
+  // git considers the file ignored, a stray `!.env` line in the same
+  // .gitignore is a configuration smell we still surface as not-ignored.
   const gitignorePath = path.join(cwd, '.gitignore');
   const content = await readFileSafe(gitignorePath);
+  if (content) {
+    const lines = content.split('\n').map((l) => l.trim());
+    const hasDangerousNegation = lines.some(
+      (l) => l.startsWith('!') && (l.includes('.env') || l.includes('env')) && !SAFE_NEGATION_RE.test(l),
+    );
+    if (hasDangerousNegation) return false;
+  }
+
+  // Preferred path: ask git. Handles monorepo path-prefixed entries
+  // (`apps/backend/.env`), `**/.env`, parent-dir `.gitignore` chains, and any
+  // other gitignore syntax we'd otherwise need to re-implement.
+  const verdict = await gitCheckIgnore(cwd, envFile);
+  if (verdict === 'ignored') return true;
+  if (verdict === 'not-ignored') return false;
+
+  // Fallback: no git repo here. Keep the legacy exact-string check so
+  // non-git working trees (CI tarball, `npx` against an unpacked release)
+  // still get a useful answer.
   if (!content) return false;
-  const lines = content.split('\n').map((l) => l.trim());
-
-  // Check for negation lines that would un-ignore actual .env files
-  // Skip safe negations like !.env.example, !.env.sample, !.env.template
-  const hasDangerousNegation = lines.some(
-    (l) => l.startsWith('!') && (l.includes('.env') || l.includes('env')) && !SAFE_NEGATION_RE.test(l),
-  );
-  if (hasDangerousNegation) return false;
-
-  return lines.some((l) => ENV_GITIGNORE_PATTERNS.includes(l));
+  return legacyGitignoreContains(content);
 }
 
 export const fixes = [
@@ -106,7 +161,15 @@ export default {
     }
 
     if (envFiles.length > 0) {
-      const ignored = await isInGitignore(cwd);
+      // Ask git about every discovered env file; only emit critical if at
+      // least one is genuinely not ignored.
+      let ignored = true;
+      for (const envFile of envFiles) {
+        if (!(await isInGitignore(cwd, envFile))) {
+          ignored = false;
+          break;
+        }
+      }
       if (!ignored) {
         findings.push({
           findingId: 'env-exposure/env-not-gitignored',

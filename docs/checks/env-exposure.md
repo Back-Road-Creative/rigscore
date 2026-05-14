@@ -56,11 +56,17 @@ Out of scope for `--fix --yes`: removing hardcoded keys from config files, redac
   INFO API key pattern in comment in config.js
 ```
 
+## How it works
+
+- For each `.env` / `.env.*` file in the project root, the check shells out to `git check-ignore --quiet --no-index <file>` and treats exit `0` as "ignored", `1` as "not ignored". `--no-index` is required so the verdict reflects gitignore patterns even when a `.env` has been mistakenly committed to the index. This delegates the matching to git itself, which means path-prefixed entries (`apps/backend/.env`), `**/.env`, and parent-directory `.gitignore` chains all work correctly in monorepos.
+- When `cwd` is not inside a git working tree (exit code `128`, or git is not installed), the check falls back to a legacy exact-string match against a known set of `.env` patterns in the local `.gitignore`. This keeps non-git inputs (unpacked tarballs, `npx` against a downloaded release) usable.
+- Before either path runs, the local `.gitignore` is scanned for dangerous negation lines (`!.env`, but not the un-ignore-safe `!.env.example|sample|template`). A dangerous negation always wins and the file is reported as not-ignored regardless of what git says.
+
 ## Scope and limitations
 
 - Scans project root only for `.env` / `.env.*` files (no recursion) — deeper trees are covered by `deep-secrets` under `--deep`.
 - Config-file list is `AI_CONFIG_FILES` (governance files + `.claude/settings.json`, `.mcp.json`, `config.{js,ts,json}`, `secrets.{yaml,json}`, `credentials.json`, `application.yml`, `settings.{py,js}`).
 - Per-file "worst finding wins" — a single config file contributes at most one finding, with CRITICAL outranking INFO so a trailing hardcoded key is not shadowed by an earlier commented match.
-- Gitignore parser recognizes dangerous negation (`!.env`) and un-ignore-safe negation (`!.env.example|sample|template`).
+- Gitignore detection uses `git check-ignore --no-index` and recognizes dangerous negation (`!.env`) and un-ignore-safe negation (`!.env.example|sample|template`). When git is unavailable the check falls back to an exact-string match against a small set of `.env` patterns and may miss path-prefixed entries (`apps/backend/.env`).
 - Shell-history scan caps at 3 hits and reads only the last 500 lines; full history forensics is out of scope.
 - POSIX permission check short-circuits on Windows with a SKIPPED finding.

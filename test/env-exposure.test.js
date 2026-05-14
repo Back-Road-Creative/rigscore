@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/env-exposure.js';
 import { WEIGHTS } from '../src/constants.js';
@@ -220,6 +221,49 @@ describe('env-exposure check', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
       fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
+  it('PASS in a monorepo subdir when parent .gitignore path-ignores the .env (issue: exact-string match fails)', async () => {
+    // Real-world monorepo bug: parent `.gitignore` lists `apps/backend/.env`
+    // (path-prefixed entry, no top-level `.env` line). When the scan runs with
+    // cwd = apps/backend, git considers `.env` ignored, but the prior
+    // exact-string match against the local `.gitignore` (which doesn't exist
+    // here) returned false and emitted a critical false positive.
+    const repoRoot = makeTmpDir();
+    const sub = path.join(repoRoot, 'apps', 'backend');
+    fs.mkdirSync(sub, { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, '.gitignore'), 'apps/backend/.env\n');
+    fs.writeFileSync(path.join(sub, '.env'), 'SECRET=foo\n');
+
+    // Initialize a real git repo so `git check-ignore` works against it.
+    const gitOpts = {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_CONFIG_SYSTEM: '/dev/null',
+      },
+      stdio: 'ignore',
+    };
+    execFileSync('git', ['init', '-q'], gitOpts);
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], gitOpts);
+    execFileSync('git', ['config', 'user.name', 'test'], gitOpts);
+    execFileSync('git', ['add', '.gitignore'], gitOpts);
+    execFileSync('git', ['commit', '-q', '-m', 'init'], gitOpts);
+
+    try {
+      const result = await check.run({ cwd: sub, homedir: '/tmp' });
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title?.includes('.gitignore'),
+      );
+      expect(critical).toBeUndefined();
+      const pass = result.findings.find(
+        (f) => f.severity === 'pass' && f.title?.includes('gitignored'),
+      );
+      expect(pass).toBeDefined();
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
