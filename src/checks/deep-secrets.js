@@ -135,25 +135,48 @@ export default {
         continue; // skip line-by-line scan for this file
       }
 
+      // Cap output at one finding per file, but DO NOT stop at the first
+      // match if it's only an INFO (comment/example) — a real CRITICAL on a
+      // later line must be allowed to escalate. Without this, a leading
+      // `// Old key: sk-...` line would mask a real hardcoded secret a few
+      // lines below and silently downgrade the finding to info.
+      let bestInfo = null;
+      let criticalFinding = null;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const trimmed = line.trim();
         if (!trimmed) continue;
 
         const result = scanLineForSecrets(line, trimmed);
-        if (result.matched) {
-          secretCount++;
-          findings.push({
-            findingId: result.severity === 'critical' ? 'deep-secrets/hardcoded-secret' : 'deep-secrets/possible-secret-comment',
-            severity: result.severity,
-            title: result.severity === 'critical'
-              ? `Hardcoded secret in ${relPath}:${i + 1}`
-              : `Possible secret (comment/example) in ${relPath}:${i + 1}`,
+        if (!result.matched) continue;
+
+        if (result.severity === 'critical') {
+          criticalFinding = {
+            findingId: 'deep-secrets/hardcoded-secret',
+            severity: 'critical',
+            title: `Hardcoded secret in ${relPath}:${i + 1}`,
             detail: `Pattern: ${result.pattern.source.slice(0, 30)}...`,
             remediation: 'Move secrets to environment variables or a secrets manager.',
-          });
-          break; // one finding per file is enough
+          };
+          break; // real secret found — no need to keep scanning this file
         }
+        // INFO match: remember the first one but keep scanning in case a
+        // CRITICAL appears later in the same file.
+        if (!bestInfo) {
+          bestInfo = {
+            findingId: 'deep-secrets/possible-secret-comment',
+            severity: 'info',
+            title: `Possible secret (comment/example) in ${relPath}:${i + 1}`,
+            detail: `Pattern: ${result.pattern.source.slice(0, 30)}...`,
+            remediation: 'Move secrets to environment variables or a secrets manager.',
+          };
+        }
+      }
+
+      const fileFinding = criticalFinding || bestInfo;
+      if (fileFinding) {
+        secretCount++;
+        findings.push(fileFinding);
       }
     }
 
