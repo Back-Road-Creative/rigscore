@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- deep-secrets: do not stop at first comment-pattern match — escalate to critical when a real secret follows. Fixes a real critical being downgraded to info.
+
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
   `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
