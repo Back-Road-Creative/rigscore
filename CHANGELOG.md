@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which already supports either matching path. Previously, fixers exporting
   only `{ id, findingIds, description, apply }` were silently dropped at load
   time and never reached the dispatcher.
+- env-exposure: use `git check-ignore` instead of exact-string match — fixes
+  false positives on monorepos with path-prefixed .env entries.
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
