@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - deep-secrets: do not stop at first comment-pattern match — escalate to critical when a real secret follows. Fixes a real critical being downgraded to info.
+- `checks/index`: accept fixer registrations that declare `findingIds` without
+  a `match` function. Aligns the registration contract with `fixer.js` dispatch,
+  which already supports either matching path. Previously, fixers exporting
+  only `{ id, findingIds, description, apply }` were silently dropped at load
+  time and never reached the dispatcher.
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an

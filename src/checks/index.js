@@ -25,12 +25,17 @@ export async function loadChecks(options = {}) {
     const mod = await import(path.join(__dirname, file));
     checks.push(mod.default);
 
-    // Collect self-registered fixes
+    // Collect self-registered fixes. A fixer must declare EITHER a `match`
+    // predicate function OR a non-empty `findingIds` array — the two matching
+    // paths supported by src/fixer.js. Requiring `match` alone silently
+    // dropped findingIds-only fixers at load time.
     if (Array.isArray(mod.fixes)) {
       for (const fix of mod.fixes) {
-        if (fix.id && typeof fix.match === 'function' && typeof fix.apply === 'function') {
-          _registeredFixes[fix.id] = fix;
-        }
+        if (!fix.id || typeof fix.apply !== 'function') continue;
+        const hasMatch = typeof fix.match === 'function';
+        const hasFindingIds = Array.isArray(fix.findingIds) && fix.findingIds.length > 0;
+        if (!hasMatch && !hasFindingIds) continue;
+        _registeredFixes[fix.id] = fix;
       }
     }
   }
