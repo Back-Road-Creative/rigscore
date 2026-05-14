@@ -42,10 +42,16 @@ No auto-fix — the module does not export a `fixes` array. Every CRITICAL here 
   CRITICAL GCP service account key in infra/sa.json
     File contains both "type": "service_account" and "private_key".
   CRITICAL Hardcoded secret in scripts/deploy.js:42
-    Pattern: sk-ant-[a-zA-Z0-9_-]{10,...
+    Pattern: \bsk-ant-[a-zA-Z0-9_-]{10,}\b...
   INFO Possible secret (comment/example) in README.md:118
-    Pattern: AKIA[0-9A-Z]{16}...
+    Pattern: \bAKIA[0-9A-Z]{16}\b...
 ```
+
+All `KEY_PATTERNS` entries are anchored with `\b` word boundaries (or
+URL-shaped lead-ins) and carry length quantifiers cross-checked against
+vendor docs and canonical specimens. The anchors prevent substring matches
+inside JWTs, base64 blobs, and identifiers — e.g. an `AKIA…` substring in
+a JWT payload no longer triggers a CRITICAL.
 
 ## Scope and limitations
 
