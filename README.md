@@ -419,7 +419,15 @@ Classifies the project's workflow artefacts against the AI development taxonomy 
 - Stale memory files and orphan memory that is not linked from `MEMORY.md`
 - Taxonomy misclassification between skills, agents, pipelines, and memory
 
-### 20. Documentation coverage (advisory, 0 points) {#documentation}
+### 20. Agent output schemas (advisory, 0 points) {#agent-output-schemas}
+
+Scans `.claude/agents/*.md` (project and `~/.claude/`) and verifies that every agent that claims to emit JSON output (e.g. body contains "Return ONLY a JSON" or an "## Output Format" section) declares a parseable ```` ```json ```` fenced example block. Codifies the convention documented in `_active/lib-skill-utils/AGENT_OUTPUT_SCHEMAS.md` so fan-out orchestrators have a reliable contract to parse against.
+
+**What rigscore looks for:**
+- Agents that announce JSON output but contain no `` ```json `` fenced example block
+- Agents whose `` ```json `` fenced blocks fail `JSON.parse` (placeholder values left unquoted, trailing commas, comments)
+
+### 21. Documentation coverage (advisory, 0 points) {#documentation}
 
 Enforces the docs-first gate: every module in `src/checks/` must have a matching page under `docs/checks/` with the canonical sections (Purpose, Triggers, Weight rationale, Fix semantics, SARIF, Example) filled in, and every doc must correspond to a real check. Advisory, and only active in rigscore itself or plugin repos that mirror its layout. See [`docs/checks/documentation.md`](docs/checks/documentation.md).
 
@@ -560,7 +568,7 @@ rigscore runs on rigscore in CI. Transparency about what that score means:
 
 - **Self-score: 35/100 (Grade F).** This is the real score, not a vanity baseline. Rigscore is an npm package; 10 of 19 checks legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. If your project is seeing similar — see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for the diagnostic walk-through.
 - **CI threshold: `--fail-under 30`.** Calibrated to the observed baseline with a 5-point regression buffer. The public default is 70 — the 40-point gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
-- **`.rigscorerc.json` disables three checks** (`infrastructure-security`, `skill-coherence`, `workflow-maturity`) that require workspace-oriented artifacts rigscore doesn't ship. These are per-check disables at the profile level, not ignore-rules on individual findings — the distinction matters when auditing the config.
+- **`.rigscorerc.json` disables four checks** (`infrastructure-security`, `skill-coherence`, `workflow-maturity`, `agent-output-schemas`) that require workspace-oriented artifacts rigscore doesn't ship. These are per-check disables at the profile level, not ignore-rules on individual findings — the distinction matters when auditing the config.
 
 ## Options
 

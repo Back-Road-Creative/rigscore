@@ -3,8 +3,9 @@
     "disabled": [
       "infrastructure-security",
       "skill-coherence",
-      "workflow-maturity"
+      "workflow-maturity",
+      "agent-output-schemas"
     ]
   },
-  "_comment": "rigscore is an npm package scanner, not an AI workspace. The three disabled checks expect governance scaffolding (hooks dir, skill files, stage directories) that applies to workspaces dogfooding rigscore, not to this repo itself. See .github/workflows/ci.yml self-scan step."
+  "_comment": "rigscore is an npm package scanner, not an AI workspace. The four disabled checks expect governance scaffolding (hooks dir, skill files, stage directories, .claude/agents/) that applies to workspaces dogfooding rigscore, not to this repo itself. See .github/workflows/ci.yml self-scan step."
 }

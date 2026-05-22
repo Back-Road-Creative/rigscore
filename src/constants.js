@@ -36,6 +36,7 @@ export const WEIGHTS = {
   'skill-coherence': 0,
   'workflow-maturity': 0,
   'documentation': 0,
+  'agent-output-schemas': 0,
 };
 
 // OWASP Agentic Top 10 (2026) mapping for findings
@@ -58,6 +59,7 @@ export const OWASP_AGENTIC_MAP = {
   'skill-coherence': 'ASI01',          // Agent Goal Hijack
   'workflow-maturity': 'ASI01',        // Agent Goal Hijack — taxonomy misclassification causes goal drift
   'documentation': 'ASI02',            // Tool Misuse & Exploitation — undocumented check behavior
+  'agent-output-schemas': 'ASI01',     // Agent Goal Hijack — undeclared JSON contract lets orchestrator-aggregated output drift silently
 };
 
 // Sentinel score for checks that find nothing to scan

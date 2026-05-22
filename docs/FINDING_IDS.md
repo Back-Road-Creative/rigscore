@@ -309,6 +309,11 @@ Grouped by check. Each ID is stable within the current major.
 - `workflow-maturity/pipeline-step-overload` (info)
 - `workflow-maturity/stage-dir-overload` (info)
 
+### agent-output-schemas
+
+- `agent-output-schemas/missing-schema-block` (warning)
+- `agent-output-schemas/malformed-schema-block` (warning)
+
 ### Stable check-level IDs
 
 Every check id in `src/checks/` is stable. These work in `--ignore` and
@@ -319,7 +324,7 @@ Every check id in `src/checks/` is stable. These work in `--ignore` and
 `git-hooks`, `infrastructure-security`, `instruction-effectiveness`,
 `mcp-config`, `network-exposure`, `permissions-hygiene`, `site-security`,
 `skill-coherence`, `skill-files`, `unicode-steganography`,
-`windows-security`, `workflow-maturity`.
+`windows-security`, `workflow-maturity`, `agent-output-schemas`.
 
 ## How to discover IDs you're seeing right now
 
