@@ -37,6 +37,42 @@ function shouldIncludeByName(filename) {
 // deep-scan bounded. Override via config.limits.maxFileBytes.
 const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
 
+// Stable provider labels keyed by a leading-literal substring of each
+// KEY_PATTERN regex source. Echoing raw regex source into a finding body
+// leaks pattern shape into SARIF / CI logs (and the body drifts whenever
+// a pattern is tightened); the label fixes both issues. Unknown patterns
+// fall back to a generic "credential" label.
+const PATTERN_LABEL_RULES = [
+  ['sk-ant-', 'Anthropic API key'],
+  ['AKIA', 'AWS access key'], ['ASIA', 'AWS STS temporary credentials'],
+  ['ghp_', 'GitHub personal access token'], ['gho_', 'GitHub OAuth token'],
+  ['xoxb-', 'Slack bot token'], ['xoxp-', 'Slack user token'], ['xox[aers]-', 'Slack token'],
+  ['sk-(?:proj', 'OpenAI API key'], ['glpat-', 'GitLab personal access token'],
+  ['sk_live_', 'Stripe secret key (live)'], ['sk_test_', 'Stripe secret key (test)'],
+  ['rk_live_', 'Stripe restricted key'], ['pk_live_', 'Stripe publishable key'],
+  ['SG\\.', 'SendGrid API key'], ['SK[0-9a-f]', 'Twilio API key'],
+  ['AIzaSy', 'Firebase / Google API key'], ['dop_v1_', 'DigitalOcean token'],
+  ['key-[a-f0-9]', 'Mailgun API key'], ['npm_', 'npm access token'],
+  ['pypi-', 'PyPI API token'], ['hf_', 'Hugging Face token'],
+  ['mongodb\\+srv', 'MongoDB connection string'], ['vercel_', 'Vercel token'],
+  ['sbp_', 'Supabase service role key'], ['eyJhbGciOiJI', 'Supabase JWT'],
+  ['cf_', 'Cloudflare API token'], ['railway_', 'Railway token'],
+  ['pscale_tkn_', 'PlanetScale token'], ['neon_', 'Neon API key'],
+  ['lin_api_', 'Linear API key'], ['r8_', 'Replicate API token'],
+  ['tvly-', 'Tavily API key'], ['whsec_', 'Webhook signing secret'],
+  ['AGE-SECRET-KEY-1', 'AGE encryption key'], ['dd[a-z]', 'Datadog API key'],
+  ['op:\\/\\/', '1Password CLI reference'], ['hvs\\.', 'HashiCorp Vault token'],
+  ['AKCp', 'JFrog Artifactory token'], ['"auth"', 'Docker registry auth token'],
+];
+
+export function labelForPattern(pattern) {
+  const src = pattern?.source || '';
+  for (const [needle, label] of PATTERN_LABEL_RULES) {
+    if (src.includes(needle)) return label;
+  }
+  return 'credential';
+}
+
 export default {
   id: 'deep-secrets',
   enforcementGrade: 'pattern',
@@ -150,12 +186,18 @@ export default {
         const result = scanLineForSecrets(line, trimmed);
         if (!result.matched) continue;
 
+        // Use a stable provider label rather than leaking the raw regex
+        // source — both because the regex pattern can itself encode hints
+        // about a secret's structure (and ends up in SARIF / CI logs) and
+        // because a truncated slice changes whenever a pattern is tightened,
+        // making finding bodies unstable across rigscore upgrades.
+        const providerLabel = labelForPattern(result.pattern);
         if (result.severity === 'critical') {
           criticalFinding = {
             findingId: 'deep-secrets/hardcoded-secret',
             severity: 'critical',
             title: `Hardcoded secret in ${relPath}:${i + 1}`,
-            detail: `Pattern: ${result.pattern.source.slice(0, 30)}...`,
+            detail: `Detected provider: ${providerLabel}`,
             remediation: 'Move secrets to environment variables or a secrets manager.',
           };
           break; // real secret found — no need to keep scanning this file
@@ -167,7 +209,7 @@ export default {
             findingId: 'deep-secrets/possible-secret-comment',
             severity: 'info',
             title: `Possible secret (comment/example) in ${relPath}:${i + 1}`,
-            detail: `Pattern: ${result.pattern.source.slice(0, 30)}...`,
+            detail: `Detected provider: ${providerLabel}`,
             remediation: 'Move secrets to environment variables or a secrets manager.',
           };
         }
