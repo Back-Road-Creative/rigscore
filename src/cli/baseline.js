@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { slugify } from '../utils.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json');
@@ -16,7 +17,7 @@ export function flattenFindings(results) {
       if (f.severity === 'skipped' || f.severity === 'pass') continue;
       out.push({
         checkId: r.id,
-        findingId: f.findingId || `${r.id}/${(f.title || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 60)}`,
+        findingId: f.findingId || `${r.id}/${slugify(f.title)}`,
         severity: f.severity,
         title: f.title,
       });

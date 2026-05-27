@@ -342,11 +342,11 @@ export async function run(args) {
       for (const f of added) {
         process.stderr.write(`  [${f.severity}] ${f.findingId} — ${f.title}\n`);
       }
-      // Gate on new findings count vs fail-under interpreted as "max new".
-      // failUnder default is 70 (score-based); for baseline semantics we
-      // treat any new finding as failing unless the user passes an
-      // explicit non-default. Matches the "exit on new findings" contract.
-      process.exit(added.length > 0 ? 1 : 0);
+      // Baseline semantics: any new finding fails. The `added.length === 0`
+      // early-return at line 334 guarantees we only reach this point when
+      // there is at least one new finding, so the ternary in the previous
+      // version was dead — always evaluated to 1.
+      process.exit(1);
     }
 
     if (options.watch) {

@@ -161,23 +161,26 @@ export default {
     }
 
     if (envFiles.length > 0) {
-      // Ask git about every discovered env file; only emit critical if at
-      // least one is genuinely not ignored.
-      let ignored = true;
+      // Ask git about every discovered env file and collect the offenders
+      // by name. The previous code only tracked a boolean and emitted a
+      // generic ".env file found" message even when the real offender was
+      // .env.production or .env.local, leaving the user to guess which
+      // file to add to .gitignore.
+      const unignored = [];
       for (const envFile of envFiles) {
         if (!(await isInGitignore(cwd, envFile))) {
-          ignored = false;
-          break;
+          unignored.push(envFile);
         }
       }
-      if (!ignored) {
+      if (unignored.length > 0) {
+        const fileList = unignored.join(', ');
         findings.push({
           findingId: 'env-exposure/env-not-gitignored',
           severity: 'critical',
-          title: '.env file found but NOT in .gitignore',
+          title: `${fileList} found but NOT in .gitignore`,
           detail: 'Your API keys and secrets will be committed to version control.',
-          evidence: `.env present; .gitignore does not list .env`,
-          remediation: 'Add .env to .gitignore immediately.',
+          evidence: `unignored: ${fileList}`,
+          remediation: `Add ${unignored.length === 1 ? unignored[0] : 'these files'} to .gitignore immediately.`,
           learnMore: 'https://headlessmode.com/tools/rigscore/#env-security',
         });
       } else {

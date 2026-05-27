@@ -4,6 +4,7 @@ import { loadChecks } from './checks/index.js';
 import { calculateOverallScore, calculateCheckScore } from './scoring.js';
 import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
+import { slugify } from './utils.js';
 
 /**
  * Deduplicate findings across check results.
@@ -89,18 +90,6 @@ export function deduplicateFindings(results) {
     // (matches the behavior of suppressFindings).
     results[ri].score = calculateCheckScore(results[ri].findings);
   }
-}
-
-/**
- * Slugify a finding title into a stable ID component.
- * "env file found but NOT in .gitignore" → "env-file-found-but-not-in-gitignore"
- */
-function slugify(title) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60);
 }
 
 /**
