@@ -38,7 +38,7 @@ node bin/rigscore.js . --check claude-md
 
 Scored: `mcp-config` (14pt), `coherence` (14pt), `skill-files` (10pt), `claude-md` (10pt), `claude-settings` (8pt), `deep-secrets` (8pt), `env-exposure` (8pt), `credential-storage` (6pt), `docker-security` (6pt), `infrastructure-security` (6pt), `unicode-steganography` (4pt), `permissions-hygiene` (4pt), `git-hooks` (2pt).
 
-Advisory (weight 0): `windows-security`, `network-exposure`, `site-security`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`.
+Advisory (weight 0): `windows-security`, `network-exposure`, `site-security`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`, `documentation`, `agent-output-schemas`.
 
 Weights are the single source of truth in `src/constants.js` — never hardcode them elsewhere.
 
