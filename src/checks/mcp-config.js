@@ -533,11 +533,15 @@ export default {
           }
         }
 
-        // Online npm registry check (--online flag)
+        // Online npm registry check (--online flag).
+        // Rename the inner result so it doesn't shadow the outer
+        // `registryResult` (the MCP-registry fetch result captured above);
+        // the shadow made the registry-fallback INFO finding below
+        // mistakenly evaluate this loop's last-iteration value.
         if (packageName && context.online) {
-          const registryResult = await checkNpmRegistry(packageName);
-          if (registryResult) {
-            findings.push(registryResult);
+          const npmFinding = await checkNpmRegistry(packageName);
+          if (npmFinding) {
+            findings.push(npmFinding);
           }
         }
       }

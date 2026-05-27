@@ -9,6 +9,7 @@ import {
   writeBaseline,
   diffFindings,
 } from '../src/cli/baseline.js';
+import { assignFindingIds } from '../src/scanner.js';
 
 describe('baseline helpers', () => {
   let tmp;
@@ -88,5 +89,25 @@ describe('baseline helpers', () => {
 
   it('empty baseline + empty current → no added', () => {
     expect(diffFindings([], [])).toEqual([]);
+  });
+
+  it('flattenFindings and assignFindingIds slugify titles identically', () => {
+    // Regression: baseline.js had its own inline slugify that omitted the
+    // leading/trailing dash strip used by scanner.js, so titles starting or
+    // ending with non-alphanumerics produced divergent findingIds across
+    // the two paths. Now both call utils.slugify.
+    const tricky = [
+      '!!leading-and-trailing!!',
+      '   whitespace   wrapped   ',
+      'normal title text',
+      ':punctuation: bookends:',
+    ];
+    for (const title of tricky) {
+      const scannerInput = [{ id: 'env-exposure', findings: [{ severity: 'critical', title }] }];
+      const baselineInput = [{ id: 'env-exposure', findings: [{ severity: 'critical', title }] }];
+      assignFindingIds(scannerInput);
+      const flat = flattenFindings(baselineInput);
+      expect(flat[0].findingId).toBe(scannerInput[0].findings[0].findingId);
+    }
   });
 });
