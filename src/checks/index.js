@@ -61,11 +61,26 @@ export function getRegisteredFixes() {
  */
 export async function discoverPlugins(cwd) {
   const plugins = [];
-  const searchDirs = [
+  // Track resolved plugin directories already imported. Without this, a
+  // plugin installed in both `cwd/node_modules` and rigscore's own install
+  // gets loaded twice and its findings double-count.
+  const seenPaths = new Set();
+  const seenIds = new Set();
+  const rawSearchDirs = [
     cwd ? path.join(cwd, 'node_modules') : null,
     // Also check where rigscore itself is installed
     path.resolve(__dirname, '..', '..', 'node_modules'),
   ].filter(Boolean);
+  // Resolved-path dedup of the search roots themselves — when cwd IS the
+  // rigscore install dir, both entries point at the same node_modules.
+  const seenRoots = new Set();
+  const searchDirs = [];
+  for (const d of rawSearchDirs) {
+    const resolved = path.resolve(d);
+    if (seenRoots.has(resolved)) continue;
+    seenRoots.add(resolved);
+    searchDirs.push(d);
+  }
 
   for (const nodeModules of searchDirs) {
     let entries;
@@ -105,10 +120,18 @@ export async function discoverPlugins(cwd) {
     for (const dir of pluginDirs) {
       try {
         const pluginPath = path.join(nodeModules, dir.name);
+        const resolved = path.resolve(pluginPath);
+        if (seenPaths.has(resolved)) continue;
+        seenPaths.add(resolved);
+
         const mod = await import(pluginPath);
         const plugin = mod.default || mod;
 
         if (!validatePlugin(plugin, dir.name)) continue;
+        // Belt-and-suspenders: even if two distinct paths export the same
+        // plugin id (e.g., symlink farm), only register the first.
+        if (seenIds.has(plugin.id)) continue;
+        seenIds.add(plugin.id);
         plugins.push(plugin);
       } catch (err) {
         process.stderr.write(`rigscore: failed to load plugin "${dir.name}": ${err.message}\n`);
