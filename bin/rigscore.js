@@ -2,6 +2,16 @@
 
 import { run } from '../src/index.js';
 
+// Last-resort guard. Any rejection that escapes `run()`'s try/catch
+// (e.g. a subcommand handler that throws asynchronously) ends up here —
+// emit a single-line message instead of Node's default stack dump.
+function handleFatalTopLevel(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`rigscore: unexpected error: ${msg}\n`);
+  process.exit(2);
+}
+process.on('unhandledRejection', handleFatalTopLevel);
+
 const args = process.argv.slice(2);
 
 // Subcommand dispatch (MCP runtime-hash pinning, print-and-paste workflow).
@@ -144,4 +154,4 @@ Examples:
   process.exit(0);
 }
 
-run(args);
+run(args).catch(handleFatalTopLevel);
