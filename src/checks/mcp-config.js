@@ -110,15 +110,38 @@ function extractHost(urlOrTransport) {
   }
 }
 
-function checkNpmRegistry(packageName) {
+// Cap the npm registry response we'll buffer before aborting. A typical
+// package document is a few KB; anything over half a megabyte is either a
+// transport-level surprise (compressed-and-bombed tarball metadata, hung
+// connection feeding garbage, malicious redirect target) or a registry
+// outage returning HTML. Abort rather than grow an unbounded string.
+export const MAX_REGISTRY_BYTES = 512 * 1024;
+
+export function checkNpmRegistry(packageName, options = {}) {
+  const httpGet = options.httpGet || https.get;
+  const maxBytes = options.maxBytes || MAX_REGISTRY_BYTES;
   return new Promise((resolve) => {
     const timeout = setTimeout(() => resolve(null), 5000);
 
     const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}`;
-    const req = https.get(url, { timeout: 5000 }, (res) => {
+    const req = httpGet(url, { timeout: 5000 }, (res) => {
       let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      let bytesRead = 0;
+      let aborted = false;
+      res.on('data', (chunk) => {
+        if (aborted) return;
+        bytesRead += chunk.length;
+        if (bytesRead > maxBytes) {
+          aborted = true;
+          req.destroy();
+          clearTimeout(timeout);
+          resolve(null);
+          return;
+        }
+        data += chunk;
+      });
       res.on('end', () => {
+        if (aborted) return;
         clearTimeout(timeout);
         try {
           if (res.statusCode === 404) {
@@ -375,7 +398,12 @@ export default {
           });
         }
 
-        // CVE-2026-21852: ANTHROPIC_BASE_URL redirect in MCP server env
+        // CVE-2026-21852: ANTHROPIC_BASE_URL redirect in MCP server env.
+        // The linked Checkpoint writeup is a co-disclosure that covers both
+        // CVE-2025-59536 (compound auto-approve) and CVE-2026-21852 (this
+        // base-URL redirect class) — confirmed by correctness-bugs T3.14d.
+        // URL slug names the more-prominent CVE; the article body covers
+        // both. Do not "fix" the URL to a CVE-2026-21852-specific page.
         const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
         if (envBaseUrl && !envBaseUrl.includes('api.anthropic.com') && !envBaseUrl.includes('127.0.0.1') && !envBaseUrl.includes('localhost')) {
           findings.push({
