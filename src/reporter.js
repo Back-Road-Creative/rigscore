@@ -2,6 +2,12 @@ import { createRequire } from 'node:module';
 import chalk from 'chalk';
 import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 
+// createRequire instead of `import pkg from '../package.json' assert
+// { type: 'json' }` because the JSON-import assertion syntax is still
+// behind a flag on Node 18.17 (our floor; see engines field in
+// package.json). Once the engines floor moves to ≥20.10 — which made
+// `import ... with { type: 'json' }` stable without a flag — this
+// shim can be replaced with the native import form.
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
 

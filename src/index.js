@@ -10,6 +10,24 @@ import { findApplicableFixes, applyFixes } from './fixer.js';
 import { PROFILE_HINTS } from './config.js';
 import { ConfigParseError } from './utils.js';
 
+/**
+ * Parse rigscore's CLI argument vector into a normalized options object.
+ *
+ * Recognized flags (subset; see `--help` for the full list): --json,
+ * --sarif, --badge, --ci (implies --sarif/--no-color/--no-cta), --check
+ * <id>, --recursive/-r, --depth <N> (implies --recursive), --deep,
+ * --online, --refresh-mcp-registry (implies --online), --fail-under <N>
+ * (clamped 0-100), --profile <name>, --fix, --yes/-y, --init-hook,
+ * --watch, --ignore <comma-list>, --baseline <path>.
+ *
+ * A bare positional argument is treated as the target directory; only
+ * the last positional wins. Unknown flags are ignored (subcommands like
+ * `init`, `explain`, `diff` are dispatched in bin/rigscore.js before
+ * parseArgs sees them).
+ *
+ * @param {string[]} args - argv slice (typically `process.argv.slice(2)`).
+ * @returns {Options} Normalized options with defaults filled in.
+ */
 export function parseArgs(args) {
   const options = {
     json: false,
@@ -97,6 +115,29 @@ export function parseArgs(args) {
   return options;
 }
 
+/**
+ * Top-level CLI entrypoint. Parses args, validates the target directory,
+ * applies profile hints (recursive/depth defaults from `monorepo` etc.),
+ * dispatches to scan() or scanRecursive(), formats output (terminal /
+ * JSON / SARIF / badge), applies suppress/ignore patterns, runs --fix
+ * if requested, and exits with a status code derived from --fail-under.
+ *
+ * Exit codes:
+ *   0 — clean (score ≥ failUnder, or baseline mode with no new findings)
+ *   1 — score below --fail-under, or baseline mode with new findings
+ *   2 — argument/config/scan error (delegated to handleFatal / the
+ *       top-level unhandledRejection guard in bin/rigscore.js)
+ *
+ * Special modes that short-circuit normal flow:
+ *   --init-hook  — install pre-commit hook and exit
+ *   --baseline   — write or diff against baseline; never enters watch loop
+ *   --watch      — enter the file-watcher loop; warns on initial below-
+ *                  threshold scan instead of exiting (matches watcher.js:47
+ *                  "warn-only" intent)
+ *
+ * @param {string[]} args - argv slice passed in from bin/rigscore.js.
+ * @returns {Promise<void>} Resolves once the side effects (stdout/exit) complete.
+ */
 export async function run(args) {
   const options = parseArgs(args);
 
