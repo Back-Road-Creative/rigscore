@@ -33,7 +33,7 @@ jobs:
         run: git diff --exit-code package-lock.json
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --coverage
 
       # docs-first gate: verify every src/checks/*.js has a complete doc page at
       # docs/checks/<id>.md. Blocking — adding or modifying a check without
