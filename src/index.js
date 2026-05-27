@@ -205,14 +205,18 @@ export async function run(args) {
     profile: options.profile,
   };
 
-  // Surface malformed user config as a friendly one-liner + exit 2, rather
-  // than a Node stack trace. Anything else bubbles up as-is.
+  // Surface scan failures as a friendly one-liner + exit 2, rather than a
+  // Node stack trace. ConfigParseError gets its own user-facing message;
+  // anything else is wrapped in a generic "scan failed" line so both the
+  // recursive and non-recursive paths exit symmetrically.
   const handleFatal = (err) => {
     if (err instanceof ConfigParseError) {
       process.stderr.write(err.toUserMessage() + '\n');
       process.exit(2);
     }
-    throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Error: scan failed: ${msg}\n`);
+    process.exit(2);
   };
 
   if (options.recursive) {
@@ -249,12 +253,8 @@ export async function run(args) {
     try {
       result = await scan(scanOptions);
     } catch (err) {
-      if (err instanceof ConfigParseError) {
-        process.stderr.write(err.toUserMessage() + '\n');
-        process.exit(2);
-      }
-      process.stderr.write(`Error: scan failed: ${err.message}\n`);
-      process.exit(2);
+      handleFatal(err);
+      return; // unreachable — handleFatal always exits
     }
 
     // Apply suppress/ignore patterns
@@ -350,9 +350,15 @@ export async function run(args) {
     }
 
     if (options.watch) {
-      // Fail fast on initial scan — watch loop is warn-only
-      if (result.score < options.failUnder) {
-        process.exit(1);
+      // Warn on initial below-threshold scan but enter the watch loop —
+      // matches watcher.js:47 "warn-only in loop" intent. The previous
+      // hard-exit(1) made --watch unusable on projects that started red,
+      // even though that's exactly when you'd want to watch for fixes.
+      if (options.failUnder && result.score < options.failUnder) {
+        process.stderr.write(
+          `\nWarning: score ${result.score} is below --fail-under ${options.failUnder} ` +
+          '(entering watch mode anyway)\n',
+        );
       }
       const { startWatching } = await import('./watcher.js');
       await startWatching(cwd, args, options);
