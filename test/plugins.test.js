@@ -113,4 +113,33 @@ describe('plugin system', () => {
     const resolved = resolveWeights(config);
     expect(resolved['custom-plugin']).toBe(5);
   });
+
+  it('does not double-register two plugin packages that export the same id', async () => {
+    // Regression: when the same plugin id appears in two different package
+    // directories (e.g., installed in both cwd/node_modules and the
+    // rigscore install's node_modules, or under different package names
+    // that export the same id), it used to register twice and double-count.
+    await withTmpDir(async (dir) => {
+      for (const name of ['rigscore-check-dupe-a', 'rigscore-check-dupe-b']) {
+        const p = path.join(dir, 'node_modules', name);
+        fs.mkdirSync(p, { recursive: true });
+        fs.writeFileSync(
+          path.join(p, 'package.json'),
+          JSON.stringify({ name, type: 'module', main: 'index.js' }),
+        );
+        fs.writeFileSync(
+          path.join(p, 'index.js'),
+          `export default {
+            id: 'dupe-plugin',
+            name: 'Dupe Plugin',
+            category: 'governance',
+            run: async () => ({ score: 100, findings: [] }),
+          };`,
+        );
+      }
+      const plugins = await discoverPlugins(dir);
+      const matches = plugins.filter((p) => p.id === 'dupe-plugin');
+      expect(matches).toHaveLength(1);
+    });
+  });
 });

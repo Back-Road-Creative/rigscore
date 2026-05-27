@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runChecks, suppressFindings, assignFindingIds } from '../src/scanner.js';
+import { runChecks, suppressFindings, assignFindingIds, deduplicateFindings } from '../src/scanner.js';
 import { loadChecks } from '../src/checks/index.js';
 import { WEIGHTS } from '../src/constants.js';
 import path from 'node:path';
@@ -150,6 +150,37 @@ describe('scan integration', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
+  });
+
+  it('deduplicateFindings removes ALL per-file variants from a losing check, not just the first', () => {
+    // Regression: when a low-weight check emits N findings that normalize to
+    // the same key (per-file variants) and a higher-weight check emits one,
+    // only the first variant was removed; the rest leaked into the report.
+    // mcp-config (weight 14) outranks docker-security (weight 6).
+    const results = [
+      {
+        id: 'docker-security',
+        score: 0,
+        findings: [
+          { severity: 'warning', title: 'Secret exposure in alpha.json' },
+          { severity: 'warning', title: 'Secret exposure in beta.json' },
+          { severity: 'warning', title: 'Secret exposure in gamma.json' },
+        ],
+      },
+      {
+        id: 'mcp-config',
+        score: 0,
+        findings: [
+          { severity: 'warning', title: 'Secret exposure in delta.json' },
+        ],
+      },
+    ];
+    deduplicateFindings(results);
+    // All three docker-security variants must be gone — they all normalize
+    // to "warning:Secret exposure" and lose to mcp-config's higher weight.
+    expect(results[0].findings).toHaveLength(0);
+    expect(results[1].findings).toHaveLength(1);
+    expect(results[1].findings[0].title).toBe('Secret exposure in delta.json');
   });
 
   it('suppressFindings removes findings matching patterns (case-insensitive)', () => {

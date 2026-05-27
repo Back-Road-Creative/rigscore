@@ -15,8 +15,11 @@ import { loadConfig, resolveWeights } from './config.js';
  * stick (matches the behavior of suppressFindings).
  */
 export function deduplicateFindings(results) {
-  const seen = new Map(); // "severity:normalizedTitle" → { resultIdx, findingIdx, weight }
-  const toRemove = [];    // { resultIdx, findingIdx } pairs to batch-remove after scan
+  // key → Map<resultIdx, { weight, findingIndices: number[] }>
+  // Tracking all per-result findings (not just one) closes the variant-leak
+  // bug where a losing check with N per-file variants only got 1 removed.
+  const seen = new Map();
+  const toRemove = [];
 
   for (let ri = 0; ri < results.length; ri++) {
     const r = results[ri];
@@ -31,23 +34,40 @@ export function deduplicateFindings(results) {
       const normalized = f.title.replace(/\s+in\s+\S+$/, '').replace(/:\s+\S+$/, '').trim();
       const key = `${f.severity}:${normalized}`;
 
-      if (seen.has(key)) {
-        const prev = seen.get(key);
-        // Same check — preserve both. Within-check findings that normalize to
-        // the same key are per-file variants (e.g., one finding per skill file
-        // hitting a pattern); collapsing them hides real triage signal.
-        if (prev.resultIdx === ri) continue;
-        // Cross-check — collapse to the higher-weighted check.
-        if (weight >= prev.weight) {
-          // Current check has higher weight — mark previous for removal
-          toRemove.push({ resultIdx: prev.resultIdx, findingIdx: prev.findingIdx });
-          seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
-        } else {
-          // Previous check has higher weight — mark current for removal
-          toRemove.push({ resultIdx: ri, findingIdx: fi });
+      if (!seen.has(key)) {
+        seen.set(key, new Map());
+      }
+      const byResult = seen.get(key);
+
+      // Same check — preserve both. Within-check findings that normalize to
+      // the same key are per-file variants (e.g., one finding per skill file
+      // hitting a pattern); collapsing them hides real triage signal.
+      if (byResult.has(ri)) {
+        byResult.get(ri).findingIndices.push(fi);
+        continue;
+      }
+
+      // Cross-check — find the current best weight already recorded.
+      let maxWeight = -Infinity;
+      for (const info of byResult.values()) {
+        if (info.weight > maxWeight) maxWeight = info.weight;
+      }
+
+      if (weight >= maxWeight) {
+        // Current check wins (ties go to current, matching the prior
+        // `weight >= prev.weight` behavior). Sweep every losing result's
+        // findings — including all per-file variants — into toRemove.
+        for (const [prevRi, info] of [...byResult]) {
+          if (info.weight <= weight) {
+            for (const prevFi of info.findingIndices) {
+              toRemove.push({ resultIdx: prevRi, findingIdx: prevFi });
+            }
+            byResult.delete(prevRi);
+          }
         }
+        byResult.set(ri, { weight, findingIndices: [fi] });
       } else {
-        seen.set(key, { resultIdx: ri, findingIdx: fi, weight });
+        toRemove.push({ resultIdx: ri, findingIdx: fi });
       }
     }
   }
