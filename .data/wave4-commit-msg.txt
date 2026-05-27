@@ -1,0 +1,46 @@
+fix(security): cap npm registry buffer, document CVE co-disclosure, tighten protocol/env checks
+
+Five narrow security gaps from the 2026-05-27 health report:
+
+1. (mcp-config) checkNpmRegistry buffered the entire npm registry
+   response into a string with no upper bound. A hung connection, a
+   compressed-and-bombed metadata blob, or a malicious redirect target
+   could feed unbounded bytes until the timeout fired (or OOM, on a
+   long-running CI run). Add MAX_REGISTRY_BYTES = 512KB, track
+   bytesRead per chunk, and req.destroy() + resolve null when the
+   cap trips. Also export checkNpmRegistry with an injectable httpGet
+   and maxBytes so the abort path is testable.
+
+2. (mcp-config + claude-settings) The Checkpoint URL referenced for the
+   CVE-2026-21852 (ANTHROPIC_BASE_URL redirect) finding has a slug
+   naming CVE-2025-59536 — initially read as a mismatch, but the
+   correctness-bugs test T3.14d explicitly asserts both files reference
+   that URL because the post is a co-disclosure covering both CVEs.
+   Add an inline comment noting the co-disclosure so future readers
+   don't repeat the "fix" attempt. No URL change.
+
+3. (deep-secrets) Finding detail echoed result.pattern.source.slice(0, 30) —
+   raw regex source from KEY_PATTERNS — into SARIF / CI logs. The
+   pattern source encodes provider-specific structure (key prefix,
+   length quantifier) and the truncated body drifted whenever a pattern
+   was tightened, making findings unstable across upgrades. Replace
+   with labelForPattern(pattern) lookup against a stable provider-name
+   map. New test asserts every KEY_PATTERN has a mapped label (so a
+   future pattern addition cannot silently regress to "credential").
+
+4. (mcp-registry) getDefaultCachePath accepted any value of
+   XDG_CACHE_HOME without validation, so an attacker who can set env
+   for the rigscore process could redirect the cache write to
+   /etc/rigscore-cache or escape via ../. Resolve homedir + the
+   candidate path, accept only paths that equal homedir or live under
+   homedir + sep, fall back to ~/.cache otherwise.
+
+5. (http) url.startsWith('https') matched 'httpsfoo://attacker' and
+   other near-protocol typos, falling through to the http dispatch
+   without TLS. Tighten to 'https://' in fetchHeaders, fetchBody,
+   and probeStatus.
+
+Closes Security #1 (warning), #2 (uncertain), #3 (info), #4 (info),
+#5 (info).
+
+Wave 4 of the fix plan. Touches mcp-config.js; must land before Wave 13.
