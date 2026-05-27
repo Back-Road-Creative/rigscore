@@ -28,6 +28,13 @@ if (args.length > 0 && args[0] === 'diff') {
   mod.runDiffSubcommand(args.slice(1));
 }
 
+// `rigscore explain <findingId>` — print the relevant docs page.
+if (args.length > 0 && args[0] === 'explain') {
+  const mod = await import('../src/cli/explain.js');
+  await mod.runExplainSubcommand(args.slice(1));
+  process.exit(0);
+}
+
 // `init` subcommand: writes a starter .rigscorerc.json. Accepts
 // `--profile <name>` to pre-fill the profile, `--force` / `-f` to overwrite
 // pre-existing files, and `--example` to scaffold a demo project with
@@ -104,6 +111,10 @@ Checks (moat-heavy weighting):
   instruction-effectiveness Instruction quality & context budget (advisory)
   skill-coherence          Skill ↔ governance coherence (advisory)
   documentation            Check docs coverage against src/checks (advisory)
+  workflow-maturity       Skill/agent graduation signals (advisory)
+  windows-security        Windows-specific config hygiene (advisory)
+  network-exposure        Bound-service / port exposure (advisory)
+  agent-output-schemas    JSON-emitting agents declare schemas (advisory)
 
 Subcommands:
   init [--profile <name>]          Write a commented .rigscorerc.json starter
