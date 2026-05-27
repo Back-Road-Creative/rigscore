@@ -35,7 +35,15 @@ export const DEFAULT_NETWORK_TIMEOUT_MS = 5_000;
  */
 export function getDefaultCachePath(homedir = os.homedir()) {
   const xdg = process.env.XDG_CACHE_HOME && process.env.XDG_CACHE_HOME.trim();
-  const cacheRoot = xdg ? xdg : path.join(homedir, '.cache');
+  // Reject XDG_CACHE_HOME that escapes the user's home dir — an attacker
+  // who can set environment variables for the rigscore process could
+  // otherwise redirect the cache write to `/etc/rigscore-cache` or similar.
+  // Absolute path resolution + a prefix check on resolved homedir blocks
+  // both `..` traversal and absolute escapes.
+  const resolvedHome = path.resolve(homedir);
+  const candidate = xdg ? path.resolve(xdg) : path.join(resolvedHome, '.cache');
+  const inHome = candidate === resolvedHome || candidate.startsWith(resolvedHome + path.sep);
+  const cacheRoot = inHome ? candidate : path.join(resolvedHome, '.cache');
   return path.join(cacheRoot, 'rigscore', 'mcp-registry.json');
 }
 

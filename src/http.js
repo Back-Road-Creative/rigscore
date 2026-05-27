@@ -19,7 +19,7 @@ export const USER_AGENT = `rigscore/${pkg.version} (+https://github.com/Back-Roa
  */
 export async function fetchHeaders(url, timeout = DEFAULT_TIMEOUT) {
   return new Promise((resolve) => {
-    const mod = url.startsWith('https') ? https : http;
+    const mod = url.startsWith('https://') ? https : http;
     const req = mod.get(url, { timeout, headers: { 'User-Agent': USER_AGENT } }, (res) => {
       res.resume(); // drain
       resolve({ statusCode: res.statusCode, headers: res.headers });
@@ -35,7 +35,7 @@ export async function fetchHeaders(url, timeout = DEFAULT_TIMEOUT) {
  */
 export async function fetchBody(url, timeout = DEFAULT_TIMEOUT) {
   return new Promise((resolve) => {
-    const mod = url.startsWith('https') ? https : http;
+    const mod = url.startsWith('https://') ? https : http;
     const req = mod.get(url, { timeout, headers: { 'User-Agent': USER_AGENT } }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
@@ -53,7 +53,7 @@ export async function fetchBody(url, timeout = DEFAULT_TIMEOUT) {
  */
 export async function probeStatus(url, timeout = 5000) {
   return new Promise((resolve) => {
-    const mod = url.startsWith('https') ? https : http;
+    const mod = url.startsWith('https://') ? https : http;
     const req = mod.get(url, { timeout, headers: { 'User-Agent': USER_AGENT } }, (res) => {
       res.resume();
       resolve(res.statusCode);

@@ -3,7 +3,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import check from '../src/checks/mcp-config.js';
+import { EventEmitter } from 'node:events';
+import check, { checkNpmRegistry, MAX_REGISTRY_BYTES } from '../src/checks/mcp-config.js';
 import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -371,5 +372,34 @@ describe('mcp-config check', () => {
       fs.rmSync(tmpDir, { recursive: true });
       fs.rmSync(externalDir, { recursive: true });
     }
+  });
+
+  it('checkNpmRegistry exposes a sensible byte cap', () => {
+    expect(MAX_REGISTRY_BYTES).toBe(512 * 1024);
+  });
+
+  it('checkNpmRegistry aborts and resolves null when the response exceeds maxBytes', async () => {
+    // Stub https.get: synthesize an oversize stream and confirm req.destroy
+    // fires when bytesRead crosses the cap.
+    let destroyCalled = false;
+    const res = new EventEmitter();
+    res.statusCode = 200;
+    const req = new EventEmitter();
+    req.destroy = () => { destroyCalled = true; };
+
+    const httpGet = (_url, _opts, onResponse) => {
+      setImmediate(() => {
+        onResponse(res);
+        // Emit 4 chunks of 40KB each (160KB total — well over the 100-byte cap below)
+        const chunk = Buffer.alloc(40 * 1024, 'x');
+        for (let i = 0; i < 4; i++) res.emit('data', chunk);
+        res.emit('end');
+      });
+      return req;
+    };
+
+    const result = await checkNpmRegistry('any-package', { httpGet, maxBytes: 100 });
+    expect(result).toBeNull();
+    expect(destroyCalled).toBe(true);
   });
 });

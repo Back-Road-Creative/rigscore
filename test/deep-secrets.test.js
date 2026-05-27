@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import check from '../src/checks/deep-secrets.js';
-import { WEIGHTS } from '../src/constants.js';
+import check, { labelForPattern } from '../src/checks/deep-secrets.js';
+import { KEY_PATTERNS, WEIGHTS } from '../src/constants.js';
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-deep-'));
@@ -246,6 +246,34 @@ describe('deep-secrets check', () => {
       expect(result.score).toBe(100);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('finding detail uses a stable provider label, never the raw regex source', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      // AKIA + 16 uppercase/digit chars matches the AWS access key pattern.
+      const fakeKey = 'AKIA' + 'ABCDEFGHIJKLMNOP';
+      fs.writeFileSync(path.join(tmpDir, 'leaky.js'), `const k = "${fakeKey}";`);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      const secret = result.findings.find((f) => f.severity === 'critical' && f.title.includes('leaky.js'));
+      expect(secret).toBeDefined();
+      expect(secret.detail).toBe('Detected provider: AWS access key');
+      // Must not contain raw regex metacharacters from the pattern source
+      expect(secret.detail).not.toMatch(/\\b|\[0-9|\{16\}|\(\?:/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('labelForPattern returns a label for every KEY_PATTERN (no fallback leaks)', () => {
+    // Every pattern in the canonical list should have a mapped label —
+    // a "credential" fallback would mean an unrecognized pattern slipped
+    // into KEY_PATTERNS without a corresponding PATTERN_LABEL_RULES entry.
+    for (const pattern of KEY_PATTERNS) {
+      const label = labelForPattern(pattern);
+      expect(label).not.toBe('credential');
+      expect(label.length).toBeGreaterThan(0);
     }
   });
 });
