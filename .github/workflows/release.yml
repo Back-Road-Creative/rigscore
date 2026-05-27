@@ -53,6 +53,14 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: npm test
 
+      # docs-first gate: same blocking check ci.yml runs. Without it, a
+      # release branch could ship a check whose docs/checks/<id>.md is
+      # missing or stale — the user-facing `rigscore explain <findingId>`
+      # would then break against the just-released artifact.
+      - name: Verify check docs
+        if: steps.check.outputs.exists == 'false'
+        run: npm run verify:docs
+
       - name: Build changelog
         if: steps.check.outputs.exists == 'false'
         id: changelog
@@ -83,16 +91,57 @@ jobs:
             --notes-file /tmp/release-notes.txt
           echo "Created release v${{ steps.pkg.outputs.version }}"
 
-      - name: Generate headlessmode release post + tool page sync
+      # Export changelog + prev-tag for the downstream headlessmode job so
+      # it doesn't have to re-checkout this repo.
+      - name: Export release outputs
+        id: release_out
         if: steps.check.outputs.exists == 'false'
+        run: |
+          {
+            echo "version=${{ steps.pkg.outputs.version }}"
+            echo "prev_tag=${{ steps.changelog.outputs.prev_tag }}"
+            echo "changelog<<EOF"
+            printf '%s\n' "${{ steps.changelog.outputs.log }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+    outputs:
+      released: ${{ steps.check.outputs.exists == 'false' && 'true' || 'false' }}
+      version: ${{ steps.release_out.outputs.version }}
+      prev_tag: ${{ steps.release_out.outputs.prev_tag }}
+      changelog: ${{ steps.release_out.outputs.changelog }}
+
+  # Separate job so the cross-repo PAT (HEADLESSMODE_PAT) is only exposed
+  # to the step that needs it, with `contents: read` on this repo —
+  # nothing in this job writes to rigscore. Also gated on `released ==
+  # 'true'` and on the PAT being set, so a fork without the secret
+  # cannot trigger a misleading failure.
+  headlessmode-post:
+    name: Post release to headlessmode
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Guard — require HEADLESSMODE_PAT
+        env:
+          PAT: ${{ secrets.HEADLESSMODE_PAT }}
+        run: |
+          if [ -z "${PAT}" ]; then
+            echo "HEADLESSMODE_PAT not set — skipping cross-repo post."
+            echo "skip=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate headlessmode release post + tool page sync
+        if: env.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
-          RIGSCORE_CHANGELOG: ${{ steps.changelog.outputs.log }}
-          RIGSCORE_PREV_TAG: ${{ steps.changelog.outputs.prev_tag }}
+          RIGSCORE_CHANGELOG: ${{ needs.release.outputs.changelog }}
+          RIGSCORE_PREV_TAG: ${{ needs.release.outputs.prev_tag }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
           set -euo pipefail
 
-          VERSION="${{ steps.pkg.outputs.version }}"
           PREV_VERSION="${RIGSCORE_PREV_TAG#v}"
 
           echo "Version: ${VERSION}"

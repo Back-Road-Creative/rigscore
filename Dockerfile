@@ -4,7 +4,14 @@
 # workflow so OCI labels always match the actual release.
 ARG VERSION=dev
 
-FROM node:20-alpine
+# Pinned to the multi-arch manifest-list digest so the build is
+# reproducible across architectures. Refresh procedure (e.g. once per
+# minor Node release):
+#   curl -s https://hub.docker.com/v2/repositories/library/node/tags/20-alpine \
+#     | python3 -c "import json,sys; print(json.load(sys.stdin)['digest'])"
+# Then update the digest below and bump the comment.
+# Resolved 2026-05-27 — node:20-alpine
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
 
 ARG VERSION
 
