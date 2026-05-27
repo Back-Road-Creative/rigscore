@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Module-level cache for self-registered fixes collected during loadChecks()
-let _registeredFixes = {};
+// Module-level cache for self-registered fixes collected during loadChecks().
+// null until loadChecks runs at least once — getRegisteredFixes uses that
+// to distinguish "no fixers exist" from "loadChecks never ran".
+let _registeredFixes = null;
 
 /**
  * Auto-discover all check modules in this directory (excluding index.js).
@@ -13,13 +15,17 @@ let _registeredFixes = {};
  * Also collects self-registered fixes from check modules that export a `fixes` array.
  */
 export async function loadChecks(options = {}) {
+  // Reset the module-level fixer cache up front, BEFORE any await. Doing it
+  // before the first I/O yield means a downstream caller cannot observe a
+  // stale-but-populated cache while we're mid-load.
+  _registeredFixes = {};
+
   const files = await fs.promises.readdir(__dirname);
   const checkFiles = files.filter(
     (f) => f.endsWith('.js') && f !== 'index.js',
   );
 
   const checks = [];
-  _registeredFixes = {};
 
   for (const file of checkFiles) {
     const mod = await import(path.join(__dirname, file));
@@ -50,8 +56,13 @@ export async function loadChecks(options = {}) {
 /**
  * Return fixes self-registered by check modules during the last loadChecks() call.
  * Keys are fix IDs, values are { id, match, description, apply } objects.
+ * Throws if loadChecks() has never run — that condition would otherwise
+ * silently return an empty map and make `--fix` look like "no fixes available".
  */
 export function getRegisteredFixes() {
+  if (_registeredFixes === null) {
+    throw new Error('getRegisteredFixes() called before loadChecks() — call loadChecks() first.');
+  }
   return _registeredFixes;
 }
 

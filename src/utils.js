@@ -374,6 +374,24 @@ const COMMENT_PREFIXES = ['#', '//', '<!--', '--', '/*', '*'];
  * Scan a single line for secret patterns.
  * Returns { matched: boolean, severity: 'critical'|'info', pattern?: RegExp }
  */
+/**
+ * Slugify a finding title into a stable ID component.
+ *   "env file found but NOT in .gitignore" → "env-file-found-but-not-in-gitignore"
+ *
+ * Canonical version: lowercase, non-alphanumeric → '-', strip leading/
+ * trailing dashes, cap at 60 chars. Used by both scanner (assignFindingIds)
+ * and cli/baseline (flattenFindings). The two paths previously diverged
+ * subtly — baseline omitted the leading/trailing dash strip — which made
+ * finding IDs unstable depending on which code path generated them.
+ */
+export function slugify(title) {
+  return String(title || 'unknown')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+}
+
 export function scanLineForSecrets(line, trimmed) {
   const isComment = COMMENT_PREFIXES.some((p) => trimmed.startsWith(p));
   const isExample = /\b(example|placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me)\b/i.test(line);

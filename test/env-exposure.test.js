@@ -282,4 +282,27 @@ describe('env-exposure check', () => {
       }
     });
   }
+
+  it('finding title names the specific unignored env file when multiple exist', async () => {
+    // Initialize a git repo so isInGitignore via `git check-ignore` works
+    // against a real .gitignore (matches how the check actually queries).
+    const tmpDir = makeTmpDir();
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: tmpDir });
+      // Three env files: .env is gitignored, .env.production is NOT.
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+      fs.writeFileSync(path.join(tmpDir, '.env'), 'SECRET=ok\n');
+      fs.writeFileSync(path.join(tmpDir, '.env.production'), 'SECRET=leaked\n');
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.findingId === 'env-exposure/env-not-gitignored',
+      );
+      expect(critical).toBeDefined();
+      expect(critical.title).toContain('.env.production');
+      expect(critical.title).not.toMatch(/^\.env found/);
+      expect(critical.evidence).toContain('.env.production');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });
