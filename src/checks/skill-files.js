@@ -495,6 +495,47 @@ export function checkUnicode(file) {
 }
 
 /**
+ * Privilege-escalation pattern detection (Wave 8 extraction).
+ *
+ * Behavior preserved from the inline Wave 12 implementation:
+ *  - Accumulate matches per patternId (sudo, chmod-777, disable-firewall …).
+ *  - Allowlist entries are checked per patternId (so an operator skill can
+ *    permit `sudo` without permitting `chmod 777` in the same skill).
+ *  - Severity is WARNING for 1-2 distinct patternIds in the file and
+ *    CRITICAL once the file hits ≥3 distinct escalation patterns. One
+ *    finding emitted per surviving patternId.
+ */
+export function checkEscalation(file, allowlist) {
+  const findings = [];
+  const escalationAcc = new Map(); // patternId → { matches, firstLine }
+  forEachPatternMatch(file.content, ESCALATION_PATTERNS, isDefensiveContext, (pattern, line) => {
+    const patternId = patternIdForEscalation(pattern.source);
+    if (findAllowlistMatch(allowlist, file.path, patternId)) return;
+    const existing = escalationAcc.get(patternId);
+    if (existing) {
+      existing.matches++;
+    } else {
+      escalationAcc.set(patternId, { matches: 1, firstLine: line.trim().slice(0, 120) });
+    }
+  });
+  const distinctEscalationIds = escalationAcc.size;
+  for (const [patternId, entry] of escalationAcc) {
+    const severity = distinctEscalationIds >= 3 ? 'critical' : 'warning';
+    findings.push({
+      findingId: `skill-files/escalation-${patternId}`,
+      severity,
+      title: `Privilege escalation pattern in ${file.path}`,
+      detail: `File contains ${entry.matches} escalation match(es) for pattern "${patternId}". File matches ${distinctEscalationIds} distinct escalation pattern(s) in total.`,
+      evidence: entry.firstLine,
+      matches: entry.matches,
+      remediation: 'Remove privilege escalation instructions from skill files.',
+      context: { file: file.path, patternId, skill: extractSkillDir(file.path), matches: entry.matches, distinctPatterns: distinctEscalationIds },
+    });
+  }
+  return findings;
+}
+
+/**
  * POSIX file-mode check. Skill files that are world-writable can be
  * tampered with by any local user — emit a WARNING. Linux/macOS only;
  * Windows file permissions are checked separately by windows-security.
@@ -608,36 +649,8 @@ export default {
       findings.push(...checkShellExec(file, allowlist));
       findings.push(...checkExfiltration(file, allowlist));
 
-      // C4: drop the first-match `break` cap. Emit one finding per escalation
-      // patternId, but include a `matches` count and bump severity to
-      // CRITICAL when the file hits >= 3 distinct escalation patterns. The
-      // allowlist entries remain finer-grained (e.g. allowlist `sudo` in an
-      // operator skill without permitting `chmod 777` in the same skill).
-      const escalationAcc = new Map(); // patternId → { matches, firstLine }
-      forEachPatternMatch(file.content, ESCALATION_PATTERNS, isDefensiveContext, (pattern, line) => {
-        const patternId = patternIdForEscalation(pattern.source);
-        if (findAllowlistMatch(allowlist, file.path, patternId)) return;
-        const existing = escalationAcc.get(patternId);
-        if (existing) {
-          existing.matches++;
-        } else {
-          escalationAcc.set(patternId, { matches: 1, firstLine: line.trim().slice(0, 120) });
-        }
-      });
-      const distinctEscalationIds = escalationAcc.size;
-      for (const [patternId, entry] of escalationAcc) {
-        const severity = distinctEscalationIds >= 3 ? 'critical' : 'warning';
-        findings.push({
-          findingId: `skill-files/escalation-${patternId}`,
-          severity,
-          title: `Privilege escalation pattern in ${file.path}`,
-          detail: `File contains ${entry.matches} escalation match(es) for pattern "${patternId}". File matches ${distinctEscalationIds} distinct escalation pattern(s) in total.`,
-          evidence: entry.firstLine,
-          matches: entry.matches,
-          remediation: 'Remove privilege escalation instructions from skill files.',
-          context: { file: file.path, patternId, skill: extractSkillDir(file.path), matches: entry.matches, distinctPatterns: distinctEscalationIds },
-        });
-      }
+      // Privilege escalation patterns — see checkEscalation().
+      findings.push(...checkEscalation(file, allowlist));
 
       // Check persistence patterns — C4 aggregation
       if (!findAllowlistMatch(allowlist, file.path, 'persistence')) {
