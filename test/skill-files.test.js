@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import check from '../src/checks/skill-files.js';
+import check, { forEachPatternMatch, accumulatePatternMatches } from '../src/checks/skill-files.js';
 import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -250,4 +250,62 @@ describe('skill-files check', () => {
       }
     });
   }
+});
+
+describe('accumulatePatternMatches / forEachPatternMatch helpers', () => {
+  const neverDefensive = () => false;
+  const alwaysDefensive = () => true;
+
+  it('collects one entry per non-defensive match across multiple patterns', () => {
+    const content = 'first sudo line\nsecond chmod 777 line\nthird sudo line\n';
+    const patterns = [/sudo/, /chmod 777/];
+    const { lines, patternSources } = accumulatePatternMatches(content, patterns, neverDefensive);
+    expect(lines).toEqual([
+      'first sudo line',
+      'third sudo line',
+      'second chmod 777 line',
+    ]);
+    expect(patternSources.size).toBe(2);
+    expect(patternSources.has('sudo')).toBe(true);
+    expect(patternSources.has('chmod 777')).toBe(true);
+  });
+
+  it('isDefensive predicate suppresses matches on flagged lines', () => {
+    const content = 'real sudo call\n# defend against sudo escalation\n';
+    const { lines, patternSources } = accumulatePatternMatches(
+      content,
+      [/sudo/],
+      (line) => /defend against/i.test(line),
+    );
+    expect(lines).toEqual(['real sudo call']);
+    expect(patternSources.size).toBe(1);
+  });
+
+  it('honors a non-global regex by re-compiling with the g flag internally', () => {
+    // /sudo/ (no g) used to advance `lastIndex` on the second call only when
+    // explicitly given the g flag. The helper adds it; both matches should
+    // be found in the same content blob.
+    const content = 'sudo one\nsudo two\nsudo three\n';
+    const { lines } = accumulatePatternMatches(content, [/sudo/], neverDefensive);
+    expect(lines.length).toBe(3);
+  });
+
+  it('alwaysDefensive returns empty even when patterns match every line', () => {
+    const content = 'sudo a\nsudo b\nsudo c\n';
+    const { lines, patternSources } = accumulatePatternMatches(content, [/sudo/], alwaysDefensive);
+    expect(lines).toEqual([]);
+    expect(patternSources.size).toBe(0);
+  });
+
+  it('forEachPatternMatch yields each (pattern, line) pair to the callback', () => {
+    const content = 'a-sudo\nb-curl\n';
+    const calls = [];
+    forEachPatternMatch(content, [/sudo/, /curl/], neverDefensive, (pattern, line) => {
+      calls.push([pattern.source, line]);
+    });
+    expect(calls).toEqual([
+      ['sudo', 'a-sudo'],
+      ['curl', 'b-curl'],
+    ]);
+  });
 });
