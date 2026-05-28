@@ -231,6 +231,19 @@ export async function run(args) {
   };
 
   if (options.recursive) {
+    // Reject flag combinations that don't have a clean semantic in recursive
+    // mode. Per-project --fix output is noisy; --baseline writes a single
+    // file that can't represent N projects; --badge of an aggregate has no
+    // meaningful score. Fail loud rather than silently no-op.
+    const unsupportedRecursiveFlags = [];
+    if (options.fix) unsupportedRecursiveFlags.push('--fix');
+    if (options.baseline) unsupportedRecursiveFlags.push('--baseline');
+    if (options.badge) unsupportedRecursiveFlags.push('--badge');
+    if (unsupportedRecursiveFlags.length > 0) {
+      process.stderr.write(`rigscore: ${unsupportedRecursiveFlags.join(', ')} not supported in --recursive mode\n`);
+      process.exit(2);
+    }
+
     let result;
     try {
       result = await scanRecursive({ ...scanOptions, depth: options.depth, failUnder: options.failUnder });
@@ -244,13 +257,22 @@ export async function run(args) {
       process.exit(2);
     }
 
+    // --ignore in recursive mode: apply per-project suppression before formatting.
+    // Mirrors the non-recursive branch but doesn't recompute scores — recursive
+    // formatters present per-project numbers as-scanned.
+    if (options.ignore && options.ignore.length > 0) {
+      for (const project of result.projects) {
+        if (project.results) suppressFindings(project.results, options.ignore);
+      }
+    }
+
     if (options.sarif) {
       // SARIF for recursive: one run per project
       process.stdout.write(JSON.stringify(formatSarifMulti(result.projects), null, 2) + '\n');
     } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else {
-      process.stdout.write(formatTerminalRecursive(result, cwd, { noCta: options.noCta }) + '\n');
+      process.stdout.write(formatTerminalRecursive(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }
 
     // Fail if ANY project is below threshold (fail-fast on worst)
