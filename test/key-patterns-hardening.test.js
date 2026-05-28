@@ -49,9 +49,9 @@ describe('KEY_PATTERNS hardening — negatives (must NOT match)', () => {
   });
 
   it('AKIA pattern does NOT match AKIA-substring embedded in larger token', () => {
-    // 16 base-64-ish chars immediately after AKIA but with letters/digits
+    // 16 uppercase/digit chars immediately after AKIA but with letters/digits
     // continuing afterwards — a JWT / blob substring, not an AWS key.
-    const jwtLike = 'eyJxxxAKIAIOSFODNN7EXAMPLEabc123';
+    const jwtLike = 'eyJxxxAKIAXXXXXXXXXXXXXXXXabc123';
     expect(patternMatches('AKIA', jwtLike)).toBe(false);
   });
 
@@ -63,7 +63,7 @@ describe('KEY_PATTERNS hardening — negatives (must NOT match)', () => {
   });
 
   it('ASIA pattern does NOT match ASIA-substring embedded in larger token', () => {
-    expect(patternMatches('ASIA', 'fooASIAIOSFODNN7EXAMPLEabc')).toBe(false);
+    expect(patternMatches('ASIA', 'fooASIAXXXXXXXXXXXXXXXXabc')).toBe(false);
   });
 
   it('SK Twilio pattern does NOT match the bare 2-letter prefix in context', () => {
@@ -82,7 +82,7 @@ describe('KEY_PATTERNS hardening — negatives (must NOT match)', () => {
 
   it('scanLineForSecrets does NOT flag AKIA inside a JWT-like blob', () => {
     const line =
-      'const jwt = "eyJxxxAKIAIOSFODNN7EXAMPLEabc.signaturepayload";';
+      'const jwt = "eyJxxxAKIAXXXXXXXXXXXXXXXXabc.signaturepayload";';
     const r = scanLineForSecrets(line, line.trim());
     expect(r.matched).toBe(false);
   });
@@ -112,13 +112,14 @@ describe('KEY_PATTERNS hardening — positives (must STILL match real tokens)', 
   });
 
   it('AKIA still matches a standalone AWS access key', () => {
-    // Canonical AWS example access key id.
-    const real = 'AKIAIOSFODNN7EXAMPLE';
+    // Shape-only specimen — avoids AWS's documented canonical example, which
+    // is a known fingerprint for gitleaks / push-time secret scanning.
+    const real = 'AKIAXXXXXXXXXXXXXXXX';
     expect(patternMatches('AKIA', real)).toBe(true);
   });
 
   it('AKIA matches in a quoted/JSON context (with boundary)', () => {
-    const line = '"aws_key": "AKIAIOSFODNN7EXAMPLE"';
+    const line = '"aws_key": "AKIAXXXXXXXXXXXXXXXX"';
     const r = scanLineForSecrets(line, line.trim());
     expect(r.matched).toBe(true);
   });
