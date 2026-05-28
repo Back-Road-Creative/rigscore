@@ -56,64 +56,86 @@ export function parseArgs(args) {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--json') {
-      options.json = true;
-    } else if (arg === '--badge') {
-      options.badge = true;
-    } else if (arg === '--sarif') {
-      options.sarif = true;
-    } else if (arg === '--no-color') {
-      options.noColor = true;
-    } else if (arg === '--no-cta') {
-      options.noCta = true;
-    } else if (arg === '--cta') {
-      options.noCta = false;
-    } else if (arg === '--check' && i + 1 < args.length) {
-      options.checkFilter = args[++i];
-    } else if (arg === '--verbose' || arg === '-v') {
-      options.verbose = true;
-    } else if (arg === '--recursive' || arg === '-r') {
-      options.recursive = true;
-    } else if (arg === '--depth' && i + 1 < args.length) {
-      options.depth = parseInt(args[++i], 10) || 1;
-      options.recursive = true; // --depth implies --recursive
-    } else if (arg === '--deep') {
-      options.deep = true;
-    } else if (arg === '--online') {
-      options.online = true;
-    } else if (arg === '--refresh-mcp-registry') {
-      options.refreshMcpRegistry = true;
-      options.online = true; // implies --online
-    } else if (arg === '--include-home-skills') {
-      options.includeHomeSkills = true;
-    } else if (arg === '--fail-under' && i + 1 < args.length) {
-      const parsed = parseInt(args[++i], 10);
-      options.failUnder = Math.max(0, Math.min(100, Number.isNaN(parsed) ? 70 : parsed));
-    } else if (arg === '--profile' && i + 1 < args.length) {
-      options.profile = args[++i];
-    } else if (arg === '--fix') {
-      options.fix = true;
-    } else if (arg === '--yes' || arg === '-y') {
-      options.yes = true;
-    } else if (arg === '--init-hook') {
-      options.initHook = true;
-    } else if (arg === '--watch') {
-      options.watch = true;
-    } else if (arg === '--ignore' && i + 1 < args.length) {
-      options.ignore = args[++i].split(',').map(s => s.trim()).filter(Boolean);
-    } else if (arg === '--baseline' && i + 1 < args.length) {
-      options.baseline = args[++i];
-    } else if (arg === '--ci') {
-      options.sarif = true;
-      options.noColor = true;
-      options.noCta = true;
+    const def = FLAG_DEFS[arg];
+    if (def) {
+      if (def.takesValue) {
+        // Match prior behavior: a value-taking flag at the end of argv
+        // with no following arg is silently ignored, not errored.
+        if (i + 1 >= args.length) continue;
+        def.handler(options, args[++i]);
+      } else {
+        def.handler(options);
+      }
     } else if (!arg.startsWith('-')) {
+      // Bare positional → target directory; last positional wins.
       options.cwd = arg;
     }
+    // Unknown --flag is silently ignored (preserves the prior contract;
+    // forward-compat for CI scripts that pass through extra flags).
   }
 
   return options;
 }
+
+/**
+ * Flag dispatch table for parseArgs. Replaces a 21-branch if/else chain
+ * with O(1) lookup keyed by literal arg. Each entry exposes:
+ *   - `takesValue` (optional bool): consumes the next argv slot as `v`
+ *   - `handler(options[, value])`: applies the flag's effect, including
+ *      any implication chains (e.g., `--ci` → sarif + noColor + noCta).
+ *
+ * Aliases (`--verbose`/`-v`, `--recursive`/`-r`, `--yes`/`-y`) share a
+ * handler object reference so they remain trivially in sync.
+ */
+const FLAG_DEFS = (() => {
+  const setTrue = (key) => (o) => { o[key] = true; };
+  const setStr = (key) => (o, v) => { o[key] = v; };
+
+  const verbose = { handler: setTrue('verbose') };
+  const recursive = { handler: setTrue('recursive') };
+  const yes = { handler: setTrue('yes') };
+
+  return {
+    // Plain booleans
+    '--json':                 { handler: setTrue('json') },
+    '--badge':                { handler: setTrue('badge') },
+    '--sarif':                { handler: setTrue('sarif') },
+    '--no-color':             { handler: setTrue('noColor') },
+    '--no-cta':               { handler: setTrue('noCta') },
+    '--cta':                  { handler: (o) => { o.noCta = false; } },
+    '--deep':                 { handler: setTrue('deep') },
+    '--online':               { handler: setTrue('online') },
+    '--include-home-skills':  { handler: setTrue('includeHomeSkills') },
+    '--fix':                  { handler: setTrue('fix') },
+    '--init-hook':            { handler: setTrue('initHook') },
+    '--watch':                { handler: setTrue('watch') },
+
+    // Aliased booleans
+    '--verbose': verbose, '-v': verbose,
+    '--recursive': recursive, '-r': recursive,
+    '--yes': yes, '-y': yes,
+
+    // Implication chains
+    '--refresh-mcp-registry': { handler: (o) => { o.refreshMcpRegistry = true; o.online = true; } },
+    '--ci':                   { handler: (o) => { o.sarif = true; o.noColor = true; o.noCta = true; } },
+
+    // String-value flags
+    '--check':                { takesValue: true, handler: setStr('checkFilter') },
+    '--profile':              { takesValue: true, handler: setStr('profile') },
+    '--baseline':             { takesValue: true, handler: setStr('baseline') },
+    '--ignore':               { takesValue: true, handler: (o, v) => {
+      o.ignore = v.split(',').map((s) => s.trim()).filter(Boolean);
+    } },
+    '--depth':                { takesValue: true, handler: (o, v) => {
+      o.depth = parseInt(v, 10) || 1;
+      o.recursive = true; // --depth implies --recursive
+    } },
+    '--fail-under':           { takesValue: true, handler: (o, v) => {
+      const parsed = parseInt(v, 10);
+      o.failUnder = Math.max(0, Math.min(100, Number.isNaN(parsed) ? 70 : parsed));
+    } },
+  };
+})();
 
 /**
  * Top-level CLI entrypoint. Parses args, validates the target directory,
