@@ -15,6 +15,9 @@ import check, {
   checkTyposquatRegistry,
   checkClaudeSettings,
   checkCve2025_59536,
+  checkCrossClientDrift,
+  checkHashPinning,
+  checkRuntimeToolPinStatus,
 } from '../src/checks/mcp-config.js';
 import { WEIGHTS } from '../src/constants.js';
 
@@ -646,6 +649,115 @@ describe('Wave 13c — checkClaudeSettings / checkCve2025_59536', () => {
       expect(findings).toHaveLength(1);
       expect(findings[0].severity).toBe('critical');
       expect(findings[0].findingId).toBe('mcp-config/cve-2025-59536-auto-approve-on-clone');
+    });
+  });
+});
+
+describe('Wave 13d — checkCrossClientDrift / checkHashPinning / checkRuntimeToolPinStatus', () => {
+  describe('checkCrossClientDrift', () => {
+    it('returns empty + driftDetected=false when only one client is configured', () => {
+      const map = new Map([['.mcp.json', { srv: { args: ['a'] } }]]);
+      const r = checkCrossClientDrift(map);
+      expect(r.findings).toEqual([]);
+      expect(r.driftDetected).toBe(false);
+    });
+
+    it('emits cross-client-drift WARNING when args differ between clients', () => {
+      const map = new Map([
+        ['.mcp.json', { srv: { args: ['a'] } }],
+        ['.cursor/mcp.json', { srv: { args: ['b'] } }],
+      ]);
+      const r = checkCrossClientDrift(map);
+      expect(r.driftDetected).toBe(true);
+      const drift = r.findings.find((f) => f.findingId === 'mcp-config/cross-client-drift');
+      expect(drift).toBeDefined();
+      expect(drift.severity).toBe('warning');
+    });
+
+    it('emits single-client-server INFO for a server only in one of multiple clients', () => {
+      const map = new Map([
+        ['.mcp.json', { only: { args: ['x'] } }],
+        ['.cursor/mcp.json', { other: { args: ['y'] } }],
+      ]);
+      const r = checkCrossClientDrift(map);
+      expect(r.driftDetected).toBe(false);
+      const infos = r.findings.filter((f) => f.findingId === 'mcp-config/single-client-server');
+      expect(infos.length).toBe(2);
+    });
+
+    it('identical configs across clients produce no drift finding', () => {
+      const map = new Map([
+        ['.mcp.json', { srv: { args: ['a'], env: { X: '1' }, transport: 'stdio' } }],
+        ['.cursor/mcp.json', { srv: { args: ['a'], env: { X: '1' }, transport: 'stdio' } }],
+      ]);
+      const r = checkCrossClientDrift(map);
+      expect(r.driftDetected).toBe(false);
+      expect(r.findings.find((f) => f.findingId === 'mcp-config/cross-client-drift')).toBeUndefined();
+    });
+  });
+
+  describe('checkHashPinning', () => {
+    it('returns empty + writes nothing when currentHashes is empty', async () => {
+      const tmp = makeTmpDir();
+      try {
+        const findings = await checkHashPinning(tmp, {}, true);
+        expect(findings).toEqual([]);
+        // No .rigscore-state.json should have been written
+        expect(fs.existsSync(path.join(tmp, '.rigscore-state.json'))).toBe(false);
+      } finally {
+        fs.rmSync(tmp, { recursive: true });
+      }
+    });
+
+    it('returns empty when writeState is explicitly false (test-suppress path)', async () => {
+      const tmp = makeTmpDir();
+      try {
+        const findings = await checkHashPinning(tmp, { srv: 'hash-abc' }, false);
+        expect(findings).toEqual([]);
+        expect(fs.existsSync(path.join(tmp, '.rigscore-state.json'))).toBe(false);
+      } finally {
+        fs.rmSync(tmp, { recursive: true });
+      }
+    });
+
+    it('writes state on first scan (no warnings) and emits drift WARNING on changed hash', async () => {
+      const tmp = makeTmpDir();
+      try {
+        // First scan: no state yet → no warning, state is written
+        const first = await checkHashPinning(tmp, { srv: 'hash-v1' }, true);
+        expect(first).toEqual([]);
+        // Second scan with a different hash → drift WARNING
+        const second = await checkHashPinning(tmp, { srv: 'hash-v2' }, true);
+        const drift = second.find((f) => f.findingId === 'mcp-config/server-hash-drift');
+        expect(drift).toBeDefined();
+        expect(drift.severity).toBe('warning');
+      } finally {
+        fs.rmSync(tmp, { recursive: true });
+      }
+    });
+  });
+
+  describe('checkRuntimeToolPinStatus', () => {
+    it('returns empty when surfaceRuntime is false', async () => {
+      const tmp = makeTmpDir();
+      try {
+        const findings = await checkRuntimeToolPinStatus(tmp, { srv: 'h' }, false);
+        expect(findings).toEqual([]);
+      } finally {
+        fs.rmSync(tmp, { recursive: true });
+      }
+    });
+
+    it('emits "pin not recorded" INFO when no runtime hash in state', async () => {
+      const tmp = makeTmpDir();
+      try {
+        const findings = await checkRuntimeToolPinStatus(tmp, { srv: 'h' }, true);
+        expect(findings).toHaveLength(1);
+        expect(findings[0].findingId).toBe('mcp-config/runtime-tool-pin-missing');
+        expect(findings[0].severity).toBe('info');
+      } finally {
+        fs.rmSync(tmp, { recursive: true });
+      }
     });
   });
 });
