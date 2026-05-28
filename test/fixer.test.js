@@ -132,13 +132,21 @@ describe('fixer self-registration', () => {
     expect(ids).toContain('skill-file-world-writable');
   });
 
-  it('each registered fix has required shape (id, match, description, apply)', () => {
+  it('each registered fix has required shape (id, description, apply, and at least one matcher)', () => {
+    // Matchers come in two flavors after PR #112: a `match(finding)` predicate
+    // (legacy, title-substring) OR a non-empty `findingIds: string[]` (new).
+    // src/checks/index.js loadChecks() rejects fixers that declare neither, so
+    // every registered fix must satisfy this disjunction. The previous
+    // assertion required `match` unconditionally and flaked whenever the
+    // findingIds-only-fixer test registered before this one in the worker.
     const fixes = getRegisteredFixes();
     for (const [id, fix] of Object.entries(fixes)) {
       expect(fix.id).toBe(id);
-      expect(typeof fix.match).toBe('function');
       expect(typeof fix.description).toBe('string');
       expect(typeof fix.apply).toBe('function');
+      const hasMatch = typeof fix.match === 'function';
+      const hasFindingIds = Array.isArray(fix.findingIds) && fix.findingIds.length > 0;
+      expect(hasMatch || hasFindingIds, `fix "${id}" must declare match() or non-empty findingIds`).toBe(true);
     }
   });
 
