@@ -1,0 +1,29 @@
+refactor(skill-files): extract checkInjection / checkShellExec / checkExfiltration
+
+Phase 2a of the skill-files.js god-function decomposition (Complexity #2
+critical). Extracts the three pattern-scanning helpers from run() into
+exported functions:
+
+- checkInjection(file): single-line + 2-line sliding window injection
+  detection, with defensive-context downgrade. Returns up to 1 finding.
+
+- checkShellExec(file, allowlist): aggregated per-file shell-exec
+  finding using accumulatePatternMatches; severity escalates to CRITICAL
+  at 3+ distinct patterns; honors per-file shell-exec allowlist.
+
+- checkExfiltration(file, allowlist): first-match-wins exfiltration
+  detection, suppressed by defensive context or per-file allowlist.
+
+run() shrinks from 434 to 318 lines (-116). Per-file body is now a
+short sequence of `findings.push(...checkX(file, allowlist))` calls
+for the extracted families; checkUnicode + checkPosixPermissions
+extraction will follow in Phase 2b to keep this PR's diff in budget.
+
+Behavior is bit-identical — same findings, severities, evidence
+strings, context payloads. All 94 existing skill-file end-to-end
+tests still pass.
+
+Closes Complexity #2 (partial — Phase 2b finishes the run() reduction).
+
+Wave 12 Phase 2a of the fix plan. Split from a larger Phase 2 change
+(originally 557 sum) so each PR stays close to JP's diff cap.

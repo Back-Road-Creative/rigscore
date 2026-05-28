@@ -1,0 +1,35 @@
+refactor(cli): replace 21-branch arg parser with table-driven dispatch
+
+src/index.js parseArgs() was a 56-line if/else chain — flagged as
+Complexity #7 in the 2026-05-27 health report. Each branch followed
+one of a handful of shapes (plain bool, override-bool, string-value,
+parsed-int, comma-list, implication chain), but the chain mixed them
+all together so every new flag added linear if/else weight.
+
+Replace with FLAG_DEFS lookup table:
+  - Map keyed by literal arg ('--json', '--check', etc.) for O(1)
+    dispatch
+  - Each entry: { takesValue?: bool, handler: (options[, value]) => void }
+  - Aliases ('--verbose'/'-v', '--recursive'/'-r', '--yes'/'-y') share
+    one handler object reference so they stay trivially in sync
+  - Implication chains (--ci → sarif+noColor+noCta;
+    --refresh-mcp-registry → online; --depth → recursive) live inside
+    the handler closures, same as before
+
+Behavior is bit-identical:
+  - Same option defaults
+  - Same silent-skip for a value-taking flag at end of argv
+  - Same silent-ignore for unknown --flag (preserves forward-compat
+    for CI scripts that pass through extra flags)
+  - Same "bare positional → cwd; last positional wins" rule
+
+Test surface widened from 14 to 23: added regressions for
+--no-color isolation, --refresh-mcp-registry implication,
+--depth implication + integer parse + non-numeric fallback,
+-v / -r / -y alias resolution, unknown-flag tolerance with no cwd
+pollution, positional-last-wins, value-flag at end of argv,
+empty-entry filtering in --ignore comma list.
+
+Closes Complexity #7.
+
+Wave 11 of the fix plan.

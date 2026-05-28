@@ -430,6 +430,92 @@ export function checkExfiltration(file, allowlist) {
   return [];
 }
 
+/**
+ * Unicode-steganography detection: bidi overrides (CRITICAL), zero-width
+ * characters (WARNING), and homoglyphs from classic non-Latin scripts plus
+ * modern prompt-injection ranges that NFKC-normalize to ASCII (WARNING).
+ */
+export function checkUnicode(file) {
+  const findings = [];
+
+  if (hasBidiOverrides(file.content)) {
+    findings.push({
+      findingId: 'skill-files/bidi-override',
+      severity: 'critical',
+      title: `Bidirectional override characters in ${file.path}`,
+      detail: 'File contains Unicode bidi override characters (U+202A-202E, U+2066-2069) that can make text render differently than stored, hiding malicious instructions.',
+      remediation: 'Remove all bidirectional override characters from the file.',
+      context: { file: file.path },
+    });
+  }
+
+  if (hasZeroWidthChars(file.content)) {
+    findings.push({
+      findingId: 'skill-files/zero-width',
+      severity: 'warning',
+      title: `Zero-width characters detected in ${file.path}`,
+      detail: 'File contains invisible zero-width characters (ZWJ, ZWNJ, ZWS, BOM, ZWNBS) that could hide malicious content between visible text.',
+      remediation: 'Remove zero-width characters. Run: cat -v <file> to reveal hidden characters.',
+      context: { file: file.path },
+    });
+  }
+
+  if (hasHomoglyphs(file.content)) {
+    const modernRanges = detectModernHomoglyphRanges(file.content);
+    const classicDetail = 'File contains characters from non-Latin scripts (Greek, Cyrillic, Armenian, Georgian, Cherokee) that visually resemble Latin letters. This could be used to disguise malicious instructions.';
+    const detail = modernRanges.length
+      ? `${classicDetail} Detected ranges: ${modernRanges.join(', ')}.`
+      : classicDetail;
+    findings.push({
+      findingId: 'skill-files/homoglyph',
+      severity: 'warning',
+      title: `Homoglyph characters detected in ${file.path}`,
+      detail,
+      remediation: 'Replace homoglyph characters with their ASCII equivalents.',
+      context: { file: file.path, modernRanges },
+    });
+  } else {
+    // Modern prompt-injection ranges that NFKC-normalize to ASCII — must be detected
+    // on raw text. Skill/governance files are dev-control surfaces where Mathematical
+    // Bold or Fullwidth text is extremely unlikely to be legitimate.
+    const modernRanges = detectModernHomoglyphRanges(file.content);
+    if (modernRanges.length > 0) {
+      findings.push({
+        findingId: 'skill-files/homoglyph',
+        severity: 'warning',
+        title: `Homoglyph characters detected in ${file.path}`,
+        detail: `File contains Unicode characters from ranges used in prompt-injection attacks: ${modernRanges.join(', ')}. These visually resemble Latin letters and can disguise malicious instructions.`,
+        remediation: 'Replace homoglyph characters with their ASCII equivalents.',
+        context: { file: file.path, modernRanges },
+      });
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * POSIX file-mode check. Skill files that are world-writable can be
+ * tampered with by any local user — emit a WARNING. Linux/macOS only;
+ * Windows file permissions are checked separately by windows-security.
+ */
+export async function checkPosixPermissions(file) {
+  if (process.platform === 'win32') return [];
+  const fileStat = await statSafe(file.fullPath);
+  if (!fileStat) return [];
+  const mode = fileStat.mode & 0o777;
+  if (!(mode & 0o002)) return [];
+  return [{
+    findingId: 'skill-files/world-writable',
+    severity: 'warning',
+    title: `Skill file ${file.path} is world-writable`,
+    detail: `${file.path} has mode ${mode.toString(8)}. World-writable skill files can be tampered with.`,
+    evidence: `${file.path} mode ${mode.toString(8)}`,
+    remediation: `Run: chmod 644 ${file.path}`,
+    context: { file: file.path },
+  }];
+}
+
 export default {
   id: 'skill-files',
   enforcementGrade: 'pattern',
@@ -615,61 +701,8 @@ export default {
         }
       }
 
-      // Bidi override detection — CRITICAL (can make text render differently)
-      if (hasBidiOverrides(file.content)) {
-        findings.push({
-          findingId: 'skill-files/bidi-override',
-          severity: 'critical',
-          title: `Bidirectional override characters in ${file.path}`,
-          detail: 'File contains Unicode bidi override characters (U+202A-202E, U+2066-2069) that can make text render differently than stored, hiding malicious instructions.',
-          remediation: 'Remove all bidirectional override characters from the file.',
-          context: { file: file.path },
-        });
-      }
-
-      // Zero-width character detection — WARNING (invisible content)
-      if (hasZeroWidthChars(file.content)) {
-        findings.push({
-          findingId: 'skill-files/zero-width',
-          severity: 'warning',
-          title: `Zero-width characters detected in ${file.path}`,
-          detail: 'File contains invisible zero-width characters (ZWJ, ZWNJ, ZWS, BOM, ZWNBS) that could hide malicious content between visible text.',
-          remediation: 'Remove zero-width characters. Run: cat -v <file> to reveal hidden characters.',
-          context: { file: file.path },
-        });
-      }
-
-      // Homoglyph detection (classic ranges: Greek, Cyrillic, Armenian, Georgian, Cherokee)
-      if (hasHomoglyphs(file.content)) {
-        const modernRanges = detectModernHomoglyphRanges(file.content);
-        const classicDetail = 'File contains characters from non-Latin scripts (Greek, Cyrillic, Armenian, Georgian, Cherokee) that visually resemble Latin letters. This could be used to disguise malicious instructions.';
-        const detail = modernRanges.length
-          ? `${classicDetail} Detected ranges: ${modernRanges.join(', ')}.`
-          : classicDetail;
-        findings.push({
-          findingId: 'skill-files/homoglyph',
-          severity: 'warning',
-          title: `Homoglyph characters detected in ${file.path}`,
-          detail,
-          remediation: 'Replace homoglyph characters with their ASCII equivalents.',
-          context: { file: file.path, modernRanges },
-        });
-      } else {
-        // Modern prompt-injection ranges that NFKC-normalize to ASCII — must be detected
-        // on raw text. Skill/governance files are dev-control surfaces where Mathematical
-        // Bold or Fullwidth text is extremely unlikely to be legitimate.
-        const modernRanges = detectModernHomoglyphRanges(file.content);
-        if (modernRanges.length > 0) {
-          findings.push({
-            findingId: 'skill-files/homoglyph',
-            severity: 'warning',
-            title: `Homoglyph characters detected in ${file.path}`,
-            detail: `File contains Unicode characters from ranges used in prompt-injection attacks: ${modernRanges.join(', ')}. These visually resemble Latin letters and can disguise malicious instructions.`,
-            remediation: 'Replace homoglyph characters with their ASCII equivalents.',
-            context: { file: file.path, modernRanges },
-          });
-        }
-      }
+      // Unicode steganography (bidi / zero-width / homoglyph) — see checkUnicode().
+      findings.push(...checkUnicode(file));
 
       // Check external URLs — only WARNING for HTTP (non-TLS)
       const urls = file.content.match(URL_PATTERN);
@@ -710,25 +743,8 @@ export default {
         });
       }
 
-      // Check file permissions (Linux only)
-      if (process.platform !== 'win32') {
-        const fileStat = await statSafe(file.fullPath);
-        if (fileStat) {
-          const mode = fileStat.mode & 0o777;
-          // World-writable check: "others" write bit
-          if (mode & 0o002) {
-            findings.push({
-              findingId: 'skill-files/world-writable',
-              severity: 'warning',
-              title: `Skill file ${file.path} is world-writable`,
-              detail: `${file.path} has mode ${mode.toString(8)}. World-writable skill files can be tampered with.`,
-              evidence: `${file.path} mode ${mode.toString(8)}`,
-              remediation: `Run: chmod 644 ${file.path}`,
-              context: { file: file.path },
-            });
-          }
-        }
-      }
+      // POSIX world-writable permission check — see checkPosixPermissions().
+      findings.push(...(await checkPosixPermissions(file)));
     }
 
     if (findings.length === 0) {
