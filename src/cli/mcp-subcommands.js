@@ -50,6 +50,18 @@ export async function runMcpPin(args) {
     process.stderr.write('Usage: rigscore mcp-pin <serverName> <hashHex>\n');
     process.exit(2);
   }
+  // Constrain to printable shell-safe characters and block prototype keys
+  // (`__proto__`, `constructor`, `prototype`) that would otherwise mutate
+  // Object.prototype when set on `merged.servers`. Real MCP server names
+  // in the wild use underscores (e.g. `mcp_server_foo`), so the regex
+  // permits them; the explicit blocklist handles the dangerous cases.
+  const PROTO_BLOCKLIST = new Set(['__proto__', 'constructor', 'prototype']);
+  if (!/^[A-Za-z0-9._@/_-]+$/.test(serverName)
+      || serverName.length > 256
+      || PROTO_BLOCKLIST.has(serverName)) {
+    process.stderr.write(`Error: invalid server name "${serverName}" — must match /^[A-Za-z0-9._@/_-]+$/, be ≤256 chars, and not be a prototype-pollution key\n`);
+    process.exit(2);
+  }
   if (!/^[a-f0-9]{64}$/i.test(hashHex)) {
     process.stderr.write(`Error: hash must be a 64-character lowercase hex sha256 digest (got "${hashHex.slice(0, 16)}...")\n`);
     process.exit(2);

@@ -3,6 +3,15 @@ coverage/
 .DS_Store
 *.log
 
+# Local environment files at repo root — never commit. Anchored with a
+# leading `/` so the pattern does NOT cascade to `test/fixtures/**/.env`,
+# which are intentional fixtures the env-exposure check needs to see as
+# not-ignored (`git check-ignore` walks parent .gitignore chains, so an
+# unanchored `.env` here would shadow the fixture).
+/.env
+/.env.*
+!/.env.example
+
 # Dogfood fixture artifacts
 test/fixtures/scored-project/.rigscore-state.json
 test/fixtures/scored-project/a-plain-file.txt

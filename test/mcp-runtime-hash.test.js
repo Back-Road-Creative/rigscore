@@ -228,6 +228,23 @@ describe('T2.5 mcp-pin subcommand', () => {
       expect(state.servers['my-server'].runtimeToolHash).toBe(hash2);
     });
   });
+
+  // Prototype-pollution guard. Without the regex validator, names like
+  // __proto__ / constructor / toString land directly on `merged.servers[name]`,
+  // mutating Object.prototype for the saved state and any code that
+  // subsequently does `state.servers[someUntrustedKey]` lookups.
+  it('rejects prototype-pollution server names with exit 2', async () => {
+    await withTmpDir(async (tmpDir) => {
+      const hash = 'a'.repeat(64);
+      for (const bad of ['__proto__', 'constructor', 'prototype', 'has space', 'semi;colon']) {
+        const res = runCli(['mcp-pin', bad, hash], { cwd: tmpDir });
+        expect(res.status, `should reject "${bad}"`).toBe(2);
+        expect(res.stderr).toMatch(/invalid server name/);
+      }
+      // State file should not have been created — every call exited before write.
+      expect(fs.existsSync(path.join(tmpDir, STATE_FILENAME))).toBe(false);
+    });
+  });
 });
 
 describe('T2.6 mcp-verify subcommand', () => {
