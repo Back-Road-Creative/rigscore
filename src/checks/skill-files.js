@@ -295,6 +295,141 @@ export const fixes = [
   },
 ];
 
+/**
+ * Per-pattern-family helpers extracted from run() so the file loop in run()
+ * reads as a sequence of "check X, push findings" calls rather than a
+ * 300-line straight-line body. Each helper takes the `file` shape used by
+ * run() — `{ path, fullPath, content }` — plus any extra dependencies
+ * (allowlist) and returns a finding array (possibly empty).
+ *
+ * The helpers retain their original branching behavior; this is a pure
+ * extraction, no semantic change.
+ */
+
+/**
+ * Injection-pattern detection. Single-line pass first, then a 2-line
+ * sliding window (catches templates that split "ignore previous" /
+ * "instructions" across two lines). One finding per file.
+ */
+export function checkInjection(file) {
+  const findings = [];
+  const lines = file.content.split('\n');
+
+  let injectionFound = false;
+  for (const line of lines) {
+    const normalizedLine = normalizeText(line);
+    for (const pattern of INJECTION_PATTERNS) {
+      if (pattern.test(normalizedLine)) {
+        const isDefensive = isDefensiveContext(normalizedLine);
+        findings.push({
+          findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
+          severity: isDefensive ? 'info' : 'critical',
+          title: isDefensive
+            ? `Defensive injection reference in ${file.path}`
+            : `Injection pattern found in ${file.path}`,
+          detail: isDefensive
+            ? 'File references injection patterns in a defensive context.'
+            : 'File contains instruction override patterns that could hijack AI agent behavior.',
+          evidence: line.trim().slice(0, 120),
+          remediation: isDefensive
+            ? 'No action needed — this appears to be a defensive rule.'
+            : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
+          context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
+        });
+        injectionFound = true;
+        break;
+      }
+    }
+    if (injectionFound) break;
+  }
+
+  if (!injectionFound) {
+    for (let i = 0; i < lines.length - 1; i++) {
+      const twoLines = normalizeText(lines[i] + ' ' + lines[i + 1]);
+      for (const pattern of INJECTION_PATTERNS) {
+        if (pattern.test(twoLines)) {
+          const isDefensive = isDefensiveContext(twoLines);
+          findings.push({
+            findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
+            severity: isDefensive ? 'info' : 'critical',
+            title: isDefensive
+              ? `Defensive injection reference in ${file.path}`
+              : `Injection pattern found in ${file.path}`,
+            detail: isDefensive
+              ? 'File references injection patterns in a defensive context.'
+              : 'File contains instruction override patterns that could hijack AI agent behavior.',
+            evidence: (lines[i] + ' ' + lines[i + 1]).trim().slice(0, 120),
+            remediation: isDefensive
+              ? 'No action needed — this appears to be a defensive rule.'
+              : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
+            context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
+          });
+          injectionFound = true;
+          break;
+        }
+      }
+      if (injectionFound) break;
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * Shell-execution-pattern detection. Aggregated finding (one per file)
+ * with a `matches` count and severity escalating to CRITICAL at 3+
+ * distinct patterns. Honors the per-file shell-exec allowlist.
+ */
+export function checkShellExec(file, allowlist) {
+  if (findAllowlistMatch(allowlist, file.path, 'shell-exec')) return [];
+
+  const { lines: matchedLines, patternSources: matchedPatternSources } =
+    accumulatePatternMatches(file.content, SHELL_EXEC_PATTERNS, isDefensiveContext);
+
+  if (matchedPatternSources.size === 0) return [];
+
+  const matches = matchedLines.length;
+  const distinctPatterns = matchedPatternSources.size;
+  const severity = distinctPatterns >= 3 ? 'critical' : 'warning';
+  return [{
+    findingId: 'skill-files/shell-exec',
+    severity,
+    title: `Shell execution instructions in ${file.path}`,
+    detail: `File contains ${matches} shell-execution match(es) across ${distinctPatterns} distinct pattern(s).`,
+    evidence: matchedLines[0],
+    matches,
+    remediation: 'Review shell execution instructions carefully for security.',
+    context: { file: file.path, patternId: 'shell-exec', skill: extractSkillDir(file.path), matches, distinctPatterns },
+  }];
+}
+
+/**
+ * Data-exfiltration-pattern detection. First-match-wins (one finding per
+ * file). Suppresses defensive references and allowlisted files.
+ */
+export function checkExfiltration(file, allowlist) {
+  for (const pattern of EXFILTRATION_PATTERNS) {
+    if (pattern.test(file.content)) {
+      const matchLine = file.content.split('\n').find((l) => pattern.test(l)) || '';
+      const isDefensive = isDefensiveContext(matchLine);
+      const allowed = findAllowlistMatch(allowlist, file.path, 'exfiltration');
+      if (!isDefensive && !allowed) {
+        return [{
+          findingId: 'skill-files/exfiltration',
+          severity: 'warning',
+          title: `Data exfiltration pattern in ${file.path}`,
+          detail: 'File contains instructions that could exfiltrate data to external services.',
+          evidence: matchLine.trim().slice(0, 120),
+          remediation: 'Remove or restrict data transfer instructions.',
+          context: { file: file.path, patternId: 'exfiltration', skill: extractSkillDir(file.path) },
+        }];
+      }
+      return [];
+    }
+  }
+  return [];
+}
+
 export default {
   id: 'skill-files',
   enforcementGrade: 'pattern',
@@ -380,128 +515,12 @@ export default {
     const allowlist = config?.skillFiles?.allowlist || [];
 
     for (const file of filesToScan) {
-      const lines = file.content.split('\n');
-
-      // Check injection patterns — line by line with defensive word downgrade
-      let injectionFound = false;
-      for (const line of lines) {
-        const normalizedLine = normalizeText(line);
-        for (const pattern of INJECTION_PATTERNS) {
-          if (pattern.test(normalizedLine)) {
-            const isDefensive = isDefensiveContext(normalizedLine);
-            findings.push({
-              findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
-              severity: isDefensive ? 'info' : 'critical',
-              title: isDefensive
-                ? `Defensive injection reference in ${file.path}`
-                : `Injection pattern found in ${file.path}`,
-              detail: isDefensive
-                ? 'File references injection patterns in a defensive context.'
-                : 'File contains instruction override patterns that could hijack AI agent behavior.',
-              evidence: line.trim().slice(0, 120),
-              remediation: isDefensive
-                ? 'No action needed — this appears to be a defensive rule.'
-                : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
-              context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
-            });
-            injectionFound = true;
-            break;
-          }
-        }
-        if (injectionFound) break; // one finding per file for injection
-      }
-
-      // Multi-line injection detection: 2-line sliding windows
-      if (!injectionFound) {
-        for (let i = 0; i < lines.length - 1; i++) {
-          const twoLines = normalizeText(lines[i] + ' ' + lines[i + 1]);
-          for (const pattern of INJECTION_PATTERNS) {
-            if (pattern.test(twoLines)) {
-              const isDefensive = isDefensiveContext(twoLines);
-              findings.push({
-                findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
-                severity: isDefensive ? 'info' : 'critical',
-                title: isDefensive
-                  ? `Defensive injection reference in ${file.path}`
-                  : `Injection pattern found in ${file.path}`,
-                detail: isDefensive
-                  ? 'File references injection patterns in a defensive context.'
-                  : 'File contains instruction override patterns that could hijack AI agent behavior.',
-                evidence: (lines[i] + ' ' + lines[i + 1]).trim().slice(0, 120),
-                remediation: isDefensive
-                  ? 'No action needed — this appears to be a defensive rule.'
-                  : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
-                context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
-              });
-              injectionFound = true;
-              break;
-            }
-          }
-          if (injectionFound) break;
-        }
-      }
-
-      // Check shell execution patterns.
-      // C3: apply isDefensiveContext so README lines like
-      //   Don't use `curl http://` — always use HTTPS
-      // or security-education skill files don't false-fire.
-      // C4: drop the first-match `break` cap so a file with many bad patterns
-      // doesn't score identically to a file with one. Emit a single finding
-      // with a `matches` count; escalate to CRITICAL at >= 3 matches.
-      if (!findAllowlistMatch(allowlist, file.path, 'shell-exec')) {
-        const matchedLines = [];
-        const matchedPatternSources = new Set();
-        for (const pattern of SHELL_EXEC_PATTERNS) {
-          const globalPattern = pattern.flags.includes('g')
-            ? pattern
-            : new RegExp(pattern.source, pattern.flags + 'g');
-          let match;
-          while ((match = globalPattern.exec(file.content)) !== null) {
-            const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
-            const lineEnd = file.content.indexOf('\n', match.index);
-            const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-            if (isDefensiveContext(line)) continue;
-            matchedLines.push(line.trim().slice(0, 120));
-            matchedPatternSources.add(pattern.source);
-          }
-        }
-        if (matchedPatternSources.size > 0) {
-          const matches = matchedLines.length;
-          const distinctPatterns = matchedPatternSources.size;
-          const severity = distinctPatterns >= 3 ? 'critical' : 'warning';
-          findings.push({
-            findingId: 'skill-files/shell-exec',
-            severity,
-            title: `Shell execution instructions in ${file.path}`,
-            detail: `File contains ${matches} shell-execution match(es) across ${distinctPatterns} distinct pattern(s).`,
-            evidence: matchedLines[0],
-            matches,
-            remediation: 'Review shell execution instructions carefully for security.',
-            context: { file: file.path, patternId: 'shell-exec', skill: extractSkillDir(file.path), matches, distinctPatterns },
-          });
-        }
-      }
-
-      // Check exfiltration patterns
-      for (const pattern of EXFILTRATION_PATTERNS) {
-        if (pattern.test(file.content)) {
-          const matchLine = file.content.split('\n').find(l => pattern.test(l)) || '';
-          const isDefensive = isDefensiveContext(matchLine);
-          const allowed = findAllowlistMatch(allowlist, file.path, 'exfiltration');
-          if (!isDefensive && !allowed) {
-            findings.push({
-              findingId: 'skill-files/exfiltration',
-              severity: 'warning',
-              title: `Data exfiltration pattern in ${file.path}`,
-              detail: 'File contains instructions that could exfiltrate data to external services.',
-              evidence: matchLine.trim().slice(0, 120),
-              remediation: 'Remove or restrict data transfer instructions.',
-              context: { file: file.path, patternId: 'exfiltration', skill: extractSkillDir(file.path) },
-            });
-          }
-          break;
-        }
-      }
+      // Per-pattern-family helpers extracted in Wave 12 Phase 2. The per-
+      // file body used to be ~300 lines of inline scanning; these calls
+      // preserve the exact behavior (same severities, evidence, context).
+      findings.push(...checkInjection(file));
+      findings.push(...checkShellExec(file, allowlist));
+      findings.push(...checkExfiltration(file, allowlist));
 
       // C4: drop the first-match `break` cap. Emit one finding per escalation
       // patternId, but include a `matches` count and bump severity to
