@@ -61,18 +61,21 @@ export function runInitHook(cwd) {
     process.exit(0);
   }
 
-  fs.mkdirSync(hooksDir, { recursive: true });
-
   const pinnedCmd = `npx -y github:Back-Road-Creative/rigscore@v${version} --fail-under 70 --no-cta || exit 1`;
   const pinnedComment = `# rigscore pinned to v${version}. Re-run 'rigscore --init-hook' after upgrading to re-pin.`;
 
-  if (existing) {
-    fs.appendFileSync(hookPath, `\n${pinnedComment}\n${pinnedCmd}\n`);
-  } else {
-    fs.writeFileSync(hookPath, `#!/bin/sh\n${pinnedComment}\n${pinnedCmd}\n`);
+  try {
+    fs.mkdirSync(hooksDir, { recursive: true });
+    if (existing) {
+      fs.appendFileSync(hookPath, `\n${pinnedComment}\n${pinnedCmd}\n`);
+    } else {
+      fs.writeFileSync(hookPath, `#!/bin/sh\n${pinnedComment}\n${pinnedCmd}\n`);
+    }
+    fs.chmodSync(hookPath, 0o755);
+  } catch (err) {
+    process.stderr.write(`rigscore: could not install hook at ${hookPath}: ${err.message}\n`);
+    process.exit(2);
   }
-
-  fs.chmodSync(hookPath, 0o755);
   process.stderr.write('Installed rigscore pre-commit hook in .git/hooks/pre-commit\n');
   process.exit(0);
 }

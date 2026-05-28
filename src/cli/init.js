@@ -48,7 +48,12 @@ export async function runInitSubcommand(args) {
   }
 
   const body = buildStarter(profile);
-  fs.writeFileSync(target, body);
+  try {
+    fs.writeFileSync(target, body);
+  } catch (err) {
+    process.stderr.write(`rigscore: could not write ${target}: ${err.message}\n`);
+    process.exit(2);
+  }
   process.stderr.write(`rigscore: wrote ${target}\n`);
 }
 
@@ -180,13 +185,20 @@ findings across every check category.
 `,
 };
 
+// Returns { path, status: 'written' | 'skipped' } on success, or
+// { path, status: 'error', message } when fs surfaces an EACCES / ENOSPC /
+// EROFS — caller decides how loud to be. Name now matches the contract.
 function writeFileSafe(dir, relPath, contents, { overwrite }) {
   const target = path.join(dir, relPath);
   if (fs.existsSync(target) && !overwrite) {
     return { path: target, status: 'skipped' };
   }
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, contents, 'utf-8');
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, contents, 'utf-8');
+  } catch (err) {
+    return { path: target, status: 'error', message: err.message };
+  }
   return { path: target, status: 'written' };
 }
 
@@ -198,17 +210,22 @@ function writeFileSafe(dir, relPath, contents, { overwrite }) {
 export function scaffoldExample(dir, { force = false, profile = null } = {}) {
   const results = [];
   for (const [rel, contents] of Object.entries(EXAMPLE_FILES)) {
-    try {
-      results.push(writeFileSafe(dir, rel, contents, { overwrite: force }));
-    } catch (err) {
-      process.stderr.write(`failed to write ${rel}: ${err.message}\n`);
+    const res = writeFileSafe(dir, rel, contents, { overwrite: force });
+    if (res.status === 'error') {
+      process.stderr.write(`rigscore: could not write ${rel}: ${res.message}\n`);
       return 2;
     }
+    results.push(res);
   }
 
   const configPath = path.join(dir, '.rigscorerc.json');
   if (!fs.existsSync(configPath) || force) {
-    fs.writeFileSync(configPath, buildStarter(profile), 'utf-8');
+    try {
+      fs.writeFileSync(configPath, buildStarter(profile), 'utf-8');
+    } catch (err) {
+      process.stderr.write(`rigscore: could not write ${configPath}: ${err.message}\n`);
+      return 2;
+    }
     results.push({ path: configPath, status: 'written' });
   } else {
     results.push({ path: configPath, status: 'skipped' });
