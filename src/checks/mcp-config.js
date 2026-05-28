@@ -616,6 +616,124 @@ export function checkAnthropicBaseUrl(server, name, relPath) {
   }];
 }
 
+/**
+ * Broad-filesystem-access detection. Pulls path args from the server's args
+ * list and flags any that match SENSITIVE_PATHS exactly (`/`, `/home`,
+ * `/etc`, `/root`, `/var`, `/opt`, `/usr`). Returns `hasBroadFilesystemAccess`
+ * so the outer loop can roll it into the check's `data` block.
+ */
+export function checkBroadFilesystemAccess(server, name, relPath) {
+  const args = server.args || [];
+  const extractedPaths = extractPathsFromArgs(args);
+  const sensitivePaths = extractedPaths.filter((p) => SENSITIVE_PATHS.includes(p));
+  if (sensitivePaths.length === 0) return { findings: [], hasBroadFilesystemAccess: false };
+  return {
+    findings: [{
+      findingId: 'mcp-config/broad-filesystem-access',
+      severity: 'critical',
+      title: `MCP server "${name}" has broad filesystem access: ${sensitivePaths.join(', ')}`,
+      detail: `Server can access sensitive path(s). Found in ${relPath}.`,
+      remediation: 'Scope filesystem access to your project directory only.',
+      learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
+    }],
+    hasBroadFilesystemAccess: true,
+  };
+}
+
+/** Relative-path-traversal detection (`../` inside any arg). */
+export function checkPathTraversal(server, name, relPath) {
+  const args = server.args || [];
+  const hasTraversal = args.some((a) => typeof a === 'string' && a.includes('../'));
+  if (!hasTraversal) return [];
+  return [{
+    findingId: 'mcp-config/relative-path-traversal',
+    severity: 'warning',
+    title: `MCP server "${name}" uses relative path traversal`,
+    detail: `Arguments contain "../" which may escape project scope. Found in ${relPath}.`,
+    remediation: 'Use absolute paths scoped to your project directory.',
+  }];
+}
+
+/** Unsafe permission-flag detection — first-match wins. */
+export function checkUnsafePermissionFlag(server, name, relPath) {
+  const args = server.args || [];
+  for (const arg of args) {
+    const lowerArg = typeof arg === 'string' ? arg.toLowerCase() : '';
+    if (UNSAFE_PERMISSION_FLAGS.some((flag) => lowerArg.startsWith(flag))) {
+      return [{
+        findingId: 'mcp-config/unsafe-permission-flag',
+        severity: 'warning',
+        title: `MCP server "${name}" uses unsafe permission flag: ${arg}`,
+        detail: `Overly broad permissions detected in ${relPath}.`,
+        remediation: 'Use granular permission flags instead of blanket allow-all.',
+      }];
+    }
+  }
+  return [];
+}
+
+/** Unpinned-version (unstable distribution tag) detection — first-match wins. */
+export function checkUnpinnedVersion(server, name, relPath) {
+  const args = server.args || [];
+  for (const arg of args) {
+    if (typeof arg !== 'string') continue;
+    const atIdx = arg.lastIndexOf('@');
+    if (atIdx > 0) {
+      const tag = arg.slice(atIdx + 1).toLowerCase();
+      if (UNSTABLE_TAGS.has(tag)) {
+        return [{
+          findingId: 'mcp-config/unpinned-unstable-tag',
+          severity: 'warning',
+          title: `MCP server "${name}" uses unpinned version (@${tag})`,
+          detail: 'Unstable distribution tags can introduce breaking changes or supply chain attacks.',
+          remediation: 'Pin MCP server packages to specific versions.',
+          learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+        }];
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * Unpinned-npx detection. command=='npx'/'npx.cmd' AND the package-position
+ * arg has no stable version pin (e.g. `pkg@1.0.0`). Flag values like
+ * `--token=@abc123` do NOT satisfy the pin check — only the package-position arg.
+ */
+export function checkNpxPin(server, name, relPath) {
+  const args = server.args || [];
+  if (server.command !== 'npx' && server.command !== 'npx.cmd') return [];
+  if (args.length === 0) return [];
+  const packageArg = findPackagePositionArg(args);
+  const hasVersionPin = packageArg !== null && argHasStableVersionPin(packageArg);
+  if (hasVersionPin) return [];
+  return [{
+    findingId: 'mcp-config/unpinned-npx-package',
+    severity: 'warning',
+    title: `MCP server "${name}" uses unpinned npx package`,
+    detail: `npx without a version pin (e.g. @1.0.0) runs whatever version is latest. Found in ${relPath}.`,
+    remediation: 'Pin the package version: npx package@1.0.0',
+  }];
+}
+
+/** Inline-credentials detection — KEY_PATTERNS scan over `[command, ...args].join(' ')`. */
+export function checkInlineCredentials(server, name, relPath) {
+  const args = server.args || [];
+  const fullCommand = [server.command || '', ...args].join(' ');
+  for (const pattern of KEY_PATTERNS) {
+    if (pattern.test(fullCommand)) {
+      return [{
+        findingId: 'mcp-config/inline-credentials',
+        severity: 'critical',
+        title: `MCP server "${name}" has inline credentials in command`,
+        detail: 'API keys or tokens are embedded directly in the MCP server command.',
+        remediation: 'Use environment variables instead of inline credentials.',
+      }];
+    }
+  }
+  return [];
+}
+
 export default {
   id: 'mcp-config',
   enforcementGrade: 'mechanical',
@@ -726,112 +844,22 @@ export default {
         findings.push(...transportResult.findings);
         if (transportResult.hasNetworkTransport) hasNetworkTransport = true;
 
-        // Check for sensitive filesystem access in args
-        const args = server.args || [];
-        const extractedPaths = extractPathsFromArgs(args);
-        const sensitivePaths = extractedPaths.filter(p => SENSITIVE_PATHS.includes(p));
-
-        if (sensitivePaths.length > 0) {
-          hasBroadFilesystemAccess = true;
-          findings.push({
-            findingId: 'mcp-config/broad-filesystem-access',
-            severity: 'critical',
-            title: `MCP server "${name}" has broad filesystem access: ${sensitivePaths.join(', ')}`,
-            detail: `Server can access sensitive path(s). Found in ${relPath}.`,
-            remediation: 'Scope filesystem access to your project directory only.',
-            learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
-          });
-        }
-
-        // Check for relative path traversal in args
-        const hasTraversal = args.some(a => typeof a === 'string' && a.includes('../'));
-        if (hasTraversal) {
-          findings.push({
-            findingId: 'mcp-config/relative-path-traversal',
-            severity: 'warning',
-            title: `MCP server "${name}" uses relative path traversal`,
-            detail: `Arguments contain "../" which may escape project scope. Found in ${relPath}.`,
-            remediation: 'Use absolute paths scoped to your project directory.',
-          });
-        }
-
-        // Check for overly broad permission flags
-        for (const arg of args) {
-          const lowerArg = typeof arg === 'string' ? arg.toLowerCase() : '';
-          if (UNSAFE_PERMISSION_FLAGS.some(flag => lowerArg.startsWith(flag))) {
-            findings.push({
-              findingId: 'mcp-config/unsafe-permission-flag',
-              severity: 'warning',
-              title: `MCP server "${name}" uses unsafe permission flag: ${arg}`,
-              detail: `Overly broad permissions detected in ${relPath}.`,
-              remediation: 'Use granular permission flags instead of blanket allow-all.',
-            });
-            break;
-          }
-        }
-
-        // Sensitive env passthrough — see checkSensitiveEnv().
+        // Broad-filesystem / path-traversal / unsafe-flag / sensitive-env /
+        // ANTHROPIC_BASE_URL / unpinned-version / unpinned-npx /
+        // inline-credentials — see helpers.
+        const fsResult = checkBroadFilesystemAccess(server, name, relPath);
+        findings.push(...fsResult.findings);
+        if (fsResult.hasBroadFilesystemAccess) hasBroadFilesystemAccess = true;
+        findings.push(...checkPathTraversal(server, name, relPath));
+        findings.push(...checkUnsafePermissionFlag(server, name, relPath));
         findings.push(...checkSensitiveEnv(server, name, relPath));
-
-        // CVE-2026-21852 ANTHROPIC_BASE_URL redirect — see checkAnthropicBaseUrl().
         findings.push(...checkAnthropicBaseUrl(server, name, relPath));
-
-        // Check for unpinned versions (unstable distribution tags)
-        for (const arg of args) {
-          if (typeof arg !== 'string') continue;
-          const atIdx = arg.lastIndexOf('@');
-          if (atIdx > 0) {
-            const tag = arg.slice(atIdx + 1).toLowerCase();
-            if (UNSTABLE_TAGS.has(tag)) {
-              findings.push({
-                findingId: 'mcp-config/unpinned-unstable-tag',
-                severity: 'warning',
-                title: `MCP server "${name}" uses unpinned version (@${tag})`,
-                detail: 'Unstable distribution tags can introduce breaking changes or supply chain attacks.',
-                remediation: 'Pin MCP server packages to specific versions.',
-                learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
-              });
-              break;
-            }
-          }
-        }
-
-        // Unpinned npx: command is 'npx' and the package-position arg has no version pin.
-        // Package-position = first non-flag arg (not starting with '-'), skipping -y/--yes.
-        // A version pin looks like pkg@1.0.0 or @scope/pkg@1.0.0.
-        // Scoped packages (@scope/pkg) without @version are NOT pinned.
-        // Unstable tags (@latest, @next, @dev, etc.) are NOT pins.
-        // IMPORTANT: only the package-position arg is checked — flag values like
-        // `--token=@abc123` must not satisfy the pin check.
-        const packageArg = findPackagePositionArg(args);
-        const hasVersionPin = packageArg !== null && argHasStableVersionPin(packageArg);
-        if ((server.command === 'npx' || server.command === 'npx.cmd') &&
-            args.length > 0 && !hasVersionPin) {
-          findings.push({
-            findingId: 'mcp-config/unpinned-npx-package',
-            severity: 'warning',
-            title: `MCP server "${name}" uses unpinned npx package`,
-            detail: `npx without a version pin (e.g. @1.0.0) runs whatever version is latest. Found in ${relPath}.`,
-            remediation: 'Pin the package version: npx package@1.0.0',
-          });
-        }
-
-        // Check for inline credentials in args or command
-        const fullCommand = [server.command || '', ...args].join(' ');
-        for (const pattern of KEY_PATTERNS) {
-          if (pattern.test(fullCommand)) {
-            findings.push({
-              findingId: 'mcp-config/inline-credentials',
-              severity: 'critical',
-              title: `MCP server "${name}" has inline credentials in command`,
-              detail: 'API keys or tokens are embedded directly in the MCP server command.',
-              remediation: 'Use environment variables instead of inline credentials.',
-            });
-            break;
-          }
-        }
+        findings.push(...checkUnpinnedVersion(server, name, relPath));
+        findings.push(...checkNpxPin(server, name, relPath));
+        findings.push(...checkInlineCredentials(server, name, relPath));
 
         // Supply-chain checks (typosquat curated + registry) — see helpers.
+        const args = server.args || [];
         const packageName = extractPackageName(args);
         const curated = checkTyposquatCurated(name, packageName);
         findings.push(...curated.findings);
