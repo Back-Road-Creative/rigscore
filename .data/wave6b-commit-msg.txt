@@ -1,0 +1,45 @@
+chore(ci,docker): pin Dockerfile digest, enforce coverage gate, harden release workflow
+
+Five production-readiness gaps from the 2026-05-27 health report,
+consolidated into one CI/Docker polish PR.
+
+1. (Dockerfile) `FROM node:20-alpine` was tag-pinned only — Docker
+   re-pulls whatever the registry currently labels `20-alpine`, so a
+   future image rebuild could pick up a different base image without
+   any code change. Pinned to the multi-arch manifest-list digest
+   resolved 2026-05-27. Added a refresh-procedure comment showing the
+   exact curl + jq one-liner to resolve a new digest.
+
+2. (vitest.config.js + ci.yml) No coverage gate existed. Added
+   `coverage.provider: 'v8'` with a `lines: 40` threshold matching the
+   historical baseline noted in CLAUDE.md, and switched the CI test
+   step to `npm test -- --coverage`. Local run reports 84.05% lines —
+   well clear of the gate. (Peer dep `@vitest/coverage-v8@3.2.4` was
+   added in #123 so this PR can land under the 300-sum cap.)
+
+3. (vitest.config.js) Added a comment documenting the 10s testTimeout
+   rationale (long-pole is spawn-based CLI tests; macOS CI cold-start
+   can take 2-3s) and a per-test override example.
+
+4. (release.yml) Added the docs-first `npm run verify:docs` gate
+   between test and the release step, mirroring ci.yml. Without it, a
+   release could ship a check whose docs/checks/<id>.md is missing or
+   stale and `rigscore explain` would break against the just-released
+   artifact.
+
+5. (release.yml) Split the headlessmode cross-repo post into its own
+   `headlessmode-post` job that:
+   - declares `permissions: { contents: read }` — nothing in this job
+     writes to rigscore, so the previous job-level `contents: write`
+     was excessive
+   - explicit `if: needs.release.outputs.released == 'true'` guard so
+     a no-op release run doesn't trigger the cross-repo post
+   - explicit PAT-presence guard so a fork without HEADLESSMODE_PAT
+     skips cleanly instead of failing on git clone
+   - passes version + changelog through job outputs so it doesn't
+     need to re-checkout this repo
+
+Closes Production #4 (Dockerfile pin), #5 (coverage gate), #6 (release
+verify:docs), #7 (headlessmode PAT scope), #8 (vitest timeout doc).
+
+Wave 6b of the fix plan (companion to 6a which added the peer dep).
