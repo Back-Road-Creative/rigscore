@@ -168,7 +168,7 @@ These came up during the session but belong to other repos / processes:
 
 - **devcontainer fix-ownership UX:** post-session `.claude/worktrees/agent-*` dirs are `dev`-owned and joe can't `rm -rf` them without sudo. JP's CLAUDE.md says "suggest `make fix-ownership`" but the workspace Makefile target may not handle this case (worktrees aren't ordinary files; they have `.git/worktrees/` metadata mirrored). **Workspace devcontainer issue.**
 
-- **Other projects' rigscore self-scores:** `svc-gomoveshift-video` 54, `svc-social-media-seo` 31, `lib-skill-utils` 27. None are rigscore bugs; they're indicators that those projects need their own rigscore-fix sweeps. **Per-project work.**
+- **Other projects' rigscore self-scores:** three other workspace projects scored in the 27–54 range when self-scanned. None are rigscore bugs; they're indicators that those projects need their own rigscore-fix sweeps. **Per-project work.**
 
 - **Claude Code worktree auto-unlock-on-merge:** `cleanup-worktrees` SKILL.md notes "The harness locks these worktrees to protect agent work pre-merge, but never unlocks them post-merge — they accumulate forever otherwise." Structural issue with `Agent(isolation: "worktree")` — every parallel run leaks one locked worktree. **Claude Code harness issue.**
 
