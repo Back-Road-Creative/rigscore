@@ -1,0 +1,38 @@
+refactor(skill-files): extract accumulatePatternMatches / forEachPatternMatch helpers
+
+src/checks/skill-files.js run() was 472 lines — Complexity #2 (critical)
+in the 2026-05-27 health report. Three of the inner pattern loops
+(escalation, persistence, indirect-injection) shared an identical
+regex-iteration + line-extraction + defensive-context skip body (~13
+lines each). Any drift between them was invisible until a fixture
+test caught a count divergence — flagged separately as Complexity #6.
+
+Phase 1 lands the shared primitives:
+
+- `forEachPatternMatch(content, patterns, isDefensive, onMatch)` —
+  handles the g-flag dance, line slicing around match.index, and the
+  defensive-context skip. Yields each (pattern, line) pair via callback
+  so callers retain control of their per-match aggregation shape.
+
+- `accumulatePatternMatches(content, patterns, isDefensive)` →
+  `{ lines, patternSources }` — convenience wrapper for the simple
+  "collect trimmed line samples + distinct pattern sources" shape used
+  by persistence and indirect-injection.
+
+The escalation loop uses forEachPatternMatch directly because its
+accumulator is keyed by patternId (via patternIdForEscalation()) and
+its per-match work includes a per-patternId allowlist check —
+accumulatePatternMatches's lines+sources output would discard that.
+
+Net: skill-files.js run() goes from 472 to 434 lines. Three of the
+biggest copy-paste blocks collapse to 5-line calls plus the
+caller-specific accumulator. Behavior is bit-identical — same
+findings, same severities, same evidence strings.
+
+Wave 12 Phase 2 will tackle the larger per-pattern-family extractions
+(checkInjection, checkShellExec, checkExfiltration, checkUnicode,
+checkPosixPermissions) targeting a further ~120-line reduction.
+
+Closes Complexity #2 (partial) and Complexity #6 (full).
+
+Wave 12 Phase 1 of the fix plan.
