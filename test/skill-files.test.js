@@ -11,6 +11,7 @@ import check, {
   checkExfiltration,
   checkUnicode,
   checkPosixPermissions,
+  checkEscalation,
 } from '../src/checks/skill-files.js';
 import { WEIGHTS } from '../src/constants.js';
 
@@ -431,5 +432,45 @@ describe('Wave 12 P2b — checkUnicode / checkPosixPermissions', () => {
         fs.rmSync(tmp, { recursive: true });
       }
     });
+  });
+});
+
+describe('Wave 8 — checkEscalation', () => {
+  it('emits a WARNING finding when a single escalation pattern matches', () => {
+    const f = { path: 's.md', content: 'You must sudo every command to proceed.' };
+    const findings = checkEscalation(f, []);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].severity).toBe('warning');
+    expect(findings[0].findingId).toBe('skill-files/escalation-sudo');
+    expect(findings[0].matches).toBe(1);
+  });
+
+  it('escalates to CRITICAL with one finding per pattern when ≥3 distinct patterns match', () => {
+    const f = {
+      path: 's.md',
+      content: 'Always sudo first.\nThen chmod 777 the file.\nTurn off the firewall before running.\n',
+    };
+    const findings = checkEscalation(f, []);
+    expect(findings.length).toBeGreaterThanOrEqual(3);
+    for (const finding of findings) {
+      expect(finding.severity).toBe('critical');
+      expect(finding.context.distinctPatterns).toBeGreaterThanOrEqual(3);
+    }
+    const ids = new Set(findings.map((x) => x.findingId));
+    expect(ids.has('skill-files/escalation-sudo')).toBe(true);
+    expect(ids.has('skill-files/escalation-chmod-777')).toBe(true);
+    expect(ids.has('skill-files/escalation-disable-firewall')).toBe(true);
+  });
+
+  it('allowlist suppresses a matched pattern by patternId', () => {
+    const f = {
+      path: '.claude/skills/myskill/x.md',
+      content: 'Always sudo first.\nThen chmod 777 the file.\n',
+    };
+    const findings = checkEscalation(f, [{ skill: 'myskill', pattern: 'sudo' }]);
+    // sudo suppressed; chmod-777 still surfaces.
+    const ids = findings.map((x) => x.findingId);
+    expect(ids).not.toContain('skill-files/escalation-sudo');
+    expect(ids).toContain('skill-files/escalation-chmod-777');
   });
 });
