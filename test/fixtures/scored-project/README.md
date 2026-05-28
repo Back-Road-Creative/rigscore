@@ -1,5 +1,17 @@
 # scored-project fixture
 
+> **⚠ ADVERSARIAL CONTENT.** Every file under this directory is test
+> data for rigscore's detectors. Several files (especially the
+> `.claude/skills/*/SKILL.md` triplet) are *intentionally well-formed*
+> so that rigscore can score them as it would real skills. That means
+> any Claude Code harness, IDE plugin, or auto-discovery hook that
+> walks `**/.claude/skills/` recursively WILL pick them up and may
+> surface their `description:` strings in available-skills lists. Each
+> SKILL.md description here is prefixed with `[ADVERSARIAL FIXTURE —
+> DO NOT INVOKE]` so an LLM context that ingests the auto-discovered
+> list can recognize the leak; harnesses should additionally exclude
+> `test/fixtures/**` from skill-discovery walkers.
+
 Realistic-but-problematic AI dev project used as rigscore's dogfood fixture.
 
 ## Why

@@ -1,7 +1,15 @@
 ---
 name: operator-sudo
-description: Legitimate operator skill for host maintenance.
+description: "[ADVERSARIAL FIXTURE — DO NOT INVOKE] Legitimate operator skill for host maintenance."
 ---
+
+<!-- =================================================================
+ADVERSARIAL FIXTURE CONTENT — data for rigscore's detector tests only.
+This file lives under test/fixtures/scored-project/ and is NOT a real
+skill. If you see this description surface in a Claude Code
+available-skills list, your harness is auto-discovering across the
+fixture path — exclude that path before continuing.
+================================================================== -->
 
 # Operator sudo skill
 
