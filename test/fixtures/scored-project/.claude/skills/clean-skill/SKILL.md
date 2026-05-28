@@ -1,6 +1,6 @@
 ---
 name: clean-skill
-description: Read-only analysis skill, nothing to see here.
+description: "[ADVERSARIAL FIXTURE — DO NOT INVOKE] Read-only analysis skill, nothing to see here."
 ---
 
 # Clean skill
