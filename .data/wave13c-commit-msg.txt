@@ -1,0 +1,36 @@
+refactor(mcp-config): extract checkClaudeSettings + checkCve2025_59536 compound detection
+
+Wave 13c — third phase of the mcp-config.js god-function decomposition.
+Pulls the .claude/settings.json scan + the CVE-2025-59536 compound
+detection out of run() into two named helpers:
+
+- checkClaudeSettings(cwd, homedir) → { findings, autoApproveEnabled }.
+  Scans both the project-level and homedir-level .claude/settings.json
+  for enableAllProjectMcpServers (auto-approve CRITICAL) and for
+  hooks[*][*].command matching DANGEROUS_HOOK_PATTERNS (CRITICAL).
+  Returns the auto-approve flag so the compound check can reuse it
+  without re-reading the JSON.
+
+- checkCve2025_59536(hasRepoMcpJson, autoApproveEnabled) → findings.
+  Pure flag-AND combinator: only emits when both conditions are true.
+  Replaces a double-loop over the same settingsPaths that had to
+  re-call readJsonSafe — that inefficiency went away naturally once
+  the settings parse was hoisted into its own helper.
+
+run() shrinks from 475 to 417 lines (-58). Combined Wave 13 a+b+c
+reduction: 587 → 417 (-170). Behavior is bit-identical — same finding
+IDs, severities, evidence, learnMore URLs, settings-path order.
+
+7 new direct unit tests cover the helpers' branches:
+- checkClaudeSettings: no-settings, enableAllProjectMcpServers,
+  curl-pipe-sh hook, benign hook (silent pass-through)
+- checkCve2025_59536: 3 combinator branches (only one fires both)
+
+Wave 13d closes the decomposition with the hash-pinning + cross-
+client drift extractions. Final run() target: ~60 lines (current 417,
+expected delta from 13d ~350 → final ~67).
+
+Closes Complexity #1 (partial — only hash-pinning + drift remain),
+Complexity #3 (partial).
+
+Wave 13 Phase C of the fix plan.
