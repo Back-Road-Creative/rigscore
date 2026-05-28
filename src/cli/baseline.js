@@ -125,3 +125,43 @@ export function runDiffSubcommand(args) {
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   process.exit(added.length === 0 ? 0 : 1);
 }
+
+/**
+ * Baseline-mode driver for `rigscore --baseline <path>`. On first run
+ * writes the baseline + exits 0; on subsequent runs computes the diff
+ * vs the saved baseline and exits 0 (no new findings) or 1 (new
+ * findings, listed on stderr). Extracted from src/index.js run() for
+ * readability; behavior is unchanged.
+ *
+ * @param {object} scanResult - The {results, score, config} from scan().
+ * @param {string} baselinePath - Filesystem path passed to --baseline.
+ * @returns {void} Always exits the process.
+ */
+export function runBaselineMode(scanResult, baselinePath) {
+  const existing = loadBaseline(baselinePath);
+  if (!existing) {
+    const newBaseline = buildBaseline(scanResult);
+    writeBaseline(baselinePath, newBaseline);
+    process.stderr.write(
+      `rigscore: wrote new baseline to ${baselinePath} ` +
+      `(${newBaseline.findings.length} findings pinned).\n`,
+    );
+    process.exit(0);
+  }
+  const currentFindings = flattenFindings(scanResult.results);
+  const added = diffFindings(existing.findings, currentFindings);
+  if (added.length === 0) {
+    process.stderr.write(`rigscore: no new findings vs baseline (${existing.findings.length} pinned).\n`);
+    process.exit(0);
+  }
+  process.stderr.write(
+    `rigscore: ${added.length} new findings vs baseline ` +
+    `(baseline timestamp: ${existing.timestamp}):\n`,
+  );
+  for (const f of added) {
+    process.stderr.write(`  [${f.severity}] ${f.findingId} — ${f.title}\n`);
+  }
+  // Baseline semantics: any new finding fails. The early-return above
+  // guarantees added.length > 0 by the time we reach here.
+  process.exit(1);
+}

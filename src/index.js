@@ -172,62 +172,10 @@ export async function run(args) {
   }
 
   if (options.initHook) {
-    const path = await import('node:path');
-    const { createRequire } = await import('node:module');
-    const require = createRequire(import.meta.url);
-    const pkg = require('../package.json');
-    const version = pkg.version;
-
-    const hooksDir = path.default.join(cwd, '.git', 'hooks');
-    const hookPath = path.default.join(hooksDir, 'pre-commit');
-
-    // Check if .git exists
-    try {
-      fs.statSync(path.default.join(cwd, '.git'));
-    } catch {
-      process.stderr.write('Error: No .git directory found. Run git init first.\n');
-      process.exit(1);
-    }
-
-    // Check if hook already has rigscore
-    let existing = '';
-    try { existing = fs.readFileSync(hookPath, 'utf8'); } catch {}
-
-    // Detect an older pinned version and nudge the user to re-init rather
-    // than silently appending a second line that shadows the first.
-    const pinnedMatch = existing.match(/rigscore@v(\d+\.\d+\.\d+)/);
-    if (existing.includes('rigscore')) {
-      if (pinnedMatch && pinnedMatch[1] !== version) {
-        process.stderr.write(
-          `rigscore hook already installed (pinned to v${pinnedMatch[1]}; ` +
-          `current version v${version}). Re-run 'rigscore --init-hook' after ` +
-          `editing the old line out of .git/hooks/pre-commit to re-pin.\n`,
-        );
-      } else {
-        process.stderr.write('rigscore hook already installed in .git/hooks/pre-commit\n');
-      }
-      process.exit(0);
-    }
-
-    // Create hooks dir if needed
-    fs.mkdirSync(hooksDir, { recursive: true });
-
-    // Pin to the release tag matching the currently-installed rigscore
-    // version. An unpinned npx github:… install would let any default-branch
-    // compromise propagate to every adopter on their next commit.
-    const pinnedCmd = `npx -y github:Back-Road-Creative/rigscore@v${version} --fail-under 70 --no-cta || exit 1`;
-    const pinnedComment = `# rigscore pinned to v${version}. Re-run 'rigscore --init-hook' after upgrading to re-pin.`;
-
-    if (existing) {
-      // Append to existing hook
-      fs.appendFileSync(hookPath, `\n${pinnedComment}\n${pinnedCmd}\n`);
-    } else {
-      fs.writeFileSync(hookPath, `#!/bin/sh\n${pinnedComment}\n${pinnedCmd}\n`);
-    }
-
-    fs.chmodSync(hookPath, 0o755);
-    process.stderr.write('Installed rigscore pre-commit hook in .git/hooks/pre-commit\n');
-    process.exit(0);
+    // Implementation lives in src/cli/init-hook.js — extracted from run()
+    // for readability and to shrink run() under the complexity gate.
+    const { runInitHook } = await import('./cli/init-hook.js');
+    return runInitHook(cwd);
   }
 
   if (options.noColor) {
@@ -355,39 +303,11 @@ export async function run(args) {
       }
     }
 
-    // Baseline mode: on first run write baseline + exit 0; on subsequent
-    // runs compare and gate exit code on the count of NEW findings.
+    // Baseline mode lives in src/cli/baseline.js (runBaselineMode);
+    // extracted from run() for readability. Behavior unchanged.
     if (options.baseline) {
-      const { buildBaseline, loadBaseline, writeBaseline, diffFindings, flattenFindings } =
-        await import('./cli/baseline.js');
-      const existing = loadBaseline(options.baseline);
-      if (!existing) {
-        const newBaseline = buildBaseline(result);
-        writeBaseline(options.baseline, newBaseline);
-        process.stderr.write(
-          `rigscore: wrote new baseline to ${options.baseline} ` +
-          `(${newBaseline.findings.length} findings pinned).\n`,
-        );
-        process.exit(0);
-      }
-      const currentFindings = flattenFindings(result.results);
-      const added = diffFindings(existing.findings, currentFindings);
-      if (added.length === 0) {
-        process.stderr.write(`rigscore: no new findings vs baseline (${existing.findings.length} pinned).\n`);
-        process.exit(0);
-      }
-      process.stderr.write(
-        `rigscore: ${added.length} new findings vs baseline ` +
-        `(baseline timestamp: ${existing.timestamp}):\n`,
-      );
-      for (const f of added) {
-        process.stderr.write(`  [${f.severity}] ${f.findingId} — ${f.title}\n`);
-      }
-      // Baseline semantics: any new finding fails. The `added.length === 0`
-      // early-return at line 334 guarantees we only reach this point when
-      // there is at least one new finding, so the ternary in the previous
-      // version was dead — always evaluated to 1.
-      process.exit(1);
+      const { runBaselineMode } = await import('./cli/baseline.js');
+      runBaselineMode(result, options.baseline);
     }
 
     if (options.watch) {
