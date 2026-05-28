@@ -108,9 +108,17 @@ export async function verifyCheckDocs(opts = {}) {
   let weights = opts.weights;
   if (!weights) {
     // Node ESM rejects relative filesystem paths as bare specifiers; use file:// URL.
-    const constantsUrl = pathToFileURL(path.join(root, 'src', 'constants.js')).href;
-    const mod = await import(constantsUrl);
-    weights = mod.WEIGHTS;
+    // Falls back to an empty map if the target root has no src/constants.js —
+    // this lets verify-docs run against arbitrary fixture or third-party repos
+    // that don't ship rigscore's weight registry; weight-drift detection is
+    // simply skipped in that case rather than crashing the whole verify pass.
+    try {
+      const constantsUrl = pathToFileURL(path.join(root, 'src', 'constants.js')).href;
+      const mod = await import(constantsUrl);
+      weights = mod.WEIGHTS || {};
+    } catch {
+      weights = {};
+    }
   }
 
   const checkFiles = (await readDirSafe(checksDir)) || [];
