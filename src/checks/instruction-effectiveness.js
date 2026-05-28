@@ -87,47 +87,22 @@ function buildCrossRepoMatcher(config) {
   return (ref) => regexes.some((re) => re.test(ref));
 }
 
-/**
- * Discover all instruction-bearing files in the project and homedir.
- * Returns array of { relPath, fullPath, content, category }.
- */
-async function discoverFiles(cwd, homedir, config) {
-  const files = [];
-  const seen = new Set();
-
-  async function addFile(fullPath, relPath, category) {
-    if (seen.has(fullPath)) return;
-    const stat = await statSafe(fullPath);
-    if (!stat || stat.isDirectory() || stat.size > MAX_FILE_SIZE || stat.size === 0) return;
-    const content = await readFileSafe(fullPath);
-    if (!content) return;
-    // Skip binary files (null byte in first 1024 chars)
-    if (content.slice(0, 1024).includes('\0')) return;
-    seen.add(fullPath);
-    files.push({ relPath, fullPath, content, category });
-  }
-
-  // 1. Governance chain — project-level
+// Governance: top-level CLAUDE.md / .cursorrules / homedir variants /
+// config-listed paths / opt-in governanceDirs recursive walks.
+async function collectGovernanceFiles(cwd, homedir, config, addFile) {
   for (const f of GOVERNANCE_FILES) {
-    const full = path.join(cwd, f);
-    await addFile(full, f, 'governance');
+    await addFile(path.join(cwd, f), f, 'governance');
   }
-
-  // Governance chain — homedir
   await addFile(path.join(homedir, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md', 'governance');
   await addFile(path.join(homedir, 'CLAUDE.md'), '~/CLAUDE.md', 'governance');
 
-  // Config-specified governance paths
   if (config?.paths?.claudeMd) {
     for (const p of config.paths.claudeMd) {
       await addFile(p, p, 'governance');
     }
   }
 
-  // 2. Extra governance directories (opt-in via config.paths.governanceDirs)
-  const extraGovDirs = Array.isArray(config?.paths?.governanceDirs)
-    ? config.paths.governanceDirs
-    : [];
+  const extraGovDirs = Array.isArray(config?.paths?.governanceDirs) ? config.paths.governanceDirs : [];
   for (const govSubDir of extraGovDirs) {
     try {
       const entries = await fs.promises.readdir(govSubDir, { recursive: true });
@@ -139,8 +114,10 @@ async function discoverFiles(cwd, homedir, config) {
       }
     } catch { /* directory doesn't exist or unreadable */ }
   }
+}
 
-  // 3. Skill/command directories (project + homedir)
+// Skill/command directories under project + homedir, recursively.
+async function collectSkillFiles(cwd, homedir, addFile) {
   const searchRoots = [cwd];
   if (homedir && homedir !== cwd) searchRoots.push(homedir);
 
@@ -158,22 +135,22 @@ async function discoverFiles(cwd, homedir, config) {
       } catch { /* directory doesn't exist */ }
     }
   }
+}
 
-  // 4. Memory files — project-level memory index
+// MEMORY.md at project root + .claude/, plus homedir per-project memory
+// dirs. Each MEMORY.md is also scanned for markdown links to other .md
+// files which are pulled in as additional memory entries.
+async function collectMemoryFiles(cwd, homedir, addFile) {
   const memoryLocations = [
     path.join(cwd, 'MEMORY.md'),
     path.join(cwd, '.claude', 'MEMORY.md'),
   ];
-
-  // Also check homedir project-specific memory
   if (homedir) {
-    const projectSlug = path.basename(cwd);
     const projectMemDir = path.join(homedir, '.claude', 'projects');
     try {
       const projectDirs = await fs.promises.readdir(projectMemDir);
       for (const d of projectDirs) {
-        const memPath = path.join(projectMemDir, d, 'memory', 'MEMORY.md');
-        memoryLocations.push(memPath);
+        memoryLocations.push(path.join(projectMemDir, d, 'memory', 'MEMORY.md'));
       }
     } catch { /* no project memory dirs */ }
   }
@@ -186,10 +163,7 @@ async function discoverFiles(cwd, homedir, config) {
       : memPath.replace(homedir, '~');
     await addFile(memPath, rel, 'memory');
 
-    // Parse MEMORY.md for linked .md files
-    const linkRe = /\[.*?\]\(([^)]+\.md)\)/g;
-    let match;
-    while ((match = linkRe.exec(content)) !== null) {
+    for (const match of content.matchAll(/\[.*?\]\(([^)]+\.md)\)/g)) {
       const linkedPath = match[1];
       if (linkedPath.startsWith('http')) continue;
       const resolvedPath = path.resolve(path.dirname(memPath), linkedPath);
@@ -199,6 +173,34 @@ async function discoverFiles(cwd, homedir, config) {
       await addFile(resolvedPath, linkedRel, 'memory');
     }
   }
+}
+
+/**
+ * Discover all instruction-bearing files in the project and homedir.
+ * Returns array of { relPath, fullPath, content, category }.
+ *
+ * Orchestrator only — the three collectGovernance/Skill/Memory helpers
+ * share the addFile closure via parameter, which handles dedup + size
+ * cap + binary-detection + content read in one place.
+ */
+async function discoverFiles(cwd, homedir, config) {
+  const files = [];
+  const seen = new Set();
+
+  async function addFile(fullPath, relPath, category) {
+    if (seen.has(fullPath)) return;
+    const stat = await statSafe(fullPath);
+    if (!stat || stat.isDirectory() || stat.size > MAX_FILE_SIZE || stat.size === 0) return;
+    const content = await readFileSafe(fullPath);
+    if (!content) return;
+    if (content.slice(0, 1024).includes('\0')) return; // binary
+    seen.add(fullPath);
+    files.push({ relPath, fullPath, content, category });
+  }
+
+  await collectGovernanceFiles(cwd, homedir, config, addFile);
+  await collectSkillFiles(cwd, homedir, addFile);
+  await collectMemoryFiles(cwd, homedir, addFile);
 
   return files;
 }
