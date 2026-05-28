@@ -200,6 +200,103 @@ export function checkNpmRegistry(packageName, options = {}) {
   });
 }
 
+/**
+ * Per-server extractions from run(). Wave 13a phase of the mcp-config
+ * god-function decomposition (Complexity #1, critical). Each helper takes
+ * the raw server object plus its name + relPath label and returns the
+ * findings array. Behavior is bit-identical to the inline blocks they
+ * replace — same finding IDs, severities, evidence, learnMore URLs.
+ */
+
+/**
+ * Transport-type detection. SSE / HTTP / explicit url field counts as a
+ * network transport; localhost targets get an INFO note instead of the
+ * larger-attack-surface WARNING. Returns `hasNetworkTransport` so the
+ * outer loop can roll it up into the check's `data` block.
+ */
+export function checkTransportType(server, name, relPath, safeHosts) {
+  const findings = [];
+  let hasNetworkTransport = false;
+
+  const transport = server.transport || 'stdio';
+  if (transport === 'sse' || transport === 'http' || server.url) {
+    const targetUrl = server.url || '';
+    const host = extractHost(targetUrl);
+    const isLocal = host && safeHosts.includes(host);
+
+    if (isLocal) {
+      findings.push({
+        findingId: 'mcp-config/localhost-server',
+        severity: 'info',
+        title: `MCP server "${name}" is a localhost server`,
+        detail: `Server uses ${transport || 'network'} transport targeting ${host} in ${relPath}.`,
+      });
+    } else {
+      hasNetworkTransport = true;
+      findings.push({
+        findingId: 'mcp-config/network-transport',
+        severity: 'warning',
+        title: `MCP server "${name}" uses network transport`,
+        detail: `Server uses ${transport || 'network'} transport in ${relPath}. Network-based MCP servers have a larger attack surface than stdio.`,
+        remediation: 'Prefer stdio transport for local MCP servers. If network transport is required, ensure authentication and TLS.',
+        learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
+      });
+    }
+  }
+
+  return { findings, hasNetworkTransport };
+}
+
+/**
+ * Sensitive-env passthrough. >=3 distinct sensitive keys upgrades to
+ * CRITICAL ("wildcard" passthrough); 1-2 keys is a WARNING that asks the
+ * user to verify the server actually needs them.
+ */
+export function checkSensitiveEnv(server, name, relPath) {
+  const env = server.env || {};
+  const envKeys = Object.keys(env);
+  const sensitiveKeys = envKeys.filter((k) => SENSITIVE_ENV_KEYS.includes(k));
+  if (sensitiveKeys.length === 0) return [];
+  if (sensitiveKeys.length >= 3) {
+    return [{
+      findingId: 'mcp-config/env-wildcard-sensitive-vars',
+      severity: 'critical',
+      title: `MCP server "${name}" receives ${sensitiveKeys.length} sensitive env vars`,
+      detail: `Sensitive environment variables (${sensitiveKeys.join(', ')}) are passed to this server.`,
+      remediation: 'Only pass environment variables that the server actually needs.',
+    }];
+  }
+  return [{
+    findingId: 'mcp-config/env-sensitive-vars',
+    severity: 'warning',
+    title: `MCP server "${name}" receives sensitive env var(s): ${sensitiveKeys.join(', ')}`,
+    detail: `Sensitive keys passed in ${relPath}.`,
+    remediation: 'Verify this server needs these credentials.',
+  }];
+}
+
+/**
+ * CVE-2026-21852: ANTHROPIC_BASE_URL/API_BASE redirect in the MCP server
+ * env. Co-disclosed with CVE-2025-59536 in the Checkpoint writeup; see
+ * the comment on `learnMore` for why the URL slug names the other CVE.
+ */
+export function checkAnthropicBaseUrl(server, name, relPath) {
+  const env = server.env || {};
+  const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
+  if (!envBaseUrl) return [];
+  if (envBaseUrl.includes('api.anthropic.com') || envBaseUrl.includes('127.0.0.1') || envBaseUrl.includes('localhost')) {
+    return [];
+  }
+  return [{
+    findingId: 'mcp-config/anthropic-base-url-redirect',
+    severity: 'critical',
+    title: `ANTHROPIC_BASE_URL redirect in MCP server "${name}" env`,
+    detail: `MCP server "${name}" sets API base to ${envBaseUrl.slice(0, 60)} — this can exfiltrate API keys and intercept requests (CVE-2026-21852). Found in ${relPath}.`,
+    remediation: 'Remove ANTHROPIC_BASE_URL/ANTHROPIC_API_BASE from MCP server env, or set it to https://api.anthropic.com.',
+    learnMore: 'https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/',
+  }];
+}
+
 export default {
   id: 'mcp-config',
   enforcementGrade: 'mechanical',
@@ -305,32 +402,10 @@ export default {
           currentHashes[name] = computeServerHash(server);
         }
 
-        // Check transport type
-        const transport = server.transport || 'stdio';
-        if (transport === 'sse' || transport === 'http' || server.url) {
-          const targetUrl = server.url || '';
-          const host = extractHost(targetUrl);
-          const isLocal = host && safeHosts.includes(host);
-
-          if (isLocal) {
-            findings.push({
-              findingId: 'mcp-config/localhost-server',
-              severity: 'info',
-              title: `MCP server "${name}" is a localhost server`,
-              detail: `Server uses ${transport || 'network'} transport targeting ${host} in ${relPath}.`,
-            });
-          } else {
-            hasNetworkTransport = true;
-            findings.push({
-              findingId: 'mcp-config/network-transport',
-              severity: 'warning',
-              title: `MCP server "${name}" uses network transport`,
-              detail: `Server uses ${transport || 'network'} transport in ${relPath}. Network-based MCP servers have a larger attack surface than stdio.`,
-              remediation: 'Prefer stdio transport for local MCP servers. If network transport is required, ensure authentication and TLS.',
-              learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
-            });
-          }
-        }
+        // Transport-type detection — see checkTransportType().
+        const transportResult = checkTransportType(server, name, relPath, safeHosts);
+        findings.push(...transportResult.findings);
+        if (transportResult.hasNetworkTransport) hasNetworkTransport = true;
 
         // Check for sensitive filesystem access in args
         const args = server.args || [];
@@ -376,45 +451,11 @@ export default {
           }
         }
 
-        // Check for sensitive env passthrough
-        const env = server.env || {};
-        const envKeys = Object.keys(env);
-        const sensitiveKeys = envKeys.filter((k) => SENSITIVE_ENV_KEYS.includes(k));
-        if (sensitiveKeys.length >= 3) {
-          findings.push({
-            findingId: 'mcp-config/env-wildcard-sensitive-vars',
-            severity: 'critical',
-            title: `MCP server "${name}" receives ${sensitiveKeys.length} sensitive env vars`,
-            detail: `Sensitive environment variables (${sensitiveKeys.join(', ')}) are passed to this server.`,
-            remediation: 'Only pass environment variables that the server actually needs.',
-          });
-        } else if (sensitiveKeys.length > 0) {
-          findings.push({
-            findingId: 'mcp-config/env-sensitive-vars',
-            severity: 'warning',
-            title: `MCP server "${name}" receives sensitive env var(s): ${sensitiveKeys.join(', ')}`,
-            detail: `Sensitive keys passed in ${relPath}.`,
-            remediation: 'Verify this server needs these credentials.',
-          });
-        }
+        // Sensitive env passthrough — see checkSensitiveEnv().
+        findings.push(...checkSensitiveEnv(server, name, relPath));
 
-        // CVE-2026-21852: ANTHROPIC_BASE_URL redirect in MCP server env.
-        // The linked Checkpoint writeup is a co-disclosure that covers both
-        // CVE-2025-59536 (compound auto-approve) and CVE-2026-21852 (this
-        // base-URL redirect class) — confirmed by correctness-bugs T3.14d.
-        // URL slug names the more-prominent CVE; the article body covers
-        // both. Do not "fix" the URL to a CVE-2026-21852-specific page.
-        const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
-        if (envBaseUrl && !envBaseUrl.includes('api.anthropic.com') && !envBaseUrl.includes('127.0.0.1') && !envBaseUrl.includes('localhost')) {
-          findings.push({
-            findingId: 'mcp-config/anthropic-base-url-redirect',
-            severity: 'critical',
-            title: `ANTHROPIC_BASE_URL redirect in MCP server "${name}" env`,
-            detail: `MCP server "${name}" sets API base to ${envBaseUrl.slice(0, 60)} — this can exfiltrate API keys and intercept requests (CVE-2026-21852). Found in ${relPath}.`,
-            remediation: 'Remove ANTHROPIC_BASE_URL/ANTHROPIC_API_BASE from MCP server env, or set it to https://api.anthropic.com.',
-            learnMore: 'https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/',
-          });
-        }
+        // CVE-2026-21852 ANTHROPIC_BASE_URL redirect — see checkAnthropicBaseUrl().
+        findings.push(...checkAnthropicBaseUrl(server, name, relPath));
 
         // Check for unpinned versions (unstable distribution tags)
         for (const arg of args) {

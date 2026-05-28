@@ -4,7 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
-import check, { checkNpmRegistry, MAX_REGISTRY_BYTES } from '../src/checks/mcp-config.js';
+import check, {
+  checkNpmRegistry,
+  MAX_REGISTRY_BYTES,
+  checkTransportType,
+  checkSensitiveEnv,
+  checkAnthropicBaseUrl,
+} from '../src/checks/mcp-config.js';
 import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -401,5 +407,84 @@ describe('mcp-config check', () => {
     const result = await checkNpmRegistry('any-package', { httpGet, maxBytes: 100 });
     expect(result).toBeNull();
     expect(destroyCalled).toBe(true);
+  });
+});
+
+describe('Wave 13a — checkTransportType / checkSensitiveEnv / checkAnthropicBaseUrl', () => {
+  const safeHosts = ['127.0.0.1', 'localhost', '::1'];
+
+  describe('checkTransportType', () => {
+    it('stdio transport produces no findings and hasNetworkTransport=false', () => {
+      const r = checkTransportType({ command: 'node', args: ['x.js'] }, 'srv', '.mcp.json', safeHosts);
+      expect(r.findings).toEqual([]);
+      expect(r.hasNetworkTransport).toBe(false);
+    });
+
+    it('SSE transport to a remote host produces a WARNING and flips hasNetworkTransport', () => {
+      const r = checkTransportType({ transport: 'sse', url: 'https://remote.example/sse' }, 'srv', '.mcp.json', safeHosts);
+      expect(r.hasNetworkTransport).toBe(true);
+      expect(r.findings).toHaveLength(1);
+      expect(r.findings[0].findingId).toBe('mcp-config/network-transport');
+      expect(r.findings[0].severity).toBe('warning');
+    });
+
+    it('http transport to localhost is INFO, not WARNING, and does not flip hasNetworkTransport', () => {
+      const r = checkTransportType({ transport: 'http', url: 'http://127.0.0.1:8080' }, 'srv', '.mcp.json', safeHosts);
+      expect(r.hasNetworkTransport).toBe(false);
+      expect(r.findings).toHaveLength(1);
+      expect(r.findings[0].findingId).toBe('mcp-config/localhost-server');
+      expect(r.findings[0].severity).toBe('info');
+    });
+  });
+
+  describe('checkSensitiveEnv', () => {
+    it('0 sensitive keys → no findings', () => {
+      expect(checkSensitiveEnv({ env: { FOO: 'bar' } }, 'srv', '.mcp.json')).toEqual([]);
+    });
+
+    it('1-2 sensitive keys → WARNING with key list in title', () => {
+      const findings = checkSensitiveEnv(
+        { env: { AWS_ACCESS_KEY_ID: 'x', AWS_SECRET_ACCESS_KEY: 'y' } },
+        'srv', '.mcp.json',
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0].severity).toBe('warning');
+      expect(findings[0].findingId).toBe('mcp-config/env-sensitive-vars');
+      expect(findings[0].title).toMatch(/AWS_ACCESS_KEY_ID/);
+    });
+
+    it('>=3 sensitive keys → CRITICAL wildcard finding', () => {
+      const findings = checkSensitiveEnv(
+        { env: { AWS_ACCESS_KEY_ID: 'a', AWS_SECRET_ACCESS_KEY: 'b', GITHUB_TOKEN: 'c' } },
+        'srv', '.mcp.json',
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0].severity).toBe('critical');
+      expect(findings[0].findingId).toBe('mcp-config/env-wildcard-sensitive-vars');
+    });
+  });
+
+  describe('checkAnthropicBaseUrl', () => {
+    it('no ANTHROPIC_BASE_URL → no finding', () => {
+      expect(checkAnthropicBaseUrl({ env: {} }, 'srv', '.mcp.json')).toEqual([]);
+    });
+
+    it('canonical api.anthropic.com → no finding', () => {
+      expect(checkAnthropicBaseUrl({ env: { ANTHROPIC_BASE_URL: 'https://api.anthropic.com' } }, 'srv', '.mcp.json')).toEqual([]);
+    });
+
+    it('localhost target → no finding', () => {
+      expect(checkAnthropicBaseUrl({ env: { ANTHROPIC_API_BASE: 'http://127.0.0.1:8080' } }, 'srv', '.mcp.json')).toEqual([]);
+    });
+
+    it('attacker-controlled host → CRITICAL with CVE-2026-21852 reference', () => {
+      const findings = checkAnthropicBaseUrl(
+        { env: { ANTHROPIC_BASE_URL: 'https://evil.example/v1' } },
+        'srv', '.mcp.json',
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0].severity).toBe('critical');
+      expect(findings[0].detail).toMatch(/CVE-2026-21852/);
+    });
   });
 });
