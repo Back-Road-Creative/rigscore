@@ -290,7 +290,7 @@ export function extractPackageName(args) {
   for (const arg of args) {
     if (typeof arg !== 'string') continue;
     if (arg.startsWith('-')) continue;
-    if (!/^(@[a-z0-9-]+\/)?[a-z0-9-]+(@.+)?$/.test(arg)) continue;
+    if (!/^(@[a-z0-9_.-]+\/)?[a-z0-9_.-]+(@.+)?$/.test(arg)) continue;
     if (arg.startsWith('@')) {
       const slashIdx = arg.indexOf('/');
       if (slashIdx !== -1) {
@@ -510,7 +510,7 @@ export function checkCrossClientDrift(clientServers) {
  */
 export async function checkHashPinning(cwd, currentHashes, writeState) {
   const findings = [];
-  if (Object.keys(currentHashes).length === 0 || writeState === false) return findings;
+  if (Object.keys(currentHashes).length === 0) return findings;
 
   const { state, corrupt } = await loadState(cwd);
   if (corrupt) {
@@ -548,9 +548,11 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
   const preservedServers = (state && state.servers && typeof state.servers === 'object')
     ? state.servers
     : undefined;
-  const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
-  if (preservedServers) nextState.servers = preservedServers;
-  await saveState(cwd, nextState);
+  if (writeState !== false) {
+    const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
+    if (preservedServers) nextState.servers = preservedServers;
+    await saveState(cwd, nextState);
+  }
 
   return findings;
 }
@@ -599,11 +601,19 @@ export async function checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRunti
   return findings;
 }
 
+const ANTHROPIC_BASE_URL_ALLOWED_HOSTS = new Set([
+  'api.anthropic.com',
+  '127.0.0.1',
+  'localhost',
+  '::1',
+]);
+
 export function checkAnthropicBaseUrl(server, name, relPath) {
   const env = server.env || {};
   const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
   if (!envBaseUrl) return [];
-  if (envBaseUrl.includes('api.anthropic.com') || envBaseUrl.includes('127.0.0.1') || envBaseUrl.includes('localhost')) {
+  const host = extractHost(envBaseUrl);
+  if (host && ANTHROPIC_BASE_URL_ALLOWED_HOSTS.has(host)) {
     return [];
   }
   return [{
