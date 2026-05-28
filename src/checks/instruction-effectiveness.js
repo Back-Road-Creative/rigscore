@@ -93,8 +93,10 @@ async function collectGovernanceFiles(cwd, homedir, config, addFile) {
   for (const f of GOVERNANCE_FILES) {
     await addFile(path.join(cwd, f), f, 'governance');
   }
-  await addFile(path.join(homedir, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md', 'governance');
-  await addFile(path.join(homedir, 'CLAUDE.md'), '~/CLAUDE.md', 'governance');
+  if (homedir) {
+    await addFile(path.join(homedir, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md', 'governance');
+    await addFile(path.join(homedir, 'CLAUDE.md'), '~/CLAUDE.md', 'governance');
+  }
 
   if (config?.paths?.claudeMd) {
     for (const p of config.paths.claudeMd) {
@@ -182,8 +184,16 @@ async function collectMemoryFiles(cwd, homedir, addFile) {
  * Orchestrator only — the three collectGovernance/Skill/Memory helpers
  * share the addFile closure via parameter, which handles dedup + size
  * cap + binary-detection + content read in one place.
+ *
+ * `homedir` is suppressed (set to null) when --include-home-skills is
+ * off, matching the documented CLI default ("scan cwd only; home
+ * findings do not affect project scores unless this flag is set") and
+ * the same gate skill-files.js applies. Without this, the check
+ * reports dead refs / vague-instructions / bloat findings in
+ * ~/.claude/skills/** that the user explicitly opted out of seeing.
  */
-async function discoverFiles(cwd, homedir, config) {
+async function discoverFiles(cwd, homedir, config, includeHomeSkills) {
+  const effectiveHomedir = includeHomeSkills ? homedir : null;
   const files = [];
   const seen = new Set();
 
@@ -198,9 +208,9 @@ async function discoverFiles(cwd, homedir, config) {
     files.push({ relPath, fullPath, content, category });
   }
 
-  await collectGovernanceFiles(cwd, homedir, config, addFile);
-  await collectSkillFiles(cwd, homedir, addFile);
-  await collectMemoryFiles(cwd, homedir, addFile);
+  await collectGovernanceFiles(cwd, effectiveHomedir, config, addFile);
+  await collectSkillFiles(cwd, effectiveHomedir, addFile);
+  await collectMemoryFiles(cwd, effectiveHomedir, addFile);
 
   return files;
 }
@@ -694,11 +704,11 @@ export default {
   category: 'governance',
 
   async run(context) {
-    const { cwd, homedir, config } = context;
+    const { cwd, homedir, config, includeHomeSkills } = context;
     const findings = [];
 
     // Discover all instruction-bearing files
-    const files = await discoverFiles(cwd, homedir, config);
+    const files = await discoverFiles(cwd, homedir, config, includeHomeSkills);
 
     if (files.length === 0) {
       return {
