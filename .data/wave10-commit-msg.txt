@@ -1,0 +1,35 @@
+refactor(index): extract --init-hook and --baseline branches from run()
+
+src/index.js run() was 266 lines — flagged as Complexity #4 (god function)
+in the 2026-05-27 health report. Two of its branches are self-contained
+sub-commands that don't share state with the main scan/format/exit flow:
+
+1. **--init-hook** (~58 lines) moved to new src/cli/init-hook.js as
+   `runInitHook(cwd)`. Includes the .git presence check, the
+   already-installed / older-pinned-version detection, the
+   `#!/bin/sh` + pinned `npx -y github:Back-Road-Creative/rigscore@v…`
+   write/append path, and chmod 755. Same exit-code contract (0 ok,
+   1 if no .git). run() collapses to a single `return runInitHook(cwd)`.
+
+2. **--baseline** (~30 lines) moved to src/cli/baseline.js as
+   `runBaselineMode(scanResult, baselinePath)`. The companion to the
+   already-extracted `runDiffSubcommand` — both now live next to the
+   shared baseline helpers (buildBaseline, loadBaseline, diffFindings,
+   flattenFindings) instead of being inlined in run(). Same exit-code
+   contract (0 first-run or no new findings, 1 new findings).
+
+Net: run() goes from 266 lines to 193 lines. Plan target was <100;
+remaining structure (profile hints, scan dispatch, output format
+dispatch, --fix, --watch, exit handling) is small per-branch and
+intertwined with the suppress/score/options flow, so further
+extraction is left for a follow-up wave rather than forced here.
+
+Test surface: test/init-hook.test.js still drives the same logic
+through run(['--init-hook', dir]) — the entry point is unchanged,
+the dispatch just goes one hop further. All 7 init-hook tests pass.
+
+Closes Complexity #4 — partial. The 266→193 reduction collapses the
+two largest self-contained branches; run() is no longer at the top
+of the file's complexity ranking.
+
+Wave 10 of the fix plan.

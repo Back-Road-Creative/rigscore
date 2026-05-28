@@ -1,0 +1,31 @@
+test(docs): add --cwd/--root to scripts/verify-docs.js and unskip 2 documentation-check tests
+
+scripts/verify-docs.js previously hardcoded REPO_ROOT from its own
+__filename, so it could only verify the rigscore install itself. The
+test suite documented this limit by skipping two integration tests
+that wanted to spawn the script against a synthetic tmp fixture.
+
+Add `--cwd <path>` (alias `--root <path>`) to the CLI:
+- Default unchanged: REPO_ROOT resolved from __filename. `npm run
+  verify:docs` and the CI/release workflows behave bit-identically.
+- When --cwd is passed, the verify run uses that root for both
+  src/checks/ scan and docs/checks/ scan, and --stub writes into
+  <cwd>/docs/checks/. The stub template is always read from the
+  rigscore install (the user's repo may not have _template.md).
+- Validates the path is a real directory before invoking the library;
+  cleaner error than a downstream readdir ENOENT.
+
+src/lib/verify-docs.js: weights auto-load was hard-failing on repos
+without src/constants.js. Wrap in try/catch and fall back to an empty
+weights map — weight-drift detection is then skipped for fixture and
+third-party repos that don't ship rigscore's WEIGHTS registry. Self-
+verify still loads rigscore's own WEIGHTS as before.
+
+test/documentation-check.test.js: unskip both tests, plus two new
+ones exercising --cwd validation (nonexistent target → exit 2, missing
+path value → exit 2). All four spawn the real script against tmp
+fixtures.
+
+Closes Gaps #2 (skipped test 316), Gaps #3 (skipped test 320).
+
+Wave 8 of the fix plan.
