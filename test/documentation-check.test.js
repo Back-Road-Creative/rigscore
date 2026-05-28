@@ -2,7 +2,19 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { verifyCheckDocs, formatVerifyResult, REQUIRED_SECTIONS } from '../src/lib/verify-docs.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT = path.resolve(__dirname, '..', 'scripts', 'verify-docs.js');
+
+function runScript(args) {
+  return spawnSync('node', [SCRIPT, ...args], {
+    encoding: 'utf-8',
+    env: { ...process.env, NO_COLOR: '1' },
+  });
+}
 
 /**
  * Create an isolated fixture with `src/checks/` and `docs/checks/` subdirs.
@@ -306,18 +318,48 @@ describe('formatVerifyResult()', () => {
 });
 
 describe('CLI script (scripts/verify-docs.js) — smoke', () => {
-  // E2's scripts/verify-docs.js hardcodes REPO_ROOT from its own file path
-  // (see scripts/verify-docs.js line 14) and exposes no --cwd / --root flag.
-  // Running it against a synthetic tmp fixture is therefore not possible
-  // without copying or patching the script, which is out of scope for E3.
-  // The main session will swap these skips for real tests (or fold into an
-  // integration suite) once a portable invocation path exists.
+  // Wave 8: --cwd / --root flag added so the script can be pointed at a
+  // synthetic tmp fixture instead of its own install dir. Previously
+  // skipped tests now run real spawn against the script.
 
-  it.skip('14. dirty fixture exits 1 — TODO: needs --cwd/--root on scripts/verify-docs.js', () => {
-    // Intentionally skipped. See describe block comment.
+  it('14. dirty fixture (missing doc) exits 1', () => {
+    const fx = makeFixture();
+    try {
+      // One check, no matching doc → MISSING offender, exit 1.
+      fx.writeCheck('orphan-check');
+      const res = runScript(['--cwd', fx.root]);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toMatch(/MISSING.*orphan-check/);
+    } finally {
+      fx.cleanup();
+    }
   });
 
-  it.skip('15. --stub <id> creates doc from template — TODO: needs --cwd/--root on scripts/verify-docs.js', () => {
-    // Intentionally skipped. See describe block comment.
+  it('15. --stub <id> creates doc from template into the --cwd target', () => {
+    const fx = makeFixture();
+    try {
+      const res = runScript(['--cwd', fx.root, '--stub', 'fresh-check']);
+      expect(res.status).toBe(0);
+      const stubPath = path.join(fx.docsDir, 'fresh-check.md');
+      expect(fs.existsSync(stubPath)).toBe(true);
+      const body = fs.readFileSync(stubPath, 'utf8');
+      // Template substitution: <check-id> placeholder should be replaced.
+      expect(body).not.toContain('<check-id>');
+      expect(body).toContain('fresh-check');
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it('16. --cwd target that does not exist exits 2 with a clear message', () => {
+    const res = runScript(['--cwd', '/nonexistent/path/xyz-' + Date.now()]);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/--cwd target does not exist/);
+  });
+
+  it('17. --cwd without a path value exits 2', () => {
+    const res = runScript(['--cwd']);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/--cwd requires a path argument/);
   });
 });

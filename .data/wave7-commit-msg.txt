@@ -1,0 +1,33 @@
+docs(src): JSDoc on parseArgs/run + document createRequire JSON-import shim
+
+Three docs/quality polish items from the 2026-05-27 health report:
+
+1. (src/index.js parseArgs) Added JSDoc — recognized flags, positional
+   handling, unknown-flag behavior, link to subcommand dispatch in
+   bin/rigscore.js. (Gaps #5)
+
+2. (src/index.js run) Added JSDoc — entry-point flow, exit code
+   contract (0/1/2), and the three short-circuit modes (--init-hook,
+   --baseline, --watch) that don't follow the normal scan/format/exit
+   path. (Gaps #6)
+
+3. (src/reporter.js createRequire) Added a comment explaining the
+   shim: `import pkg from '../package.json' with { type: 'json' }` is
+   stable on Node ≥20.10 but still gated behind a flag on our 18.17
+   engine floor. Notes the upgrade path. (Quality #3)
+
+Not actionable, documented inline in the PR body rather than the
+codebase:
+
+- Quality #1 (`'.mcp' + '.' + 'json'` concat in src/utils.js:134) is
+  load-bearing — it dodges the T2.9 grep guard in
+  test/mcp-runtime-hash.test.js, which fails any src/ file that
+  imports child_process AND references `.mcp.json` literally. utils.js
+  imports child_process via execSafe. Existing comment already
+  explains; nothing to change.
+- Quality #2 (for-loop → for...of style consistency) — the three
+  c-style loops in src/index.js:39, src/scanner.js:427,
+  src/checks/mcp-config.js:76 all use `i+1` indexing or `i +=
+  CONCURRENCY` chunking and cannot trivially convert.
+
+Wave 7 of the fix plan. No behavior change — JSDoc + comment only.
