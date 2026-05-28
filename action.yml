@@ -59,7 +59,7 @@ runs:
     # and has been tag-validated in the previous step.
     # We clone into a sibling path so we don't clobber the caller's checkout.
     - name: Check out rigscore source
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: Back-Road-Creative/rigscore
         ref: ${{ github.action_ref }}
