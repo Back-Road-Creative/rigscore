@@ -27,8 +27,9 @@ scanner directly from `src/index.js` — no CLI shell-out. See
 - `.mcp.json` — three servers: one pinned, one typosquat+unpinned+`@latest`,
   one with 4 sensitive env vars.
 - `.env` + `.env.example` — `.env` intentionally NOT in `.gitignore`;
-  placeholder uses `AKIAIOSFODNN7EXAMPLE` (AWS's canonical documented
-  example key) so no real-looking secret is committed.
+  placeholder uses an `AKIA[A-Z]{16}`-shape-only string (`AKIAXXXX…`) so
+  rigscore's prefix-based detectors still fire while gitleaks / TruffleHog /
+  GitHub push-time secret scanning do not.
 - `docker-compose.yml` — two services with missing `cap_drop`, no `user`,
   no memory limit, no loopback bind.
 - `package.json`, `requirements.txt` — enough markers to make the directory
@@ -65,5 +66,9 @@ Every placeholder in this fixture is an obvious stub. Never substitute
 real-looking values; rigscore's secret patterns treat `AKIA[0-9A-Z]{16}`
 matches as real keys unless the surrounding line contains `example|
 placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me`.
-`AKIAIOSFODNN7EXAMPLE` is AWS's documented example key and falls under
-that exception.
+The current placeholder `AKIAXXXXXXXXXXXXXXXX` matches the shape regex
+(so the detector still fires in tests) but contains `xxx`, satisfying the
+exception. It deliberately avoids AWS's documented canonical example
+string because gitleaks, TruffleHog, and GitHub push-time secret
+scanning hard-code that exact literal as a known fingerprint and would
+block downstream consumers that scan tracked source.
