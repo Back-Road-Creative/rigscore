@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { MAX_RESPONSE_BYTES } from './http.js';
 
 export const REGISTRY_URL = 'https://registry.modelcontextprotocol.io/v0/servers';
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -249,6 +250,32 @@ export async function fetchRegistry(options = {}) {
       fetchedAt: null,
       fromCache: false,
       warning: `MCP registry returned status ${status}`,
+    };
+  }
+
+  // Cap the response body before parse. A misbehaving registry could
+  // stream gigabytes; we want a hard upper bound consistent with http.js.
+  // Content-Length is a cheap upfront guard; servers that omit it fall
+  // through to response.json() which globally allocates the buffer.
+  const declaredLength = response.headers && typeof response.headers.get === 'function'
+    ? parseInt(response.headers.get('content-length'), 10)
+    : NaN;
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
+    if (cached) {
+      const when = cached.fetchedAt.slice(0, 10);
+      return {
+        servers: extractServers(cached.data),
+        fetchedAt: cached.fetchedAt,
+        fromCache: true,
+        stale: true,
+        warning: `MCP registry response exceeds ${MAX_RESPONSE_BYTES} bytes, using stale cache from ${when}`,
+      };
+    }
+    return {
+      servers: [],
+      fetchedAt: null,
+      fromCache: false,
+      warning: `MCP registry response exceeds ${MAX_RESPONSE_BYTES} bytes`,
     };
   }
 

@@ -7,6 +7,14 @@ import { createRequire } from 'node:module';
 // `timeout` argument; scanner passes config.limits.networkTimeoutMs when set.
 const DEFAULT_TIMEOUT = 5_000;
 
+// Response body cap for fetchBody. A misbehaving or malicious host could
+// stream gigabytes into us; without a cap, fetchBody would happily
+// concatenate the whole thing into memory. 10MB is well above any
+// real-world site-security HTML or registry JSON we scan. Exported so
+// mcp-registry.js (which uses globalThis.fetch, not the http.js helpers)
+// can share the same ceiling.
+export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
 // Read version from package.json once at module load so the User-Agent
 // advertised to external hosts matches the installed release.
 const require = createRequire(import.meta.url);
@@ -30,15 +38,34 @@ export async function fetchHeaders(url, timeout = DEFAULT_TIMEOUT) {
 }
 
 /**
- * Fetch the full body of a URL as a string.
+ * Fetch the full body of a URL as a string, capped at MAX_RESPONSE_BYTES.
+ * Over-cap responses are aborted mid-stream and resolve to null (treated
+ * by callers as a fetch failure, same as a timeout).
  * @returns {Promise<string|null>}
  */
 export async function fetchBody(url, timeout = DEFAULT_TIMEOUT) {
   return new Promise((resolve) => {
     const mod = url.startsWith('https://') ? https : http;
     const req = mod.get(url, { timeout, headers: { 'User-Agent': USER_AGENT } }, (res) => {
+      // Honour Content-Length as a cheap upfront check; falls through to
+      // the streaming cap if the server omits or lies about the header.
+      const declared = parseInt(res.headers['content-length'], 10);
+      if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+        req.destroy();
+        resolve(null);
+        return;
+      }
       const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
+      let bytesRead = 0;
+      res.on('data', (chunk) => {
+        bytesRead += chunk.length;
+        if (bytesRead > MAX_RESPONSE_BYTES) {
+          req.destroy();
+          resolve(null);
+          return;
+        }
+        chunks.push(chunk);
+      });
       res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
       res.on('error', () => resolve(null));
     });
