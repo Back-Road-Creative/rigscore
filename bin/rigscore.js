@@ -36,6 +36,7 @@ if (args.length > 0 && MCP_SUBCOMMANDS.has(args[0])) {
 if (args.length > 0 && args[0] === 'diff') {
   const mod = await import('../src/cli/baseline.js');
   mod.runDiffSubcommand(args.slice(1));
+  process.exit(0);
 }
 
 // `rigscore explain <findingId>` — print the relevant docs page.
