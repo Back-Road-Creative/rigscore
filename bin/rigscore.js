@@ -61,12 +61,12 @@ if (args.includes('--version')) {
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
   const pkg = require('../package.json');
-  console.log(`rigscore v${pkg.version}`);
+  process.stdout.write(`rigscore v${pkg.version}\n`);
   process.exit(0);
 }
 
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`rigscore — AI dev environment configuration hygiene checker
+  process.stdout.write(`rigscore — AI dev environment configuration hygiene checker
 
 Usage:
   rigscore [directory] [options]
@@ -151,7 +151,7 @@ Examples:
   rigscore --ci --fail-under 80     CI with strict threshold
   rigscore . -r --depth 2           Scan monorepo (2 levels deep)
   rigscore --check docker-security  Run only Docker/K8s check
-  npx -y <pkg> | rigscore mcp-hash | xargs rigscore mcp-pin <server>`);
+  npx -y <pkg> | rigscore mcp-hash | xargs rigscore mcp-pin <server>\n`);
   process.exit(0);
 }
 
