@@ -110,6 +110,56 @@ function isDefensiveContext(text) {
 }
 
 /**
+ * Iterate every (pattern, match-line) pair across a content blob.
+ * Handles the regex-with-g-flag dance, line extraction around match.index,
+ * and the defensive-context skip so callers don't repeat the boilerplate.
+ *
+ * @param {string} content      The file body to scan.
+ * @param {RegExp[]} patterns   Patterns to test (g flag added if missing).
+ * @param {(line: string) => boolean} isDefensive  Lines for which this
+ *                              returns true are skipped (e.g., a security
+ *                              README that names the attack to defend
+ *                              against shouldn't itself trip the check).
+ * @param {(pattern: RegExp, line: string) => void} onMatch  Called once per
+ *                              non-defensive match.
+ */
+export function forEachPatternMatch(content, patterns, isDefensive, onMatch) {
+  for (const pattern of patterns) {
+    const globalPattern = pattern.flags.includes('g')
+      ? pattern
+      : new RegExp(pattern.source, pattern.flags + 'g');
+    let match;
+    while ((match = globalPattern.exec(content)) !== null) {
+      const lineStart = content.lastIndexOf('\n', match.index) + 1;
+      const lineEnd = content.indexOf('\n', match.index);
+      const line = content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+      if (isDefensive(line)) continue;
+      onMatch(pattern, line);
+    }
+  }
+}
+
+/**
+ * Convenience wrapper around forEachPatternMatch for the simple aggregation
+ * shape: collect a trimmed, capped sample of every non-defensive line, plus
+ * the set of distinct pattern sources that triggered. Used by persistence
+ * and indirect-injection detection; escalation handling needs the lower-
+ * level forEachPatternMatch directly because its accumulator is keyed by
+ * patternId rather than pattern.source.
+ *
+ * @returns {{ lines: string[], patternSources: Set<string> }}
+ */
+export function accumulatePatternMatches(content, patterns, isDefensive) {
+  const lines = [];
+  const patternSources = new Set();
+  forEachPatternMatch(content, patterns, isDefensive, (pattern, line) => {
+    lines.push(line.trim().slice(0, 120));
+    patternSources.add(pattern.source);
+  });
+  return { lines, patternSources };
+}
+
+/**
  * Extract the skill directory name from a file path under `.claude/skills/`.
  * Returns e.g. "sops-status" for `.claude/skills/sops-status/SKILL.md` or
  * `~/.claude/skills/sops-status/evals/acceptance.md`. Returns null for files
@@ -459,26 +509,16 @@ export default {
       // allowlist entries remain finer-grained (e.g. allowlist `sudo` in an
       // operator skill without permitting `chmod 777` in the same skill).
       const escalationAcc = new Map(); // patternId → { matches, firstLine }
-      for (const pattern of ESCALATION_PATTERNS) {
-        const globalPattern = pattern.flags.includes('g')
-          ? pattern
-          : new RegExp(pattern.source, pattern.flags + 'g');
-        let match;
-        while ((match = globalPattern.exec(file.content)) !== null) {
-          const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
-          const lineEnd = file.content.indexOf('\n', match.index);
-          const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-          if (isDefensiveContext(line)) continue;
-          const patternId = patternIdForEscalation(pattern.source);
-          if (findAllowlistMatch(allowlist, file.path, patternId)) continue;
-          const existing = escalationAcc.get(patternId);
-          if (existing) {
-            existing.matches++;
-          } else {
-            escalationAcc.set(patternId, { matches: 1, firstLine: line.trim().slice(0, 120) });
-          }
+      forEachPatternMatch(file.content, ESCALATION_PATTERNS, isDefensiveContext, (pattern, line) => {
+        const patternId = patternIdForEscalation(pattern.source);
+        if (findAllowlistMatch(allowlist, file.path, patternId)) return;
+        const existing = escalationAcc.get(patternId);
+        if (existing) {
+          existing.matches++;
+        } else {
+          escalationAcc.set(patternId, { matches: 1, firstLine: line.trim().slice(0, 120) });
         }
-      }
+      });
       const distinctEscalationIds = escalationAcc.size;
       for (const [patternId, entry] of escalationAcc) {
         const severity = distinctEscalationIds >= 3 ? 'critical' : 'warning';
@@ -496,22 +536,8 @@ export default {
 
       // Check persistence patterns — C4 aggregation
       if (!findAllowlistMatch(allowlist, file.path, 'persistence')) {
-        const persistenceLines = [];
-        const persistencePatterns = new Set();
-        for (const pattern of PERSISTENCE_PATTERNS) {
-          const globalPattern = pattern.flags.includes('g')
-            ? pattern
-            : new RegExp(pattern.source, pattern.flags + 'g');
-          let match;
-          while ((match = globalPattern.exec(file.content)) !== null) {
-            const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
-            const lineEnd = file.content.indexOf('\n', match.index);
-            const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-            if (isDefensiveContext(line)) continue;
-            persistenceLines.push(line.trim().slice(0, 120));
-            persistencePatterns.add(pattern.source);
-          }
-        }
+        const { lines: persistenceLines, patternSources: persistencePatterns } =
+          accumulatePatternMatches(file.content, PERSISTENCE_PATTERNS, isDefensiveContext);
         if (persistencePatterns.size > 0) {
           const matches = persistenceLines.length;
           const distinctPatterns = persistencePatterns.size;
@@ -532,22 +558,8 @@ export default {
       // Check indirect injection patterns — C4 aggregation (CRITICAL severity
       // at any match; escalate detail when multiple distinct patterns present)
       if (!findAllowlistMatch(allowlist, file.path, 'indirect-injection')) {
-        const indirectLines = [];
-        const indirectPatterns = new Set();
-        for (const pattern of INDIRECT_INJECTION_PATTERNS) {
-          const globalPattern = pattern.flags.includes('g')
-            ? pattern
-            : new RegExp(pattern.source, pattern.flags + 'g');
-          let match;
-          while ((match = globalPattern.exec(file.content)) !== null) {
-            const lineStart = file.content.lastIndexOf('\n', match.index) + 1;
-            const lineEnd = file.content.indexOf('\n', match.index);
-            const line = file.content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-            if (isDefensiveContext(line)) continue;
-            indirectLines.push(line.trim().slice(0, 120));
-            indirectPatterns.add(pattern.source);
-          }
-        }
+        const { lines: indirectLines, patternSources: indirectPatterns } =
+          accumulatePatternMatches(file.content, INDIRECT_INJECTION_PATTERNS, isDefensiveContext);
         if (indirectPatterns.size > 0) {
           findings.push({
             findingId: 'skill-files/indirect-injection',
