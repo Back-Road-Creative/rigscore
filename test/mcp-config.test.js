@@ -18,6 +18,12 @@ import check, {
   checkCrossClientDrift,
   checkHashPinning,
   checkRuntimeToolPinStatus,
+  checkBroadFilesystemAccess,
+  checkPathTraversal,
+  checkUnsafePermissionFlag,
+  checkUnpinnedVersion,
+  checkNpxPin,
+  checkInlineCredentials,
 } from '../src/checks/mcp-config.js';
 import { WEIGHTS } from '../src/constants.js';
 
@@ -759,5 +765,35 @@ describe('Wave 13d — checkCrossClientDrift / checkHashPinning / checkRuntimeTo
         fs.rmSync(tmp, { recursive: true });
       }
     });
+  });
+});
+
+describe('Wave 2A — remaining per-server helpers', () => {
+  it('checkBroadFilesystemAccess: bare / flags CRITICAL + sets flag', () => {
+    expect(checkBroadFilesystemAccess({ args: ['/home/me/proj'] }, 's', '.mcp.json').hasBroadFilesystemAccess).toBe(false);
+    const r = checkBroadFilesystemAccess({ args: ['/'] }, 's', '.mcp.json');
+    expect(r.hasBroadFilesystemAccess).toBe(true);
+    expect(r.findings[0].findingId).toBe('mcp-config/broad-filesystem-access');
+  });
+  it('checkPathTraversal: "../" → WARNING; absolute path → no finding', () => {
+    expect(checkPathTraversal({ args: ['/abs'] }, 's', '.mcp.json')).toEqual([]);
+    expect(checkPathTraversal({ args: ['../x'] }, 's', '.mcp.json')[0].findingId).toBe('mcp-config/relative-path-traversal');
+  });
+  it('checkUnsafePermissionFlag: --dangerously-skip-permissions → WARNING; --safe → none', () => {
+    expect(checkUnsafePermissionFlag({ args: ['--safe'] }, 's', '.mcp.json')).toEqual([]);
+    expect(checkUnsafePermissionFlag({ args: ['--dangerously-skip-permissions'] }, 's', '.mcp.json')[0].findingId).toBe('mcp-config/unsafe-permission-flag');
+  });
+  it('checkUnpinnedVersion: @latest → WARNING; @1.2.3 → none', () => {
+    expect(checkUnpinnedVersion({ args: ['pkg@1.2.3'] }, 's', '.mcp.json')).toEqual([]);
+    expect(checkUnpinnedVersion({ args: ['pkg@latest'] }, 's', '.mcp.json')[0].findingId).toBe('mcp-config/unpinned-unstable-tag');
+  });
+  it('checkNpxPin: npx without pin → WARNING; node command → none', () => {
+    expect(checkNpxPin({ command: 'node', args: ['x.js'] }, 's', '.mcp.json')).toEqual([]);
+    expect(checkNpxPin({ command: 'npx', args: ['-y', 'pkg'] }, 's', '.mcp.json')[0].findingId).toBe('mcp-config/unpinned-npx-package');
+  });
+  it('checkInlineCredentials: inline Anthropic key → CRITICAL; clean → none', () => {
+    expect(checkInlineCredentials({ command: 'node', args: ['x.js'] }, 's', '.mcp.json')).toEqual([]);
+    const key = 'sk-ant-api03-' + 'A'.repeat(95);
+    expect(checkInlineCredentials({ command: 'node', args: [`--token=${key}`] }, 's', '.mcp.json')[0].findingId).toBe('mcp-config/inline-credentials');
   });
 });
