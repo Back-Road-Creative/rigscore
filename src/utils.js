@@ -243,17 +243,28 @@ export async function walkDirSafe(rootDir, opts = {}) {
     }
   }
 
-  async function walk(current, depth) {
+  /**
+   * Unified directory walker. Used to be two near-identical functions —
+   * `walk()` (top-level entry, performs the inode visited check) and
+   * `walkUnder()` (symlinked-dir target, skipped the inode check because
+   * the caller had already added the resolved inode to `visited`). Merging
+   * via `skipRootInode` removes ~40 lines of copy-paste and a real bug
+   * vector: any drift between the two copies' symlink handling would have
+   * been invisible.
+   */
+  async function walk(current, depth, { skipRootInode = false } = {}) {
     if (depth > maxDepth) return;
     if (files.length >= maxFiles) return;
 
-    const key = await keyForPath(current);
-    if (!key) return;
-    if (visited.has(key)) {
-      loopDetected = true;
-      return;
+    if (!skipRootInode) {
+      const key = await keyForPath(current);
+      if (!key) return;
+      if (visited.has(key)) {
+        loopDetected = true;
+        return;
+      }
+      visited.add(key);
     }
-    visited.add(key);
 
     let entries;
     try {
@@ -299,61 +310,13 @@ export async function walkDirSafe(rootDir, opts = {}) {
           if (skipHidden && entry.name.startsWith('.')) continue;
           if (skipDirs.has(entry.name)) continue;
           visited.add(realKey);
-          await walkUnder(realPath, depth + 1);
+          await walk(realPath, depth + 1, { skipRootInode: true });
         } else if (stReal.isFile() && shouldInclude(full, entry)) {
           files.push(full);
         }
         continue;
       }
 
-      if (lst.isDirectory()) {
-        if (skipHidden && entry.name.startsWith('.')) continue;
-        if (skipDirs.has(entry.name)) continue;
-        await walk(full, depth + 1);
-      } else if (lst.isFile() && shouldInclude(full, entry)) {
-        files.push(full);
-      }
-    }
-  }
-
-  // Same loop as walk(), but we've already added the inode key to `visited`
-  // before calling it — used for symlinked-dir targets.
-  async function walkUnder(current, depth) {
-    if (depth > maxDepth) return;
-    if (files.length >= maxFiles) return;
-
-    let entries;
-    try {
-      entries = await fs.promises.readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (files.length >= maxFiles) return;
-      const full = path.join(current, entry.name);
-      let lst;
-      try {
-        lst = await fs.promises.lstat(full);
-      } catch {
-        continue;
-      }
-      if (lst.isSymbolicLink()) {
-        let realPath, stReal;
-        try { realPath = await fs.promises.realpath(full); } catch { continue; }
-        try { stReal = await fs.promises.stat(realPath); } catch { continue; }
-        const realKey = `${stReal.dev}:${stReal.ino}`;
-        if (visited.has(realKey)) { loopDetected = true; continue; }
-        if (stReal.isDirectory()) {
-          if (skipHidden && entry.name.startsWith('.')) continue;
-          if (skipDirs.has(entry.name)) continue;
-          visited.add(realKey);
-          await walkUnder(realPath, depth + 1);
-        } else if (stReal.isFile() && shouldInclude(full, entry)) {
-          files.push(full);
-        }
-        continue;
-      }
       if (lst.isDirectory()) {
         if (skipHidden && entry.name.startsWith('.')) continue;
         if (skipDirs.has(entry.name)) continue;
