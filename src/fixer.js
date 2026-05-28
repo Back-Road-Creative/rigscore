@@ -47,10 +47,10 @@ function fixerMatches(id, fixer, finding) {
     if (matched) {
       if (!warnedLegacyMatchers.has(id)) {
         warnedLegacyMatchers.add(id);
-        console.warn(
+        process.stderr.write(
           `rigscore: fixer "${id}" matched via legacy title-substring predicate. ` +
           `Prefer findingId equality — set findingId on the finding and list it ` +
-          `in fixer.findingIds to avoid silent fix orphaning if the title changes.`,
+          `in fixer.findingIds to avoid silent fix orphaning if the title changes.\n`,
         );
       }
       return true;

@@ -311,64 +311,48 @@ export const fixes = [
  * sliding window (catches templates that split "ignore previous" /
  * "instructions" across two lines). One finding per file.
  */
+// Shared finding shape so the single-line + 2-line-window passes don't
+// drift apart. Whoever finds the match owns the `evidence` slice; the
+// rest is mechanical.
+function buildInjectionFinding(file, evidence, isDefensive) {
+  return {
+    findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
+    severity: isDefensive ? 'info' : 'critical',
+    title: isDefensive
+      ? `Defensive injection reference in ${file.path}`
+      : `Injection pattern found in ${file.path}`,
+    detail: isDefensive
+      ? 'File references injection patterns in a defensive context.'
+      : 'File contains instruction override patterns that could hijack AI agent behavior.',
+    evidence: evidence.trim().slice(0, 120),
+    remediation: isDefensive
+      ? 'No action needed — this appears to be a defensive rule.'
+      : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
+    context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
+  };
+}
+
 export function checkInjection(file) {
   const findings = [];
   const lines = file.content.split('\n');
 
-  let injectionFound = false;
   for (const line of lines) {
-    const normalizedLine = normalizeText(line);
-    for (const pattern of INJECTION_PATTERNS) {
-      if (pattern.test(normalizedLine)) {
-        const isDefensive = isDefensiveContext(normalizedLine);
-        findings.push({
-          findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
-          severity: isDefensive ? 'info' : 'critical',
-          title: isDefensive
-            ? `Defensive injection reference in ${file.path}`
-            : `Injection pattern found in ${file.path}`,
-          detail: isDefensive
-            ? 'File references injection patterns in a defensive context.'
-            : 'File contains instruction override patterns that could hijack AI agent behavior.',
-          evidence: line.trim().slice(0, 120),
-          remediation: isDefensive
-            ? 'No action needed — this appears to be a defensive rule.'
-            : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
-          context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
-        });
-        injectionFound = true;
-        break;
-      }
+    const normalized = normalizeText(line);
+    const hit = INJECTION_PATTERNS.find((p) => p.test(normalized));
+    if (hit) {
+      findings.push(buildInjectionFinding(file, line, isDefensiveContext(normalized)));
+      return findings;
     }
-    if (injectionFound) break;
   }
 
-  if (!injectionFound) {
-    for (let i = 0; i < lines.length - 1; i++) {
-      const twoLines = normalizeText(lines[i] + ' ' + lines[i + 1]);
-      for (const pattern of INJECTION_PATTERNS) {
-        if (pattern.test(twoLines)) {
-          const isDefensive = isDefensiveContext(twoLines);
-          findings.push({
-            findingId: isDefensive ? 'skill-files/injection-defensive' : 'skill-files/injection',
-            severity: isDefensive ? 'info' : 'critical',
-            title: isDefensive
-              ? `Defensive injection reference in ${file.path}`
-              : `Injection pattern found in ${file.path}`,
-            detail: isDefensive
-              ? 'File references injection patterns in a defensive context.'
-              : 'File contains instruction override patterns that could hijack AI agent behavior.',
-            evidence: (lines[i] + ' ' + lines[i + 1]).trim().slice(0, 120),
-            remediation: isDefensive
-              ? 'No action needed — this appears to be a defensive rule.'
-              : 'Remove instruction override patterns. If this is a legitimate rule, rephrase it.',
-            context: { file: file.path, patternId: 'injection', skill: extractSkillDir(file.path), defensive: isDefensive },
-          });
-          injectionFound = true;
-          break;
-        }
-      }
-      if (injectionFound) break;
+  // 2-line sliding window catches injection phrases split across a wrap.
+  for (let i = 0; i < lines.length - 1; i++) {
+    const joined = lines[i] + ' ' + lines[i + 1];
+    const normalized = normalizeText(joined);
+    const hit = INJECTION_PATTERNS.find((p) => p.test(normalized));
+    if (hit) {
+      findings.push(buildInjectionFinding(file, joined, isDefensiveContext(normalized)));
+      return findings;
     }
   }
 

@@ -352,6 +352,23 @@ function detectContradictions(file) {
  *     (`~/.claude/projects/<slug>/memory/*.md`) — those describe OTHER projects
  *     by design and their references live outside the scanned cwd.
  */
+// Resolve a referenced path against cwd, the referring file's dir, and a
+// bare-relative form. Returns true if any candidate exists on disk.
+async function resolveRef(bareRef, cwd, fullPath) {
+  const candidates = [
+    path.resolve(cwd, bareRef),
+    path.resolve(path.dirname(fullPath), bareRef),
+  ];
+  const stripped = bareRef.replace(/^\.\//, '').replace(/^\//, '');
+  if (stripped !== bareRef) {
+    candidates.push(path.resolve(cwd, stripped));
+  }
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) return true;
+  }
+  return false;
+}
+
 async function detectDeadReferences(file, cwd, config) {
   const findings = [];
 
@@ -379,23 +396,14 @@ async function detectDeadReferences(file, cwd, config) {
   for (let i = 0; i < lines.length; i++) {
     if (codeBlocks.has(i)) continue;
     const line = lines[i];
-
-    // Backtick references
-    let match;
-    const btRe = new RegExp(BACKTICK_PATH_RE.source, BACKTICK_PATH_RE.flags);
-    while ((match = btRe.exec(line)) !== null) {
-      const ref = match[1].trim();
-      if (looksLikeFilePath(ref)) {
-        extractedPaths.push({ ref, line: i + 1 });
-      }
-    }
-
-    // Markdown link references
-    const mlRe = new RegExp(MARKDOWN_LINK_RE.source, MARKDOWN_LINK_RE.flags);
-    while ((match = mlRe.exec(line)) !== null) {
-      const ref = match[1].trim();
-      if (looksLikeFilePath(ref)) {
-        extractedPaths.push({ ref, line: i + 1 });
+    // matchAll over the shared module-level regexes — no per-iteration
+    // RegExp allocation, no lastIndex state to reset.
+    for (const re of [BACKTICK_PATH_RE, MARKDOWN_LINK_RE]) {
+      for (const match of line.matchAll(re)) {
+        const ref = match[1].trim();
+        if (looksLikeFilePath(ref)) {
+          extractedPaths.push({ ref, line: i + 1 });
+        }
       }
     }
   }
@@ -410,25 +418,7 @@ async function detectDeadReferences(file, cwd, config) {
     // Exempt configured cross-repo refs (both the suffixed and bare form).
     if (crossRepoMatch(ref) || crossRepoMatch(bareRef)) continue;
 
-    // Resolve relative to CWD and file's directory
-    const candidates = [
-      path.resolve(cwd, bareRef),
-      path.resolve(path.dirname(file.fullPath), bareRef),
-    ];
-
-    // Also try without leading ./ or /
-    const stripped = bareRef.replace(/^\.\//, '').replace(/^\//, '');
-    if (stripped !== bareRef) {
-      candidates.push(path.resolve(cwd, stripped));
-    }
-
-    let found = false;
-    for (const candidate of candidates) {
-      if (await fileExists(candidate)) {
-        found = true;
-        break;
-      }
-    }
+    const found = await resolveRef(bareRef, cwd, file.fullPath);
 
     if (!found) {
       const findingId = 'instruction-effectiveness/dead-file-reference';

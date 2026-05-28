@@ -117,86 +117,76 @@ function extractHost(urlOrTransport) {
 // outage returning HTML. Abort rather than grow an unbounded string.
 export const MAX_REGISTRY_BYTES = 512 * 1024;
 
+// Drain a response into a string, aborting if it exceeds `maxBytes`.
+// Resolves to the body on success or null on overflow / stream error.
+function streamCappedBody(req, res, maxBytes) {
+  return new Promise((resolve) => {
+    let data = '';
+    let bytesRead = 0;
+    let aborted = false;
+    res.on('data', (chunk) => {
+      if (aborted) return;
+      bytesRead += chunk.length;
+      if (bytesRead > maxBytes) {
+        aborted = true;
+        req.destroy();
+        resolve(null);
+        return;
+      }
+      data += chunk;
+    });
+    res.on('end', () => { if (!aborted) resolve(data); });
+    res.on('error', () => { if (!aborted) resolve(null); });
+  });
+}
+
+// Convert an npm registry JSON body into a finding (or null).
+function npmRegistryBodyToFinding(packageName, statusCode, body) {
+  if (statusCode === 404) {
+    return {
+      findingId: 'mcp-config/npm-package-not-found',
+      severity: 'critical',
+      title: `MCP package "${packageName}" not found on npm`,
+      detail: 'This package does not exist on the npm registry. It may be a private package or a typo.',
+      remediation: 'Verify the package name and source.',
+      context: { packageName },
+    };
+  }
+  if (statusCode !== 200) return null;
+  let pkg;
+  try { pkg = JSON.parse(body); } catch { return null; }
+  if (!pkg.time?.created) return null;
+  const daysSinceCreated = (Date.now() - Date.parse(pkg.time.created)) / (1000 * 60 * 60 * 24);
+  if (daysSinceCreated < 30) {
+    return {
+      findingId: 'mcp-config/npm-package-very-new',
+      severity: 'warning',
+      title: `MCP package "${packageName}" is very new (${Math.round(daysSinceCreated)} days old)`,
+      detail: 'New packages have less community vetting and could be malicious.',
+      remediation: 'Review the package source code and maintainer reputation before using.',
+      context: { packageName, daysSinceCreated: Math.round(daysSinceCreated) },
+    };
+  }
+  return null;
+}
+
 export function checkNpmRegistry(packageName, options = {}) {
   const httpGet = options.httpGet || https.get;
   const maxBytes = options.maxBytes || MAX_REGISTRY_BYTES;
+  const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}`;
+
   return new Promise((resolve) => {
     const timeout = setTimeout(() => resolve(null), 5000);
+    const done = (v) => { clearTimeout(timeout); resolve(v); };
 
-    const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}`;
-    const req = httpGet(url, { timeout: 5000 }, (res) => {
-      let data = '';
-      let bytesRead = 0;
-      let aborted = false;
-      res.on('data', (chunk) => {
-        if (aborted) return;
-        bytesRead += chunk.length;
-        if (bytesRead > maxBytes) {
-          aborted = true;
-          req.destroy();
-          clearTimeout(timeout);
-          resolve(null);
-          return;
-        }
-        data += chunk;
-      });
-      res.on('end', () => {
-        if (aborted) return;
-        clearTimeout(timeout);
-        try {
-          if (res.statusCode === 404) {
-            resolve({
-              findingId: 'mcp-config/npm-package-not-found',
-              severity: 'critical',
-              title: `MCP package "${packageName}" not found on npm`,
-              detail: 'This package does not exist on the npm registry. It may be a private package or a typo.',
-              remediation: 'Verify the package name and source.',
-              context: { packageName },
-            });
-            return;
-          }
-          if (res.statusCode !== 200) {
-            resolve(null);
-            return;
-          }
-          const pkg = JSON.parse(data);
-          if (!pkg.time?.created) {
-            resolve(null);
-            return;
-          }
-          const created = new Date(pkg.time?.created);
-          const now = new Date();
-          const daysSinceCreated = (now - created) / (1000 * 60 * 60 * 24);
-
-          if (daysSinceCreated < 30) {
-            resolve({
-              findingId: 'mcp-config/npm-package-very-new',
-              severity: 'warning',
-              title: `MCP package "${packageName}" is very new (${Math.round(daysSinceCreated)} days old)`,
-              detail: 'New packages have less community vetting and could be malicious.',
-              remediation: 'Review the package source code and maintainer reputation before using.',
-              context: { packageName, daysSinceCreated: Math.round(daysSinceCreated) },
-            });
-            return;
-          }
-
-          resolve(null);
-        } catch {
-          resolve(null);
-        }
-      });
+    const req = httpGet(url, { timeout: 5000 }, async (res) => {
+      const body = await streamCappedBody(req, res, maxBytes);
+      if (body === null) { done(null); return; }
+      done(npmRegistryBodyToFinding(packageName, res.statusCode, body));
     });
 
-    req.on('error', () => {
-      clearTimeout(timeout);
-      resolve(null);
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      clearTimeout(timeout);
-      resolve(null);
-    });
+    req.on('error', () => done(null));
+    req.on('timeout', () => { req.destroy(); done(null); });
   });
 }
 
