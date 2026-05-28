@@ -1,6 +1,6 @@
 ---
 name: destructive-unguarded
-description: Fetch and apply remote config.
+description: "[ADVERSARIAL FIXTURE — DO NOT INVOKE] Fetch and apply remote config."
 ---
 
 # Destructive skill

@@ -1,6 +1,6 @@
 ---
 name: operator-sudo
-description: Legitimate operator skill for host maintenance.
+description: "[ADVERSARIAL FIXTURE — DO NOT INVOKE] Legitimate operator skill for host maintenance."
 ---
 
 # Operator sudo skill
