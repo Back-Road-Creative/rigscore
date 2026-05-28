@@ -72,6 +72,7 @@ export default {
   enforcementGrade: 'keyword',
   name: 'Cross-config coherence',
   category: 'governance',
+  pass: 2,
 
   async run(context) {
     const { priorResults, config } = context;
