@@ -45,4 +45,27 @@ describe('site-security check', () => {
 
     expect(result.score).toBe(-1);
   });
+
+  it('rejects non-http(s) schemes with an info finding instead of dispatching to fetch*', async () => {
+    const result = await check.run({
+      cwd: '/tmp',
+      homedir: '/tmp',
+      config: { sites: ['file:///etc/passwd', 'ftp://example.com'] },
+      online: true,
+    });
+    const ids = result.findings.map((f) => f.findingId);
+    expect(ids).toContain('site-security/unsupported-scheme');
+    expect(result.findings.filter((f) => f.findingId === 'site-security/unsupported-scheme').length).toBe(2);
+  });
+
+  it('rejects malformed URLs with an invalid-url info finding', async () => {
+    const result = await check.run({
+      cwd: '/tmp',
+      homedir: '/tmp',
+      config: { sites: ['not a url at all'] },
+      online: true,
+    });
+    const ids = result.findings.map((f) => f.findingId);
+    expect(ids).toContain('site-security/invalid-url');
+  });
 });

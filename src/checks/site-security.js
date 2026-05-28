@@ -320,6 +320,32 @@ export default {
     const allFindings = [];
 
     for (const url of sites) {
+      // Reject non-http(s) schemes before they reach fetch* — `file://`,
+      // `ftp://`, `javascript:`, `data:` etc. would either error obscurely
+      // or (worse, with file://) read local disk. Cheap upfront guard.
+      let parsed;
+      try {
+        parsed = new URL(url);
+      } catch {
+        allFindings.push({
+          findingId: 'site-security/invalid-url',
+          severity: 'info',
+          title: `Invalid URL in sites: ${url}`,
+          detail: 'URL could not be parsed; skipping site-security probes for this entry.',
+          context: { url },
+        });
+        continue;
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        allFindings.push({
+          findingId: 'site-security/unsupported-scheme',
+          severity: 'info',
+          title: `Unsupported URL scheme in sites: ${parsed.protocol}`,
+          detail: `Only http(s) is probed; skipping ${url}.`,
+          context: { url, scheme: parsed.protocol },
+        });
+        continue;
+      }
       allFindings.push(...(await checkSecurityHeaders(url)));
       allFindings.push(...(await checkExposedPaths(url)));
       allFindings.push(...(await checkPiiAndSecrets(url)));
