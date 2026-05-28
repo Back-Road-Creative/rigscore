@@ -610,4 +610,68 @@ describe('instruction-effectiveness check', () => {
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
+
+  // Homedir scan must be gated on --include-home-skills, mirroring
+  // skill-files.js. Default scan ignores ~/.claude/** so findings in
+  // joe's personal skills don't pollute project-level scoring (the
+  // documented CLI contract).
+  describe('--include-home-skills gating', () => {
+    it('ignores ~/.claude/CLAUDE.md when includeHomeSkills is unset', async () => {
+      const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-ie-home-'));
+      const tmpCwd = makeTmpDir();
+      fs.mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpHome, '.claude', 'CLAUDE.md'),
+        '# Home governance\n\nReferences `definitely-not-a-real-file.md` and `another-missing-thing.py`.\n',
+      );
+      fs.writeFileSync(path.join(tmpCwd, 'CLAUDE.md'), '# Project\n\nClean.\n');
+      try {
+        const off = await check.run({ cwd: tmpCwd, homedir: tmpHome, config: defaultConfig });
+        const offHomeFindings = off.findings.filter(
+          (f) => f.context?.file?.startsWith('~/'),
+        );
+        expect(offHomeFindings).toHaveLength(0);
+
+        const on = await check.run({
+          cwd: tmpCwd,
+          homedir: tmpHome,
+          config: defaultConfig,
+          includeHomeSkills: true,
+        });
+        const onHomeFindings = on.findings.filter(
+          (f) => f.context?.file?.startsWith('~/'),
+        );
+        expect(onHomeFindings.length).toBeGreaterThan(0);
+      } finally {
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+        fs.rmSync(tmpCwd, { recursive: true, force: true });
+      }
+    });
+
+    it('ignores ~/.claude/skills/** when includeHomeSkills is unset', async () => {
+      const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-ie-home-'));
+      const tmpCwd = makeTmpDir();
+      fs.mkdirSync(path.join(tmpHome, '.claude', 'skills', 'fake-skill'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpHome, '.claude', 'skills', 'fake-skill', 'SKILL.md'),
+        '# Fake skill\n\nReferences `missing-helper.sh` and `another-missing.py`.\n',
+      );
+      fs.writeFileSync(path.join(tmpCwd, 'CLAUDE.md'), '# Project\n\nClean.\n');
+      try {
+        const off = await check.run({ cwd: tmpCwd, homedir: tmpHome, config: defaultConfig });
+        expect(off.data.filesDiscovered).toBe(1); // project CLAUDE.md only
+
+        const on = await check.run({
+          cwd: tmpCwd,
+          homedir: tmpHome,
+          config: defaultConfig,
+          includeHomeSkills: true,
+        });
+        expect(on.data.filesDiscovered).toBe(2); // + ~/.claude/skills/fake-skill/SKILL.md
+      } finally {
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+        fs.rmSync(tmpCwd, { recursive: true, force: true });
+      }
+    });
+  });
 });
