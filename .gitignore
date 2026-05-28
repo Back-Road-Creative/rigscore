@@ -3,6 +3,13 @@ coverage/
 .DS_Store
 *.log
 
+# Local environment files — never commit. Test fixtures with intentional
+# .env content are committed under test/fixtures/ and bypass via the
+# explicit .gitignore entries below.
+.env
+.env.*
+!.env.example
+
 # Dogfood fixture artifacts
 test/fixtures/scored-project/.rigscore-state.json
 test/fixtures/scored-project/a-plain-file.txt
