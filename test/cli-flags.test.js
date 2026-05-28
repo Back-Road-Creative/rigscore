@@ -79,4 +79,64 @@ describe('parseArgs', () => {
     expect(opts.online).toBe(true);
     expect(opts.verbose).toBe(true);
   });
+
+  // Wave 11 — table-driven parser regression coverage.
+
+  it('--no-color sets noColor without affecting noCta', () => {
+    const opts = parseArgs(['--no-color']);
+    expect(opts.noColor).toBe(true);
+    expect(opts.noCta).toBe(true); // default
+  });
+
+  it('--refresh-mcp-registry implies --online', () => {
+    const opts = parseArgs(['--refresh-mcp-registry']);
+    expect(opts.refreshMcpRegistry).toBe(true);
+    expect(opts.online).toBe(true);
+  });
+
+  it('--depth implies --recursive and parses the integer', () => {
+    const opts = parseArgs(['--depth', '3']);
+    expect(opts.depth).toBe(3);
+    expect(opts.recursive).toBe(true);
+  });
+
+  it('--depth with a non-numeric value falls back to default depth 1', () => {
+    const opts = parseArgs(['--depth', 'abc']);
+    expect(opts.depth).toBe(1);
+    expect(opts.recursive).toBe(true);
+  });
+
+  it('-v / -r / -y short aliases resolve to the same options', () => {
+    expect(parseArgs(['-v']).verbose).toBe(true);
+    expect(parseArgs(['-r']).recursive).toBe(true);
+    expect(parseArgs(['-y']).yes).toBe(true);
+  });
+
+  it('unknown --flag is silently tolerated (no crash, no pollution)', () => {
+    // Forward-compat: CI scripts may pass through extra flags; rigscore
+    // must not reject them. The bare flag should not become the cwd
+    // (which would happen if `!arg.startsWith('-')` accidentally fired).
+    const opts = parseArgs(['--no-such-flag', '--json']);
+    expect(opts.json).toBe(true);
+    expect(opts.cwd).toBe(null);
+  });
+
+  it('bare positional becomes cwd; last positional wins', () => {
+    const opts = parseArgs(['/path/one', '--json', '/path/two']);
+    expect(opts.cwd).toBe('/path/two');
+    expect(opts.json).toBe(true);
+  });
+
+  it('value-taking flag at the end of argv is tolerated (no crash)', () => {
+    // Matches the prior behavior: `--check` with no following value
+    // does not crash and does not set checkFilter to undefined.
+    const opts = parseArgs(['--json', '--check']);
+    expect(opts.json).toBe(true);
+    expect(opts.checkFilter).toBe(null);
+  });
+
+  it('--ignore comma list with empty entries drops the empties', () => {
+    const opts = parseArgs(['--ignore', 'env,,docker,']);
+    expect(opts.ignore).toEqual(['env', 'docker']);
+  });
 });
