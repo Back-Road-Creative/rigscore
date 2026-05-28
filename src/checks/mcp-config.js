@@ -433,6 +433,172 @@ export function checkCve2025_59536(hasRepoMcpJson, autoApproveEnabled) {
   }];
 }
 
+/**
+ * Cross-client drift detection. Walks the per-client `clientServers`
+ * map and flags any server whose args / env-key set / transport differs
+ * between two or more clients (WARNING `cross-client-drift`). Also
+ * emits an INFO finding for servers configured in only one client
+ * when 2+ clients are detected — useful coverage signal.
+ *
+ * Returns the drift flag so the outer loop can surface it in `data`.
+ */
+export function checkCrossClientDrift(clientServers) {
+  const findings = [];
+  let driftDetected = false;
+  if (clientServers.size < 2) return { findings, driftDetected };
+
+  const allServerNames = new Set();
+  for (const servers of clientServers.values()) {
+    for (const name of Object.keys(servers)) {
+      allServerNames.add(name);
+    }
+  }
+
+  for (const serverName of allServerNames) {
+    const configs = [];
+    for (const [clientPath, servers] of clientServers.entries()) {
+      if (servers[serverName]) {
+        configs.push({ clientPath, server: servers[serverName] });
+      }
+    }
+
+    if (configs.length >= 2) {
+      const signatures = configs.map((c) => JSON.stringify({
+        args: c.server.args || [],
+        env: Object.keys(c.server.env || {}).sort(),
+        transport: c.server.transport || 'stdio',
+      }));
+      const unique = new Set(signatures);
+      if (unique.size > 1) {
+        driftDetected = true;
+        findings.push({
+          findingId: 'mcp-config/cross-client-drift',
+          severity: 'warning',
+          title: `Cross-client drift: "${serverName}" configured differently across clients`,
+          detail: `Server "${serverName}" has divergent configurations in: ${configs.map((c) => c.clientPath).join(', ')}.`,
+          remediation: 'Align MCP server configurations across all AI clients.',
+          context: { serverName, clients: configs.map((c) => c.clientPath) },
+        });
+      }
+    } else if (configs.length === 1) {
+      findings.push({
+        findingId: 'mcp-config/single-client-server',
+        severity: 'info',
+        title: `MCP server "${serverName}" only configured in ${configs[0].clientPath}`,
+        detail: 'This server is not configured in all detected AI clients.',
+        context: { serverName, client: configs[0].clientPath },
+      });
+    }
+  }
+
+  return { findings, driftDetected };
+}
+
+/**
+ * Hash-pinning / rug-pull detection (CVE-2025-54136 / "MCPoison" class).
+ * Compares current repo-level MCP server config-shape hashes against the
+ * on-disk state file and writes a fresh state back unless writeState is
+ * explicitly false (tests). Diff rules:
+ *   - hash changed on existing entry → WARN
+ *   - new entries → silently record
+ *   - removed entries → silently drop
+ *   - missing state file → first scan, no warnings
+ *   - corrupt state file → INFO finding + reset
+ *
+ * Preserves any existing `state.servers` map (runtime tool-hash pins
+ * written by `rigscore mcp-pin`) when rewriting.
+ */
+export async function checkHashPinning(cwd, currentHashes, writeState) {
+  const findings = [];
+  if (Object.keys(currentHashes).length === 0 || writeState === false) return findings;
+
+  const { state, corrupt } = await loadState(cwd);
+  if (corrupt) {
+    findings.push({
+      findingId: 'mcp-config/state-file-corrupted',
+      severity: 'info',
+      title: `Corrupted ${STATE_FILENAME} — resetting`,
+      detail: 'Could not parse the rigscore state file. Rewriting with current MCP server hashes.',
+      remediation: 'No action needed. The state file has been regenerated.',
+    });
+  }
+
+  const previousHashes = (state && state.version === STATE_VERSION && state.mcpServers && typeof state.mcpServers === 'object')
+    ? state.mcpServers
+    : null;
+
+  if (previousHashes) {
+    for (const [name, hash] of Object.entries(currentHashes)) {
+      const prev = previousHashes[name];
+      if (typeof prev === 'string' && prev !== hash) {
+        findings.push({
+          findingId: 'mcp-config/server-hash-drift',
+          severity: 'warning',
+          title: `MCP server "${name}" changed shape between scans (possible rug-pull)`,
+          detail: `The configured command/args/env-key-set for "${name}" differs from the recorded hash in ${STATE_FILENAME}. This is how MCPoison-class attacks (CVE-2025-54136) pivot trusted MCP servers.`,
+          remediation: `Review the diff in ${path.join(cwd, '.mcp.json')} against version control. If the change is intentional, re-run rigscore to update the state file.`,
+          learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+          context: { serverName: name, prevHash: prev, currentHash: hash },
+        });
+      }
+    }
+  }
+
+  // Preserve any existing `servers` map (runtime tool-hash pins).
+  const preservedServers = (state && state.servers && typeof state.servers === 'object')
+    ? state.servers
+    : undefined;
+  const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
+  if (preservedServers) nextState.servers = preservedServers;
+  await saveState(cwd, nextState);
+
+  return findings;
+}
+
+/**
+ * Runtime tool-hash pin status. Default-on INFO per repo-level MCP
+ * server, suppressible via `.rigscorerc.json` key
+ * `mcpConfig.surfaceRuntimeHashStatus: false`. Surfaces whether the user
+ * has pinned a snapshot of the server's `tools/list` JSON via
+ * `rigscore mcp-pin`, which is what the CVE-2025-54136 drift detection
+ * needs as a baseline.
+ */
+export async function checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRuntime) {
+  const findings = [];
+  if (!surfaceRuntime || Object.keys(currentHashes).length === 0) return findings;
+
+  const { state: pinState } = await loadState(cwd);
+  const serversMap = (pinState && pinState.servers && typeof pinState.servers === 'object')
+    ? pinState.servers
+    : {};
+
+  for (const name of Object.keys(currentHashes)) {
+    const entry = serversMap[name] || {};
+    const pinnedAt = typeof entry.runtimeToolPinnedAt === 'string' ? entry.runtimeToolPinnedAt : null;
+    const hasRuntimeHash = typeof entry.runtimeToolHash === 'string';
+    if (hasRuntimeHash && pinnedAt) {
+      const date = pinnedAt.slice(0, 10); // ISO YYYY-MM-DD
+      findings.push({
+        findingId: 'mcp-config/runtime-tool-pin-recorded',
+        severity: 'info',
+        title: `MCP server "${name}": runtime tool pin recorded ${date}`,
+        detail: `Runtime tool hash pinned (pinnedAt ${pinnedAt}). Verify before trusting tool descriptions with: rigscore mcp-verify ${name}.`,
+        context: { serverName: name, pinnedAt },
+      });
+    } else {
+      findings.push({
+        findingId: 'mcp-config/runtime-tool-pin-missing',
+        severity: 'info',
+        title: `MCP server "${name}": runtime tool pin not recorded`,
+        detail: 'Pin a snapshot of the server\'s tool descriptions to detect CVE-2025-54136-class drift between scans. rigscore does NOT execute the server — user must pipe tools/list JSON into stdin.',
+        remediation: `Run: npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin ${name}`,
+        context: { serverName: name },
+      });
+    }
+  }
+  return findings;
+}
+
 export function checkAnthropicBaseUrl(server, name, relPath) {
   const env = server.env || {};
   const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
@@ -716,139 +882,19 @@ export default {
     findings.push(...settingsResult.findings);
     findings.push(...checkCve2025_59536(hasRepoMcpJson, settingsResult.autoApproveEnabled));
 
-    // Cross-client drift detection
-    if (clientServers.size >= 2) {
-      const allServerNames = new Set();
-      for (const servers of clientServers.values()) {
-        for (const name of Object.keys(servers)) {
-          allServerNames.add(name);
-        }
-      }
+    // Cross-client drift, hash-pinning, and runtime tool-hash pin status —
+    // see helpers. Each preserves the prior contract: drift flag rolled
+    // up into `data`; hash-pinning gated on `context.writeState !== false`
+    // so tests can suppress the on-disk write; runtime pin surface
+    // controlled by config.mcpConfig.surfaceRuntimeHashStatus.
+    const driftResult = checkCrossClientDrift(clientServers);
+    findings.push(...driftResult.findings);
+    if (driftResult.driftDetected) driftDetected = true;
 
-      for (const serverName of allServerNames) {
-        const configs = [];
-        for (const [clientPath, servers] of clientServers.entries()) {
-          if (servers[serverName]) {
-            configs.push({ clientPath, server: servers[serverName] });
-          }
-        }
+    findings.push(...(await checkHashPinning(cwd, currentHashes, context.writeState)));
 
-        if (configs.length >= 2) {
-          // Check for divergent args/env/transport
-          const signatures = configs.map(c => JSON.stringify({
-            args: c.server.args || [],
-            env: Object.keys(c.server.env || {}).sort(),
-            transport: c.server.transport || 'stdio',
-          }));
-          const unique = new Set(signatures);
-          if (unique.size > 1) {
-            driftDetected = true;
-            findings.push({
-              findingId: 'mcp-config/cross-client-drift',
-              severity: 'warning',
-              title: `Cross-client drift: "${serverName}" configured differently across clients`,
-              detail: `Server "${serverName}" has divergent configurations in: ${configs.map(c => c.clientPath).join(', ')}.`,
-              remediation: 'Align MCP server configurations across all AI clients.',
-              context: { serverName, clients: configs.map(c => c.clientPath) },
-            });
-          }
-        } else if (configs.length === 1) {
-          findings.push({
-            findingId: 'mcp-config/single-client-server',
-            severity: 'info',
-            title: `MCP server "${serverName}" only configured in ${configs[0].clientPath}`,
-            detail: 'This server is not configured in all detected AI clients.',
-            context: { serverName, client: configs[0].clientPath },
-          });
-        }
-      }
-    }
-
-    // Hash-pinning / rug-pull detection (CVE-2025-54136 / "MCPoison" class).
-    // Compare current repo-level MCP server hashes against on-disk state file.
-    // Diff rules:
-    //   - hash changed on existing entry → WARN
-    //   - new entries → silently record
-    //   - removed entries → silently drop
-    //   - missing state file → first scan, no warnings
-    //   - corrupt state file → INFO finding + reset
-    if (Object.keys(currentHashes).length > 0 && context.writeState !== false) {
-      const { state, corrupt } = await loadState(cwd);
-      if (corrupt) {
-        findings.push({
-          findingId: 'mcp-config/state-file-corrupted',
-          severity: 'info',
-          title: `Corrupted ${STATE_FILENAME} — resetting`,
-          detail: 'Could not parse the rigscore state file. Rewriting with current MCP server hashes.',
-          remediation: 'No action needed. The state file has been regenerated.',
-        });
-      }
-
-      const previousHashes = (state && state.version === STATE_VERSION && state.mcpServers && typeof state.mcpServers === 'object')
-        ? state.mcpServers
-        : null;
-
-      if (previousHashes) {
-        for (const [name, hash] of Object.entries(currentHashes)) {
-          const prev = previousHashes[name];
-          if (typeof prev === 'string' && prev !== hash) {
-            findings.push({
-              findingId: 'mcp-config/server-hash-drift',
-              severity: 'warning',
-              title: `MCP server "${name}" changed shape between scans (possible rug-pull)`,
-              detail: `The configured command/args/env-key-set for "${name}" differs from the recorded hash in ${STATE_FILENAME}. This is how MCPoison-class attacks (CVE-2025-54136) pivot trusted MCP servers.`,
-              remediation: `Review the diff in ${path.join(cwd, '.mcp.json')} against version control. If the change is intentional, re-run rigscore to update the state file.`,
-              learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
-              context: { serverName: name, prevHash: prev, currentHash: hash },
-            });
-          }
-        }
-      }
-
-      // Write the new state (first scan, drift acknowledged, or unchanged).
-      // Preserve any existing `servers` map (runtime tool-hash pins written by
-      // `rigscore mcp-pin`). Round 2's top-level `mcpServers` map carries the
-      // config-shape hash; Round 3's `servers[<name>]` carries runtime pins.
-      const preservedServers = (state && state.servers && typeof state.servers === 'object')
-        ? state.servers
-        : undefined;
-      const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
-      if (preservedServers) nextState.servers = preservedServers;
-      await saveState(cwd, nextState);
-    }
-
-    // Runtime tool-hash pin status (print-and-paste workflow).
-    // Default-on INFO finding per repo-level MCP server, suppressible via
-    // `.rigscorerc.json` key `mcpConfig.surfaceRuntimeHashStatus: false`.
     const surfaceRuntime = config?.mcpConfig?.surfaceRuntimeHashStatus !== false;
-    if (surfaceRuntime && Object.keys(currentHashes).length > 0) {
-      const { state: pinState } = await loadState(cwd);
-      const serversMap = (pinState && pinState.servers && typeof pinState.servers === 'object') ? pinState.servers : {};
-      for (const name of Object.keys(currentHashes)) {
-        const entry = serversMap[name] || {};
-        const pinnedAt = typeof entry.runtimeToolPinnedAt === 'string' ? entry.runtimeToolPinnedAt : null;
-        const hasRuntimeHash = typeof entry.runtimeToolHash === 'string';
-        if (hasRuntimeHash && pinnedAt) {
-          const date = pinnedAt.slice(0, 10); // ISO YYYY-MM-DD
-          findings.push({
-            findingId: 'mcp-config/runtime-tool-pin-recorded',
-            severity: 'info',
-            title: `MCP server "${name}": runtime tool pin recorded ${date}`,
-            detail: `Runtime tool hash pinned (pinnedAt ${pinnedAt}). Verify before trusting tool descriptions with: rigscore mcp-verify ${name}.`,
-            context: { serverName: name, pinnedAt },
-          });
-        } else {
-          findings.push({
-            findingId: 'mcp-config/runtime-tool-pin-missing',
-            severity: 'info',
-            title: `MCP server "${name}": runtime tool pin not recorded`,
-            detail: 'Pin a snapshot of the server\'s tool descriptions to detect CVE-2025-54136-class drift between scans. rigscore does NOT execute the server — user must pipe tools/list JSON into stdin.',
-            remediation: `Run: npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin ${name}`,
-            context: { serverName: name },
-          });
-        }
-      }
-    }
+    findings.push(...(await checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRuntime)));
 
     if (findings.length === 0) {
       findings.push({
