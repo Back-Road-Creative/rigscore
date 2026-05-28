@@ -55,10 +55,17 @@ export function loadBaseline(baselinePath) {
 
 /**
  * Persist a baseline JSON. Creates parent directories as needed.
+ * Permission errors / disk-full surface as a clean stderr line + exit 2
+ * rather than a Node stack trace.
  */
 export function writeBaseline(baselinePath, baseline) {
-  fs.mkdirSync(path.dirname(path.resolve(baselinePath)), { recursive: true });
-  fs.writeFileSync(baselinePath, JSON.stringify(baseline, null, 2) + '\n');
+  try {
+    fs.mkdirSync(path.dirname(path.resolve(baselinePath)), { recursive: true });
+    fs.writeFileSync(baselinePath, JSON.stringify(baseline, null, 2) + '\n');
+  } catch (err) {
+    process.stderr.write(`rigscore: could not write baseline ${baselinePath}: ${err.message}\n`);
+    process.exit(2);
+  }
 }
 
 /**
