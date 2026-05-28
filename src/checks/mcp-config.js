@@ -349,6 +349,90 @@ export function checkTyposquatRegistry(name, packageName, registryResult, hadCur
   }];
 }
 
+/**
+ * Scan `.claude/settings.json` (project + homedir) for two classes of
+ * danger:
+ *  1. `enableAllProjectMcpServers: true` — auto-approves every server
+ *     in `.mcp.json` without user consent (CRITICAL).
+ *  2. `hooks[*][*].command` matching DANGEROUS_HOOK_PATTERNS — hooks
+ *     run on every collaborator on clone (CRITICAL).
+ *
+ * Returns `{ findings, autoApproveEnabled }` so the downstream
+ * CVE-2025-59536 compound detection can reuse the parse without
+ * re-reading the settings files.
+ */
+export async function checkClaudeSettings(cwd, homedir) {
+  const findings = [];
+  let autoApproveEnabled = false;
+  const settingsPaths = [
+    path.join(cwd, '.claude', 'settings.json'),
+    path.join(homedir, '.claude', 'settings.json'),
+  ];
+  for (const settingsPath of settingsPaths) {
+    const settings = await readJsonSafe(settingsPath);
+    if (!settings) continue;
+
+    const relPath = path.relative(cwd, settingsPath) || settingsPath;
+
+    if (settings.enableAllProjectMcpServers === true) {
+      autoApproveEnabled = true;
+      findings.push({
+        findingId: 'mcp-config/mcp-auto-approve-enabled',
+        severity: 'critical',
+        title: `MCP auto-approve enabled in ${relPath}`,
+        detail: 'enableAllProjectMcpServers is true — all project MCP servers are auto-approved without user consent.',
+        remediation: 'Remove enableAllProjectMcpServers or set it to false.',
+        context: { file: relPath },
+      });
+    }
+
+    if (settings.hooks && typeof settings.hooks === 'object') {
+      for (const [hookName, hookList] of Object.entries(settings.hooks)) {
+        const hooks = Array.isArray(hookList) ? hookList : [];
+        for (const hook of hooks) {
+          const cmd = hook?.command || '';
+          for (const pattern of DANGEROUS_HOOK_PATTERNS) {
+            if (pattern.test(cmd)) {
+              findings.push({
+                findingId: 'mcp-config/dangerous-hook-command',
+                severity: 'critical',
+                title: `Dangerous hook command in ${relPath} (${hookName})`,
+                detail: `Hook "${hookName}" runs a potentially dangerous command: ${cmd.slice(0, 80)}`,
+                remediation: 'Review and remove dangerous hook commands. Hooks execute on every collaborator who clones this project.',
+                context: { file: relPath, hookName },
+              });
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  return { findings, autoApproveEnabled };
+}
+
+/**
+ * CVE-2025-59536: compound detection. A repo-level `.mcp.json` plus a
+ * `.claude/settings.json` with `enableAllProjectMcpServers: true` means
+ * every collaborator who clones the project auto-approves every server
+ * on first run — a settings-bypass RCE channel.
+ *
+ * Pure helper; consumes the flags already computed by run() (whether
+ * a repo `.mcp.json` was found) and checkClaudeSettings (whether
+ * auto-approve is enabled anywhere on the settings path).
+ */
+export function checkCve2025_59536(hasRepoMcpJson, autoApproveEnabled) {
+  if (!hasRepoMcpJson || !autoApproveEnabled) return [];
+  return [{
+    findingId: 'mcp-config/cve-2025-59536-auto-approve-on-clone',
+    severity: 'critical',
+    title: 'CVE-2025-59536: repo MCP servers auto-approved on clone',
+    detail: 'This project has .mcp.json with MCP servers AND enableAllProjectMcpServers is true in settings. Anyone cloning this repo will auto-approve all MCP servers without consent — a compound settings bypass vulnerability.',
+    remediation: 'Set enableAllProjectMcpServers to false. Review .mcp.json servers individually before approving.',
+    learnMore: 'https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/',
+  }];
+}
+
 export function checkAnthropicBaseUrl(server, name, relPath) {
   const env = server.env || {};
   const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
@@ -625,70 +709,12 @@ export default {
       return { score: NOT_APPLICABLE_SCORE, findings, data: { hasNetworkTransport: false, hasBroadFilesystemAccess: false, serverCount: 0, clientCount: 0, driftDetected: false } };
     }
 
-    // Scan .claude/settings.json for dangerous patterns
-    const settingsPaths = [
-      path.join(cwd, '.claude', 'settings.json'),
-      path.join(homedir, '.claude', 'settings.json'),
-    ];
-    for (const settingsPath of settingsPaths) {
-      const settings = await readJsonSafe(settingsPath);
-      if (!settings) continue;
-
-      const relPath = path.relative(cwd, settingsPath) || settingsPath;
-
-      // Check enableAllProjectMcpServers
-      if (settings.enableAllProjectMcpServers === true) {
-        findings.push({
-          findingId: 'mcp-config/mcp-auto-approve-enabled',
-          severity: 'critical',
-          title: `MCP auto-approve enabled in ${relPath}`,
-          detail: 'enableAllProjectMcpServers is true — all project MCP servers are auto-approved without user consent.',
-          remediation: 'Remove enableAllProjectMcpServers or set it to false.',
-          context: { file: relPath },
-        });
-      }
-
-      // Check hooks for dangerous commands
-      if (settings.hooks && typeof settings.hooks === 'object') {
-        for (const [hookName, hookList] of Object.entries(settings.hooks)) {
-          const hooks = Array.isArray(hookList) ? hookList : [];
-          for (const hook of hooks) {
-            const cmd = hook?.command || '';
-            for (const pattern of DANGEROUS_HOOK_PATTERNS) {
-              if (pattern.test(cmd)) {
-                findings.push({
-                  findingId: 'mcp-config/dangerous-hook-command',
-                  severity: 'critical',
-                  title: `Dangerous hook command in ${relPath} (${hookName})`,
-                  detail: `Hook "${hookName}" runs a potentially dangerous command: ${cmd.slice(0, 80)}`,
-                  remediation: 'Review and remove dangerous hook commands. Hooks execute on every collaborator who clones this project.',
-                  context: { file: relPath, hookName },
-                });
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // CVE-2025-59536: compound detection — repo .mcp.json + auto-approve = RCE on clone
-    if (hasRepoMcpJson) {
-      for (const settingsPath of settingsPaths) {
-        const settings = await readJsonSafe(settingsPath);
-        if (settings?.enableAllProjectMcpServers === true) {
-          findings.push({
-            findingId: 'mcp-config/cve-2025-59536-auto-approve-on-clone',
-            severity: 'critical',
-            title: 'CVE-2025-59536: repo MCP servers auto-approved on clone',
-            detail: 'This project has .mcp.json with MCP servers AND enableAllProjectMcpServers is true in settings. Anyone cloning this repo will auto-approve all MCP servers without consent — a compound settings bypass vulnerability.',
-            remediation: 'Set enableAllProjectMcpServers to false. Review .mcp.json servers individually before approving.',
-            learnMore: 'https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/',
-          });
-          break;
-        }
-      }
-    }
+    // .claude/settings.json scan (auto-approve + dangerous hooks) and the
+    // compound CVE-2025-59536 detection — see helpers. The settings parse
+    // is reused so the CVE check doesn't re-read the files.
+    const settingsResult = await checkClaudeSettings(cwd, homedir);
+    findings.push(...settingsResult.findings);
+    findings.push(...checkCve2025_59536(hasRepoMcpJson, settingsResult.autoApproveEnabled));
 
     // Cross-client drift detection
     if (clientServers.size >= 2) {
