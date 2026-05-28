@@ -10,6 +10,9 @@ import check, {
   checkTransportType,
   checkSensitiveEnv,
   checkAnthropicBaseUrl,
+  extractPackageName,
+  checkTyposquatCurated,
+  checkTyposquatRegistry,
 } from '../src/checks/mcp-config.js';
 import { WEIGHTS } from '../src/constants.js';
 
@@ -485,6 +488,74 @@ describe('Wave 13a — checkTransportType / checkSensitiveEnv / checkAnthropicBa
       expect(findings).toHaveLength(1);
       expect(findings[0].severity).toBe('critical');
       expect(findings[0].detail).toMatch(/CVE-2026-21852/);
+    });
+  });
+});
+
+describe('Wave 13b — extractPackageName / checkTyposquatCurated / checkTyposquatRegistry', () => {
+  describe('extractPackageName', () => {
+    it('returns the first non-flag arg that looks like a package', () => {
+      expect(extractPackageName(['-y', 'pkg-name'])).toBe('pkg-name');
+    });
+
+    it('strips trailing @version while preserving scoped @ prefix', () => {
+      expect(extractPackageName(['@scope/pkg@1.2.3'])).toBe('@scope/pkg');
+      expect(extractPackageName(['pkg@latest'])).toBe('pkg');
+    });
+
+    it('returns null when no plausible package arg found', () => {
+      expect(extractPackageName(['-y', '--flag'])).toBe(null);
+      expect(extractPackageName([])).toBe(null);
+    });
+
+    it('skips non-string args defensively', () => {
+      expect(extractPackageName([{ foo: 1 }, 'real-pkg'])).toBe('real-pkg');
+    });
+  });
+
+  describe('checkTyposquatCurated', () => {
+    it('null packageName → no finding, no curated-match flag', () => {
+      expect(checkTyposquatCurated('srv', null)).toEqual({ findings: [], hadCuratedMatch: false });
+    });
+
+    it('known package (in KNOWN_MCP_SERVERS) → no finding', () => {
+      // @modelcontextprotocol/server-filesystem is on the curated list
+      const r = checkTyposquatCurated('srv', '@modelcontextprotocol/server-filesystem');
+      expect(r.hadCuratedMatch).toBe(false);
+      expect(r.findings).toEqual([]);
+    });
+
+    it('package 1-edit from a known server → WARNING with hadCuratedMatch=true', () => {
+      // Levenshtein 1 from @modelcontextprotocol/server-filesystem
+      const r = checkTyposquatCurated('srv', '@modelcontextprotocol/server-filesysem');
+      expect(r.hadCuratedMatch).toBe(true);
+      expect(r.findings).toHaveLength(1);
+      expect(r.findings[0].severity).toBe('warning');
+      expect(r.findings[0].findingId).toBe('mcp-config/typosquat-curated');
+    });
+  });
+
+  describe('checkTyposquatRegistry', () => {
+    const stubRegistry = { servers: [{ name: 'io.modelcontextprotocol/sqlite' }] };
+
+    it('returns empty when packageName is null', () => {
+      expect(checkTyposquatRegistry('srv', null, stubRegistry, false)).toEqual([]);
+    });
+
+    it('returns empty when hadCuratedMatch is true (skip duplicate signal)', () => {
+      expect(checkTyposquatRegistry('srv', 'sqlit', stubRegistry, true)).toEqual([]);
+    });
+
+    it('returns empty when registry has no servers', () => {
+      expect(checkTyposquatRegistry('srv', 'sqlit', { servers: [] }, false)).toEqual([]);
+      expect(checkTyposquatRegistry('srv', 'sqlit', null, false)).toEqual([]);
+    });
+
+    it('1-edit-away from a registry server → CRITICAL', () => {
+      const findings = checkTyposquatRegistry('srv', 'sqlit', stubRegistry, false);
+      expect(findings).toHaveLength(1);
+      expect(findings[0].severity).toBe('critical');
+      expect(findings[0].findingId).toBe('mcp-config/typosquat-registry');
     });
   });
 });

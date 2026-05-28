@@ -280,6 +280,75 @@ export function checkSensitiveEnv(server, name, relPath) {
  * env. Co-disclosed with CVE-2025-59536 in the Checkpoint writeup; see
  * the comment on `learnMore` for why the URL slug names the other CVE.
  */
+/**
+ * Pull the npm package name out of an MCP server's args list. Skips flags,
+ * matches the first arg that looks like a package spec, and strips any
+ * trailing @version suffix while preserving the scope prefix for scoped
+ * packages (`@scope/pkg`). Returns null when no plausible package found.
+ */
+export function extractPackageName(args) {
+  for (const arg of args) {
+    if (typeof arg !== 'string') continue;
+    if (arg.startsWith('-')) continue;
+    if (!/^(@[a-z0-9-]+\/)?[a-z0-9-]+(@.+)?$/.test(arg)) continue;
+    if (arg.startsWith('@')) {
+      const slashIdx = arg.indexOf('/');
+      if (slashIdx !== -1) {
+        const afterSlash = arg.slice(slashIdx + 1);
+        const atIdx = afterSlash.indexOf('@');
+        return atIdx !== -1 ? arg.slice(0, slashIdx + 1 + atIdx) : arg;
+      }
+      return arg;
+    }
+    const atIdx = arg.indexOf('@');
+    return atIdx !== -1 ? arg.slice(0, atIdx) : arg;
+  }
+  return null;
+}
+
+/**
+ * Offline typosquat detection against the hand-curated KNOWN_MCP_SERVERS
+ * list. Returns `{ findings, hadCuratedMatch }` so the outer loop can
+ * skip the registry-based check when a curated match already fired.
+ */
+export function checkTyposquatCurated(name, packageName) {
+  if (!packageName || KNOWN_MCP_SERVERS.includes(packageName)) {
+    return { findings: [], hadCuratedMatch: false };
+  }
+  const match = findTyposquatMatch(packageName);
+  if (!match) return { findings: [], hadCuratedMatch: false };
+  return {
+    findings: [{
+      findingId: 'mcp-config/typosquat-curated',
+      severity: 'warning',
+      title: `MCP server "${name}": package "${packageName}" is similar to known "${match}"`,
+      detail: `Levenshtein distance 1-2 from an official MCP server package. This could be a typosquat.`,
+      remediation: `Verify the package name is correct. Did you mean "${match}"?`,
+    }],
+    hadCuratedMatch: true,
+  };
+}
+
+/**
+ * Online typosquat detection against the MCP registry mirror. Bails out
+ * silently when no `packageName`, when the registry fetch produced no
+ * usable server list, or when a curated match already fired upstream.
+ */
+export function checkTyposquatRegistry(name, packageName, registryResult, hadCuratedMatch) {
+  if (!packageName || hadCuratedMatch) return [];
+  if (!registryResult || !Array.isArray(registryResult.servers) || registryResult.servers.length === 0) return [];
+  const regMatch = findRegistryTyposquatMatch(packageName, registryResult.servers, levenshtein);
+  if (!regMatch) return [];
+  return [{
+    findingId: 'mcp-config/typosquat-registry',
+    severity: 'critical',
+    title: `MCP server "${name}": package "${packageName}" typosquats registry server "${regMatch}"`,
+    detail: `Package name is 1-2 edits from "${regMatch}" in the official MCP registry at https://registry.modelcontextprotocol.io. Source: MCP registry.`,
+    remediation: `Verify the package name is correct. Did you mean "${regMatch}"?`,
+    learnMore: 'https://registry.modelcontextprotocol.io/v0/servers',
+  }];
+}
+
 export function checkAnthropicBaseUrl(server, name, relPath) {
   const env = server.env || {};
   const envBaseUrl = env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_BASE || '';
@@ -512,67 +581,11 @@ export default {
           }
         }
 
-        // Extract package name from args for supply chain checks
-        let packageName = null;
-        for (const arg of args) {
-          // Skip flags
-          if (arg.startsWith('-')) continue;
-          // Package names: @scope/name or name (may have @version suffix)
-          if (/^(@[a-z0-9-]+\/)?[a-z0-9-]+(@.+)?$/.test(arg)) {
-            // Strip version suffix (@1.0.0, @latest) while preserving scoped @
-            if (arg.startsWith('@')) {
-              const slashIdx = arg.indexOf('/');
-              if (slashIdx !== -1) {
-                const afterSlash = arg.slice(slashIdx + 1);
-                const atIdx = afterSlash.indexOf('@');
-                packageName = atIdx !== -1 ? arg.slice(0, slashIdx + 1 + atIdx) : arg;
-              } else {
-                packageName = arg;
-              }
-            } else {
-              const atIdx = arg.indexOf('@');
-              packageName = atIdx !== -1 ? arg.slice(0, atIdx) : arg;
-            }
-            break;
-          }
-        }
-
-        // Typosquatting detection (offline, hand-curated list)
-        let hadCuratedMatch = false;
-        if (packageName && !KNOWN_MCP_SERVERS.includes(packageName)) {
-          const match = findTyposquatMatch(packageName);
-          if (match) {
-            hadCuratedMatch = true;
-            findings.push({
-              findingId: 'mcp-config/typosquat-curated',
-              severity: 'warning',
-              title: `MCP server "${name}": package "${packageName}" is similar to known "${match}"`,
-              detail: `Levenshtein distance 1-2 from an official MCP server package. This could be a typosquat.`,
-              remediation: `Verify the package name is correct. Did you mean "${match}"?`,
-            });
-          }
-        }
-
-        // Typosquatting detection (online, augments with MCP registry data)
-        if (
-          packageName &&
-          !hadCuratedMatch &&
-          registryResult &&
-          Array.isArray(registryResult.servers) &&
-          registryResult.servers.length > 0
-        ) {
-          const regMatch = findRegistryTyposquatMatch(packageName, registryResult.servers, levenshtein);
-          if (regMatch) {
-            findings.push({
-              findingId: 'mcp-config/typosquat-registry',
-              severity: 'critical',
-              title: `MCP server "${name}": package "${packageName}" typosquats registry server "${regMatch}"`,
-              detail: `Package name is 1-2 edits from "${regMatch}" in the official MCP registry at https://registry.modelcontextprotocol.io. Source: MCP registry.`,
-              remediation: `Verify the package name is correct. Did you mean "${regMatch}"?`,
-              learnMore: 'https://registry.modelcontextprotocol.io/v0/servers',
-            });
-          }
-        }
+        // Supply-chain checks (typosquat curated + registry) — see helpers.
+        const packageName = extractPackageName(args);
+        const curated = checkTyposquatCurated(name, packageName);
+        findings.push(...curated.findings);
+        findings.push(...checkTyposquatRegistry(name, packageName, registryResult, curated.hadCuratedMatch));
 
         // Online npm registry check (--online flag).
         // Rename the inner result so it doesn't shadow the outer
