@@ -24,6 +24,14 @@ const DEFAULTS = {
   weights: {},
   checks: { disabled: [] },
   suppress: [],
+  deepScan: {
+    maxFiles: null,
+    excludeDirs: [],
+  },
+  limits: {
+    maxFileBytes: null,
+    maxWalkDepth: null,
+  },
   coherence: {
     allowGovernanceContradictions: [],
   },
@@ -304,6 +312,27 @@ function mergeConfig(userConfig, baseline) {
         merged.push(entry);
       }
       result.skillFiles.allowlist = merged;
+    }
+  }
+
+  if (userConfig.deepScan && typeof userConfig.deepScan === 'object') {
+    if (Number.isInteger(userConfig.deepScan.maxFiles)) {
+      result.deepScan.maxFiles = userConfig.deepScan.maxFiles;
+    }
+    if (Array.isArray(userConfig.deepScan.excludeDirs)) {
+      // Concat & dedupe — personal excludes stack with project excludes
+      result.deepScan.excludeDirs = [
+        ...new Set([...(result.deepScan.excludeDirs || []), ...userConfig.deepScan.excludeDirs]),
+      ];
+    }
+  }
+
+  if (userConfig.limits && typeof userConfig.limits === 'object') {
+    if (Number.isInteger(userConfig.limits.maxFileBytes)) {
+      result.limits.maxFileBytes = userConfig.limits.maxFileBytes;
+    }
+    if (Number.isInteger(userConfig.limits.maxWalkDepth)) {
+      result.limits.maxWalkDepth = userConfig.limits.maxWalkDepth;
     }
   }
 

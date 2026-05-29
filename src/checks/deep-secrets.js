@@ -92,10 +92,16 @@ export default {
     const maxDepth = config?.limits?.maxWalkDepth || 50;
     const maxFileBytes = config?.limits?.maxFileBytes || DEFAULT_MAX_FILE_BYTES;
 
+    // Project-configured excludes (e.g. vendored themes, generated output,
+    // nested repos) stack on top of the hardcoded SKIP_DIRS so monorepos can
+    // scope the deep scan to first-party source via .rigscorerc.json.
+    const extraSkip = config?.deepScan?.excludeDirs || [];
+    const skipDirs = extraSkip.length ? new Set([...SKIP_DIRS, ...extraSkip]) : SKIP_DIRS;
+
     const { files, loopDetected } = await walkDirSafe(cwd, {
       maxFiles,
       maxDepth,
-      skipDirs: SKIP_DIRS,
+      skipDirs,
       // C5: allow walking into dotfolders like `config/.env.production`'s
       // parent or `.github/`. The expanded SKIP_DIRS (.cache, .idea, .venv,
       // .next, etc.) is the authoritative allowlist for dangerous dotdirs.

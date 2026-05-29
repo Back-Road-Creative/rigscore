@@ -197,6 +197,49 @@ describe('loadConfig', () => {
     }
   });
 
+  it('honors deepScan.maxFiles/excludeDirs and limits from .rigscorerc.json', async () => {
+    // Regression: deep-secrets.js reads config.deepScan.maxFiles and
+    // config.limits.maxFileBytes, but mergeConfig used to drop those keys
+    // entirely, so the documented option was dead and the file cap was
+    // permanently 1000. These keys must now survive the merge.
+    const tmpDir = makeTmpDir();
+    const rc = {
+      deepScan: { maxFiles: 5000, excludeDirs: ['themes', 'public'] },
+      limits: { maxFileBytes: 1048576, maxWalkDepth: 80 },
+    };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      expect(config.deepScan.maxFiles).toBe(5000);
+      expect(config.deepScan.excludeDirs).toEqual(['themes', 'public']);
+      expect(config.limits.maxFileBytes).toBe(1048576);
+      expect(config.limits.maxWalkDepth).toBe(80);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('concatenates and deduplicates deepScan.excludeDirs from home + project', async () => {
+    const cwdDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    fs.writeFileSync(
+      path.join(cwdDir, '.rigscorerc.json'),
+      JSON.stringify({ deepScan: { excludeDirs: ['public', '_external'] } }),
+    );
+    fs.writeFileSync(
+      path.join(homeDir, '.rigscorerc.json'),
+      JSON.stringify({ deepScan: { excludeDirs: ['themes', 'public'] } }),
+    );
+    try {
+      const config = await loadConfig(cwdDir, homeDir);
+      // home first, then cwd; dedupe preserves order
+      expect(config.deepScan.excludeDirs).toEqual(['themes', 'public', '_external']);
+    } finally {
+      fs.rmSync(cwdDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
   it('merges partial weights with defaults instead of replacing', async () => {
     const tmpDir = makeTmpDir();
     const rc = { weights: { 'mcp-config': 30 } };
