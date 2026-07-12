@@ -189,3 +189,27 @@ export const KEY_PATTERNS = [
   /\bAKCp[a-zA-Z0-9]{10,}\b/,                         // JFrog Artifactory token
   /"auth"\s*:\s*"[A-Za-z0-9+/=]{20,}"/,               // Docker registry auth token (already anchored by quotes)
 ];
+
+/**
+ * PRACTICE_WEIGHTS — the second scoring axis.
+ *
+ * `WEIGHTS` above answers "is this rig safe?". This map answers a different
+ * question: "does this team actually *drive* its agents well?" — bounded
+ * loops, written goals, graduated workflows, sandboxed execution, capped CI
+ * agents, tidy memory, honest disclosure.
+ *
+ * INVARIANTS
+ *  - Must sum to exactly 100 (pinned by test/constants.test.js).
+ *  - Every id here MUST stay weight-0 in `WEIGHTS`. The Security axis is
+ *    frozen: no practice check may move an existing badge by a single point.
+ *    The two maps are scored independently by the same scorer.
+ */
+export const PRACTICE_WEIGHTS = {
+  'loop-governance': 25,     // unbounded agent loops = the top blast-radius + cost risk
+  'spec-goals': 20,          // goal/spec-driven work is the strongest quality predictor
+  'workflow-maturity': 20,   // the graduation ladder: ad-hoc prompt → skill → deterministic code
+  'sandbox-posture': 15,     // cross-vendor posture normaliser — the loudest differentiator
+  'ci-agent-caps': 10,       // agent jobs in CI need token/time caps (N/A when CI runs no agents)
+  'memory-hygiene': 5,       // real, but slow-burn: stale memory degrades quality gradually
+  'ai-disclosure': 5,        // trust/compliance hygiene — cheap, binary, increasingly required
+};

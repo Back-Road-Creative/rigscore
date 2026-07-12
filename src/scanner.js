@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadChecks } from './checks/index.js';
-import { calculateOverallScore } from './scoring.js';
+import { calculateOverallScore, calculatePracticeScore } from './scoring.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
 import {
@@ -82,7 +82,18 @@ export async function scan(options = {}) {
     overallScore = calculateOverallScore(results, weights);
   }
 
-  return { score: overallScore, results, config };
+  return {
+    score: overallScore,
+    results,
+    config,
+    // Second axis; `null` when the repo has no practice surface. A getter, not
+    // a snapshot: the CLI suppresses findings AFTER scan() returns, rewriting
+    // per-check scores in place — a plain value would go stale in exactly that
+    // path. JSON.stringify invokes it, so `--json` carries it for free.
+    get practiceScore() {
+      return calculatePracticeScore(results);
+    },
+  };
 }
 
 // Files that indicate a directory is a scannable project
