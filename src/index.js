@@ -195,7 +195,6 @@ export async function run(args) {
     }
   }
 
-
   if (options.initHook) {
     // Implementation lives in src/cli/init-hook.js — extracted from run()
     // for readability and to shrink run() under the complexity gate.
