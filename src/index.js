@@ -6,6 +6,7 @@ import { resolveWeights } from './config.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
+import { formatCompliance } from './compliance.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
 import { PROFILE_HINTS } from './config.js';
 import { ConfigParseError } from './utils.js';
@@ -52,6 +53,7 @@ export function parseArgs(args) {
     watch: false,
     ignore: null,
     baseline: null,
+    report: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -123,6 +125,7 @@ const FLAG_DEFS = (() => {
     '--check':                { takesValue: true, handler: setStr('checkFilter') },
     '--profile':              { takesValue: true, handler: setStr('profile') },
     '--baseline':             { takesValue: true, handler: setStr('baseline') },
+    '--report':               { takesValue: true, handler: setStr('report') },
     '--ignore':               { takesValue: true, handler: (o, v) => {
       o.ignore = v.split(',').map((s) => s.trim()).filter(Boolean);
     } },
@@ -193,6 +196,13 @@ export async function run(args) {
     }
   }
 
+  // Fail loud on an unknown --report kind: silently printing the default terminal
+  // report would let a CI job mistake it for a compliance artifact.
+  if (options.report && options.report !== 'compliance') {
+    process.stderr.write(`rigscore: unknown --report kind "${options.report}" (supported: compliance)\n`);
+    process.exit(2);
+  }
+
   if (options.initHook) {
     // Implementation lives in src/cli/init-hook.js — extracted from run()
     // for readability and to shrink run() under the complexity gate.
@@ -237,6 +247,7 @@ export async function run(args) {
     // meaningful score. Fail loud rather than silently no-op.
     const unsupportedRecursiveFlags = [];
     if (options.fix) unsupportedRecursiveFlags.push('--fix');
+    if (options.report) unsupportedRecursiveFlags.push('--report');
     if (options.baseline) unsupportedRecursiveFlags.push('--baseline');
     if (options.badge) unsupportedRecursiveFlags.push('--badge');
     if (unsupportedRecursiveFlags.length > 0) {
@@ -307,7 +318,9 @@ export async function run(args) {
       }
     }
 
-    if (options.sarif) {
+    if (options.report === 'compliance') {
+      process.stdout.write(formatCompliance(result) + '\n');
+    } else if (options.sarif) {
       process.stdout.write(JSON.stringify(formatSarif(result), null, 2) + '\n');
     } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
