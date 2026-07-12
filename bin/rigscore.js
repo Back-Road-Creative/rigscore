@@ -95,6 +95,10 @@ Options:
   --fix              Show auto-fixable issues (dry run)
   --fix --yes        Apply safe auto-remediations
   --watch            Watch for changes and re-run automatically
+  --verify-state     CI gate for MCP rug-pulls (CVE-2025-54136). Read-only; runs
+                     no checks. Exit 1 if a server pinned in .rigscore-state.json
+                     changed its command/args/env-key shape, 0 if every pin
+                     matches, 2 if nothing is pinned (cannot verify).
   --verbose, -v      Show passing checks and info-level findings
   --ignore <list>    Suppress findings matching patterns (comma-separated)
   --init-hook        Install a pre-commit hook that runs rigscore
