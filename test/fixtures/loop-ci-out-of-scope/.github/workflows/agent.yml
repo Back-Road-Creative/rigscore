@@ -1,0 +1,7 @@
+on:
+  schedule:
+    - cron: '0 3 * * *'
+jobs:
+  triage:
+    steps:
+      - run: claude -p "triage new issues" --dangerously-skip-permissions
