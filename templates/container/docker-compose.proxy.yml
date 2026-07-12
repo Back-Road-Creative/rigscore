@@ -1,0 +1,47 @@
+# Egress filtering proxy, brought up by devcontainer.json `initializeCommand` BEFORE the dev container
+# is created. That container joins the internal-only network (no route out) and reaches the internet
+# ONLY through this proxy, which allow-lists destinations.
+services:
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    image: "{{PROJECT_NAME}}-egress-proxy:local"
+    container_name: "{{PROJECT_NAME}}-egress-proxy"
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 256m
+    pids_limit: 64
+    volumes:
+      - tinyproxy-logs:/var/log/tinyproxy   # durable CONNECT audit trail
+    networks:
+      - egress       # internal-only; shared with the dev container
+      - egress-ext   # outbound leg so the proxy itself can reach allowed hosts
+    # `pidof tinyproxy` would prove only that the PROCESS is alive, and tinyproxy fails OPEN on a filter
+    # parse error — a broken allow-list would read as healthy on a network meant to be fail-CLOSED.
+    # healthcheck.sh runs a positive AND a negative CONNECT probe, so a fail-open filter fails
+    # `--wait` at create time instead. 8s: the positive leg really dials out.
+    healthcheck:
+      test: ["CMD-SHELL", "/etc/tinyproxy/healthcheck.sh"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+
+volumes:
+  tinyproxy-logs:
+
+networks:
+  egress:
+    name: "{{PROJECT_NAME}}-egress"
+    internal: true
+    # Keep the gateway IP off the host bridge: closes the dev-container -> gateway -> host channel.
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+    ipam:
+      config:
+        - subnet: "{{EGRESS_SUBNET}}"   # pinned so the tinyproxy client ACL can't drift
+  egress-ext:
+    name: "{{PROJECT_NAME}}-egress-ext"
