@@ -9,11 +9,26 @@ forbidden-actions, path restrictions, and approval gates.
 
 | Client | Template | Install path |
 |---|---|---|
+| Claude Code | [`claude/CLAUDE.md`](claude/CLAUDE.md) | `<repo-root>/CLAUDE.md` |
+| Claude Code | [`claude/.claude/settings.json`](claude/.claude/settings.json) | `<repo-root>/.claude/settings.json` |
+| GitHub Copilot | [`copilot/.github/copilot-instructions.md`](copilot/.github/copilot-instructions.md) | `<repo-root>/.github/copilot-instructions.md` |
+| Any (vendor-neutral) | [`agents-md/AGENTS.md`](agents-md/AGENTS.md) | `<repo-root>/AGENTS.md` |
 | Cursor | [`cursor/.cursorrules`](cursor/.cursorrules) | `<repo-root>/.cursorrules` |
 | Cline | [`cline/.clinerules`](cline/.clinerules) | `<repo-root>/.clinerules` |
 | Continue | [`continue/.continuerules`](continue/.continuerules) | `<repo-root>/.continuerules` |
 | Windsurf | [`windsurf/.windsurfrules`](windsurf/.windsurfrules) | `<repo-root>/.windsurfrules` |
 | Aider | [`aider/.aider.conf.yml`](aider/.aider.conf.yml) | `<repo-root>/.aider.conf.yml` |
+
+`AGENTS.md` is the cross-client instruction file several agents already
+read. If more than one agent works in your repo, write that one and let
+the client-specific files be thin stubs pointing at it.
+
+Claude Code is the only client with a matching *settings* file. The
+`claude/` template ships both halves: `CLAUDE.md` states the rule, and
+`.claude/settings.json` enforces it with `permissions.deny` entries,
+`defaultMode: acceptEdits` (never `bypassPermissions`), and all four
+lifecycle hooks — the shape the `claude-settings` and
+`permissions-hygiene` checks score.
 
 ## What these cover
 
@@ -46,6 +61,11 @@ npx github:Back-Road-Creative/rigscore --check skill-files
 
 Both should score at or near 100. If they don't, the reported findings
 will tell you what the template is missing for your project.
+
+Judge a template on those per-check scores, not on the overall grade of a
+directory that contains nothing but the template: rigscore scales the
+overall score by how much of the attack surface it could actually measure,
+and a lone rules file leaves most checks N/A.
 
 ## See also
 
