@@ -12,13 +12,19 @@ const ACTION = /^anthropics\/claude-code(?:-base)?-action@/;
 const TURNS = /--max-turns[\s=]/;
 const CTOOLS = /--(?:dis)?allowed-?tools[\s=]|--tools[\s=]/i;
 // [tool, invocation, turn-cap flag | null, tool-scoping flags | null]. Invocations match a command word
-// (`claude …`), never a path (`.claude/x`). aider/opencode are out of scope — see the docs page.
+// (`claude …`), never a path (`.claude/x`). aider and opencode carry `null, null`: neither vendor
+// documents a turn cap or a tool-scoping flag, so both are graded on timeout-minutes alone. Their
+// auto-approve flags (aider `--yes`, opencode `--auto`) are deliberately NOT bypasses — see the docs page.
 const CLIS = [
   ['claude', /(?:^|[\s;&|(])claude(?=\s)(?=.*(?:\s-p\b|\s--print\b))/, TURNS, CTOOLS],
   ['codex', /(?:^|[\s;&|(])codex\s+e(?:xec)?(?=\s|$)/, null,
     /--sandbox[\s=]+(?:read-only|workspace-write)|--ask-for-approval[\s=]|(?:^|\s)-s[\s=]+(?:read-only|workspace-write)|(?:^|\s)-a[\s=]/],
   ['gemini', /(?:^|[\s;&|(])gemini(?=\s)(?=.*(?:\s-p\b|\s--prompt\b))/, null,
     /--allowed-tools[\s=]|--approval-mode[\s=]+(?:default|auto_edit|plan)\b/],
+  // aider's non-interactive form is `--message`/`--msg`/`-m` (or `--message-file`); bare `aider` would
+  // sit at an interactive prompt, so requiring the flag is what makes this a CI invocation.
+  ['aider', /(?:^|[\s;&|(])aider(?=\s)(?=.*(?:\s-m\b|\s--msg\b|\s--message(?:-file)?\b))/, null, null],
+  ['opencode', /(?:^|[\s;&|(])opencode\s+run(?=\s|$)/, null, null],
 ];
 // Unambiguous "no ceiling" flags. Gemini's `-y` is excluded on purpose — it collides with apt-get/npm.
 const BYPASS = [
