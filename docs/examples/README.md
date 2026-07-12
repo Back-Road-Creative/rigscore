@@ -1,11 +1,13 @@
 # Client examples
 
 Starter skill / rules files for the AI coding clients rigscore knows how
-to score. These templates are calibrated to pass rigscore's default
-profile (`skill-files`, `claude-md` / governance coverage, coherence
-signals) without needing further tuning. Copy the one for your client,
-drop it at the indicated path, then edit to match your project's real
-forbidden-actions, path restrictions, and approval gates.
+to score. Each template is calibrated against rigscore's default profile,
+which concretely means: **zero CRITICAL findings, and `claude-md`,
+`skill-files` and `coherence` all at 100** — not a high overall grade
+(see the caveat below on why a directory holding one config file cannot
+score above ~50). Copy the one for your client, drop it at the indicated
+path, then edit to match your project's real forbidden-actions, path
+restrictions, and approval gates.
 
 | Client | Template | Install path |
 |---|---|---|
