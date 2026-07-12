@@ -75,6 +75,8 @@ Options:
   --json             Output results as JSON
   --sarif            Output SARIF v2.1.0 for GitHub Advanced Security
   --badge            Generate a markdown badge
+  --cyclonedx        Output a CycloneDX 1.6 AI-BOM (JSON) of the MCP servers,
+                     AI client configs and governance files found (docs/cyclonedx.md)
   --ci               CI mode (--sarif --no-color --no-cta)
   --fail-under <N>   Exit code 1 if score < N (default: 70)
   --profile <name>   Scoring profile (default, minimal, ci, home, monorepo)
