@@ -53,7 +53,8 @@ export const WEIGHTS = {
   'sandbox-posture': 0,
 };
 
-// OWASP Agentic Top 10 (2026) mapping for findings
+// OWASP Top 10 for Agentic Applications 2026 — official IDs are `ASIxx:2026`;
+// the bare `ASIxx` stem is stored here. Final release (published 2025-12-09).
 export const OWASP_AGENTIC_MAP = {
   'mcp-config': 'ASI04',       // Agentic Supply Chain
   'coherence': 'ASI01',        // Agent Goal Hijack
@@ -76,6 +77,80 @@ export const OWASP_AGENTIC_MAP = {
   'agent-output-schemas': 'ASI01',     // Agent Goal Hijack — undeclared JSON contract lets orchestrator-aggregated output drift silently
 };
 
+// Compliance standards mapping (see docs/compliance.md). Every control ID is transcribed
+// from that framework's primary source (URL in FRAMEWORKS). A check is listed under a
+// control ONLY where it genuinely evidences it: an honest sparse table beats a complete
+// fictional one, because a wrong citation is what a customer forwards to their auditor.
+const byControl = (control, ids) => Object.fromEntries(ids.map((id) => [id, control]));
+
+// NIST AI RMF 1.0 (NIST AI 100-1, Jan 2023). Subcategory IDs are space-separated.
+export const NIST_AI_RMF_MAP = {
+  'mcp-config': 'MANAGE 3.1',   // third-party resources monitored, controls applied
+  ...byControl('GOVERN 1.2', ['coherence', 'skill-files', 'claude-md',
+    'instruction-effectiveness', 'skill-coherence', 'workflow-maturity']),
+  ...byControl('MAP 4.2', ['documentation', 'agent-output-schemas']),
+  ...byControl('MEASURE 2.7', ['claude-settings', 'deep-secrets', 'env-exposure',
+    'credential-storage', 'docker-security', 'infrastructure-security',
+    'unicode-steganography', 'git-hooks', 'permissions-hygiene', 'network-exposure']),
+};
+
+// EU AI Act — Regulation (EU) 2024/1689. Value = the Article the check evidences.
+export const EU_AI_ACT_MAP = {
+  'claude-settings': 'Article 14', // auto-approve/bypass removes the human from the loop
+  'documentation': 'Article 11',   // technical documentation (Annex IV)
+  ...byControl('Article 15', ['mcp-config', 'coherence', 'skill-files', 'claude-md',
+    'deep-secrets', 'env-exposure', 'credential-storage', 'docker-security',
+    'infrastructure-security', 'unicode-steganography', 'git-hooks',
+    'permissions-hygiene', 'network-exposure', 'instruction-effectiveness',
+    'skill-coherence', 'workflow-maturity', 'agent-output-schemas']),
+};
+
+// `status` is the UPSTREAM publication state — a beta list must never render to
+// an auditor as settled. `coverage: full` = every scored check is mapped.
+export const FRAMEWORKS = {
+  'owasp-agentic': {
+    name: 'OWASP Top 10 for Agentic Applications 2026',
+    status: 'final (published 2025-12-09)',
+    url: 'https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/',
+    coverage: 'full',
+    map: OWASP_AGENTIC_MAP,
+    controls: {
+      ASI01: 'Agent Goal Hijack',
+      ASI02: 'Tool Misuse',
+      ASI03: 'Identity & Privilege Abuse',
+      ASI04: 'Agentic Supply Chain Vulnerabilities',
+      ASI05: 'Unexpected Code Execution',
+      ASI07: 'Insecure Inter-Agent Communication',
+    },
+  },
+  'nist-ai-rmf': {
+    name: 'NIST AI RMF 1.0 (NIST AI 100-1)',
+    status: 'final (January 2023)',
+    url: 'https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf',
+    coverage: 'full',
+    map: NIST_AI_RMF_MAP,
+    controls: {
+      'GOVERN 1.2': 'Trustworthy-AI characteristics are integrated into organizational policies, processes, procedures, and practices',
+      'MAP 4.2': 'Internal risk controls for AI system components, including third-party technologies, are identified and documented',
+      'MEASURE 2.7': 'AI system security and resilience are evaluated and documented',
+      'MANAGE 3.1': 'AI risks and benefits from third-party resources are regularly monitored, and risk controls are applied and documented',
+    },
+  },
+  'eu-ai-act': {
+    name: 'EU AI Act — Regulation (EU) 2024/1689',
+    status: 'in force, phased application',
+    url: 'https://ai-act-service-desk.ec.europa.eu/en/ai-act/timeline/timeline-implementation-eu-ai-act',
+    coverage: 'full',
+    map: EU_AI_ACT_MAP,
+    note: 'Dates are the in-force schedule. The proposed "Digital Omnibus" delay to the high-risk dates (Annex III -> 2027-12-02, Annex I -> 2028-08-02) is NOT in force: EP plenary approved it 2026-06-16, Council adoption + OJ publication still pending. Do not plan against the delay.',
+    controls: {
+      'Article 11': 'Technical documentation (Annex IV) — applies 2026-08-02 (Annex III high-risk), 2027-08-02 (Art. 6(1)/Annex I)',
+      'Article 14': 'Human oversight — applies 2026-08-02 (Annex III high-risk), 2027-08-02 (Art. 6(1)/Annex I)',
+      'Article 15': 'Accuracy, robustness and cybersecurity — applies 2026-08-02 (Annex III high-risk), 2027-08-02 (Art. 6(1)/Annex I)',
+      'Article 50': 'Transparency for certain AI systems — applies 2026-08-02. NOT EVIDENCED: rigscore does not inspect end-user AI disclosure or synthetic-content marking.',
+    },
+  },
+};
 // Sentinel score for checks that find nothing to scan
 export const NOT_APPLICABLE_SCORE = -1;
 

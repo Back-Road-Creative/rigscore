@@ -107,6 +107,8 @@ Options:
   --baseline <path>  Baseline mode. On first run writes findings to <path>;
                      on subsequent runs reports ONLY new findings vs baseline
                      and exits 1 if any new finding is found
+  --report <kind>    Render findings grouped by compliance-framework control
+                     (kinds: compliance). Not supported with --recursive.
   --version          Show version
   --help, -h         Show this help
 
