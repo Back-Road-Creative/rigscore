@@ -6,17 +6,30 @@
 
 Validates host-level backstops that sit underneath a single project: a root-owned global git-hooks directory, a git wrapper that strips `--no-verify` and blocks force-push, a shell safety guard, immutable governance directories, a deny-list in Claude Code `settings.json`, and a registered sandbox gate. Maps to **OWASP Agentic ASI02 — Tool Misuse**: when per-project hooks are missing or bypassed, an agent with shell access can still run dangerous commands; infrastructure-level guards are the enforcement layer of last resort. A pass guarantees that the configured hooks directory, wrapper, safety gates, immutable directories, deny-list, and sandbox gate are in place and properly owned. A failure typically means an agent could bypass project hooks (`git commit --no-verify`), force-push to main, or run `rm -rf /`-style commands without intervention.
 
-This check is **opt-in**. By default it returns `SKIPPED` / N/A. You enable it by configuring at least one of `paths.hooksDir`, `paths.gitWrapper`, `paths.safetyGates`, or `paths.immutableDirs` in `.rigscorerc.json`. It is additionally Linux-only — returns N/A on macOS and Windows even when configured.
+The check runs **out of the box**: with no `.rigscorerc.json` it detects the conventional locations of these artifacts (see [Path resolution](#path-resolution)) and returns `SKIPPED` / N/A only when there is genuinely nothing to look at. It remains Linux-only — N/A on macOS and Windows even when configured.
+
+## Path resolution
+
+Explicit `.rigscorerc.json` `paths.*` are authoritative; detected defaults only fill the gaps, so a user who declared a path keeps exactly the behavior below. **A default that does not exist on disk is simply not scanned** — a missing optional artifact never becomes a finding.
+
+| Path | Default when not declared | Derived from |
+|---|---|---|
+| `hooksDir` | git's effective hooks path — `git rev-parse --git-path hooks`, which honors `core.hooksPath` and otherwise yields `<repo>/.git/hooks`. Adopted only if it holds a non-`*.sample` hook (every repo ships samples; scanning those would flag every project). | git itself |
+| `gitWrapper` | the first `git` on `PATH` that is a `#!` script — the real git is a compiled binary, so a script shadowing it *is* the wrapper. | `PATH` |
+| `safetyGates` | `/etc/profile.d/safety-gates.sh`, then `/etc/profile.d/safety-guard.sh` | shell `profile.d` |
+| `immutableDirs` | **none.** `chattr +i` is an operator claim about a specific directory — no filesystem convention says a given dir must be immutable, so a default would manufacture a warning on every project. | — |
+
+Detection is anchored to a git project (`<cwd>/.git`): with no repo there is no git-hooks or git-wrapper surface to attribute host infrastructure to. The missing-artifact and root-ownership triggers below fire for **declared** paths only — a detected path exists by construction, and a repo-local hooks dir is user-owned by design (git has to write to it), so a uid-0 finding there would be a guaranteed false positive on every project.
 
 ## Triggers
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| `process.platform !== 'linux'` | SKIPPED | — | N/A on macOS/Windows |
-| No infrastructure paths configured in `.rigscorerc.json` | SKIPPED | — | Configure `paths.hooksDir`/`gitWrapper`/`safetyGates`/`immutableDirs` to enable |
+| `process.platform !== 'linux'` | SKIPPED | — | N/A on macOS/Windows; the skip names the platform |
+| Nothing declared **and** nothing at the default locations | SKIPPED | — | "nothing found at the default locations" — declare `paths.*` to point at a custom location |
 | `paths.hooksDir` configured but directory missing | CRITICAL | `infrastructure-security/global-git-hooks-directory-missing` | Create the directory root-owned with required hooks |
 | `paths.hooksDir` exists but not owned by root (uid 0) | CRITICAL | `infrastructure-security/global-git-hooks-directory-not-root-owned` | `sudo chown root:root <hooksDir>` |
-| Required hook `pre-commit`/`pre-push`/`commit-msg` missing inside `hooksDir` | CRITICAL | `infrastructure-security/required-git-hook-missing-hook` | Create it as a root-owned executable |
+| Required hook `pre-commit`/`pre-push`/`commit-msg` missing inside `hooksDir` | CRITICAL (declared) / WARNING (detected) | `infrastructure-security/required-git-hook-missing-hook` | Create it as a root-owned executable |
 | Required hook exists but lacks owner-execute bit | WARNING | `infrastructure-security/git-hook-not-executable-hook` | `sudo chmod 755 <path>` |
 | Required hook present and executable | PASS | — | — |
 | `paths.gitWrapper` configured but missing | CRITICAL | `infrastructure-security/git-safety-wrapper-missing` | Install a wrapper that strips `--no-verify` and blocks force-push |
@@ -36,7 +49,7 @@ This check is **opt-in**. By default it returns `SKIPPED` / N/A. You enable it b
 
 ## Weight rationale
 
-**Weight 6 — 6 points.** Tied with `docker-security` (6) and `credential-storage` (6). Lower than `claude-settings` (8) because infrastructure controls are inherently opt-in (Linux-only, path-configured) and returning N/A for most users means a higher weight would under-score installs that simply don't have an enterprise stack. Higher than `permissions-hygiene` (4) because when these controls *are* configured and drift, the failure blast radius (no hook enforcement, no deny-list) covers the whole host, not just one file's mode bits. The 6-point cap matches `docker-security` since both are "isolation/enforcement layer gone" signals.
+**Weight 6 — 6 points.** Tied with `docker-security` (6) and `credential-storage` (6). Lower than `claude-settings` (8) because infrastructure controls are host-level and still Linux-only, and a project with no such artifacts at all returns N/A — a higher weight would under-score installs that simply don't have an enterprise stack. Higher than `permissions-hygiene` (4) because when these controls *are* present and drift, the failure blast radius (no hook enforcement, no deny-list) covers the whole host, not just one file's mode bits. The 6-point cap matches `docker-security` since both are "isolation/enforcement layer gone" signals.
 
 ## Fix semantics
 
@@ -89,7 +102,7 @@ infrastructure-security ............. 40/100  (weight 6)
 ## Scope and limitations
 
 - Platform gate: Linux only (`process.platform === 'linux'`). macOS and Windows receive a `skipped` finding regardless of configuration.
-- Opt-in gate: if none of `paths.hooksDir`, `paths.gitWrapper`, `paths.safetyGates`, `paths.immutableDirs` is configured, the check is `SKIPPED` and does not contribute to the score.
+- No-surface gate: if nothing is declared **and** nothing is found at the default locations, the check is `SKIPPED` and does not contribute to the score.
 - Root-ownership checks compare `stat.uid === 0` only; they do not verify GID or ACLs.
 - Deny-list match is substring on the joined list — order-independent but not regex-aware.
 - Sandbox gate detection is a naive substring search for `sandbox-gate` in the JSON-serialized `hooks` block of `settings.json` / `settings.local.json`; renaming the gate defeats detection.
