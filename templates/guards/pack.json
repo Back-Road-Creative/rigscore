@@ -1,0 +1,13 @@
+{
+  "name": "guards",
+  "description": "Agent-safety baseline: deny rules, an expiring permissions manifest, and a working pre-commit secret scan",
+  "checks": ["claude-settings", "git-hooks"],
+  "files": [
+    { "src": "settings.json", "dest": ".claude/settings.json" },
+    { "src": "permissions.json", "dest": ".claude/permissions.json" },
+    { "src": "pre-commit", "dest": ".git/hooks/pre-commit" }
+  ],
+  "vars": {
+    "PROJECT_NAME": "the repo directory name"
+  }
+}

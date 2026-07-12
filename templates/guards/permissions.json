@@ -1,0 +1,40 @@
+{
+  "_comment": "Expiring permissions manifest for {{PROJECT_NAME}}. Permissions should rot loudly, not accrete silently. Every grant below has an owner and a reason; the whole manifest has an expiry.",
+  "scope": "{{PROJECT_NAME}}",
+  "version": 1,
+  "expires": "2026-10-12",
+  "renewal": {
+    "policy": "Re-review every 90 days. At renewal, DELETE every grant not used since the last review, then bump `expires` and append a changelog entry. Renewal is a deletion exercise, not a rubber stamp.",
+    "reviewers": ["repo-maintainer"],
+    "cadenceDays": 90
+  },
+  "enforcement": {
+    "_comment": "The expiry is inert unless something fails the build on it. Wire this gate up — an unenforced expiry date is decoration.",
+    "gate": "CI job runs on every PR and on a daily schedule; it parses `expires` and exits non-zero once the date is in the past, so the repo goes red on the day permissions go stale rather than years later.",
+    "suggestedCi": "test $(date -u +%Y-%m-%d) \\< $(node -p \"require('./.claude/permissions.json').expires\") || { echo 'permissions manifest expired — re-review .claude/permissions.json'; exit 1; }",
+    "onExpiry": "Build fails. Fix by re-reviewing grants and bumping `expires` — never by widening the window without a review."
+  },
+  "grants": [
+    {
+      "id": "git-read-only",
+      "permission": "Bash(git status:*), Bash(git diff:*), Bash(git log:*)",
+      "reason": "Agent needs to read repo state to reason about changes.",
+      "owner": "repo-maintainer",
+      "risk": "low"
+    },
+    {
+      "id": "source-read",
+      "permission": "Read(./src/**), Read(./test/**)",
+      "reason": "Agent reads first-party source. Credential paths stay denied in settings.json.",
+      "owner": "repo-maintainer",
+      "risk": "low"
+    }
+  ],
+  "changelog": [
+    {
+      "date": "2026-07-12",
+      "actor": "guards pack install",
+      "change": "Initial manifest. Baseline grants: read-only git + first-party source. Destructive shell, credential reads, and network exfil denied in .claude/settings.json."
+    }
+  ]
+}
