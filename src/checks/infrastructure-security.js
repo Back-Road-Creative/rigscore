@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
@@ -5,6 +6,18 @@ import { fileExists, readFileSafe, readJsonSafe, execSafe, statSafe } from '../u
 
 // Required git hooks in the global hooks directory
 const REQUIRED_HOOKS = ['pre-commit', 'pre-push', 'commit-msg'];
+
+// Conventional system locations for a shell safety guard. Derived from the
+// paths this check already documents (`/etc/profile.d/safety-*.sh`), not a
+// new filesystem convention.
+const DEFAULT_SAFETY_GATE_PATHS = [
+  '/etc/profile.d/safety-gates.sh',
+  '/etc/profile.d/safety-guard.sh',
+];
+
+// A git safety wrapper is a shell script; the real git is a compiled binary.
+// Cap the read so we never slurp a multi-MB ELF just to look at its shebang.
+const MAX_WRAPPER_BYTES = 256 * 1024;
 
 // Required deny-list entries in settings.json
 const REQUIRED_DENY_PATTERNS = [
@@ -33,6 +46,70 @@ async function isExecutable(filePath) {
 }
 
 /**
+ * A hooks dir is only worth scanning when it actually manages hooks: git ships
+ * `.git/hooks` full of `*.sample` files in every repo, and scanning that would
+ * emit "required hook missing" on every project.
+ */
+async function managesHooks(dir) {
+  try {
+    const entries = await fs.promises.readdir(dir);
+    return entries.some((e) => !e.endsWith('.sample'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The first `git` on PATH, but only if it is a script (`#!` shebang) — the
+ * real git is a compiled binary, so a script shadowing it IS the wrapper.
+ * No wrapper installed → null → that surface is simply not scanned.
+ */
+async function detectGitWrapper(env) {
+  for (const dir of String(env.PATH || '').split(path.delimiter).filter(Boolean)) {
+    const candidate = path.join(dir, 'git');
+    if (!(await fileExists(candidate))) continue;
+    const stat = await statSafe(candidate);
+    // First git on PATH wins (that's what a shell would run), wrapper or not.
+    if (!stat || !stat.isFile() || stat.size > MAX_WRAPPER_BYTES) return null;
+    const content = await readFileSafe(candidate);
+    return content && content.startsWith('#!') ? candidate : null;
+  }
+  return null;
+}
+
+/**
+ * Detect the conventional locations of the artifacts this check inspects, so
+ * it runs out of the box instead of lying dormant behind `.rigscorerc.json`.
+ * Defaults table + rationale: docs/checks/infrastructure-security.md.
+ *
+ * `immutableDirs` has NO default on purpose: `chattr +i` is an operator claim
+ * about a specific directory, so defaulting one would manufacture a warning on
+ * every project. Detection is anchored to a git project (no repo at `cwd` → no
+ * git-hooks/wrapper surface), and every detected path is verified to exist, so
+ * a missing optional artifact can never become a false-positive finding.
+ */
+async function detectDefaultPaths(cwd, env) {
+  const detected = { hooksDir: null, gitWrapper: null, safetyGates: null };
+  if (!cwd || !(await fileExists(path.join(cwd, '.git')))) return detected;
+
+  const raw = await execSafe('git', ['-C', cwd, 'rev-parse', '--git-path', 'hooks']);
+  const hooksDir = raw && raw.trim() ? path.resolve(cwd, raw.trim()) : null;
+  if (hooksDir && (await fileExists(hooksDir)) && (await managesHooks(hooksDir))) {
+    detected.hooksDir = hooksDir;
+  }
+
+  detected.gitWrapper = await detectGitWrapper(env);
+
+  for (const candidate of DEFAULT_SAFETY_GATE_PATHS) {
+    if (await fileExists(candidate)) {
+      detected.safetyGates = candidate;
+      break;
+    }
+  }
+  return detected;
+}
+
+/**
  * Parse lsattr output for the immutable flag.
  * lsattr -d output looks like: "----i---------e------- /path/to/dir"
  */
@@ -52,33 +129,57 @@ export default {
   async run(context) {
     const { cwd, homedir, config } = context;
 
-    // Only applicable on Linux
+    // Only applicable on Linux. Name the platform so this skip is
+    // distinguishable from the "nothing to scan" skip below.
     if (process.platform !== 'linux') {
-      return {
-        score: NOT_APPLICABLE_SCORE,
-        findings: [{ severity: 'skipped', title: 'Infrastructure security check is Linux-only' }],
-      };
-    }
-
-    const hooksDir = config?.paths?.hooksDir || null;
-    const gitWrapper = config?.paths?.gitWrapper || null;
-    const safetyGates = config?.paths?.safetyGates || null;
-    const immutableDirs = config?.paths?.immutableDirs || [];
-
-    // Opt-in gate: without any infrastructure paths configured, return N/A.
-    // This keeps the "universal infrastructure guidance" framing without
-    // punishing default installs that don't replicate an enterprise stack.
-    const anyInfraConfigured = !!(hooksDir || gitWrapper || safetyGates || immutableDirs.length > 0);
-    if (!anyInfraConfigured) {
       return {
         score: NOT_APPLICABLE_SCORE,
         findings: [{
           severity: 'skipped',
-          title: 'Infrastructure security check is opt-in; configure .rigscorerc.json paths.hooksDir/gitWrapper/safetyGates/immutableDirs to enable.',
+          title: `Infrastructure security check is Linux-only (platform: ${process.platform})`,
+        }],
+      };
+    }
+
+    const declaredHooksDir = config?.paths?.hooksDir || null;
+    const declaredGitWrapper = config?.paths?.gitWrapper || null;
+    const declaredSafetyGates = config?.paths?.safetyGates || null;
+    const immutableDirs = config?.paths?.immutableDirs || [];
+
+    // Declared `.rigscorerc.json` paths are authoritative; defaults only fill
+    // the gaps — a detected default never stomps a declared value.
+    const detected = await detectDefaultPaths(cwd, process.env);
+    const hooksDir = declaredHooksDir || detected.hooksDir;
+    const gitWrapper = declaredGitWrapper || detected.gitWrapper;
+    const safetyGates = declaredSafetyGates || detected.safetyGates;
+    const pathSources = {
+      hooksDir: declaredHooksDir ? 'config' : (detected.hooksDir ? 'default' : null),
+      gitWrapper: declaredGitWrapper ? 'config' : (detected.gitWrapper ? 'default' : null),
+      safetyGates: declaredSafetyGates ? 'config' : (detected.safetyGates ? 'default' : null),
+      immutableDirs: immutableDirs.length > 0 ? 'config' : null,
+    };
+
+    // Nothing declared, nothing at the default locations → nothing to look at.
+    // Still N/A, but the message says we looked rather than "configure paths".
+    const anyInfra = !!(hooksDir || gitWrapper || safetyGates || immutableDirs.length > 0);
+    if (!anyInfra) {
+      return {
+        score: NOT_APPLICABLE_SCORE,
+        findings: [{
+          severity: 'skipped',
+          title: 'Infrastructure security: nothing found at the default locations (no managed git hooks dir, git wrapper, or shell safety guard) — opt-in via .rigscorerc.json paths.hooksDir/gitWrapper/safetyGates/immutableDirs',
+          detail: `Searched: git hooks path for ${cwd}, the first \`git\` on PATH, ${DEFAULT_SAFETY_GATE_PATHS.join(', ')}.`,
         }],
         data: {},
       };
     }
+
+    // Root-ownership is a claim about a *managed* control, so it is asserted
+    // only for declared paths: a repo-local hooks dir is user-owned by design
+    // (git writes to it), so a uid-0 finding there is a guaranteed false
+    // positive. "Artifact missing" likewise can only fire for a declared path.
+    const hooksDirDeclared = !!declaredHooksDir;
+    const gitWrapperDeclared = !!declaredGitWrapper;
 
     const findings = [];
 
@@ -95,7 +196,7 @@ export default {
           context: { hooksDir },
         });
       } else {
-        const hooksDirRootOwned = await isRootOwned(hooksDir);
+        const hooksDirRootOwned = hooksDirDeclared ? await isRootOwned(hooksDir) : true;
         if (!hooksDirRootOwned) {
           findings.push({
             findingId: 'infrastructure-security/hooks-dir-not-root-owned',
@@ -114,11 +215,14 @@ export default {
           if (!exists) {
             findings.push({
               findingId: 'infrastructure-security/required-hook-missing',
-              severity: 'critical',
+              // A CRITICAL zeroes the whole check. Only a declared hooks dir
+              // is an operator claim strong enough to warrant that; a detected
+              // one reports the same gap as a WARNING.
+              severity: hooksDirDeclared ? 'critical' : 'warning',
               title: `Required git hook missing: ${hook}`,
               detail: `${hookPath} not found`,
               remediation: `Create ${hookPath} as root-owned executable script.`,
-              context: { hook, hookPath },
+              context: { hook, hookPath, source: pathSources.hooksDir },
             });
           } else {
             const executable = await isExecutable(hookPath);
@@ -151,7 +255,7 @@ export default {
           context: { gitWrapper },
         });
       } else {
-        const wrapperRootOwned = await isRootOwned(gitWrapper);
+        const wrapperRootOwned = gitWrapperDeclared ? await isRootOwned(gitWrapper) : true;
         if (!wrapperRootOwned) {
           findings.push({
             findingId: 'infrastructure-security/git-wrapper-not-root-owned',
@@ -291,6 +395,8 @@ export default {
       data: {
         hooksDir,
         gitWrapper,
+        safetyGates,
+        pathSources,
         immutableDirsChecked: dirsToCheck.length,
         denyListEntries: denyList ? denyList.length : 0,
         sandboxGateRegistered,
