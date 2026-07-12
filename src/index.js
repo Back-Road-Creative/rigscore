@@ -38,6 +38,7 @@ export function parseArgs(args) {
     noColor: false,
     noCta: true,
     verbose: false,
+    report: null,
     checkFilter: null,
     cwd: null,
     recursive: false,
@@ -52,7 +53,6 @@ export function parseArgs(args) {
     watch: false,
     ignore: null,
     baseline: null,
-    report: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -195,16 +195,6 @@ export async function run(args) {
     }
   }
 
-  // A compliance report is a single-subject audit artifact. Fail loud on an
-  // unknown kind or a recursive run: either would print something a CI job
-  // could mistake for one.
-  if (options.report && (options.report !== 'compliance' || options.recursive)) {
-    const why = options.report !== 'compliance'
-      ? `unknown --report kind "${options.report}" (supported: compliance)`
-      : '--report cannot be combined with --recursive';
-    process.stderr.write(`rigscore: ${why}\n`);
-    process.exit(2);
-  }
 
   if (options.initHook) {
     // Implementation lives in src/cli/init-hook.js — extracted from run()
@@ -216,6 +206,16 @@ export async function run(args) {
   if (options.noColor) {
     // Chalk respects the NO_COLOR env var
     process.env.NO_COLOR = '1';
+  }
+
+  // A compliance report is a single-subject audit artifact: fail loud on an
+  // unknown kind or a recursive run rather than print a lookalike.
+  if (options.report && (options.report !== 'compliance' || options.recursive)) {
+    const why = options.report !== 'compliance'
+      ? `unknown --report kind "${options.report}" (supported: compliance)`
+      : '--report cannot be combined with --recursive';
+    process.stderr.write(`rigscore: ${why}\n`);
+    process.exit(2);
   }
 
   const scanOptions = {
