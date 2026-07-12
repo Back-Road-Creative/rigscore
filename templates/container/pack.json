@@ -1,0 +1,18 @@
+{
+  "name": "container",
+  "description": "Fail-closed egress devcontainer: agent runs on an internal-only network and reaches the internet solely through an allow-listing proxy.",
+  "checks": ["docker-security", "network-exposure"],
+  "files": [
+    { "src": "devcontainer.json", "dest": ".devcontainer/devcontainer.json" },
+    { "src": "docker-compose.proxy.yml", "dest": ".devcontainer/egress/docker-compose.proxy.yml" },
+    { "src": "Dockerfile.proxy", "dest": ".devcontainer/egress/Dockerfile.proxy" },
+    { "src": "tinyproxy.conf", "dest": ".devcontainer/egress/tinyproxy.conf" },
+    { "src": "allowlist", "dest": ".devcontainer/egress/allowlist" },
+    { "src": "healthcheck.sh", "dest": ".devcontainer/egress/healthcheck.sh" }
+  ],
+  "vars": {
+    "PROJECT_NAME": "myproject",
+    "ALLOWED_HOSTS": "# one extended-regex host per line, e.g. (^|\\.)crates\\.io$",
+    "EGRESS_SUBNET": "172.30.0.0/16"
+  }
+}
