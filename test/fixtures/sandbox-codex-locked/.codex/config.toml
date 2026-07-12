@@ -1,0 +1,5 @@
+approval_policy = "on-request"  # a trailing comment must not corrupt the value
+sandbox_mode = "read-only"
+
+[sandbox_workspace_write]
+network_access = false
