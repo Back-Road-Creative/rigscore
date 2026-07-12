@@ -1,0 +1,12 @@
+{
+  "name": "docs",
+  "description": "AGENTS.md-first governance baseline: one vendor-neutral agent contract, plus a CLAUDE.md that defers to it",
+  "checks": ["claude-md"],
+  "files": [
+    { "src": "AGENTS.md", "dest": "AGENTS.md" },
+    { "src": "CLAUDE.md", "dest": "CLAUDE.md" }
+  ],
+  "vars": {
+    "PROJECT_NAME": "the repo directory name"
+  }
+}
