@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Inspects the `mcpServers[].env` maps inside AI-client config files in `~/` — Claude Desktop, Cursor, Cline, Continue, Windsurf, Amp — and flags any env value that looks like a literal provider credential rather than a secure reference. Maps to **OWASP Agentic Top 10 ASI03 — Identity & Privilege Abuse**: these config files typically sit at default (user-readable) permissions and any process running as the user, any backup tool, any cloud-sync agent, or any MCP server spawned from the config can read them. A passing check guarantees that every `mcpServers[*].env[*]` value is either (a) not a `KEY_PATTERNS` match, (b) a 1Password CLI reference (`op://…`), or (c) a shell template placeholder (`${VAR}`) — i.e. the real credential is resolved at runtime. A failure means a plaintext key is sitting at rest in a world-adjacent location.
+Inspects the `mcpServers[].env` maps inside AI-client config files in `~/` — Claude Desktop, Cursor, Cline, Continue, Windsurf, Amp, Gemini CLI — and flags any env value that looks like a literal provider credential rather than a secure reference. Maps to **OWASP Agentic Top 10 ASI03 — Identity & Privilege Abuse**: these config files typically sit at default (user-readable) permissions and any process running as the user, any backup tool, any cloud-sync agent, or any MCP server spawned from the config can read them. A passing check guarantees that every `mcpServers[*].env[*]` value is either (a) not a `KEY_PATTERNS` match, (b) a 1Password CLI reference (`op://…`), or (c) a shell template placeholder (`${VAR}`) — i.e. the real credential is resolved at runtime. A failure means a plaintext key is sitting at rest in a world-adjacent location.
 
 ## Triggers
 
@@ -42,6 +42,9 @@ Client → config path mapping:
 | Continue | `.continue/config.json` |
 | Windsurf | `.windsurf/mcp.json` |
 | Amp | `.amp/mcp.json` |
+| Gemini CLI | `.gemini/settings.json` |
+
+The table is generated from the client registry (`src/clients.js`) — add a client there, not here.
 
 ## Example
 
