@@ -1,0 +1,15 @@
+# Minimal allow-listing egress proxy: unprivileged, read-only rootfs. Digest-pinned so a rebuild
+# can't float to a newer base (advance tag + digest together via `docker buildx imagetools inspect
+# alpine:3.21`). tinyproxy pinned to 1.11: FilterType (tinyproxy.conf) exists only in 1.11+.
+FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+RUN apk add --no-cache 'tinyproxy=~1.11' \
+ && mkdir -p /var/log/tinyproxy && chown nobody:nobody /var/log/tinyproxy
+COPY tinyproxy.conf  /etc/tinyproxy/tinyproxy.conf
+COPY allowlist       /etc/tinyproxy/allowlist
+COPY healthcheck.sh  /etc/tinyproxy/healthcheck.sh
+RUN chmod 0755 /etc/tinyproxy/healthcheck.sh
+# Non-root; binds 8888 (>1024) so no privilege is needed. Pidfile on tmpfs + log on a named volume
+# keep the rootfs read-only; tinyproxy can't open /dev/stdout as nobody, so it logs to a file we tail
+# to stdout. `exec` keeps it PID 1, so the healthcheck always has a listener to probe.
+USER nobody
+ENTRYPOINT ["/bin/sh", "-c", "touch /var/log/tinyproxy/tinyproxy.log; tail -f /var/log/tinyproxy/tinyproxy.log & exec tinyproxy -d -c /etc/tinyproxy/tinyproxy.conf"]

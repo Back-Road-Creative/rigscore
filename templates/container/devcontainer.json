@@ -1,0 +1,21 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "remoteUser": "vscode",
+  "initializeCommand": "docker compose -f '${localWorkspaceFolder}/.devcontainer/egress/docker-compose.proxy.yml' up -d --build --wait --wait-timeout 90",
+  "runArgs": [
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges:true",
+    "--tmpfs=/tmp:rw,noexec,nosuid,size=512m",
+    "--network={{PROJECT_NAME}}-egress",
+    "--dns=127.0.0.1"
+  ],
+  "containerEnv": {
+    "HTTP_PROXY": "http://{{PROJECT_NAME}}-egress-proxy:8888",
+    "HTTPS_PROXY": "http://{{PROJECT_NAME}}-egress-proxy:8888",
+    "http_proxy": "http://{{PROJECT_NAME}}-egress-proxy:8888",
+    "https_proxy": "http://{{PROJECT_NAME}}-egress-proxy:8888",
+    "NO_PROXY": "localhost,127.0.0.1,::1,{{PROJECT_NAME}}-egress-proxy",
+    "no_proxy": "localhost,127.0.0.1,::1,{{PROJECT_NAME}}-egress-proxy"
+  }
+}

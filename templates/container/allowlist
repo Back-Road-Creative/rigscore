@@ -1,0 +1,11 @@
+# Egress allow-list (extended regex vs the destination HOST). FilterDefaultDeny means ONLY hosts
+# matching a line below are reachable — every line is a hole you opened. Do NOT add example.com:
+# healthcheck.sh probes it as the host that MUST be refused; allow-listing it blinds the detector.
+(^|\.)github\.com$
+(^|\.)githubusercontent\.com$
+# Package registries — drop the ones your project does not use.
+(^|\.)npmjs\.org$
+(^|\.)npmjs\.com$
+(^|\.)pypi\.org$
+(^|\.)pythonhosted\.org$
+{{ALLOWED_HOSTS}}
