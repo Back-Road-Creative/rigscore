@@ -1,4 +1,4 @@
-import { SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, WEIGHTS, NOT_APPLICABLE_SCORE, COVERAGE_PENALTY_THRESHOLD } from './constants.js';
+import { SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, WEIGHTS, PRACTICE_WEIGHTS, NOT_APPLICABLE_SCORE, COVERAGE_PENALTY_THRESHOLD } from './constants.js';
 
 /**
  * Calculate a check's score (0-100) from its findings.
@@ -69,8 +69,9 @@ export function calculateCheckScore(findings) {
  * tests first, get sign-off on the score shift, then update the formula —
  * in that order.
  */
-export function calculateOverallScore(results, customWeights) {
+export function calculateOverallScore(results, customWeights, options = {}) {
   const w = customWeights || WEIGHTS;
+  const { compoundRiskPenalty = true } = options;
   // Weight-0 advisory checks MUST NOT affect coverage math. A check that
   // contributes 0 to the score should neither count toward applicable-check
   // totals nor inflate/deflate the coverage-penalty denominator. Prior bug:
@@ -103,14 +104,38 @@ export function calculateOverallScore(results, customWeights) {
   const scale = Math.min(1, totalApplicableWeight / 100);
   let score = Math.round(total * scale);
 
-  // Compound risk penalty: coherence CRITICAL findings indicate systemic failure
-  const coherenceResult = results.find((r) => r.id === 'coherence');
-  if (coherenceResult && coherenceResult.findings) {
-    const hasCritical = coherenceResult.findings.some((f) => f.severity === 'critical');
-    if (hasCritical) {
-      score = Math.max(0, score - 10);
+  // Compound risk penalty: coherence CRITICAL findings indicate systemic failure.
+  // SECURITY-AXIS ONLY. `coherence` is a security concept (contradictory
+  // instructions + over-broad tools), it carries no Practice weight, and letting
+  // it dock 10 points off a Practice score would make a security failure look
+  // like a workflow failure. Callers scoring a non-security axis opt out.
+  if (compoundRiskPenalty) {
+    const coherenceResult = results.find((r) => r.id === 'coherence');
+    if (coherenceResult && coherenceResult.findings) {
+      const hasCritical = coherenceResult.findings.some((f) => f.severity === 'critical');
+      if (hasCritical) {
+        score = Math.max(0, score - 10);
+      }
     }
   }
 
   return score;
+}
+
+/**
+ * Practice-axis score (0-100), or `null` when the repo has NO practice surface
+ * at all (every practice check N/A). Null — not 0 — is the honest answer there:
+ * a repo with no agent loops, no specs and no memory files isn't "bad at driving
+ * agents", it simply isn't in scope, and a 0 would libel it.
+ *
+ * Same scorer as the Security axis, same coverage scaling / N/A redistribution /
+ * INFO floor — only the weights map differs. The security-only compound-risk
+ * penalty is explicitly disabled (see above).
+ */
+export function calculatePracticeScore(results) {
+  const applicable = results.filter(
+    (r) => r.score !== NOT_APPLICABLE_SCORE && (PRACTICE_WEIGHTS[r.id] || 0) > 0,
+  );
+  if (applicable.length === 0) return null;
+  return calculateOverallScore(results, PRACTICE_WEIGHTS, { compoundRiskPenalty: false });
 }
