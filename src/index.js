@@ -40,6 +40,7 @@ export function parseArgs(args) {
     noColor: false,
     noCta: true,
     verbose: false,
+    report: null,
     checkFilter: null,
     cwd: null,
     recursive: false,
@@ -128,6 +129,7 @@ const FLAG_DEFS = (() => {
     '--check':                { takesValue: true, handler: setStr('checkFilter') },
     '--profile':              { takesValue: true, handler: setStr('profile') },
     '--baseline':             { takesValue: true, handler: setStr('baseline') },
+    '--report':               { takesValue: true, handler: setStr('report') },
     '--ignore':               { takesValue: true, handler: (o, v) => {
       o.ignore = v.split(',').map((s) => s.trim()).filter(Boolean);
     } },
@@ -219,6 +221,16 @@ export async function run(args) {
   if (options.noColor) {
     // Chalk respects the NO_COLOR env var
     process.env.NO_COLOR = '1';
+  }
+
+  // A compliance report is a single-subject audit artifact: fail loud on an
+  // unknown kind or a recursive run rather than print a lookalike.
+  if (options.report && (options.report !== 'compliance' || options.recursive)) {
+    const why = options.report !== 'compliance'
+      ? `unknown --report kind "${options.report}" (supported: compliance)`
+      : '--report cannot be combined with --recursive';
+    process.stderr.write(`rigscore: ${why}\n`);
+    process.exit(2);
   }
 
   const scanOptions = {
@@ -334,6 +346,9 @@ export async function run(args) {
       process.stdout.write(formatJson(result) + '\n');
     } else if (options.badge) {
       process.stdout.write(formatBadge(result) + '\n');
+    } else if (options.report === 'compliance') {
+      const { formatCompliance } = await import('./compliance.js');
+      process.stdout.write(formatCompliance(result) + '\n');
     } else {
       process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }
