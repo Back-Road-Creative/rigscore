@@ -6,6 +6,7 @@ import { readJsonSafe, readFileSafe } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { computeServerHash, loadState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
+import { mcpConfigPaths, mcpServersIn } from '../clients.js';
 
 const SENSITIVE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -745,25 +746,8 @@ export default {
     const findings = [];
     const safeHosts = config?.network?.safeHosts || DEFAULT_SAFE_HOSTS;
 
-    // Locations to scan for MCP config — all known AI clients
-    const configPaths = [
-      // Claude
-      path.join(cwd, '.mcp.json'),
-      path.join(cwd, '.vscode', 'mcp.json'),
-      path.join(homedir, '.claude', 'claude_desktop_config.json'),
-      // Cursor
-      path.join(homedir, '.cursor', 'mcp.json'),
-      // Cline
-      path.join(homedir, '.cline', 'mcp_settings.json'),
-      // Continue
-      path.join(homedir, '.continue', 'config.json'),
-      // Windsurf
-      path.join(homedir, '.windsurf', 'mcp.json'),
-      // Zed
-      path.join(homedir, '.config', 'zed', 'settings.json'),
-      // Amp
-      path.join(homedir, '.amp', 'mcp.json'),
-    ];
+    // Locations to scan for MCP config — all known AI clients (src/clients.js)
+    const configPaths = mcpConfigPaths(cwd, homedir);
 
     // Add config-specified paths
     if (config?.paths?.mcpConfig) {
@@ -825,7 +809,7 @@ export default {
       if (configPath === path.join(cwd, '.mcp.json')) {
         hasRepoMcpJson = true;
       }
-      const servers = mcpConfig.mcpServers || {};
+      const servers = mcpServersIn(configPath, mcpConfig);
       const relPath = path.relative(cwd, configPath) || configPath;
       clientServers.set(relPath, servers);
       clientCount++;
