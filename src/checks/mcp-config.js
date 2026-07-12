@@ -720,14 +720,19 @@ export function checkNpxPin(server, name, relPath) {
 /** Inline-credentials detection — KEY_PATTERNS scan over `[command, ...args].join(' ')`. */
 export function checkInlineCredentials(server, name, relPath) {
   const args = server.args || [];
-  const fullCommand = [server.command || '', ...args].join(' ');
+  // Remote servers (Zed's `url` + `headers` shape, and the same shape elsewhere) carry
+  // their token in a header rather than the command line — scan both surfaces.
+  const headers = (server.headers && typeof server.headers === 'object') ? Object.values(server.headers) : [];
+  const haystack = [server.command || '', ...args, ...headers]
+    .filter((v) => typeof v === 'string')
+    .join(' ');
   for (const pattern of KEY_PATTERNS) {
-    if (pattern.test(fullCommand)) {
+    if (pattern.test(haystack)) {
       return [{
         findingId: 'mcp-config/inline-credentials',
         severity: 'critical',
-        title: `MCP server "${name}" has inline credentials in command`,
-        detail: 'API keys or tokens are embedded directly in the MCP server command.',
+        title: `MCP server "${name}" has inline credentials in command or headers`,
+        detail: `API keys or tokens are embedded directly in the MCP server definition in ${relPath}.`,
         remediation: 'Use environment variables instead of inline credentials.',
       }];
     }
