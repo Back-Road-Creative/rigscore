@@ -1,0 +1,7 @@
+{
+  "name": "docs",
+  "description": "Vendor-neutral AGENTS.md governance baseline (forbidden actions, approval gates, path/network/shell rules, anti-injection, TDD, definition of done, git workflow)",
+  "checks": ["claude-md"],
+  "files": [{ "src": "AGENTS.md", "dest": "AGENTS.md" }],
+  "vars": { "PROJECT_NAME": "the target repository's directory name" }
+}

@@ -38,3 +38,19 @@ directory in and it appears in `--list-packs` and `init --<name>`. There is no l
   silently, so install prints a loud `WARNING` naming the directory git actually reads.
 - **`vars`** — optional `PLACEHOLDER` → description map, substituted at install. Only `PROJECT_NAME`
   resolves today; any other placeholder is left in place and warned about.
+
+## The `docs` pack
+
+Installs `AGENTS.md`, the vendor-neutral instruction file Claude Code, Cursor, Copilot and Aider
+all read. On a bare project with an `.mcp.json` and no governance file it moves the score from
+**44/100 (D) to 62/100 (C)** — `CLAUDE.md governance` goes 0/10 → 10/10.
+
+It claims **`claude-md`** and nothing else. The template covers all nine rule categories that check
+scores (forbidden actions, approval gates, path / network / shell restrictions, anti-injection, TDD,
+definition of done, git workflow) with real rules, not keywords; `test/packs-docs.test.js` asserts
+the installed file scores 100 against the real check, so watering it down goes red.
+
+It does **not** claim `coherence`, which compares governance against *your* config: it wants every
+MCP server you run named in a governance doc, and a template cannot know your servers. Installing the
+pack can therefore legitimately *surface* a coherence finding (`Undeclared MCP server: <name>`) — that
+finding is real. Name your servers in `AGENTS.md` and it clears.
