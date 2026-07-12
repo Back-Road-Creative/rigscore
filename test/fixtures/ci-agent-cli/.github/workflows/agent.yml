@@ -1,0 +1,5 @@
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - run: claude -p "triage the backlog and open PRs" --dangerously-skip-permissions
