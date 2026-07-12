@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD, KEY_PATTERNS, OWASP_AGENTIC_MAP } from '../src/constants.js';
+import { WEIGHTS, PRACTICE_WEIGHTS, SEVERITY, SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, COVERAGE_PENALTY_THRESHOLD, KEY_PATTERNS, OWASP_AGENTIC_MAP } from '../src/constants.js';
 
 describe('constants', () => {
   it('weights sum to 100', () => {
     const total = Object.values(WEIGHTS).reduce((sum, w) => sum + w, 0);
     expect(total).toBe(100);
+  });
+
+  it('practice weights sum to 100', () => {
+    const total = Object.values(PRACTICE_WEIGHTS).reduce((sum, w) => sum + w, 0);
+    expect(total).toBe(100);
+  });
+
+  it('no practice check is scored on the Security axis (Security axis frozen)', () => {
+    for (const id of Object.keys(PRACTICE_WEIGHTS)) {
+      expect(WEIGHTS[id] || 0, `${id} must stay weight-0 on the Security axis`).toBe(0);
+    }
   });
 
   it('every severity has a deduction', () => {

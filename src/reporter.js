@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module';
 import chalk from 'chalk';
 import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
+import { resolveWeights } from './config.js';
+import { calculatePracticeScore } from './scoring.js';
 
 // createRequire instead of `import pkg from '../package.json' assert
 // { type: 'json' }` because the JSON-import assertion syntax is still
@@ -79,6 +81,20 @@ function formatGradeLabel(grade) {
   }
 }
 
+/**
+ * Weights the scorer actually used: profile → overrides → disabled (weight 0).
+ * The coverage line MUST read from these, not the static WEIGHTS map, or it
+ * reports weight for checks `checks.disabled` removed from the score.
+ * Falls back to the static map for callers that pass no config.
+ */
+function displayWeights(config) {
+  try {
+    return resolveWeights(config);
+  } catch {
+    return WEIGHTS;
+  }
+}
+
 function getScoreColor(score) {
   if (score >= 90) return chalk.greenBright;
   if (score >= 75) return chalk.green;
@@ -123,7 +139,7 @@ function box(lines, width = 38) {
 }
 
 export function formatTerminal(result, cwd, options = {}) {
-  const { score, results } = result;
+  const { score, results, config } = result;
   const grade = getGrade(score);
   const colorFn = getScoreColor(score);
   const lines = [];
@@ -186,14 +202,26 @@ export function formatTerminal(result, cwd, options = {}) {
   const riskColor = getRiskColor(riskProfile);
   const riskStr = riskColor(`Risk: ${riskProfile}`);
 
+  // Second axis. `null` = no practice surface at all — print n/a, never 0/100:
+  // a zero would libel every repo that simply isn't in scope for these checks.
+  const practiceScore = calculatePracticeScore(results);
+  const practiceStr = practiceScore === null
+    ? chalk.dim('Practice: n/a')
+    : getScoreColor(practiceScore)(`Practice: ${practiceScore}/100 (${getGrade(practiceScore)})`);
+
   lines.push(box([
     '',
     `        ${scoreStr}`,
     `        ${gradeStr}`,
     `        ${riskStr}`,
+    `        ${practiceStr}`,
     '',
   ]));
   lines.push('');
+  if (practiceScore === null) {
+    lines.push(`  ${chalk.dim('Practice: n/a — no agent loops, specs, CI agent jobs or memory files found to score.')}`);
+    lines.push('');
+  }
 
   // Enforcement-grade legend — terminal-only; suppressed in JSON/SARIF paths
   // because formatJson/formatSarif do not call formatTerminal.
@@ -203,7 +231,10 @@ export function formatTerminal(result, cwd, options = {}) {
   // Coverage messaging
   const applicableResults = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
   const totalResults = results.length;
-  const applicableWeight = applicableResults.reduce((sum, r) => sum + (WEIGHTS[r.id] || 0), 0);
+  const weights = displayWeights(config);
+  const applicableWeight = applicableResults.reduce((sum, r) => sum + (weights[r.id] || 0), 0);
+  // Denominator is the fixed 100-point axis the scorer scales against
+  // (`scale = totalApplicableWeight / 100`), not the sum of resolved weights.
   const totalWeight = Object.values(WEIGHTS).reduce((sum, w) => sum + w, 0);
   if (applicableResults.length < totalResults) {
     lines.push(`  ${chalk.dim(`Coverage: ${applicableResults.length} of ${totalResults} checks applicable (weight ${applicableWeight}/${totalWeight})${applicableWeight < 60 ? ' — score scaled down' : ''}`)}`);
