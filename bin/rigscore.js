@@ -150,6 +150,8 @@ Subcommands (scaffolders):
   init                             Write a starter .rigscorerc.json into cwd
   init --example                   Scaffold a demo project with intentional
                                    hygiene issues (useful for CI smoke tests)
+  init --list-packs                List the starter packs in templates/
+  init --<pack> [dir]              Install a starter pack (e.g. init --docs)
   init --force / -f                Overwrite pre-existing files
 
 Examples:

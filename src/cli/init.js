@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PROFILES } from '../config.js';
+import { listPacks, loadPack, installPack, formatInstallReport } from './packs.js';
 
 /**
  * `rigscore init` — writes a commented .rigscorerc.json starter into the
@@ -13,11 +14,16 @@ import { PROFILES } from '../config.js';
  *   rigscore init --profile home       → pre-fills profile: "home"
  *   rigscore init --example            → scaffold demo project (+ starter)
  *   rigscore init --force              → overwrite pre-existing files
+ *   rigscore init --<pack> [dir]       → install a pack (see --list-packs)
  */
 export async function runInitSubcommand(args) {
   let profile = null;
   let force = false;
   let example = false;
+  let listing = false;
+  const packs = [];
+  const positional = [];
+  const available = listPacks();
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--profile' && i + 1 < args.length) {
       profile = args[++i];
@@ -25,6 +31,12 @@ export async function runInitSubcommand(args) {
       force = true;
     } else if (args[i] === '--example') {
       example = true;
+    } else if (args[i] === '--list-packs') {
+      listing = true;
+    } else if (args[i].startsWith('--') && available.includes(args[i].slice(2))) {
+      packs.push(args[i].slice(2));
+    } else if (!args[i].startsWith('-')) {
+      positional.push(args[i]);
     }
   }
 
@@ -34,6 +46,9 @@ export async function runInitSubcommand(args) {
     );
     process.exit(2);
   }
+
+  if (listing) return printPackList(available);
+  if (packs.length > 0) return installPacks(packs, positional[0] || process.cwd(), force);
 
   if (example) {
     return scaffoldExample(process.cwd(), { force, profile });
@@ -55,6 +70,36 @@ export async function runInitSubcommand(args) {
     process.exit(2);
   }
   process.stderr.write(`rigscore: wrote ${target}\n`);
+}
+
+/** Packs are discovered by reading templates/ — a dropped-in pack lists itself here. */
+function printPackList(available) {
+  if (available.length === 0) return process.stdout.write('No packs found in templates/.\n'), 0;
+  process.stdout.write('Available packs:\n');
+  for (const name of available) {
+    try {
+      const pack = loadPack(name);
+      process.stdout.write(`  --${name}  ${pack.description}\n      turns green: ${pack.checks.join(', ') || '(none)'}\n`);
+    } catch (err) {
+      process.stderr.write(`  ${name} — MALFORMED: ${err.message}\n`);
+    }
+  }
+  process.stdout.write('\nInstall: rigscore init --<pack> [dir]\n');
+  return 0;
+}
+
+/** Install packs into `target`, reporting every file written or skipped. */
+function installPacks(names, target, force) {
+  for (const name of names) {
+    try {
+      process.stdout.write(formatInstallReport(installPack(name, target, { force }), target));
+    } catch (err) {
+      process.stderr.write(`rigscore: ${err.message}\n`);
+      return 2;
+    }
+  }
+  process.stdout.write(`\nNext: run \`rigscore ${target}\` to see the score move.\n`);
+  return 0;
 }
 
 /**
