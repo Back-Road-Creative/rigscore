@@ -39,6 +39,18 @@ export const WEIGHTS = {
   'workflow-maturity': 0,
   'documentation': 0,
   'agent-output-schemas': 0,
+  // Practice-pillar checks. Reserved at 0 so each lands as an advisory on the
+  // Security axis without shifting a single existing score (Security stays
+  // frozen at 100). Their real weights live on the separate Practice axis.
+  // A row here is not optional: test/scanner.test.js asserts every
+  // auto-discovered check has a numeric WEIGHTS entry, so a check with no row
+  // fails the suite regardless of what scoring.js would default it to.
+  'loop-governance': 0,
+  'spec-goals': 0,
+  'ci-agent-caps': 0,
+  'memory-hygiene': 0,
+  'ai-disclosure': 0,
+  'sandbox-posture': 0,
 };
 
 // OWASP Agentic Top 10 (2026) mapping for findings
