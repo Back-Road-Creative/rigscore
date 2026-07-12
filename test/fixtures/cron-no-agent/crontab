@@ -1,0 +1,3 @@
+# Ordinary crontab — no agent anywhere. Must stay N/A.
+0 3 * * * /usr/local/bin/backup.sh --verbose
+@reboot /usr/local/bin/warm-cache.sh
