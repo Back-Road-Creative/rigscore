@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+- **Config merging (`~/.rigscorerc.json` + project `.rigscorerc.json`) is now on
+  the record.** The behavior has shipped for some time (`src/config.js`
+  `loadConfig` / `mergeConfig`) but was never written down anywhere a user would
+  look — its only prose description lived in an untracked release-notes scratch
+  file, which is now deleted. The semantics: precedence runs DEFAULTS →
+  `~/.rigscorerc.json` → project `.rigscorerc.json`; **arrays concatenate and
+  deduplicate** across the two files (so personal `suppress` / `safeHosts` /
+  `crossRepoRefs` in your home config compose with a project's rules instead of
+  being clobbered by them), while **scalars and objects from the
+  higher-precedence file override** the lower one. A malformed
+  `.rigscorerc.json` raises a `ConfigParseError` and exits 2 rather than silently
+  falling back to defaults. (The previously-documented `profile`-key precedence,
+  #88, is one instance of this general rule, not a separate one.)
+
 ### Fixed
 - deep-secrets: do not stop at first comment-pattern match — escalate to critical when a real secret follows. Fixes a real critical being downgraded to info.
 - `checks/index`: accept fixer registrations that declare `findingIds` without
