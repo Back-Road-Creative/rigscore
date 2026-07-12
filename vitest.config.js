@@ -26,11 +26,17 @@ export default defineConfig({
     testTimeout: 10000,
     coverage: {
       provider: 'v8',
-      // 40% line coverage floor. Matches the historical baseline noted
-      // in CLAUDE.md / project conventions. Raising the gate needs a
-      // coordinated PR adding tests, not just bumping the number.
+      // 75% line coverage floor. Actual coverage at the time of writing is
+      // 84.7% lines (91 test files / 1157 tests), so the floor sits ~10
+      // points under the real number. That buffer is deliberate: it absorbs
+      // per-run variance across the Node 18/20/22 x ubuntu/macOS CI matrix
+      // (platform-gated branches leave a few lines unexecuted on any single
+      // leg) while still failing on a genuine regression. The previous 40%
+      // floor was 45 points of slack — it could not catch anything.
+      // If a legitimate change drops coverage below 75, add tests; only
+      // lower the floor with a stated reason.
       thresholds: {
-        lines: 40,
+        lines: 75,
       },
     },
   },
