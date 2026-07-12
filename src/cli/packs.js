@@ -1,0 +1,117 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Packs live here. A pack is any directory holding a pack.json — there is no registry. */
+export const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', 'templates');
+
+const HOOKS = '.git/hooks';
+const HOOK_DIR_RE = /^(\.git\/hooks|\.githooks)\//;
+const slash = (p) => p.replace(/\\/g, '/');
+const isText = (v) => typeof v === 'string' && v.trim().length > 0;
+// A dest outside the target repo is a bug or an attack. Reject both, before any write.
+const escapes = (d) => path.isAbsolute(d) || d.split(/[\\/]/).includes('..');
+// A hook without +x is inert, yet still scores green on presence. Hook dests get it
+// automatically; any other file can ask via "exec": true.
+const isExec = (f) => f.exec === true || HOOK_DIR_RE.test(slash(f.dest));
+const fail = (name, msg) => { throw new Error(`pack "${name}": ${msg}`); };
+
+// Auto-discovered like src/checks: readdir. Dropping in templates/<name>/pack.json IS the
+// registration step — no list to edit.
+export function listPacks(templatesDir = TEMPLATES_DIR) {
+  try {
+    return fs.readdirSync(templatesDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && fs.existsSync(path.join(templatesDir, e.name, 'pack.json')))
+      .map((e) => e.name).sort();
+  } catch { return []; }
+}
+
+// Validate loudly: a pack that half-installs is worse than one that refuses to.
+export function loadPack(name, templatesDir = TEMPLATES_DIR) {
+  const dir = path.join(templatesDir, name);
+  let m;
+  try {
+    m = JSON.parse(fs.readFileSync(path.join(dir, 'pack.json'), 'utf-8'));
+  } catch (err) {
+    fail(name, `unreadable pack.json (${err.message})`);
+  }
+  if (m === null || typeof m !== 'object' || Array.isArray(m)) fail(name, 'pack.json must be an object');
+  if (m.name !== name) fail(name, `"name" must equal the directory name (got "${m.name}")`);
+  if (!isText(m.description)) fail(name, 'missing "description"');
+  if (!Array.isArray(m.checks) || !m.checks.every(isText)) fail(name, '"checks" must be an array of check ids');
+  if (!Array.isArray(m.files) || m.files.length === 0) fail(name, '"files" must be a non-empty array');
+  for (const f of m.files) {
+    if (f === null || typeof f !== 'object') fail(name, 'each files[] entry must be an object');
+    if (!isText(f.src)) fail(name, 'each files[] entry needs a non-empty "src"');
+    if (!isText(f.dest)) fail(name, 'each files[] entry needs a non-empty "dest"');
+    if (f.exec !== undefined && typeof f.exec !== 'boolean') fail(name, `files[].exec must be boolean ("${f.dest}")`);
+    if (escapes(f.dest)) fail(name, `dest escapes the target directory: "${f.dest}"`);
+    if (!fs.existsSync(path.join(dir, f.src))) fail(name, `files[].src not found: "${f.src}"`);
+  }
+  const badVars = m.vars !== undefined && (m.vars === null || typeof m.vars !== 'object' || Array.isArray(m.vars));
+  if (badVars) fail(name, '"vars" must be an object of PLACEHOLDER → description');
+  for (const [k, d] of Object.entries(m.vars || {})) if (!isText(d)) fail(name, `vars.${k} needs a description`);
+  return { ...m, dir };
+}
+
+// core.hooksPath elsewhere → git ignores .git/hooks entirely: the hook never runs while a
+// presence check still passes. Say so at install time.
+export function hooksPathWarning(root, dests) {
+  const hooks = dests.map(slash).filter((d) => HOOK_DIR_RE.test(d));
+  if (hooks.length === 0) return null;
+  let set = '';
+  try {
+    const r = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: root, encoding: 'utf-8' });
+    set = slash((r.stdout || '').trim()).replace(/\/$/, '');
+  } catch { return null; }
+  const stray = hooks.filter((d) => !d.startsWith(`${set || HOOKS}/`));
+  if (stray.length === 0) return null;
+  return set
+    ? `git core.hooksPath is "${set}", so git ignores ${HOOKS} entirely — ${stray.join(', ')} will NEVER run. Install into ${set}/ or unset core.hooksPath.`
+    : `git runs hooks from ${HOOKS} only — ${stray.join(', ')} will NEVER run until: git config core.hooksPath ${path.dirname(stray[0])}`;
+}
+
+// Never clobber without `force`; escape-check every dest before the first write.
+export function installPack(name, cwd, { force = false, templatesDir = TEMPLATES_DIR } = {}) {
+  const pack = loadPack(name, templatesDir);
+  const root = path.resolve(cwd);
+  const vars = { PROJECT_NAME: path.basename(root) };
+  const planned = pack.files.map((f) => {
+    const target = path.resolve(root, f.dest);
+    if (!target.startsWith(root + path.sep)) fail(name, `dest escapes the target directory: "${f.dest}"`);
+    return { ...f, target };
+  });
+  const results = [];
+  const unresolved = new Set();
+  for (const f of planned) {
+    if (fs.existsSync(f.target) && !force) {
+      results.push({ dest: f.dest, status: 'skipped' });
+      continue;
+    }
+    const body = fs.readFileSync(path.join(pack.dir, f.src), 'utf-8').replace(/\{\{([A-Z0-9_]+)\}\}/g, (match, key) => {
+      if (key in vars) return vars[key];
+      unresolved.add(key); // never write a placeholder out blank — report it instead
+      return match;
+    });
+    fs.mkdirSync(path.dirname(f.target), { recursive: true });
+    fs.writeFileSync(f.target, body, 'utf-8');
+    if (isExec(f)) fs.chmodSync(f.target, 0o755);
+    results.push({ dest: f.dest, status: 'written' });
+  }
+  const warn = hooksPathWarning(root, planned.map((f) => f.dest));
+  return { pack, results, unresolved: [...unresolved], warnings: warn ? [warn] : [] };
+}
+
+/** Report exactly what was written and which checks it targets — verify, don't trust. */
+export function formatInstallReport({ pack, results, unresolved, warnings = [] }, cwd) {
+  const execs = new Set(pack.files.filter(isExec).map((f) => f.dest));
+  const out = results.map((r) => (r.status === 'written' ? `  written${execs.has(r.dest) ? ' (+x)' : ''}  ${r.dest}` : `  skipped (exists)  ${r.dest}`));
+  if (results.some((r) => r.status === 'skipped')) out.push('  Re-run with --force to overwrite.');
+  for (const k of unresolved) out.push(`  warning: no value for {{${k}}} — edit it by hand.`);
+  for (const w of warnings) out.push(`  WARNING: ${w}`);
+  out.push(`  Targets checks: ${pack.checks.join(', ') || '(none)'}`);
+  return `${pack.name} → ${path.resolve(cwd)}\n${out.join('\n')}\n`;
+}
