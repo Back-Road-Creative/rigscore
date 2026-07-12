@@ -6,7 +6,6 @@ import { resolveWeights } from './config.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
-import { formatCompliance } from './compliance.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
 import { PROFILE_HINTS } from './config.js';
 import { ConfigParseError } from './utils.js';
@@ -196,10 +195,14 @@ export async function run(args) {
     }
   }
 
-  // Fail loud on an unknown --report kind: silently printing the default terminal
-  // report would let a CI job mistake it for a compliance artifact.
-  if (options.report && options.report !== 'compliance') {
-    process.stderr.write(`rigscore: unknown --report kind "${options.report}" (supported: compliance)\n`);
+  // A compliance report is a single-subject audit artifact. Fail loud on an
+  // unknown kind or a recursive run: either would print something a CI job
+  // could mistake for one.
+  if (options.report && (options.report !== 'compliance' || options.recursive)) {
+    const why = options.report !== 'compliance'
+      ? `unknown --report kind "${options.report}" (supported: compliance)`
+      : '--report cannot be combined with --recursive';
+    process.stderr.write(`rigscore: ${why}\n`);
     process.exit(2);
   }
 
@@ -247,7 +250,6 @@ export async function run(args) {
     // meaningful score. Fail loud rather than silently no-op.
     const unsupportedRecursiveFlags = [];
     if (options.fix) unsupportedRecursiveFlags.push('--fix');
-    if (options.report) unsupportedRecursiveFlags.push('--report');
     if (options.baseline) unsupportedRecursiveFlags.push('--baseline');
     if (options.badge) unsupportedRecursiveFlags.push('--badge');
     if (unsupportedRecursiveFlags.length > 0) {
@@ -318,14 +320,15 @@ export async function run(args) {
       }
     }
 
-    if (options.report === 'compliance') {
-      process.stdout.write(formatCompliance(result) + '\n');
-    } else if (options.sarif) {
+    if (options.sarif) {
       process.stdout.write(JSON.stringify(formatSarif(result), null, 2) + '\n');
     } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else if (options.badge) {
       process.stdout.write(formatBadge(result) + '\n');
+    } else if (options.report === 'compliance') {
+      const { formatCompliance } = await import('./compliance.js');
+      process.stdout.write(formatCompliance(result) + '\n');
     } else {
       process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }

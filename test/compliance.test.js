@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatCompliance } from '../src/compliance.js';
-import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
+import { NOT_APPLICABLE_SCORE, WEIGHTS, FRAMEWORKS } from '../src/constants.js';
 
 const text = formatCompliance({
   score: 72,
@@ -47,5 +47,38 @@ describe('formatCompliance', () => {
     expect(text).toMatch(/UNMAPPED here \(\d+\):.*site-security/);
     // eslint-disable-next-line no-control-regex
     expect(text, 'must stay plain text for CI/auditors').not.toMatch(/\x1b\[/);
+  });
+});
+
+
+// Compliance mapping invariants — so the standards tables cannot silently rot: a
+// renamed/removed check must break the build, never ship a dangling citation.
+describe('compliance frameworks', () => {
+  const scored = Object.keys(WEIGHTS).filter((id) => WEIGHTS[id] > 0);
+  const ID_SHAPE = {
+    'owasp-agentic': /^ASI\d{2}$/,
+    'nist-ai-rmf': /^(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+$/,
+    'eu-ai-act': /^Article \d+$/,
+  };
+
+  it.each(Object.entries(FRAMEWORKS))('%s cites provenance and only real checks/controls', (key, fw) => {
+    expect(fw.name).toBeTruthy();
+    expect(fw.status, 'upstream status — a beta list must never read as final').toBeTruthy();
+    expect(fw.url, 'primary-source URL').toMatch(/^https:\/\//);
+    expect(['full', 'partial']).toContain(fw.coverage);
+    for (const [id, control] of Object.entries(fw.map)) {
+      expect(WEIGHTS, `"${id}" is not a real check id`).toHaveProperty(id);
+      expect(control, `malformed control id "${control}"`).toMatch(ID_SHAPE[key]);
+      expect(fw.controls, `control "${control}" cited with no title`).toHaveProperty(control);
+    }
+  });
+
+  it.each(Object.entries(FRAMEWORKS))('%s honors its coverage claim', (_key, fw) => {
+    const missing = scored.filter((id) => !fw.map[id]);
+    if (fw.coverage === 'full') {
+      expect(missing, 'claims full coverage but misses scored checks').toEqual([]);
+    } else {
+      expect(missing.length, 'claims partial but maps every scored check').toBeGreaterThan(0);
+    }
   });
 });
