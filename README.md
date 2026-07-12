@@ -169,7 +169,7 @@ npx github:Back-Road-Creative/rigscore --init-hook
 ## Distribution
 
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
-- **Docker image (v1.1.0, not yet published).** A `Dockerfile` and GHCR workflow are in the repo; the workflow is gated on `workflow_dispatch` only so it won't auto-publish. When the image ships, you'll pull it as `ghcr.io/back-road-creative/rigscore:latest`.
+- **Docker image (GHCR).** The Docker Publish workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/back-road-creative/rigscore:<tag>` automatically on `v*.*.*` tag pushes. It is also callable via `workflow_dispatch` for manual and dry-run builds. Pull a published tag as `ghcr.io/back-road-creative/rigscore:<tag>`.
 - **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v1`.
 - **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node 18/20. WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
 
@@ -554,20 +554,32 @@ rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/rigscore"
 
 rigscore is a configuration presence checker, not a security enforcement tool. Understanding its scope helps you use it effectively. Read this section before you rely on rigscore as a governance quality signal.
 
-- **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. Mitigations in the pipeline include LLM-judge assist (opt-in) and cross-check against observed behavior via the coherence pass.
+- **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. The only mitigation that ships today is the cross-config coherence pass, which cross-checks governance claims against observed configuration. LLM-judge assist (opt-in) is a **planned** roadmap item — it is not implemented (see [Roadmap](#roadmap)).
 - **Injection detection is pattern-based.** The injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
 - **Config-shape pinning only (not runtime tool descriptions).** rigscore hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). It does **not** hash the tool descriptions that a running MCP server advertises; doing so would require actually invoking servers (out of scope for offline mode). Snyk Agent Scan's Tool Pinning covers runtime description drift; rigscore covers the config-file rug-pull. See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use gitleaks or trufflehog.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
-- **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. An npm package will see 9–10 of 19 checks as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and score accordingly. rigscore scores *itself* 35/100 in CI for this reason, not because the project is broken — see [Dogfooding](#dogfooding) below.
+- **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 21 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 39/100 in CI for this reason — only 9 of its own 21 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
 
 ## Dogfooding
 
 rigscore runs on rigscore in CI. Transparency about what that score means:
 
-- **Self-score: 35/100 (Grade F).** This is the real score, not a vanity baseline. Rigscore is an npm package; 10 of 19 checks legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. If your project is seeing similar — see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for the diagnostic walk-through.
-- **CI threshold: `--fail-under 30`.** Calibrated to the observed baseline with a 5-point regression buffer. The public default is 70 — the 40-point gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
+- **Self-score: 39/100 (Grade F).** This is the real score, not a vanity baseline. rigscore is an npm package, so only **9 of its 21 checks are applicable (weight 48/100)** — the rest legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. Reproduce the CI number locally with a neutralised `$HOME` (what a runner sees):
+
+  ```bash
+  HOME=$(mktemp -d) node bin/rigscore.js --no-cta --profile default .
+  ```
+
+  If your project is seeing similar — see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for the diagnostic walk-through.
+- **CI threshold: `--fail-under 30`.** Calibrated to the measured baseline (39) with a 9-point regression buffer. The public default is 70 — the gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
 - **`.rigscorerc.json` disables four checks** (`infrastructure-security`, `skill-coherence`, `workflow-maturity`, `agent-output-schemas`) that require workspace-oriented artifacts rigscore doesn't ship. These are per-check disables at the profile level, not ignore-rules on individual findings — the distinction matters when auditing the config.
+
+## Roadmap
+
+Planned work. Nothing in this section ships today — if it is listed here, it is **not** implemented.
+
+- **LLM-judge assist (opt-in).** A semantic pass over governance files to catch the [semantic-reversal weakness](#known-limits) that keyword checks cannot see — a CLAUDE.md whose headers name the right concepts while its body dismantles them. Would be strictly opt-in and off by default, so rigscore stays fully offline and API-key-free out of the box.
 
 ## Options
 
