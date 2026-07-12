@@ -1,12 +1,42 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, statSafe, fileExists } from '../utils.js';
 
 const TASKS = 'tasks.md';
+const DESIGN = 'design.md';
 const SPECS = 'specs';
 const CONSTITUTION_REL = path.join('.specify', 'memory', 'constitution.md');
+
+// One planning quarter: long enough that the goal file has demonstrably sat out a cycle,
+// short enough to catch drift while it is cheap to fix. Deliberately a module constant —
+// config.js allowlists known keys, so a threshold here would need a shared DEFAULTS entry.
+const STALE_DAYS = 90;
+const DAY_MS = 86_400_000;
+
+// Each layout: the marker dir that proves the tool is installed, where its spec dirs live,
+// which file makes a dir a spec, and what a finished spec must also carry.
+const LAYOUTS = [
+  { framework: 'spec-kit', marker: '.specify', root: SPECS, entries: ['spec.md'], required: [TASKS] },
+  { framework: 'kiro', marker: '.kiro', root: '.kiro/specs', entries: ['requirements.md', 'bugfix.md'], required: [DESIGN, TASKS] },
+  // Shipped OpenSpec work is parked under changes/archive/ — done, not incomplete.
+  { framework: 'openspec', marker: 'openspec', root: 'openspec/changes', entries: ['proposal.md'], required: [DESIGN, TASKS], skip: ['archive'] },
+];
+
+const MISSING_ARTIFACT = {
+  [TASKS]: {
+    findingId: 'spec-goals/spec-dir-no-tasks',
+    why: 'it was never decomposed into executable work, so agents improvise around it',
+    fix: (dir) => `Generate \`${dir}/${TASKS}\` from the spec, or archive the spec if it is abandoned.`,
+  },
+  [DESIGN]: {
+    findingId: 'spec-goals/spec-dir-no-design',
+    why: 'the requirements were never turned into a design, so agents invent the architecture',
+    fix: (dir) => `Write \`${dir}/${DESIGN}\`, or archive the change if it is abandoned.`,
+  },
+};
 
 // Verbatim tokens from github/spec-kit's templates/constitution-template.md. Two or more
 // survivors means the template was never filled in.
@@ -21,21 +51,72 @@ const COMMAND_RE = /(^|[\s`$(])(npm|pnpm|yarn|bun|npx|make|pytest|python3?|node|
 
 const isDir = async (p) => (await statSafe(p))?.isDirectory() === true;
 
-/** Spec Kit feature dirs: `specs/<NNN-name>/` carrying a `spec.md`. */
-async function collectSpecDirs(root) {
+/**
+ * Spec dirs for one layout: a child of `layout.root` carrying one of `layout.entries`.
+ * Returns the entry file's repo-relative path too, so drift can date the spec itself.
+ */
+async function collectSpecDirs(cwd, layout) {
   let entries;
   try {
-    entries = await fs.promises.readdir(root, { withFileTypes: true });
+    entries = await fs.promises.readdir(path.join(cwd, layout.root), { withFileTypes: true });
   } catch {
     return [];
   }
+  const skip = new Set(layout.skip || []);
   const found = [];
-  for (const e of entries.filter((x) => x.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-    const dir = path.join(root, e.name);
-    if (!(await fileExists(path.join(dir, 'spec.md')))) continue;
-    found.push({ specDir: `${SPECS}/${e.name}`, hasTasks: await fileExists(path.join(dir, TASKS)) });
+  for (const e of entries.filter((x) => x.isDirectory() && !skip.has(x.name)).sort((a, b) => a.name.localeCompare(b.name))) {
+    const specDir = `${layout.root}/${e.name}`;
+    const dir = path.join(cwd, layout.root, e.name);
+    let entry = null;
+    for (const cand of layout.entries) {
+      if (await fileExists(path.join(dir, cand))) { entry = cand; break; }
+    }
+    if (!entry) continue;
+    const missing = [];
+    for (const req of layout.required) {
+      if (!(await fileExists(path.join(dir, req)))) missing.push(req);
+    }
+    found.push({ framework: layout.framework, specDir, entryRel: `${specDir}/${entry}`, missing });
   }
   return found;
+}
+
+/** Run git read-only in `cwd`; null whenever git can't answer (missing binary, no repo, error). */
+function git(cwd, args) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 5000 });
+  if (!r || r.error || r.status !== 0) return null;
+  return String(r.stdout || '').trim();
+}
+
+/** Epoch ms of a path's last commit (committer date), or NaN when git has no answer. */
+function lastCommitMs(cwd, rel) {
+  return Date.parse(git(cwd, ['log', '-1', '--format=%cI', '--', rel]) || '');
+}
+
+/**
+ * Liveness, not completeness: has the goal file sat out a planning cycle the specs kept
+ * moving through? Compares committer dates *relative to each other*, so a rebase — which
+ * rewrites every date together — cannot manufacture a finding. Where history can't answer
+ * (no `.git`, no `git` on PATH, or a shallow clone that dates every file to one commit),
+ * we skip rather than guess.
+ */
+function goalFileDrift(cwd, goalRel, specRels) {
+  if (git(cwd, ['rev-parse', '--git-dir']) === null) return null;
+  if (git(cwd, ['rev-parse', '--is-shallow-repository']) === 'true') return null;
+
+  const goalMs = lastCommitMs(cwd, goalRel);
+  if (Number.isNaN(goalMs)) return null; // never committed — nothing to compare against
+
+  let newest = null;
+  for (const rel of specRels) {
+    const ms = lastCommitMs(cwd, rel);
+    if (Number.isNaN(ms)) continue;
+    if (!newest || ms > newest.ms) newest = { rel, ms };
+  }
+  if (!newest) return null;
+
+  const gapDays = Math.floor((newest.ms - goalMs) / DAY_MS);
+  return gapDays >= STALE_DAYS ? { goalRel, newestSpec: newest.rel, gapDays } : null;
 }
 
 export default {
@@ -50,13 +131,14 @@ export default {
     const frameworks = [];
     let specDirs = [];
 
-    // Spec Kit is gated on `.specify/` because a bare `specs/` is far too generic (RSpec,
+    // Every layout is gated on its marker dir: a bare `specs/` is far too generic (RSpec,
     // OpenAPI, prose design docs) to read as spec-driven development on its own.
-    const isSpecKit = await isDir(path.join(cwd, '.specify'));
-    if (isSpecKit) {
-      frameworks.push('spec-kit');
-      if (await isDir(path.join(cwd, SPECS))) specDirs = await collectSpecDirs(path.join(cwd, SPECS));
+    for (const layout of LAYOUTS) {
+      if (!(await isDir(path.join(cwd, layout.marker)))) continue;
+      frameworks.push(layout.framework);
+      specDirs = specDirs.concat(await collectSpecDirs(cwd, layout));
     }
+    const isSpecKit = frameworks.includes('spec-kit');
 
     const agentsMd = await readFileSafe(path.join(cwd, 'AGENTS.md'));
     if (agentsMd !== null) frameworks.push('agents-md');
@@ -89,14 +171,37 @@ export default {
       }
     }
 
-    const withoutTasks = specDirs.filter((s) => !s.hasTasks);
-    for (const s of withoutTasks) {
+    const withoutTasks = specDirs.filter((s) => s.missing.includes(TASKS));
+    for (const s of specDirs) {
+      for (const miss of s.missing) {
+        const meta = MISSING_ARTIFACT[miss];
+        findings.push({
+          findingId: meta.findingId, severity: 'info',
+          title: `Spec \`${s.specDir}\` has no \`${miss}\``,
+          detail: `\`${s.specDir}/\` holds a spec but no \`${miss}\` — ${meta.why}.`,
+          remediation: meta.fix(s.specDir),
+          context: { specDir: s.specDir, missing: miss, framework: s.framework },
+        });
+      }
+    }
+
+    // The goal file is Spec Kit's constitution when it exists, else AGENTS.md.
+    const goalRel = isSpecKit && (await fileExists(path.join(cwd, CONSTITUTION_REL)))
+      ? CONSTITUTION_REL
+      : (agentsMd !== null ? 'AGENTS.md' : null);
+    // OpenSpec's living specs are dated for drift, but not completeness-checked.
+    const openspecSpecs = frameworks.includes('openspec')
+      ? (await collectSpecDirs(cwd, { framework: 'openspec', root: 'openspec/specs', entries: ['spec.md'], required: [] }))
+      : [];
+    const specRels = [...specDirs, ...openspecSpecs].map((s) => s.entryRel);
+    const drift = goalRel && specRels.length > 0 ? goalFileDrift(cwd, goalRel, specRels) : null;
+    if (drift) {
       findings.push({
-        findingId: 'spec-goals/spec-dir-no-tasks', severity: 'info',
-        title: `Spec \`${s.specDir}\` has no \`${TASKS}\``,
-        detail: `\`${s.specDir}/\` holds a spec but no \`${TASKS}\` — it was never decomposed into executable work, so agents improvise around it.`,
-        remediation: `Generate \`${s.specDir}/${TASKS}\` from the spec, or archive the spec if it is abandoned.`,
-        context: { specDir: s.specDir, missing: TASKS },
+        findingId: 'spec-goals/goal-file-stale', severity: 'info',
+        title: `Goal file \`${goalRel}\` is ${drift.gapDays} days behind the newest spec`,
+        detail: `\`${goalRel}\` was last committed ${drift.gapDays} days before \`${drift.newestSpec}\` (threshold ${STALE_DAYS}) — specs kept moving while the goal file sat out a planning cycle. Commit dates proxy attention, so read this as a prompt, not proof.`,
+        remediation: `Re-read \`${goalRel}\` against the newest specs and update what no longer holds.`,
+        context: { file: goalRel, newestSpec: drift.newestSpec, gapDays: drift.gapDays, thresholdDays: STALE_DAYS },
       });
     }
 
