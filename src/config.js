@@ -55,6 +55,13 @@ const DEFAULTS = {
     // Example: ["_active/**", "lib-skill-utils/**", "_foundation/**"]
     crossRepoRefs: [],
   },
+  memoryHygiene: {
+    // Byte budget for the auto-loaded agent-memory bundle. 40,000 ≈ 10k tokens
+    // ≈ 5% of a 200k-token window (docs/checks/memory-hygiene.md). Raise it for
+    // a repo that deliberately carries a large always-on memory set; lower it to
+    // hold a tighter line. Must be a positive integer — anything else is ignored.
+    budgetBytes: 40_000,
+  },
   skillFiles: {
     // Allowlist entries for patterns that would otherwise flag (e.g. `sudo` in
     // an operator skill). Each entry: { skill, pattern, reason }.
@@ -293,6 +300,15 @@ function mergeConfig(userConfig, baseline) {
           ...userConfig.instructionEffectiveness.crossRepoRefs,
         ]),
       ];
+    }
+  }
+
+  if (userConfig.memoryHygiene && typeof userConfig.memoryHygiene === 'object') {
+    // Scalar override (project beats home). A non-integer or non-positive value
+    // is dropped rather than throwing — the check falls back to its default.
+    const budget = userConfig.memoryHygiene.budgetBytes;
+    if (Number.isInteger(budget) && budget > 0) {
+      result.memoryHygiene.budgetBytes = budget;
     }
   }
 
