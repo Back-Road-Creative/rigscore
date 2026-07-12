@@ -1,0 +1,3 @@
+{ "mcpServers": { "memory": {
+  "command": "node", "args": ["-y", "@modelcontextprotocol/server-memory@1.0.0"], "transport": "stdio"
+} } }

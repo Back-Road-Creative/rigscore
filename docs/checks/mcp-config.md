@@ -82,6 +82,32 @@ State writes (`.rigscore-state.json`) are not fixes — they are the detection s
     → Run: npx -y <pkg> | rigscore mcp-hash | xargs rigscore mcp-pin filesystem
 ```
 
+## CI gate: `rigscore --verify-state`
+
+The `mcp-config/mcpoison-drift` finding above is a WARNING — it cannot fail a build, and a supply-chain guard a compromised repo can print a warning past is not a guard. `--verify-state` turns the same pin into an exit code.
+
+It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.json` machinery the check writes — one hash function, one pin. It never rewrites the state file (a normal scan does, which would erase the drift), runs no other checks, and makes no network calls. CI recipe — add one step to `.github/workflows/ci.yml`:
+
+```yaml
+- run: npx rigscore --verify-state .   # fails the build on an MCP rug-pull
+```
+
+| Exit | Status | Meaning |
+|---|---|---|
+| `0` | `verified` | Every pinned server still hashes to its pin |
+| `0` | `not-applicable` | No repo MCP servers and no pin — nothing to protect |
+| `1` | `drift` | A **pinned** server's `{command, args, envKeys}` changed |
+| `2` | `unpinned` / `corrupt` | Nothing pinned, or the state file is unreadable/wrong-version — the gate **cannot** verify |
+
+### Why each case decides the way it does
+
+- **No state file (`unpinned`) → exit 2, not 0.** A gate that returns success while verifying nothing teaches you it works when it doesn't — the worst of the three outcomes. Exit 2 is distinct from exit 1 (`drift`) so CI logs tell "you never pinned" apart from "you were rug-pulled". The remedy is one command: run `rigscore .` once and commit `.rigscore-state.json`. A repo with **no** MCP servers at all is genuinely not-applicable and exits 0, so the flag is safe to drop into a shared CI template on day one.
+- **Server added → reported, exit 0.** Adding a server is not the MCPoison threat model. MCPoison (CVE-2025-54136) works by mutating a server the host has *already approved*, so the stale approval carries the new payload silently. A brand-new server name gets a fresh approval prompt from the host and shows up as a new block in the `.mcp.json` diff — code review and the other `mcp-config` triggers (typosquat, unpinned npx, sensitive env, broad filesystem) are the controls for it. Failing here would also red-CI every legitimate "add an MCP server" PR. The report names it as `ADDED` and tells you to re-pin so it becomes covered.
+- **Server removed → reported, exit 0.** A server that is no longer in `.mcp.json` cannot execute; its shape did not "change", it is gone. This is a stale pin, not a security event. Reported as `REMOVED`.
+- **Rename** (`old` gone, `new` appears) therefore reads as one `REMOVED` + one `ADDED`, both exit 0 — correct, because the renamed server re-prompts for approval rather than inheriting the old one's.
+
+The report prints the pinned hash, the current hash, and the **current** shape. The old shape is deliberately *not* recoverable: the pin stores only a SHA-256, because `.rigscore-state.json` is committed to git. Diff `.mcp.json` against version control to see what the previous shape was.
+
 ## Scope and limitations
 
 - Online checks (`checkNpmRegistry`, `fetchRegistry`) run only when `--online` is passed. Default is zero network calls.
