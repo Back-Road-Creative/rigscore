@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import check, { readCodexKeys } from '../src/checks/sandbox-posture.js';
+import { CLIENTS } from '../src/clients.js';
 import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,5 +62,64 @@ describe('sandbox-posture: verdicts', () => {
     expect(r.score).toBe(NOT_APPLICABLE_SCORE);
     expect(r.findings).toHaveLength(0);
     expect(r.data.surfacesScanned).toBe(0);
+  });
+});
+
+// A locked-down, minimal config per format — enough for the check to see the surface.
+const MINIMAL = {
+  toml: 'sandbox_mode = "read-only"\n',
+  json: JSON.stringify({ permissions: { deny: ['Bash(curl:*)'] } }),
+};
+
+describe('sandbox-posture: the client registry is the surface list', () => {
+  it('scans every client the registry says has a sandbox surface — no local table', async () => {
+    // The criterion: a client that declares `sandbox` in src/clients.js is picked up
+    // with NO change to this check's logic. This test enumerates the registry, so a
+    // new entry is scanned here the day it lands (or fails loudly on a new format).
+    const declared = CLIENTS.filter((c) => (c.sandbox || []).some((e) => e.base === 'cwd'));
+    expect(declared.map((c) => c.id)).toEqual(expect.arrayContaining(['codex', 'claude-code']));
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-registry-'));
+    for (const client of declared) {
+      for (const entry of client.sandbox.filter((e) => e.base === 'cwd')) {
+        const file = path.join(cwd, entry.path);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, MINIMAL[entry.format]);
+      }
+    }
+
+    const r = await run(cwd);
+    expect(Object.keys(r.data.postures).sort()).toEqual(declared.map((c) => c.id).sort());
+    expect(r.data.surfacesScanned).toBe(declared.length);
+  });
+});
+
+describe('sandbox-posture: Claude Code deny-rule posture', () => {
+  it('flags a settings file that exists but declares zero permissions.deny entries', async () => {
+    // Fixture: settings.json with allow entries only + settings.local.json in
+    // bypassPermissions — nothing denied, nothing prompted.
+    const r = await run(FIX('sandbox-claude-nodeny'));
+    expect(ids(r)).toContain('sandbox-posture/claude-no-deny-rules');
+    expect(sev(r, 'sandbox-posture/claude-no-deny-rules')).toBe('warning');
+    expect(r.data.postures['claude-code']).toBe('unrestricted');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('passes on deny rules and never grades allow entries — claude-settings owns those', async () => {
+    const r = await run(FIX('sandbox-claude-deny'));
+    expect(ids(r)).not.toContain('sandbox-posture/claude-no-deny-rules');
+    expect(r.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning'))
+      .toHaveLength(0);
+    expect(r.data.postures['claude-code']).toBe('partial');
+    expect(r.score).toBe(100);
+  });
+
+  it('reads an absent settings file as no surface, never as zero deny rules', async () => {
+    // claude-empty ships CLAUDE.md and no .claude/settings*.json: a missing settings
+    // file is claude-settings' finding, not a posture finding.
+    const r = await run(FIX('claude-empty'));
+    expect(ids(r)).not.toContain('sandbox-posture/claude-no-deny-rules');
+    expect(r.data.postures['claude-code']).toBeUndefined();
+    expect(r.score).toBe(NOT_APPLICABLE_SCORE);
   });
 });
