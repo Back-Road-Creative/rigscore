@@ -1,0 +1,53 @@
+#!/bin/sh
+# guards pack — pre-commit secret scan for {{PROJECT_NAME}}
+#
+# Two layers, both real:
+#   1. A dedicated scanner (gitleaks / trufflehog / detect-secrets) if one is on PATH.
+#   2. A dependency-free regex backstop that always runs, so a machine with no
+#      scanner installed is still protected.
+# Exits non-zero on a hit. Bypass (deliberately loud): git commit --no-verify
+set -eu
+
+fail=0
+
+# Nothing staged? nothing to scan.
+if git diff --cached --quiet 2>/dev/null; then
+  exit 0
+fi
+
+# ---- layer 1: dedicated secret scanner, if one is installed ------------------
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact --no-banner || fail=1
+elif command -v trufflehog >/dev/null 2>&1; then
+  trufflehog git "file://$(pwd)" --since-commit HEAD --only-verified --fail || fail=1
+elif command -v detect-secrets-hook >/dev/null 2>&1; then
+  staged=$(git diff --cached --name-only --diff-filter=ACM)
+  if [ -n "$staged" ]; then
+    # shellcheck disable=SC2086
+    detect-secrets-hook $staged || fail=1
+  fi
+fi
+
+# ---- layer 2: always-on regex backstop ---------------------------------------
+# Added lines only, so pre-existing content does not block every commit.
+# Patterns are character classes, so this file is not itself a checked-in secret.
+added=$(git diff --cached -U0 --diff-filter=ACM | grep -E '^\+[^+]' || true)
+
+if [ -n "$added" ]; then
+  if printf '%s\n' "$added" | grep -qiE "(AKIA|ASIA)[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9]{32,}|(api[_-]?key|secret|token|password)[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9/+_=-]{16,}"; then
+    echo "pre-commit: possible secret in staged changes — commit blocked." >&2
+    echo "  Review the staged diff. False positive? git commit --no-verify" >&2
+    fail=1
+  fi
+fi
+
+# ---- refuse to commit credential-shaped files --------------------------------
+credpat='(^|/)(\.env(\..+)?|.+\.pem|.+\.key|.+\.p12|id_rsa.*|.*credentials.*)$'
+staged_files=$(git diff --cached --name-only --diff-filter=ACM || true)
+if printf '%s\n' "$staged_files" | grep -qE "$credpat"; then
+  echo "pre-commit: a credential-shaped file is staged — commit blocked." >&2
+  printf '%s\n' "$staged_files" | grep -E "$credpat" >&2
+  fail=1
+fi
+
+exit $fail
