@@ -1,3 +1,5 @@
+import { governanceFiles } from './clients.js';
+
 export const SEVERITY = {
   CRITICAL: 'critical',
   WARNING: 'warning',
@@ -82,18 +84,9 @@ export const INFO_ONLY_FLOOR = 50;
 // the overall score is scaled down proportionally
 export const COVERAGE_PENALTY_THRESHOLD = 50;
 
-// All known AI client governance/instruction files
-export const GOVERNANCE_FILES = [
-  'CLAUDE.md',
-  '.cursorrules',
-  '.windsurfrules',
-  '.clinerules',
-  '.continuerules',
-  'copilot-instructions.md',
-  '.github/copilot-instructions.md',
-  'AGENTS.md',
-  '.aider.conf.yml',
-];
+// All known AI client governance/instruction files — derived from the client
+// registry (src/clients.js), the single source of truth for supported clients.
+export const GOVERNANCE_FILES = governanceFiles();
 
 // Superset of config files scanned for secrets and ownership
 export const AI_CONFIG_FILES = [

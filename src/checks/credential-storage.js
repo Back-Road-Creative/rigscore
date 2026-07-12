@@ -2,15 +2,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readJsonSafe } from '../utils.js';
-
-const CLIENT_CONFIGS = [
-  { name: 'Claude Desktop', file: 'claude_desktop_config.json', dir: '.claude' },
-  { name: 'Cursor', file: 'mcp.json', dir: '.cursor' },
-  { name: 'Cline', file: 'mcp_settings.json', dir: '.cline' },
-  { name: 'Continue', file: 'config.json', dir: '.continue' },
-  { name: 'Windsurf', file: 'mcp.json', dir: '.windsurf' },
-  { name: 'Amp', file: 'mcp.json', dir: '.amp' },
-];
+import { credentialClients } from '../clients.js';
 
 const EXAMPLE_RE = /\b(example|placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me)\b/i;
 
@@ -42,7 +34,7 @@ export default {
     let filesScanned = 0;
     let secretsFound = 0;
 
-    for (const client of CLIENT_CONFIGS) {
+    for (const client of credentialClients()) {
       const configPath = path.join(homedir, client.dir, client.file);
       const config = await readJsonSafe(configPath);
       if (!config) continue;

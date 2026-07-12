@@ -3,20 +3,9 @@ import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, AI_SERVICE_PORTS, MCP_SSE_PORT_RANGE } from '../constants.js';
 import { readFileSafe, readJsonSafe, execSafe } from '../utils.js';
+import { networkMcpPaths, mcpServersIn } from '../clients.js';
 
 const DEFAULT_SAFE_HOSTS = ['127.0.0.1', 'localhost', '::1'];
-
-// MCP client config paths (subset — full list used only as fallback)
-const MCP_CONFIG_PATHS = [
-  ['.mcp.json', 'cwd'],
-  ['.vscode/mcp.json', 'cwd'],
-  ['.claude/claude_desktop_config.json', 'home'],
-  ['.cursor/mcp.json', 'home'],
-  ['.cline/mcp_settings.json', 'home'],
-  ['.continue/config.json', 'home'],
-  ['.windsurf/mcp.json', 'home'],
-  ['.amp/mcp.json', 'home'],
-];
 
 const COMPOSE_PATTERNS = [
   'docker-compose.yml', 'docker-compose.yaml',
@@ -63,9 +52,7 @@ async function checkMcpConfigUrls(context) {
   }
 
   // Read MCP configs directly to extract SSE/HTTP URLs
-  const configPaths = MCP_CONFIG_PATHS.map(([rel, base]) =>
-    path.join(base === 'cwd' ? cwd : homedir, rel),
-  );
+  const configPaths = networkMcpPaths(cwd, homedir);
 
   if (config?.paths?.mcpConfig) {
     configPaths.push(...config.paths.mcpConfig);
@@ -75,7 +62,7 @@ async function checkMcpConfigUrls(context) {
     const mcpConfig = await readJsonSafe(configPath);
     if (!mcpConfig) continue;
 
-    const servers = mcpConfig.mcpServers || {};
+    const servers = mcpServersIn(configPath, mcpConfig);
     const relPath = path.relative(cwd, configPath) || configPath;
 
     for (const [name, server] of Object.entries(servers)) {
