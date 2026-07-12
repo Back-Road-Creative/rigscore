@@ -63,8 +63,9 @@ describe('ai-disclosure check', () => {
     it('flags an AI repo with no policy and no PR template', async () => {
       const r = await fixture('ai-disclosure-none');
       expect(sev(r, 'ai-disclosure/no-ai-policy')).toBe('warning');
-      // "No PR template at all" is deferred (docs: "Not covered (yet)").
-      expect(ids(r)).not.toContain('ai-disclosure/no-pr-template');
+      // Weakest of the three signals — plenty of legitimate repos have no PR
+      // template at all (solo projects, mirrors, non-GitHub hosting) — so INFO.
+      expect(sev(r, 'ai-disclosure/no-pr-template')).toBe('info');
     });
     it('flags an AI repo whose PR template carries no AI-disclosure field', async () => {
       const r = await fixture('ai-disclosure-template-gap');
@@ -77,9 +78,10 @@ describe('ai-disclosure check', () => {
     });
   });
   describe('conservative detection', () => {
-    it('accepts a dedicated AI_POLICY.md, with no PR template at all, as clean', async () => {
+    it('accepts a dedicated AI_POLICY.md as the policy; the missing template is only advisory', async () => {
       const r = await runWith({ ...CLAUDE, 'AI_POLICY.md': '# AI policy\nDisclose AI use.\n' });
-      expect(r.findings.every((f) => f.severity === 'pass')).toBe(true);
+      expect(r.findings.filter((f) => f.severity === 'warning')).toEqual([]);
+      expect(sev(r, 'ai-disclosure/no-pr-template')).toBe('info');
     });
     it('accepts a policy stated inside the governance file itself', async () => {
       const r = await runWith({ 'AGENTS.md': '# Agents\n\nAI-assisted changes must be disclosed in the pull request.\n' });
@@ -94,5 +96,34 @@ describe('ai-disclosure check', () => {
       const r = await runWith({ ...CLAUDE, '.github/PULL_REQUEST_TEMPLATE/bug.md': '## Summary\n' });
       expect(sev(r, 'ai-disclosure/pr-template-no-ai-field')).toBe('warning');
     });
+  });
+  // A false "you have no PR template" on a repo that has one is the expensive
+  // failure, so every location GitHub honours must be read: root, .github/ and
+  // docs/, either casing, single file or PULL_REQUEST_TEMPLATE/ directory.
+  describe('no PR template at all', () => {
+    const TPL = '## Summary\n\n- [ ] I used generative AI and a human reviewed the code.\n';
+    it('never fires on a repo with no AI surface (owes no disclosure)', async () => {
+      expect(ids(await fixture('ai-disclosure-nonai'))).not.toContain('ai-disclosure/no-pr-template');
+    });
+    it('does not fire alongside pr-template-no-ai-field (the arms are exclusive)', async () => {
+      const r = await fixture('ai-disclosure-template-gap');
+      expect(ids(r)).not.toContain('ai-disclosure/no-pr-template');
+    });
+    for (const rel of [
+      '.github/PULL_REQUEST_TEMPLATE.md',
+      '.github/pull_request_template.md',
+      'PULL_REQUEST_TEMPLATE.md',
+      'pull_request_template.md',
+      'docs/PULL_REQUEST_TEMPLATE.md',
+      'docs/pull_request_template.md',
+      '.github/PULL_REQUEST_TEMPLATE/feature.md',
+      'PULL_REQUEST_TEMPLATE/feature.md',
+      'docs/PULL_REQUEST_TEMPLATE/feature.md',
+    ]) {
+      it(`sees a template at ${rel}`, async () => {
+        const r = await runWith({ ...CLAUDE, [rel]: TPL });
+        expect(ids(r)).not.toContain('ai-disclosure/no-pr-template');
+      });
+    }
   });
 });
