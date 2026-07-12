@@ -6,6 +6,7 @@ import { resolveWeights } from './config.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
+import { formatCycloneDx } from './cyclonedx.js';
 import { findApplicableFixes, applyFixes } from './fixer.js';
 import { PROFILE_HINTS } from './config.js';
 import { ConfigParseError } from './utils.js';
@@ -14,7 +15,7 @@ import { ConfigParseError } from './utils.js';
  * Parse rigscore's CLI argument vector into a normalized options object.
  *
  * Recognized flags (subset; see `--help` for the full list): --json,
- * --sarif, --badge, --ci (implies --sarif/--no-color/--no-cta), --check
+ * --sarif, --cyclonedx, --badge, --ci (implies --sarif/--no-color/--no-cta), --check
  * <id>, --recursive/-r, --depth <N> (implies --recursive), --deep,
  * --online, --refresh-mcp-registry (implies --online), --fail-under <N>
  * (clamped 0-100), --profile <name>, --fix, --yes/-y, --init-hook,
@@ -33,6 +34,7 @@ export function parseArgs(args) {
     json: false,
     badge: false,
     sarif: false,
+    cyclonedx: false,
     fix: false,
     yes: false,
     noColor: false,
@@ -100,6 +102,7 @@ const FLAG_DEFS = (() => {
     // Plain booleans
     '--json':                 { handler: setTrue('json') },
     '--badge':                { handler: setTrue('badge') },
+    '--cyclonedx':            { handler: setTrue('cyclonedx') },
     '--sarif':                { handler: setTrue('sarif') },
     '--no-color':             { handler: setTrue('noColor') },
     '--no-cta':               { handler: setTrue('noCta') },
@@ -247,8 +250,10 @@ export async function run(args) {
     // Reject flag combinations that don't have a clean semantic in recursive
     // mode. Per-project --fix output is noisy; --baseline writes a single
     // file that can't represent N projects; --badge of an aggregate has no
-    // meaningful score. Fail loud rather than silently no-op.
+    // meaningful score. Fail loud rather than silently no-op. --cyclonedx is
+    // single-project by construction: a BOM has exactly one metadata.component.
     const unsupportedRecursiveFlags = [];
+    if (options.cyclonedx) unsupportedRecursiveFlags.push('--cyclonedx');
     if (options.fix) unsupportedRecursiveFlags.push('--fix');
     if (options.baseline) unsupportedRecursiveFlags.push('--baseline');
     if (options.badge) unsupportedRecursiveFlags.push('--badge');
@@ -322,6 +327,9 @@ export async function run(args) {
 
     if (options.sarif) {
       process.stdout.write(JSON.stringify(formatSarif(result), null, 2) + '\n');
+    } else if (options.cyclonedx) {
+      const bom = await formatCycloneDx(result, { cwd });
+      process.stdout.write(JSON.stringify(bom, null, 2) + '\n');
     } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else if (options.badge) {
