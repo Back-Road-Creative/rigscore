@@ -50,6 +50,7 @@ export function parseArgs(args) {
     profile: null,
     initHook: false,
     watch: false,
+    verifyState: false,
     ignore: null,
     baseline: null,
   };
@@ -109,6 +110,7 @@ const FLAG_DEFS = (() => {
     '--fix':                  { handler: setTrue('fix') },
     '--init-hook':            { handler: setTrue('initHook') },
     '--watch':                { handler: setTrue('watch') },
+    '--verify-state':         { handler: setTrue('verifyState') },
 
     // Aliased booleans
     '--verbose': verbose, '-v': verbose,
@@ -191,6 +193,17 @@ export async function run(args) {
       options.depth = hints.depth;
       options.recursive = true;
     }
+  }
+
+  // --verify-state: read-only CI gate over the MCP config-shape pin. Deliberately
+  // short-circuits BEFORE scan() — a normal scan rewrites .rigscore-state.json
+  // (mcp-config.js → checkHashPinning), erasing the very drift this gate fails on.
+  if (options.verifyState) {
+    const { verifyState, formatVerifyStateReport } = await import('./state.js');
+    const report = await verifyState(cwd);
+    process.stdout.write(formatVerifyStateReport(report, cwd) + '\n');
+    process.exitCode = report.exitCode;
+    return;
   }
 
   if (options.initHook) {
