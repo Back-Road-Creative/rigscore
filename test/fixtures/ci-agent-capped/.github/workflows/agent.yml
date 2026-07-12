@@ -1,0 +1,11 @@
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_args: |
+            --max-turns 8
+            --allowedTools "Read,Edit,Bash(npm test)"
+      - run: codex exec --sandbox workspace-write -a on-request "fix the build"
