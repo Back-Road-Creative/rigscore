@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { slugify } from '../utils.js';
+import { slugify, execSafe } from '../utils.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json');
@@ -39,18 +39,75 @@ export function buildBaseline(scanResult) {
 }
 
 /**
- * Load a baseline JSON from disk. Returns null if file is missing or
- * malformed (caller treats as "no baseline yet — create one").
+ * Discriminated baseline loader — distinguishes a MISSING file (ENOENT; first
+ * run, mint is legitimate) from a CORRUPT existing one (unparseable, no findings
+ * array, or unreadable — never a valid committed state; a CI gate must NOT
+ * silently re-mint over it) from `ok` (a well-formed document). A plain null
+ * collapses missing and corrupt together — that is the fail-open bug.
+ * @returns {{status: 'missing'|'corrupt'|'ok', baseline: object|null}}
+ */
+export function readBaseline(baselinePath) {
+  let raw;
+  try {
+    raw = fs.readFileSync(baselinePath, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return { status: 'missing', baseline: null };
+    // Present-but-unreadable (EACCES, EISDIR, …) is not "first run" either.
+    return { status: 'corrupt', baseline: null };
+  }
+  return classifyBaseline(raw);
+}
+
+/**
+ * Classify a baseline body: 'ok' with the parsed document, or 'corrupt' for
+ * unparseable JSON or a document with no findings array. Shared by the
+ * working-tree loader (readBaseline) and the committed loader.
+ * @returns {{status: 'corrupt'|'ok', baseline: object|null}}
+ */
+function classifyBaseline(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { status: 'corrupt', baseline: null };
+  }
+  if (!parsed || !Array.isArray(parsed.findings)) return { status: 'corrupt', baseline: null };
+  return { status: 'ok', baseline: parsed };
+}
+
+/**
+ * Resolve the baseline as COMMITTED AT HEAD — the provenance fix that mirrors
+ * `--verify-state` (#263). A CI regression gate must trust only the version a
+ * human committed and reviewed, never the working-tree copy an attacker can
+ * delete or overwrite in their PR. `git show HEAD:<repo-relative-path>` is the
+ * authority; the working tree is still what gets scanned for findings.
+ *
+ *   { inRepo:false }                        — not a git repo → caller uses the working tree
+ *   { inRepo:true, status:'absent' }        — git repo, nothing committed at HEAD (first run)
+ *   { inRepo:true, status:'corrupt' }       — committed but unparseable → hard-fail
+ *   { inRepo:true, status:'ok', baseline }  — the committed authority
+ *
+ * @returns {Promise<object>}
+ */
+async function readCommittedBaseline(baselinePath) {
+  const abs = path.resolve(baselinePath);
+  const top = await execSafe('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel']);
+  if (top === null) return { inRepo: false }; // not a git repo (or git unavailable)
+  const rel = path.relative(top.trim(), abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return { inRepo: true, status: 'absent' };
+  const raw = await execSafe('git', ['-C', top.trim(), 'show', `HEAD:${rel}`]);
+  if (raw === null) return { inRepo: true, status: 'absent' }; // no HEAD / not tracked
+  return { inRepo: true, ...classifyBaseline(raw) };
+}
+
+/**
+ * Back-compat loader. Returns the baseline document, or null if the file is
+ * missing OR malformed. Callers that must distinguish the two (a gate that
+ * cannot fail open on corruption) should use readBaseline() instead.
  */
 export function loadBaseline(baselinePath) {
-  try {
-    const raw = fs.readFileSync(baselinePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.findings)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  const { status, baseline } = readBaseline(baselinePath);
+  return status === 'ok' ? baseline : null;
 }
 
 /**
@@ -144,19 +201,49 @@ export function runDiffSubcommand(args) {
  * @param {string} baselinePath - Filesystem path passed to --baseline.
  * @returns {void} Always exits the process.
  */
-export function runBaselineMode(scanResult, baselinePath) {
-  const existing = loadBaseline(baselinePath);
-  if (!existing) {
-    const newBaseline = buildBaseline(scanResult);
-    writeBaseline(baselinePath, newBaseline);
-    process.stderr.write(
-      `rigscore: wrote new baseline to ${baselinePath} ` +
-      `(${newBaseline.findings.length} findings pinned).\n`,
-    );
-    process.exit(0);
+export async function runBaselineMode(scanResult, baselinePath, { refresh = false } = {}) {
+  // Explicit regenerate. Under git-HEAD provenance a plain re-run no longer
+  // re-mints (the gate reads HEAD), so `--baseline-refresh` is the one
+  // sanctioned way to (re)write the working-tree baseline for a human to commit.
+  if (refresh) {
+    mintBaseline(scanResult, baselinePath, 'refreshed baseline at', ' — review and commit it.');
   }
-  const currentFindings = flattenFindings(scanResult.results);
-  const added = diffFindings(existing.findings, currentFindings);
+
+  // In a git repo the COMMITTED baseline is the sole authority — a deleted or
+  // corrupt working-tree copy cannot launder findings (mirrors --verify-state).
+  const committed = await readCommittedBaseline(baselinePath);
+  if (committed.inRepo && committed.status === 'corrupt') failCorrupt(baselinePath, 'committed (HEAD)');
+  if (committed.inRepo && committed.status === 'ok') diffAndExit(committed.baseline, scanResult);
+
+  // Not a git repo, or a git repo with nothing pinned at HEAD: fall back to the
+  // working-tree loader (preserves non-git usage and the documented first run).
+  const { status, baseline: existing } = readBaseline(baselinePath);
+  if (status === 'corrupt') failCorrupt(baselinePath, 'working-tree');
+  if (status === 'missing') mintBaseline(scanResult, baselinePath, 'wrote new baseline to', '');
+  diffAndExit(existing, scanResult);
+}
+
+/** Refuse a corrupt baseline (never silently re-mint). Always exits 2. */
+function failCorrupt(baselinePath, which) {
+  process.stderr.write(
+    `rigscore: ${which} baseline ${baselinePath} is malformed ` +
+    `(unparseable JSON or missing findings array); refusing to silently ` +
+    `re-mint. Fix or regenerate it with \`rigscore --baseline ${baselinePath} --baseline-refresh\`.\n`,
+  );
+  process.exit(2);
+}
+
+/** Write a fresh baseline from the current findings. Always exits 0. */
+function mintBaseline(scanResult, baselinePath, verb, suffix) {
+  const fresh = buildBaseline(scanResult);
+  writeBaseline(baselinePath, fresh);
+  process.stderr.write(`rigscore: ${verb} ${baselinePath} (${fresh.findings.length} findings pinned)${suffix}.\n`);
+  process.exit(0);
+}
+
+/** Diff current findings against a resolved baseline. Exits 0 (clean) or 1 (new findings). */
+function diffAndExit(existing, scanResult) {
+  const added = diffFindings(existing.findings, flattenFindings(scanResult.results));
   if (added.length === 0) {
     process.stderr.write(`rigscore: no new findings vs baseline (${existing.findings.length} pinned).\n`);
     process.exit(0);
@@ -168,7 +255,5 @@ export function runBaselineMode(scanResult, baselinePath) {
   for (const f of added) {
     process.stderr.write(`  [${f.severity}] ${f.findingId} — ${f.title}\n`);
   }
-  // Baseline semantics: any new finding fails. The early-return above
-  // guarantees added.length > 0 by the time we reach here.
   process.exit(1);
 }
