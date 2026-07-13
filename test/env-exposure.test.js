@@ -108,6 +108,81 @@ describe('env-exposure check', () => {
     }
   });
 
+  it('PASS when .env is gitignored and an unrelated !venv negation exists (env substring, not path token)', async () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, '.env'), 'SECRET=foo\n');
+    // `!venv/keep.txt` contains the substring `env` but does NOT un-ignore any
+    // `.env` file — the dangerous-negation guard must not fire on it.
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n!venv/keep.txt\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('.env'),
+      );
+      expect(critical).toBeUndefined();
+      const pass = result.findings.find(
+        (f) => f.severity === 'pass' && f.title.includes('gitignored'),
+      );
+      expect(pass).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PASS when .env is gitignored alongside other unrelated env-substring negations', async () => {
+    for (const negation of ['!environment/', '!prevent.md', '!.eslintrc.env-notes']) {
+      const tmpDir = makeTmpDir();
+      fs.writeFileSync(path.join(tmpDir, '.env'), 'SECRET=foo\n');
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), `.env\n${negation}\n`);
+      try {
+        const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+        const critical = result.findings.find(
+          (f) => f.severity === 'critical' && f.title.includes('.env'),
+        );
+        expect(critical, `negation ${negation} must not trip the guard`).toBeUndefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    }
+  });
+
+  it('CRITICAL preserved for dangerous negations that un-ignore a real .env family file', async () => {
+    // Each of these `!` lines un-ignores an actual `.env`-family file and must
+    // still be surfaced as not-ignored (CRITICAL), even though `.env` is otherwise
+    // gitignored.
+    for (const negation of ['!.env', '!.env.local', '!config/.env', '!secrets/.env']) {
+      const tmpDir = makeTmpDir();
+      fs.writeFileSync(path.join(tmpDir, '.env'), 'SECRET=foo\n');
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), `.env\n${negation}\n`);
+      try {
+        const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+        const critical = result.findings.find(
+          (f) => f.severity === 'critical' && f.title.includes('.env'),
+        );
+        expect(critical, `negation ${negation} must trip the guard`).toBeDefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    }
+  });
+
+  it('PASS for un-ignore-safe example/sample/template negations (guard not over-narrowed)', async () => {
+    for (const negation of ['!.env.example', '!.env.sample', '!.env.template']) {
+      const tmpDir = makeTmpDir();
+      fs.writeFileSync(path.join(tmpDir, '.env'), 'SECRET=foo\n');
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), `.env\n${negation}\n`);
+      try {
+        const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+        const critical = result.findings.find(
+          (f) => f.severity === 'critical' && f.title.includes('.env'),
+        );
+        expect(critical, `safe negation ${negation} must not trip the guard`).toBeUndefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    }
+  });
+
   it('WARNING when .env.example contains a real secret', async () => {
     const tmpDir = makeTmpDir();
     const prefix = 'sk-ant-';
