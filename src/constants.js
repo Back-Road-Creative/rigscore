@@ -83,6 +83,26 @@ export const OWASP_AGENTIC_MAP = {
 // fictional one, because a wrong citation is what a customer forwards to their auditor.
 const byControl = (control, ids) => Object.fromEntries(ids.map((id) => [id, control]));
 
+// OWASP MCP Top 10 — official IDs are `MCPxx:2025`; the bare `MCPxx` stem is stored here.
+// Upstream is BETA (Phase 3, "Beta Release and Pilot Testing"): IDs and rankings may still
+// move, which is why the framework's `status` says so and the report prints it.
+// Deliberately sparse: this list is scoped to MCP servers and the protocol, so a rigscore
+// check earns a row here only when it inspects an MCP surface (or the host controls that
+// contain what an MCP server can execute). Checks that scan agent prose with no MCP nexus —
+// `claude-md`, `skill-files`, `git-hooks` — are left UNMAPPED rather than padded in.
+export const OWASP_MCP_MAP = {
+  // Secret exposure: plaintext creds in MCP `env` maps, `.mcp.json`, source, or on disk.
+  ...byControl('MCP01', ['credential-storage', 'env-exposure', 'deep-secrets',
+    'permissions-hygiene']),
+  'claude-settings': 'MCP02',        // auto-approve/bypass hands every server full scope
+  'unicode-steganography': 'MCP03',  // hidden instruction chars in .mcp.json = the poisoning primitive
+  'mcp-config': 'MCP04',             // unpinned npx, typosquats, rug-pull hash drift
+  // Containment of what an MCP server may execute (see `note` — rigscore cannot introspect
+  // a running server's tool implementations, so MCP05 evidence is containment-side only).
+  ...byControl('MCP05', ['docker-security', 'infrastructure-security']),
+  'coherence': 'MCP09',              // a configured server undeclared in governance IS a shadow server
+};
+
 // NIST AI RMF 1.0 (NIST AI 100-1, Jan 2023). Subcategory IDs are space-separated.
 export const NIST_AI_RMF_MAP = {
   'mcp-config': 'MANAGE 3.1',   // third-party resources monitored, controls applied
@@ -121,6 +141,26 @@ export const FRAMEWORKS = {
       ASI04: 'Agentic Supply Chain Vulnerabilities',
       ASI05: 'Unexpected Code Execution',
       ASI07: 'Insecure Inter-Agent Communication',
+    },
+  },
+  'owasp-mcp': {
+    name: 'OWASP MCP Top 10',
+    status: 'BETA — upstream Phase 3 (Beta Release and Pilot Testing); IDs and rankings may still change. Do not cite as settled.',
+    url: 'https://owasp.org/www-project-mcp-top-10/',
+    coverage: 'partial',
+    map: OWASP_MCP_MAP,
+    note: 'rigscore inspects MCP configuration at rest; it does not execute or introspect a running MCP server. So MCP05 evidence is containment-side (sandbox/container posture), never proof a tool sanitizes its input, and MCP06/07/08/10 — runtime intent, auth flows, audit telemetry, live context — are NOT EVIDENCED by design.',
+    controls: {
+      MCP01: 'Token Mismanagement & Secret Exposure',
+      MCP02: 'Privilege Escalation via Scope Creep',
+      MCP03: 'Tool Poisoning',
+      MCP04: 'Software Supply Chain Attacks & Dependency Tampering',
+      MCP05: 'Command Injection & Execution',
+      MCP06: 'Intent Flow Subversion',
+      MCP07: 'Insufficient Authentication & Authorization',
+      MCP08: 'Lack of Audit and Telemetry',
+      MCP09: 'Shadow MCP Servers',
+      MCP10: 'Context Injection & Over-Sharing',
     },
   },
   'nist-ai-rmf': {

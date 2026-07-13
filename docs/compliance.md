@@ -29,13 +29,38 @@ framework? Confirm every ID against its **primary source**, record that URL and 
 | Framework | Status | Coverage | Primary source |
 |---|---|---|---|
 | OWASP Top 10 for Agentic Applications 2026 (`ASIxx:2026`) | Final (2025-12-09) | full | <https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/> |
+| OWASP MCP Top 10 (`MCPxx:2025`) | **Beta** (Phase 3, pilot testing) | partial | <https://owasp.org/www-project-mcp-top-10/> |
 | NIST AI RMF 1.0 (NIST AI 100-1) | Final (Jan 2023) | full | <https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf> |
 | EU AI Act — Regulation (EU) 2024/1689 | In force, phased | full | <https://ai-act-service-desk.ec.europa.eu/en/ai-act/timeline/timeline-implementation-eu-ai-act> |
 
-**Not yet mapped: the OWASP MCP Top 10** (<https://owasp.org/www-project-mcp-top-10/>). Its IDs
-are confirmed (`MCP01:2025`–`MCP10:2025`), but the list is upstream **beta** ("Phase 3 — Beta
-Release and Pilot Testing"), so IDs and rankings may still change. Left as a follow-up rather
-than shipped as if settled.
+## OWASP MCP Top 10 — beta, and it says so
+
+This is the one **beta** list rigscore maps (`MCP01:2025`–`MCP10:2025`, upstream "Phase 3 — Beta
+Release and Pilot Testing"). IDs and rankings may still change, so its `status` carries `BETA`
+and the report prints that status on every run — it must never read to an auditor as settled.
+
+Coverage is **partial by design**. The list is scoped to MCP servers and the protocol, so a check
+earns a row only where it inspects an MCP surface (or the host controls that contain what an MCP
+server can execute). `claude-md`, `skill-files` and `git-hooks` scan agent prose and commit gates
+with no MCP nexus — they are left `UNMAPPED` rather than padded in to make the table look full.
+
+| Control | Evidenced by |
+|---|---|
+| `MCP01` Token Mismanagement & Secret Exposure | `credential-storage`, `env-exposure`, `deep-secrets`, `permissions-hygiene` |
+| `MCP02` Privilege Escalation via Scope Creep | `claude-settings` (auto-approve / `bypassPermissions`) |
+| `MCP03` Tool Poisoning | `unicode-steganography` (hidden instruction chars in `.mcp.json`) |
+| `MCP04` Software Supply Chain Attacks & Dependency Tampering | `mcp-config` (unpinned `npx`, typosquats, rug-pull drift) |
+| `MCP05` Command Injection & Execution | `docker-security`, `infrastructure-security` — **containment only** |
+| `MCP09` Shadow MCP Servers | `coherence` (a configured server undeclared in governance) |
+| `MCP06`, `MCP07`, `MCP08`, `MCP10` | `NOT EVIDENCED` — runtime intent, auth flows, audit telemetry and live context |
+
+rigscore reads MCP configuration **at rest**; it never executes or introspects a running server.
+That is why `MCP05` evidence is containment-side (sandbox/container posture) and is *not* proof
+that a tool sanitizes its input, and why the four runtime controls are reported as gaps.
+
+> Two IDs are widely mis-stated by secondary sources: **`MCP03` is Tool Poisoning** and
+> **`MCP05` is Command Injection & Execution**. Both are transcribed from the primary source
+> above and pinned by `test/compliance.test.js`.
 
 ## EU AI Act — dates
 
