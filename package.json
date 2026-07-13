@@ -10,6 +10,7 @@
     "bin/",
     "src/",
     "templates/",
+    "docs/checks/",
     "README.md"
   ],
   "scripts": {
