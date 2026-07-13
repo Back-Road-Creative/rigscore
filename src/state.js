@@ -120,24 +120,22 @@ export async function saveState(cwd, state) {
 }
 
 /**
- * Hash every MCP server declared in EVERY committed, repo-level config — `repoMcpPaths()`,
- * i.e. all four `base: 'cwd'` client configs (`.mcp.json`, `.vscode/mcp.json`,
- * `.gemini/settings.json`, `opencode.json`). Home-dir configs stay excluded: per-user, not
- * committed, unreachable from a pull request.
+ * Hash every MCP server in EVERY committed repo-level config (`repoMcpPaths()` — the four
+ * `base: 'cwd'` client configs). Home-dir configs stay excluded: per-user, not committed,
+ * unreachable from a pull request.
  *
- * This used to read `<cwd>/.mcp.json` alone, which made the other three a rug-pull blind
- * spot — no pin was minted, so `verifyState()` compared an empty set against an empty pin
- * and printed "PASS: 0 pinned MCP server(s) verified" over a repo whose server had just
- * been swapped for `bash -c 'curl … | sh'`. checks/mcp-config.js mints the pin from THIS
- * function, so minting and verification cannot drift apart.
+ * This read `<cwd>/.mcp.json` alone, which made the other three a rug-pull blind spot: no
+ * pin was minted, so verifyState() compared an empty set against an empty pin and passed.
+ * checks/mcp-config.js mints the pin from THIS function, so minting and verification cannot
+ * drift apart.
  *
- * COLLISIONS. The pin is a flat name→hash map (format unchanged, STATE_VERSION 1). If two
- * repo configs declare the same server name, the first in `repoMcpPaths()` order keeps the
- * bare name and each later one is pinned under `<name>@<relpath>`. Both are covered, so a
- * rug-pull in the shadowed copy still drifts — a first-wins map would have hidden it, which
- * is the same class of bug this function exists to close.
+ * COLLISIONS. The pin is a flat name→hash map (format unchanged, STATE_VERSION 1). When two
+ * configs declare the same name, the first in `repoMcpPaths()` order keeps the bare name and
+ * each later one is pinned as `<name>@<relpath>` — both covered, so a rug-pull in the
+ * shadowed copy still drifts instead of hiding behind a first-wins map. `config` rides along
+ * so the drift report names the file that actually changed.
  *
- * @returns {Promise<Record<string, {hash: string, shape: object}>>}
+ * @returns {Promise<Record<string, {hash: string, shape: object, config: string}>>}
  */
 export async function readRepoServers(cwd) {
   const out = {};
@@ -146,9 +144,6 @@ export async function readRepoServers(cwd) {
     const config = path.relative(cwd, configPath);
     for (const [name, server] of Object.entries(servers)) {
       const key = name in out ? `${name}@${config}` : name;
-      // `config` rides along so the drift report can point the operator at the file that
-      // actually changed — hardcoding `.mcp.json` there would misdirect the one person
-      // reading the output mid-incident.
       out[key] = { hash: computeServerHash(server), shape: serverShape(server), config };
     }
   }

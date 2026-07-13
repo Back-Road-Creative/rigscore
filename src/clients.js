@@ -102,18 +102,11 @@ export function mcpConfigPaths(cwd, homedir) {
 
 /**
  * Absolute paths of the COMMITTED, repo-level MCP configs — every `base: 'cwd'` entry.
- *
- * The single source of truth for "which configs does the CVE-2025-54136 rug-pull pin
- * cover?" Both the minting side (checks/mcp-config.js) and the gate (state.js
- * verifyState) read it, so the two can never disagree about scope — a hardcoded
- * `.mcp.json` on either side is what let a rug-pull in `.gemini/settings.json` or
- * `opencode.json` pass with "0 pinned MCP server(s) verified".
- *
- * Home-dir configs are deliberately excluded: they are per-user, not committed, and
- * cannot be mutated by a pull request.
- *
- * Order is CLIENTS declaration order and is STABLE — server-name collisions across
- * configs are resolved by it (see readRepoServers).
+ * The single source of truth for what the CVE-2025-54136 rug-pull pin covers: both the
+ * minting side (checks/mcp-config.js) and the gate (state.js) read it, so they cannot
+ * disagree about scope. A hardcoded `.mcp.json` on either side is what let a rug-pull in
+ * `.gemini/settings.json` or `opencode.json` pass with "0 pinned MCP server(s) verified".
+ * Order is CLIENTS declaration order and is STABLE — name collisions resolve by it.
  */
 export function repoMcpPaths(cwd) {
   return mcpEntries().filter(m => m.base === 'cwd').map(m => path.join(cwd, m.path));

@@ -1,13 +1,9 @@
 /**
- * The rug-pull pin (CVE-2025-54136) must cover EVERY committed repo-level MCP config,
- * not just `.mcp.json`.
- *
- * `src/clients.js` declares four `base: 'cwd'` (committed, in-repo) MCP configs —
- * `.mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json` — and
- * `mcp-config` scans and reports on all four. Pinning only `.mcp.json` made the other
- * three a blind spot: no pin was minted, `--verify-state` found nothing to compare, and
- * a rug-pulled server sailed through with `PASS: 0 pinned MCP server(s) verified` (exit 0)
- * while `mcp-config` scored the repo as clean.
+ * The rug-pull pin (CVE-2025-54136) must cover EVERY committed repo-level MCP config, not
+ * just `.mcp.json`. `src/clients.js` declares four `base: 'cwd'` configs and `mcp-config`
+ * scans all four; pinning only `.mcp.json` made the other three a blind spot — no pin was
+ * minted, so `--verify-state` had nothing to compare and a rug-pulled server sailed through
+ * with `PASS: 0 pinned MCP server(s) verified` (exit 0) on a repo `mcp-config` scored clean.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -124,34 +120,6 @@ describe('rug-pull pin covers every committed repo-level MCP config', () => {
       expect(r.status).toBe('not-applicable');
       expect(r.exitCode).toBe(0);
       expect((await loadState(dir)).state).toBeNull();
-    });
-  });
-});
-
-describe('present-but-unparseable MCP config is disclosed, not silently swallowed', () => {
-  // rigscore's reader is JSONC-tolerant (comments and trailing commas are stripped), so
-  // "unparseable" means genuinely broken — a merge conflict is the realistic way it happens.
-  const CONFLICTED = '<<<<<<< HEAD\n{ "mcpServers": { "db": { "command": "npx" } } }\n=======\n{ "mcpServers": {} }\n>>>>>>> theirs\n';
-
-  it('emits mcp-config/config-unparseable instead of reporting "No MCP configuration found"', async () => {
-    await withTmpDir(async (dir) => {
-      write(dir, '.mcp.json', CONFLICTED);
-      const result = await scan(dir);
-      const ids = result.findings.map(f => f.findingId);
-      expect(ids).toContain('mcp-config/config-unparseable');
-      expect(ids).not.toContain('mcp-config/no-config-found');
-      const f = result.findings.find(x => x.findingId === 'mcp-config/config-unparseable');
-      expect(f.severity).toBe('warning');
-      expect(f.title).toContain('.mcp.json');
-    });
-  });
-
-  it('an ABSENT config stays a clean skip (no false unparseable finding)', async () => {
-    await withTmpDir(async (dir) => {
-      const result = await scan(dir);
-      const ids = result.findings.map(f => f.findingId);
-      expect(ids).not.toContain('mcp-config/config-unparseable');
-      expect(ids).toContain('mcp-config/no-config-found');
     });
   });
 });

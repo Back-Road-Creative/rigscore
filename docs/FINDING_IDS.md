@@ -269,7 +269,6 @@ Grouped by check. Each ID is stable within the current major.
 ### mcp-config
 
 - `mcp-config/no-config-found` (info)
-- `mcp-config/config-unparseable` (warning) — an MCP config file exists but does not parse as JSON, so its servers are scanned by nothing and (for a committed repo-level config) pinned by nothing. Mirrors `claude-settings/settings-unparseable`.
 - `mcp-config/env-wildcard-passthrough` (warning)
 - `mcp-config/localhost-server` (info)
 - `mcp-config/network-transport` (warning)

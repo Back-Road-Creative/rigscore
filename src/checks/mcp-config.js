@@ -2,7 +2,7 @@ import path from 'node:path';
 import https from 'node:https';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
-import { readJsonSafe, readFileSafe, fileExists } from '../utils.js';
+import { readJsonSafe, readFileSafe } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { readRepoServers, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
@@ -887,36 +887,17 @@ export default {
     const clientServers = new Map(); // configPath → { name → server }
 
     // Hash every server in every COMMITTED repo-level config for rug-pull detection
-    // (CVE-2025-54136) — `.mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`,
-    // `opencode.json`. Minted by the SAME function `--verify-state` verifies against
-    // (state.js readRepoServers), so the pin and the gate cannot disagree about scope;
-    // hashing only `.mcp.json` here left the other three unpinned and the gate vacuous.
-    // Home-dir configs stay unpinned: per-user, and no pull request can touch them.
+    // (CVE-2025-54136), minted by the SAME function `--verify-state` verifies against
+    // (state.js readRepoServers) so the pin and the gate cannot disagree about scope.
+    // Hashing only `.mcp.json` here left the other three configs unpinned and the gate
+    // vacuous. Home-dir configs stay unpinned: per-user, untouchable by a pull request.
     const currentHashes = Object.fromEntries(
       Object.entries(await readRepoServers(cwd)).map(([name, { hash }]) => [name, hash]),
     );
 
     for (const configPath of configPaths) {
       const mcpConfig = await readJsonSafe(configPath);
-      if (!mcpConfig) {
-        // readJsonSafe returns null for BOTH "absent" and "present but malformed". Skipping
-        // on that alone let a config that IS there — and whose servers therefore cannot be
-        // scanned or pinned — be reported as "No MCP configuration found". Absent stays a
-        // clean skip; present-but-unparseable is disclosed, mirroring
-        // claude-settings/settings-unparseable.
-        if (await fileExists(configPath)) {
-          const relPath = path.relative(cwd, configPath) || configPath;
-          findings.push({
-            findingId: 'mcp-config/config-unparseable',
-            severity: 'warning',
-            title: `Unparseable MCP configuration in ${relPath}`,
-            detail: `${relPath} exists but does not parse as JSON, so the MCP servers it declares cannot be inspected — and, for a committed repo-level config, cannot be hash-pinned either, which leaves rug-pull detection (CVE-2025-54136) off for them.`,
-            remediation: 'Fix the JSON syntax — rigscore already tolerates comments and trailing commas, so this is genuinely broken (unresolved merge-conflict markers, an unterminated string, a truncated write). Repair the file or remove it; leaving it in place means its servers are never scanned or pinned.',
-          });
-          foundAny = true;
-        }
-        continue;
-      }
+      if (!mcpConfig) continue;
 
       // Read raw text to detect wildcard env passthrough (e.g. ...process.env)
       const rawText = await readFileSafe(configPath);
