@@ -3,7 +3,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, readJsonSafe, walkDirSafe } from '../utils.js';
+import { readFileSafe, readJsonSafe, walkDirSafe, fileExists } from '../utils.js';
 
 const DANGEROUS_HOOK_RE = [
   /\bcurl\b/, /\bwget\b/, /\brm\s+-rf\b/, /\beval\b/, /\bbase64\s+-d\b/,
@@ -252,7 +252,24 @@ export default {
 
     for (const { p, rel } of paths) {
       const settings = await readJsonSafe(p);
-      if (!settings) continue;
+      if (!settings) {
+        // A present-but-unparseable settings file is a blind spot, not an absent
+        // one: its hooks/permissions can't be scanned, so a dangerous hook inside
+        // it would survive. Mirror the frontmatter-unparseable arm — surface a
+        // WARNING and keep the check applicable so "couldn't scan" never renders as
+        // N/A "no settings found". An ABSENT file stays a clean skip (→ N/A).
+        if (await fileExists(p)) {
+          findings.push({
+            findingId: 'claude-settings/settings-unparseable',
+            severity: 'warning',
+            title: `Unparseable Claude settings in ${rel}`,
+            detail: `${rel} exists but does not parse as JSON — its hooks and permissions cannot be scanned and are a blind spot.`,
+            remediation: 'Fix the JSON syntax (check for trailing commas, unquoted keys, or unterminated strings), or remove the file.',
+          });
+          foundAny = true;
+        }
+        continue;
+      }
       foundAny = true;
 
       // enableAllProjectMcpServers
