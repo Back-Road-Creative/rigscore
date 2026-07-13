@@ -10,10 +10,10 @@ Surfaces Windows- and WSL-specific isolation weaknesses that aren't covered by t
 
 | Arm | Reads | Runs when |
 |---|---|---|
-| WSL interop | `/etc/wsl.conf` | **WSL guest** (`process.platform === 'linux'` + a WSL kernel marker) — this is a Linux-guest file, and never exists on the Windows host. |
+| WSL interop | `/etc/wsl.conf` | **WSL guest** — the kernel reports a WSL marker. This is a Linux-guest file, and never exists on the Windows host. |
 | `.wslconfig`, Defender exclusions, NTFS advisory | `%USERPROFILE%\.wslconfig`, `Get-MpPreference`, — | **Windows host** (`process.platform === 'win32'`). |
 
-A plain (non-WSL) Linux or macOS machine matches neither arm and stays N/A. Guest detection reads the kernel's own release string (`/proc/sys/kernel/osrelease`, which contains `microsoft` under WSL1/WSL2) rather than `$WSL_DISTRO_NAME`, which is absent from systemd units, cron jobs, and containers. Both that path and `/etc/wsl.conf` are absolute host paths, so they are injectable through the scan context (`scan({ wslConfPath, wslOsReleasePath })`) — tests pin them instead of reading the real machine.
+A plain (non-WSL) Linux or macOS machine matches neither arm and stays N/A. Guest detection reads the kernel's own release string (`/proc/sys/kernel/osrelease`, which contains `microsoft` under WSL1/WSL2) rather than `$WSL_DISTRO_NAME`, which is absent from systemd units, cron jobs, and containers. That marker is the only signal — `process.platform` is not also consulted, which keeps the arm exercisable from a test on any OS. Both that path and `/etc/wsl.conf` are absolute host paths, so they are injectable through the scan context (`scan({ wslConfPath, wslOsReleasePath })`) — tests pin them instead of reading the real machine.
 
 ## Triggers
 
@@ -60,7 +60,7 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 
 ## Scope and limitations
 
-- Platform gate: returns `NOT_APPLICABLE` unless the machine is a Windows host (`win32`) or a WSL guest (`linux` + a `microsoft` kernel marker). A plain Linux or macOS scan will never show findings from this module.
+- Platform gate: returns `NOT_APPLICABLE` unless the machine is a Windows host (`win32`) or a WSL guest (the kernel release string contains `microsoft`). A plain Linux or macOS scan will never show findings from this module — neither has that marker.
 - Each arm only runs when the file it parses exists: `/etc/wsl.conf` on the guest, `%USERPROFILE%\.wslconfig` on the host. A WSL guest with no `wsl.conf` at all reports nothing rather than assuming WSL's defaults.
 - A container running on the WSL2 kernel matches the guest marker (it shares that kernel). This is intended, and harmless: the interop arm still only speaks if a `wsl.conf` is actually present in that filesystem.
 - Defender check shells out to `powershell.exe Get-MpPreference` with a 5s timeout, **from the Windows host only** — `powershell.exe` is reachable from a WSL guest over interop, but the guest deliberately does not cross that boundary to query the host's posture. On systems without PowerShell in PATH, or where Defender is managed by a third party, it silently degrades.

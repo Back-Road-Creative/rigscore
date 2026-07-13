@@ -20,6 +20,12 @@ const DEFAULT_WSL_OSRELEASE_PATH = '/proc/sys/kernel/osrelease';
  * is worse than one that reads a file. A container on the WSL2 kernel matches
  * too — correctly, since it shares that kernel; the interop arm then still only
  * speaks if a wsl.conf is actually present.
+ *
+ * The marker is the SOLE signal — deliberately not `&& process.platform === 'linux'`.
+ * That conjunct would be redundant (only a Linux kernel has /proc/sys/kernel/osrelease,
+ * so macOS and Windows read null and answer false anyway) while making the answer
+ * un-injectable: the guest arm could then only be exercised by a test that happens to
+ * run on Linux, which is the host-dependence this seam exists to remove.
  */
 async function isWslGuest(context) {
   const osRelease = await readFileSafe(context.wslOsReleasePath ?? DEFAULT_WSL_OSRELEASE_PATH);
@@ -39,7 +45,7 @@ export default {
     // file that never exists on the Windows host — gating it on win32 made it
     // unreachable. The .wslconfig / Defender / NTFS arms are genuinely host-side.
     const onWindowsHost = process.platform === 'win32';
-    const onWslGuest = process.platform === 'linux' && (await isWslGuest(context));
+    const onWslGuest = !onWindowsHost && (await isWslGuest(context));
 
     if (!onWindowsHost && !onWslGuest) {
       findings.push({
