@@ -9,8 +9,13 @@ import { readFileSafe, statSafe, fileExists } from '../utils.js';
 const POLICY_FILENAMES = new Set(['ai_policy.md', 'ai-policy.md', 'aipolicy.md', 'ai.md', 'ai_covenant.md', 'ai_contributing.md', 'ai-contributing.md']);
 const POLICY_DIRS = ['.', 'docs', '.github'];
 const PROSE_POLICY_FILES = ['CONTRIBUTING.md', '.github/CONTRIBUTING.md', 'docs/CONTRIBUTING.md', ...GOVERNANCE_FILES];
-const PR_TEMPLATE_FILES = ['.github/PULL_REQUEST_TEMPLATE.md', '.github/pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'docs/PULL_REQUEST_TEMPLATE.md'];
-const PR_TEMPLATE_DIRS = ['.github/PULL_REQUEST_TEMPLATE', '.github/pull_request_template'];
+// GitHub honours a PR template in the repo root, `.github/`, or `docs/` — as a single
+// file, or as a PULL_REQUEST_TEMPLATE/ directory holding several. Read all of them:
+// a false "you have no PR template" on a repo that has one is the expensive failure.
+// https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository
+const PR_TEMPLATE_ROOTS = ['.github', '.', 'docs'];
+const PR_TEMPLATE_FILES = PR_TEMPLATE_ROOTS.flatMap((d) => ['PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md'].map((n) => path.join(d, n)));
+const PR_TEMPLATE_DIRS = PR_TEMPLATE_ROOTS.flatMap((d) => [path.join(d, 'PULL_REQUEST_TEMPLATE'), path.join(d, 'pull_request_template')]);
 const MCP_CONFIGS = ['.mcp' + '.json', 'mcp_config.json', '.cursor/mcp' + '.json', '.vscode/mcp' + '.json'];
 // Presence-based keyword sets — NOT a semantic read. See the docs page's limitations.
 const AI_TERM = '\\b(generative ai|gen-?ai|ai|a\\.i\\.|artificial intelligence|llm|large language model|copilot|chatgpt|claude|cursor|codex|coding agent|machine[ -]generated)\\b';
@@ -95,7 +100,17 @@ export default {
         remediation: 'Add an AI_POLICY.md, or a "Generative AI policy" section in CONTRIBUTING.md, stating whether AI-assisted contributions are accepted and how they must be disclosed.',
       });
     }
-    // Deferred: "no PR template at all" (docs → "Not covered (yet)").
+    // Weakest of the three signals — legitimate repos (solo projects, mirrors,
+    // non-GitHub hosting) have no PR template at all — so INFO, never WARNING.
+    if (templates.length === 0) {
+      findings.push({
+        findingId: 'ai-disclosure/no-pr-template',
+        severity: 'info',
+        title: 'No PR template for a repo that runs AI agents',
+        detail: `AI surface present (${surface.slice(0, 3).join(', ')}) but no pull-request template in any location GitHub reads (root, .github/ or docs/ — single file or PULL_REQUEST_TEMPLATE/ directory), so a contributor is never asked to declare AI assistance.`,
+        remediation: 'Add .github/pull_request_template.md carrying a generative-AI declaration — e.g. a checkbox pair: did not use generative AI / used it, but a human has checked the code.',
+      });
+    }
     if (templates.length > 0 && !disclosing) {
       findings.push({
         findingId: 'ai-disclosure/pr-template-no-ai-field',
