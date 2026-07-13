@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { GOVERNANCE_FILES } from './constants.js';
 import { readFileSafe, readJsonSafe } from './utils.js';
+import { mcpServersIn } from './clients.js';
 import { computeServerHash, loadState } from './state.js';
 import { argHasStableVersionPin, extractPackageName, findPackagePositionArg } from './checks/mcp-config.js';
 
@@ -15,7 +16,9 @@ const TARGET_REF = 'rigscore:target';
 
 // Repo-level configs only — home-dir client configs are excluded on purpose:
 // a BOM is shippable and must not carry a developer's machine layout.
-const MCP_CONFIG_FILES = ['.mcp.json', '.vscode/mcp.json'];
+// `opencode.json` nests its servers under `mcp`; servers are read via mcpServersIn()
+// so each file's own key applies (see src/clients.js).
+const MCP_CONFIG_FILES = ['.mcp.json', '.vscode/mcp.json', 'opencode.json'];
 const INVENTORIED_FILES = [...MCP_CONFIG_FILES, '.claude/settings.json', ...GOVERNANCE_FILES];
 
 const prop = (name, value) => ({ name, value: String(value) });
@@ -69,8 +72,7 @@ export async function formatCycloneDx(result, options = {}) {
   const seen = new Set();
   for (const relPath of MCP_CONFIG_FILES) {
     const config = await readJsonSafe(path.join(cwd, relPath));
-    const servers = config && typeof config.mcpServers === 'object' ? config.mcpServers : null;
-    if (!servers) continue;
+    const servers = mcpServersIn(relPath, config);
     for (const [name, server] of Object.entries(servers)) {
       if (!server || typeof server !== 'object' || seen.has(name)) continue;
       seen.add(name);
