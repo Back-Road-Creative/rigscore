@@ -10,11 +10,17 @@ const DESIGN = 'design.md';
 const SPECS = 'specs';
 const CONSTITUTION_REL = path.join('.specify', 'memory', 'constitution.md');
 
-// One planning quarter: long enough that the goal file has demonstrably sat out a cycle,
-// short enough to catch drift while it is cheap to fix. Deliberately a module constant —
-// config.js allowlists known keys, so a threshold here would need a shared DEFAULTS entry.
+// One planning quarter: long enough that a goal file or spec has demonstrably sat out a
+// cycle, short enough to catch drift while it is cheap to fix. Tunable per repo via
+// `specGoals.driftWindowDays` in .rigscorerc.json (DEFAULTS in src/config.js); this is the
+// fallback when the key is absent or not a positive integer.
 const STALE_DAYS = 90;
 const DAY_MS = 86_400_000;
+
+// OpenSpec ticks tasks off as a change lands, then parks it under changes/archive/.
+// Every box ticked and none left open is the tool's own "this shipped" signal.
+const TICKED_TASK_RE = /^[ \t]*[-*] \[[xX]\]/m;
+const OPEN_TASK_RE = /^[ \t]*[-*] \[ \]/m;
 
 // Each layout: the marker dir that proves the tool is installed, where its spec dirs live,
 // which file makes a dir a spec, and what a finished spec must also carry.
@@ -94,29 +100,64 @@ function lastCommitMs(cwd, rel) {
 }
 
 /**
- * Liveness, not completeness: has the goal file sat out a planning cycle the specs kept
- * moving through? Compares committer dates *relative to each other*, so a rebase — which
- * rewrites every date together — cannot manufacture a finding. Where history can't answer
- * (no `.git`, no `git` on PATH, or a shallow clone that dates every file to one commit),
- * we skip rather than guess.
+ * Committer date of every spec, plus the newest of them — the yardstick both staleness
+ * findings are measured against. Null where history can't answer (no `.git`, no `git` on
+ * PATH, or a shallow clone that dates every file to one commit): we skip rather than guess.
  */
-function goalFileDrift(cwd, goalRel, specRels) {
+function specDates(cwd, specs) {
   if (git(cwd, ['rev-parse', '--git-dir']) === null) return null;
   if (git(cwd, ['rev-parse', '--is-shallow-repository']) === 'true') return null;
 
+  const dated = [];
+  let newest = null;
+  for (const s of specs) {
+    const ms = lastCommitMs(cwd, s.entryRel);
+    if (Number.isNaN(ms)) continue;
+    dated.push({ ...s, ms });
+    if (!newest || ms > newest.ms) newest = { rel: s.entryRel, ms };
+  }
+  return newest ? { dated, newest } : null;
+}
+
+/**
+ * Liveness, not completeness: has the goal file sat out a planning cycle the specs kept
+ * moving through? Compares committer dates *relative to each other*, so a rebase — which
+ * rewrites every date together — cannot manufacture a finding.
+ */
+function goalFileDrift(cwd, goalRel, newest, windowDays) {
   const goalMs = lastCommitMs(cwd, goalRel);
   if (Number.isNaN(goalMs)) return null; // never committed — nothing to compare against
-
-  let newest = null;
-  for (const rel of specRels) {
-    const ms = lastCommitMs(cwd, rel);
-    if (Number.isNaN(ms)) continue;
-    if (!newest || ms > newest.ms) newest = { rel, ms };
-  }
-  if (!newest) return null;
-
   const gapDays = Math.floor((newest.ms - goalMs) / DAY_MS);
-  return gapDays >= STALE_DAYS ? { goalRel, newestSpec: newest.rel, gapDays } : null;
+  return gapDays >= windowDays ? { goalRel, newestSpec: newest.rel, gapDays } : null;
+}
+
+/**
+ * Specs the tree left behind. An unfinished spec is only *evidence* of abandonment once
+ * the rest of the tree kept moving without it, so the gap is measured against the newest
+ * spec — never the wall clock. That keeps the finding rebase-immune (every date rewritten
+ * together closes the gap) at the price of staying silent on a tree abandoned wholesale,
+ * where no spec is newer than any other. A spec that is old but *complete* is finished
+ * work, not abandoned work, and is never flagged.
+ */
+function abandonedSpecs(dated, newest, windowDays) {
+  const out = [];
+  for (const s of dated) {
+    if (s.missing.length === 0) continue;
+    const gapDays = Math.floor((newest.ms - s.ms) / DAY_MS);
+    if (gapDays >= windowDays) out.push({ ...s, gapDays });
+  }
+  return out;
+}
+
+/** Complete OpenSpec changes whose tasks are all ticked — shipped work never swept into archive/. */
+async function unarchivedChanges(cwd, specs) {
+  const out = [];
+  for (const s of specs) {
+    if (s.framework !== 'openspec' || s.missing.length > 0) continue;
+    const text = await readFileSafe(path.join(cwd, s.specDir, TASKS));
+    if (text && TICKED_TASK_RE.test(text) && !OPEN_TASK_RE.test(text)) out.push(s);
+  }
+  return out;
 }
 
 export default {
@@ -126,7 +167,9 @@ export default {
   category: 'governance',
 
   async run(context) {
-    const { cwd } = context;
+    const { cwd, config } = context;
+    const configured = config?.specGoals?.driftWindowDays;
+    const windowDays = Number.isInteger(configured) && configured > 0 ? configured : STALE_DAYS;
     const findings = [];
     const frameworks = [];
     let specDirs = [];
@@ -193,15 +236,38 @@ export default {
     const openspecSpecs = frameworks.includes('openspec')
       ? (await collectSpecDirs(cwd, { framework: 'openspec', root: 'openspec/specs', entries: ['spec.md'], required: [] }))
       : [];
-    const specRels = [...specDirs, ...openspecSpecs].map((s) => s.entryRel);
-    const drift = goalRel && specRels.length > 0 ? goalFileDrift(cwd, goalRel, specRels) : null;
+    const allSpecs = [...specDirs, ...openspecSpecs];
+    const dates = allSpecs.length > 0 ? specDates(cwd, allSpecs) : null;
+
+    const drift = goalRel && dates ? goalFileDrift(cwd, goalRel, dates.newest, windowDays) : null;
     if (drift) {
       findings.push({
         findingId: 'spec-goals/goal-file-stale', severity: 'info',
         title: `Goal file \`${goalRel}\` is ${drift.gapDays} days behind the newest spec`,
-        detail: `\`${goalRel}\` was last committed ${drift.gapDays} days before \`${drift.newestSpec}\` (threshold ${STALE_DAYS}) — specs kept moving while the goal file sat out a planning cycle. Commit dates proxy attention, so read this as a prompt, not proof.`,
+        detail: `\`${goalRel}\` was last committed ${drift.gapDays} days before \`${drift.newestSpec}\` (threshold ${windowDays}) — specs kept moving while the goal file sat out a planning cycle. Commit dates proxy attention, so read this as a prompt, not proof.`,
         remediation: `Re-read \`${goalRel}\` against the newest specs and update what no longer holds.`,
-        context: { file: goalRel, newestSpec: drift.newestSpec, gapDays: drift.gapDays, thresholdDays: STALE_DAYS },
+        context: { file: goalRel, newestSpec: drift.newestSpec, gapDays: drift.gapDays, thresholdDays: windowDays },
+      });
+    }
+
+    const abandoned = dates ? abandonedSpecs(dates.dated, dates.newest, windowDays) : [];
+    for (const s of abandoned) {
+      findings.push({
+        findingId: 'spec-goals/spec-abandoned', severity: 'info',
+        title: `Spec \`${s.specDir}\` was left unfinished ${s.gapDays} days behind the newest spec`,
+        detail: `\`${s.specDir}/\` is still missing \`${s.missing.join('`, `')}\` and its last commit is ${s.gapDays} days behind \`${dates.newest.rel}\` (threshold ${windowDays}) — the spec tree moved on without it, so it reads as abandoned rather than mid-flight. Commit dates proxy attention, so read this as a prompt, not proof.`,
+        remediation: `Finish \`${s.specDir}\` or archive it — an unfinished spec agents can still read is a goal no one is steering.`,
+        context: { specDir: s.specDir, missing: s.missing, gapDays: s.gapDays, thresholdDays: windowDays, framework: s.framework },
+      });
+    }
+
+    for (const s of await unarchivedChanges(cwd, specDirs)) {
+      findings.push({
+        findingId: 'spec-goals/change-unarchived', severity: 'info',
+        title: `Change \`${s.specDir}\` is fully ticked off but never archived`,
+        detail: `Every task in \`${s.specDir}/${TASKS}\` is checked and none is open, but the change still sits in \`openspec/changes/\` — OpenSpec parks shipped work under \`changes/archive/\`, so the active tree overstates what is actually in flight.`,
+        remediation: `Sweep \`${s.specDir}\` into \`openspec/changes/archive/\` (\`openspec archive <name>\`), or reopen the tasks that are not really done.`,
+        context: { specDir: s.specDir, framework: s.framework },
       });
     }
 
@@ -219,7 +285,12 @@ export default {
       findings.push({ severity: 'pass', title: `Spec-driven artifacts are complete (${frameworks.join(', ')})` });
     }
 
-    const data = { frameworks, specDirsChecked: specDirs.length, specDirsWithoutTasks: withoutTasks.length };
+    const data = {
+      frameworks,
+      specDirsChecked: specDirs.length,
+      specDirsWithoutTasks: withoutTasks.length,
+      driftWindowDays: windowDays,
+    };
     return { score: calculateCheckScore(findings), findings, data };
   },
 };

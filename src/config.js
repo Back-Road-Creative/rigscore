@@ -62,6 +62,14 @@ const DEFAULTS = {
     // hold a tighter line. Must be a positive integer — anything else is ignored.
     budgetBytes: 40_000,
   },
+  specGoals: {
+    // Day gap at which a goal file reads as trailing the specs, and an unfinished
+    // spec reads as abandoned rather than mid-flight (docs/checks/spec-goals.md).
+    // 90 ≈ one planning quarter. Shorten it for a fast-moving repo that wants the
+    // nudge sooner; lengthen it for a long-cycle project that would find 90 noisy.
+    // Must be a positive integer — anything else is ignored.
+    driftWindowDays: 90,
+  },
   skillFiles: {
     // Allowlist entries for patterns that would otherwise flag (e.g. `sudo` in
     // an operator skill). Each entry: { skill, pattern, reason }.
@@ -309,6 +317,16 @@ function mergeConfig(userConfig, baseline) {
     const budget = userConfig.memoryHygiene.budgetBytes;
     if (Number.isInteger(budget) && budget > 0) {
       result.memoryHygiene.budgetBytes = budget;
+    }
+  }
+
+  if (userConfig.specGoals && typeof userConfig.specGoals === 'object') {
+    // Scalar override (project beats home), same policy as memoryHygiene above:
+    // a non-integer or non-positive window is dropped rather than throwing, and
+    // the check falls back to its 90-day default.
+    const window = userConfig.specGoals.driftWindowDays;
+    if (Number.isInteger(window) && window > 0) {
+      result.specGoals.driftWindowDays = window;
     }
   }
 
