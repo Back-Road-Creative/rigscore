@@ -344,6 +344,45 @@ describe('workflow-maturity check', () => {
       expect(titles).toContain('server-from-settings');
       expect(result.data.mcpServersChecked).toBe(2);
     });
+
+    // Zed nests its servers under `context_servers`, and its only config is
+    // ~/.config/zed/settings.json. A hardcoded `.mcp.json` + `mcpServers` read
+    // sees neither the path nor the key, so Zed servers were invisible here.
+    it('picks up Zed MCP servers from ~/.config/zed/settings.json (context_servers)', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeFile(path.join(home, '.config', 'zed', 'settings.json'), JSON.stringify({
+        context_servers: { 'zed-only-server': { command: 'npx' } },
+      }));
+      writeSkill(cwd, 'unrelated', [
+        '---',
+        'name: unrelated',
+        'description: no usage',
+        '---',
+        'Nothing here.',
+      ].join('\n'));
+      fs.mkdirSync(path.join(cwd, 'evals', 'unrelated'), { recursive: true });
+
+      const result = await check.run({ cwd, homedir: home });
+      const mcpFindings = result.findings.filter(f => f.title?.includes('zed-only-server'));
+      expect(result.data.mcpServersChecked).toBe(1);
+      expect(mcpFindings.length).toBe(1);
+      expect(mcpFindings[0].severity).toBe('warning');
+    });
+
+    // Zed itself ignores an `mcpServers` key in its settings, so rigscore must
+    // not invent servers from one — guards against a "read both keys" shortcut.
+    it('ignores an mcpServers key in a Zed config', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeFile(path.join(home, '.config', 'zed', 'settings.json'), JSON.stringify({
+        mcpServers: { 'not-a-zed-server': { command: 'npx' } },
+      }));
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(result.data.mcpServersChecked ?? 0).toBe(0);
+      expect(result.findings.some(f => f.title?.includes('not-a-zed-server'))).toBe(false);
+    });
   });
 
   // ---- memory-orphan ----

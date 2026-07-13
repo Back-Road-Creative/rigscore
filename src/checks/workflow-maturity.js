@@ -3,6 +3,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, readJsonSafe, fileExists } from '../utils.js';
+import { mcpConfigPaths, mcpServersIn } from '../clients.js';
 
 // Directories excluded from recursive pipeline scans
 const SKIP_DIRS = new Set(['node_modules', '.venv', '__pycache__', '.git']);
@@ -135,41 +136,30 @@ function countTriggerKeywords(content) {
 }
 
 /**
- * Read MCP server names from .mcp.json and .claude/settings.json
- * under both cwd and homedir.
+ * Read MCP server names from every known AI client's MCP config (src/clients.js),
+ * plus `.claude/settings.json` and a home-level `.mcp.json`, under cwd and homedir.
+ *
+ * Both the paths and the per-client server key come from clients.js — hardcoding
+ * `.mcp.json` + `mcpServers` was blind to any client that differs on either axis
+ * (Zed lives only at ~/.config/zed/settings.json and nests its servers under
+ * `context_servers`). `mcpServersIn()` resolves the right key for each path and
+ * falls back to `mcpServers` for paths no client claims.
  */
 async function discoverMcpServers(cwd, homedir) {
   const serverNames = new Set();
 
-  const mcpJsonPaths = [
-    path.join(cwd, '.mcp.json'),
-  ];
+  const configPaths = mcpConfigPaths(cwd, homedir);
+  configPaths.push(path.join(cwd, '.claude', 'settings.json'));
   if (homedir && homedir !== cwd) {
-    mcpJsonPaths.push(path.join(homedir, '.mcp.json'));
+    configPaths.push(path.join(homedir, '.mcp.json'));
+    configPaths.push(path.join(homedir, '.claude', 'settings.json'));
   }
 
-  for (const p of mcpJsonPaths) {
+  for (const p of configPaths) {
     const data = await readJsonSafe(p);
-    if (data?.mcpServers && typeof data.mcpServers === 'object') {
-      for (const name of Object.keys(data.mcpServers)) {
-        serverNames.add(name);
-      }
-    }
-  }
-
-  const settingsPaths = [
-    path.join(cwd, '.claude', 'settings.json'),
-  ];
-  if (homedir && homedir !== cwd) {
-    settingsPaths.push(path.join(homedir, '.claude', 'settings.json'));
-  }
-
-  for (const p of settingsPaths) {
-    const data = await readJsonSafe(p);
-    if (data?.mcpServers && typeof data.mcpServers === 'object') {
-      for (const name of Object.keys(data.mcpServers)) {
-        serverNames.add(name);
-      }
+    if (!data) continue;
+    for (const name of Object.keys(mcpServersIn(p, data))) {
+      serverNames.add(name);
     }
   }
 
