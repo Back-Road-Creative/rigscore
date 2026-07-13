@@ -124,6 +124,35 @@ describe('spec-goals check', () => {
     expect(r.findings.some((f) => String(f.context?.specDir || '').includes('archive'))).toBe(false);
   });
 
+  it('flags a Kiro requirements file written as prose, and one that mixes strays into EARS', async () => {
+    const r = await check.run(ctx('spec-goals-kiro'));
+    const notEars = r.findings.filter((f) => f.findingId === 'spec-goals/requirements-not-ears');
+    // 001-login and 002-crash are already EARS ("WHEN … THE SYSTEM SHALL …") — they never fire.
+    expect(notEars.map((f) => f.context.specDir)).toEqual([
+      '.kiro/specs/003-prose',
+      '.kiro/specs/004-mixed',
+    ]);
+    expect(notEars[0].severity).toBe('info');
+    expect(notEars[0].context.earsCount).toBe(0);
+    // 004-mixed has one real EARS line and one stray ("Refunds must be quick.").
+    expect(notEars[1].context.earsCount).toBe(1);
+    expect(notEars[1].context.nonEars[0]).toContain('Refunds must be quick');
+  });
+
+  it('audits OpenSpec living specs: a hollow domain spec, and a requirement carrying no scenario', async () => {
+    const r = await check.run(ctx('spec-goals-openspec'));
+    const gaps = r.findings.filter((f) => f.findingId === 'spec-goals/domain-spec-incomplete');
+    // billing is complete (Purpose + Requirement + Scenario) — only auth and payments fire.
+    expect(gaps.map((f) => f.context.specDir)).toEqual([
+      'openspec/specs/auth',
+      'openspec/specs/payments',
+    ]);
+    expect(gaps[0].severity).toBe('info');
+    expect(gaps[0].context.missing).toContain('a `## Purpose` section');
+    expect(gaps[0].context.missing).toContain('at least one `### Requirement:`');
+    expect(gaps[1].context.missing).toEqual(['a `#### Scenario:` under "Card Capture"']);
+  });
+
   it('INFOs when the goal file sat out a planning cycle the specs kept moving through', async () => {
     await withTmpDir(async (tmp) => {
       specKitRepo(tmp, { goalDate: daysAgo(300), specDate: daysAgo(5) });
