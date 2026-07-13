@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/memory-hygiene.js';
+import { loadConfig } from '../src/config.js';
 import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,116 @@ describe('memory-hygiene', () => {
     expect(r.score).not.toBe(NOT_APPLICABLE_SCORE);
     const ids = r.findings.map((f) => f.findingId || f.severity);
     expect(ids.some((id) => /orphan|index/i.test(id))).toBe(false);
+  });
+
+  it('reads the budget from config.memoryHygiene.budgetBytes', async () => {
+    const dir = tmpMemoryDir();
+    const note = `# Deploy\n\n${'Roll back with the previous tag when the smoke test fails. '.repeat(20)}\n`;
+    fs.writeFileSync(path.join(dir, '.claude/memory/deploy.md'), note);
+    try {
+      // Well under the 40,000-byte default — silent unless the budget is lowered.
+      const dflt = await run(dir);
+      expect(dflt.findings.find((f) => f.findingId === 'memory-hygiene/bundle-over-budget')).toBeUndefined();
+      expect(dflt.data.budgetBytes).toBe(40_000);
+
+      const tight = await run(dir, { config: { memoryHygiene: { budgetBytes: 500 } } });
+      const over = tight.findings.find((f) => f.findingId === 'memory-hygiene/bundle-over-budget');
+      expect(over).toBeDefined();
+      expect(over.severity).toBe('warning');
+      expect(tight.data.budgetBytes).toBe(500);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('merges a memoryHygiene budget from .rigscorerc.json instead of dropping it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-cfg-'));
+    try {
+      fs.writeFileSync(
+        path.join(dir, '.rigscorerc.json'),
+        JSON.stringify({ memoryHygiene: { budgetBytes: 80_000 } }),
+      );
+      const config = await loadConfig(dir, null);
+      expect(config.memoryHygiene.budgetBytes).toBe(80_000);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('memory-hygiene: single home per rule', () => {
+  // A project with a governance file and a memory dir. `rules` is written into
+  // CLAUDE.md, `memory` into .claude/memory/notes.md.
+  function tmpGoverned(claudeMd, memoryMd) {
+    const dir = tmpMemoryDir();
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), claudeMd);
+    fs.writeFileSync(path.join(dir, '.claude/memory/notes.md'), memoryMd);
+    return dir;
+  }
+
+  const dupes = (r) => r.findings.filter((f) => f.findingId === 'memory-hygiene/duplicate-rule');
+
+  it('flags a rule stated in both a governance file and a memory file', async () => {
+    const rule = 'Never merge a pull request yourself — emit the merge command for the operator.';
+    const dir = tmpGoverned(
+      `# CLAUDE.md\n\n## Git\n\n- **${rule}**\n`,
+      `# Merge policy\n\nThe 2026-03 incident: an agent self-merged a red-CI PR.\n\n${rule}\n`,
+    );
+    try {
+      const r = await run(dir);
+      const found = dupes(r);
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe('info');
+      expect(found[0].detail).toContain('CLAUDE.md');
+      expect(found[0].detail).toContain('notes.md');
+      expect(r.data.duplicateRules).toBe(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays silent on paraphrases — the bar is near-exact, not fuzzy', async () => {
+    const dir = tmpGoverned(
+      '# CLAUDE.md\n\n- Never merge a pull request yourself; emit the merge command for the operator.\n',
+      '# Merge policy\n\nThe operator merges every pull request by hand, so the agent must not merge one.\n',
+    );
+    try {
+      expect(dupes(await run(dir))).toHaveLength(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores headings, code fences, link-only lines, and short boilerplate', async () => {
+    const shared = [
+      '## Rules',
+      '',
+      '- Never.',
+      '- [Merge policy](merge.md)',
+      '',
+      '```bash',
+      'gh pr create --base main --title "fix: the thing that broke the deploy pipeline"',
+      '```',
+      '',
+    ].join('\n');
+    const dir = tmpGoverned(`# CLAUDE.md\n\n${shared}`, `# Notes\n\n${shared}`);
+    try {
+      expect(dupes(await run(dir))).toHaveLength(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('matches through bullet, emphasis, and punctuation differences', async () => {
+    const dir = tmpGoverned(
+      '# CLAUDE.md\n\n1. **Staging never lives on `/tmp`** — tmpfs is wiped on reboot, and a run loses hours of encode.\n',
+      '# Staging\n\n- Staging never lives on /tmp: tmpfs is wiped on reboot and a run loses hours of encode\n',
+    );
+    try {
+      expect(dupes(await run(dir))).toHaveLength(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('is N/A with no memory surface, and ignores home memory unless opted in', async () => {
