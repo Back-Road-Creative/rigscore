@@ -12,7 +12,8 @@ Scans `.claude/settings.json` and `.claude/settings.local.json` (both project-lo
 |---|---|---|---|
 | `enableAllProjectMcpServers: true` — MCP auto-approve | CRITICAL | `claude-settings/mcp-auto-approve` | Remove the key or set to `false` |
 | `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirected to non-Anthropic host (CVE-2025-59536) | CRITICAL | `claude-settings/anthropic-base-url-redirect` | Remove the override or set to `https://api.anthropic.com` |
-| `defaultMode: "bypassPermissions"` combined with `skipDangerousModePermissionPrompt: true` | CRITICAL | `claude-settings/bypass-skip-combo` | Drop `skipDangerousModePermissionPrompt` or change `defaultMode` to `acceptEdits` |
+| `defaultMode: "bypassPermissions"` combined with `skipDangerousModePermissionPrompt: true` | CRITICAL | `claude-settings/bypass-plus-skip-prompt` | Drop `skipDangerousModePermissionPrompt` or change `defaultMode` to `acceptEdits` |
+| `defaultMode: "bypassPermissions"` **on its own** — read from either shape (see *Settings shapes read*) | WARNING | `claude-settings/bypass-permissions-mode` | Set `defaultMode` to `acceptEdits`, or set `permissions.disableBypassPermissionsMode` to `disable` |
 | Lifecycle hook command matches dangerous pattern (`curl`, `wget`, `rm -rf`, `eval`, `base64 -d`, `nc`, `/dev/tcp`, `python -c`, `node -e`) — in either hook schema, `args` included | CRITICAL | `claude-settings/dangerous-hook` | Remove the hook; repo-level hooks execute for every collaborator |
 | Hook command references a script path (leading `/`, `~`, or `.`) that does not exist on disk | WARNING | `claude-settings/hook-script-missing` | Create the script or fix the hook's command path |
 | `allowedTools` or `permissions.allow` contains `"*"` | WARNING | `claude-settings/wildcard-tools` | Replace the wildcard with explicit tool names |
@@ -49,6 +50,32 @@ No auto-fix — the module does not export a `fixes` array. Every finding here r
     allowedTools contains "*" which permits all tools without approval.
   INFO Claude Code lifecycle hooks not configured: Stop, UserPromptSubmit
 ```
+
+## Settings shapes read
+
+`defaultMode` is read from **both** of these, nested first:
+
+```jsonc
+// published schema (json.schemastore.org/claude-code-settings.json) — and the shape
+// rigscore's own templates/guards/settings.json writes
+{ "permissions": { "defaultMode": "bypassPermissions", "deny": ["Read(./.env)"] } }
+
+// legacy / hand-written top-level shape — still read
+{ "defaultMode": "bypassPermissions" }
+```
+
+Reading only the top level made every *real* bypassPermissions config invisible: the check
+scored it 98/100 and appended "Claude settings look secure". `skipDangerousModePermissionPrompt`
+appears nowhere in the published schema, so it has no canonical home and is likewise accepted in
+either position.
+
+**Why `bypassPermissions` alone is a WARNING, not a CRITICAL.** The mode removes the per-tool-call
+approval prompt, but Claude Code still makes the operator confirm dangerous mode once — a human
+opened the gate knowingly. That is the line this check already draws: CRITICAL is for settings that
+remove the human from the loop entirely (MCP auto-approve, `ANTHROPIC_BASE_URL` redirect, and the
+bypass **+** skip-prompt combo, where even that one confirmation is gone); WARNING is for a blast
+radius a human widened on purpose (wildcard tools, dangerous allow-list entries). WARNING is also
+the weakest severity that suppresses the "look secure" pass line and moves the score (98 → 83).
 
 ## Hook schemas read
 

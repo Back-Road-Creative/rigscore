@@ -56,6 +56,26 @@ function extractHookCommands(hookList) {
   return commands;
 }
 
+/**
+ * Read a permission key from BOTH settings shapes, nested first.
+ *
+ * The published schema (json.schemastore.org/claude-code-settings.json) nests the
+ * mode under `permissions`:
+ *   { "permissions": { "defaultMode": "bypassPermissions", "deny": [...] } }
+ * which is also the shape rigscore's own templates/guards/settings.json writes.
+ * Hand-written and older configs put it at the top level:
+ *   { "defaultMode": "bypassPermissions" }
+ * Reading only the top level made every REAL bypassPermissions config invisible —
+ * the check scored it 98/100 and printed "Claude settings look secure".
+ *
+ * `skipDangerousModePermissionPrompt` appears nowhere in the published schema, so it
+ * has no canonical home; accept it in either position for the same reason.
+ */
+function readPermissionKey(settings, key) {
+  const perms = settings.permissions && typeof settings.permissions === 'object' ? settings.permissions : {};
+  return perms[key] !== undefined ? perms[key] : settings[key];
+}
+
 export default {
   id: 'claude-settings',
   enforcementGrade: 'mechanical',
@@ -108,8 +128,13 @@ export default {
         });
       }
 
-      // bypassPermissions + skipDangerousModePermissionPrompt combo
-      if (settings.defaultMode === 'bypassPermissions' && settings.skipDangerousModePermissionPrompt === true) {
+      // Permission mode — read from both shapes (see readPermissionKey above).
+      const mode = readPermissionKey(settings, 'defaultMode');
+      const skipsDangerPrompt = readPermissionKey(settings, 'skipDangerousModePermissionPrompt') === true;
+      const isBypass = mode === 'bypassPermissions';
+
+      if (isBypass && skipsDangerPrompt) {
+        // Both flags: not even the one-time dangerous-mode confirmation is shown.
         findings.push({
           findingId: 'claude-settings/bypass-plus-skip-prompt',
           severity: 'critical',
@@ -117,14 +142,30 @@ export default {
           detail: 'Both flags set together eliminate all user confirmation — the deny list is the sole defense. Any command not explicitly denied executes automatically.',
           remediation: 'Remove skipDangerousModePermissionPrompt or change defaultMode to "acceptEdits".',
         });
+      } else if (isBypass) {
+        // Bypass ALONE is already a finding — it removes the per-tool-call approval
+        // prompt outright. WARNING, not CRITICAL: the mode still costs the operator a
+        // one-time dangerous-mode confirmation, so a human opened the gate on purpose.
+        // That matches the file's convention — CRITICAL is reserved for settings that
+        // take the human out of the loop entirely (MCP auto-approve, base-URL redirect,
+        // the bypass+skip combo); WARNING covers a blast radius a human widened
+        // knowingly (wildcard tools, dangerous allow-list entries). WARNING also
+        // suppresses the "Claude settings look secure" pass line, which is the bug.
+        findings.push({
+          findingId: 'claude-settings/bypass-permissions-mode',
+          severity: 'warning',
+          title: `defaultMode is "bypassPermissions" in ${rel}`,
+          detail: 'Every tool call runs without an approval prompt — the deny list is the only thing between an injected instruction and execution.',
+          remediation: 'Set defaultMode to "acceptEdits" (or "default"), or set permissions.disableBypassPermissionsMode to "disable" to forbid the mode outright.',
+        });
       }
 
       // Track bypass mode for data export
-      if (settings.defaultMode === 'bypassPermissions') {
+      if (isBypass) {
         hasBypassPermissions = true;
-        defaultMode = settings.defaultMode;
-      } else if (settings.defaultMode && !defaultMode) {
-        defaultMode = settings.defaultMode;
+        defaultMode = mode;
+      } else if (mode && !defaultMode) {
+        defaultMode = mode;
       }
 
       // Dangerous hooks

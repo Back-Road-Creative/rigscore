@@ -175,7 +175,7 @@ describe('claude-settings check', () => {
     }
   });
 
-  it('no extra finding for bypassPermissions alone (without skipDangerousModePermissionPrompt)', async () => {
+  it('no combo CRITICAL for bypassPermissions alone (without skipDangerousModePermissionPrompt)', async () => {
     const tmpDir = makeTmpDir();
     fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(tmpDir, '.claude', 'settings.json'), JSON.stringify({
@@ -188,6 +188,47 @@ describe('claude-settings check', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
+  });
+
+  // --- bypassPermissions ALONE is a finding, in BOTH settings shapes ---
+  // Regression: the check read only top-level `defaultMode` and only fired on the
+  // bypass+skip COMBO, so a real bypassPermissions config (nested — the shape Claude
+  // Code and rigscore's own templates/guards/settings.json write) scored 98/100 and
+  // printed "Claude settings look secure".
+
+  for (const [shape, settings] of [
+    ['nested (permissions.defaultMode — real schema)', { permissions: { defaultMode: 'bypassPermissions', deny: ['Read(./.env)'] } }],
+    ['legacy top-level (defaultMode)', { defaultMode: 'bypassPermissions' }],
+  ]) {
+    it(`WARNING for bypassPermissions alone — ${shape}`, async () => {
+      const result = await runWithSettings(settings);
+      const warning = result.findings.find(f => f.findingId === 'claude-settings/bypass-permissions-mode');
+      expect(warning, 'bypassPermissions alone must emit a finding').toBeDefined();
+      expect(warning.severity).toBe('warning');
+      // A warning must suppress the "look secure" pass line and drop the score.
+      expect(result.findings.find(f => f.severity === 'pass')).toBeUndefined();
+      expect(result.score).toBeLessThan(98);
+      expect(result.data.hasBypassPermissions).toBe(true);
+      expect(result.data.defaultMode).toBe('bypassPermissions');
+    });
+  }
+
+  it('CRITICAL for the bypass + skip-prompt combo in the nested shape', async () => {
+    const result = await runWithSettings({
+      permissions: { defaultMode: 'bypassPermissions', skipDangerousModePermissionPrompt: true },
+    });
+    const critical = result.findings.find(f => f.findingId === 'claude-settings/bypass-plus-skip-prompt');
+    expect(critical).toBeDefined();
+    expect(critical.severity).toBe('critical');
+    expect(result.score).toBe(0);
+  });
+
+  it('no bypass finding for a compliant nested defaultMode', async () => {
+    const result = await runWithSettings({ permissions: { defaultMode: 'acceptEdits' } });
+    expect(result.findings.find(f => f.findingId === 'claude-settings/bypass-permissions-mode')).toBeUndefined();
+    expect(result.findings.find(f => f.severity === 'pass')).toBeDefined();
+    expect(result.data.defaultMode).toBe('acceptEdits');
+    expect(result.data.hasBypassPermissions).toBe(false);
   });
 
   // --- dangerous allow-list patterns ---
