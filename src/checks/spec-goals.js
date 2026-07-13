@@ -72,6 +72,12 @@ const PLACEHOLDER_TOKENS = [
   '[GOVERNANCE_RULES]', '[CONSTITUTION_VERSION]', '[RATIFICATION_DATE]',
 ];
 
+// A constitution shorter than this (trimmed, so whitespace padding can't dodge the gate)
+// is too thin to state governing principles — the `< 100`, not `<= 100`, matches the doc's
+// "under 100 chars". Length reads no clock, preserving the newest-spec-relative anti-flake
+// invariant the test suite's no-wall-clock source guard enforces.
+const MIN_CONSTITUTION_CHARS = 100;
+
 // agents.md states headings are NOT normative ("use any headings you like"), so hollowness
 // is judged on runnable content, never on section titles.
 const COMMAND_RE = /(^|[\s`$(])(npm|pnpm|yarn|bun|npx|make|pytest|python3?|node|cargo|go|uv|poetry|pip3?|bundle|rake|mvn|gradle|gradlew|dotnet|composer|docker|tox|vitest|jest|ruff|eslint|tsc|just|task|deno)\s+\S/m;
@@ -286,13 +292,21 @@ export default {
         });
       } else {
         const hits = PLACEHOLDER_TOKENS.filter((t) => text.includes(t));
-        if (hits.length >= 2) {
+        const trimmedLen = text.trim().length;
+        const tooShort = trimmedLen < MIN_CONSTITUTION_CHARS;
+        if (hits.length >= 2 || tooShort) {
+          // Name which condition tripped so the operator knows why. Unreplaced tokens are
+          // the richer signal, so they win the message when both hold.
+          const byTokens = hits.length >= 2;
+          const detail = byTokens
+            ? `\`${CONSTITUTION_REL}\` still holds ${hits.length} unreplaced template tokens (${hits.slice(0, 3).join(', ')}) — agents are pointed at boilerplate.`
+            : `\`${CONSTITUTION_REL}\` is only ${trimmedLen} chars (under ${MIN_CONSTITUTION_CHARS}) — too thin to state governing principles, so agents have almost nothing to satisfy.`;
           findings.push({
             findingId: 'spec-goals/constitution-placeholder', severity: 'warning',
             title: 'Constitution is still an unfilled template',
-            detail: `\`${CONSTITUTION_REL}\` still holds ${hits.length} unreplaced template tokens (${hits.slice(0, 3).join(', ')}) — agents are pointed at boilerplate.`,
+            detail,
             remediation: `Replace the bracketed placeholders in \`${CONSTITUTION_REL}\` with the project's real principles.`,
-            context: { file: CONSTITUTION_REL, placeholders: hits },
+            context: { file: CONSTITUTION_REL, placeholders: hits, chars: trimmedLen, reason: byTokens ? 'template-tokens' : 'too-short' },
           });
         }
       }
