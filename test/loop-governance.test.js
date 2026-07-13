@@ -126,6 +126,39 @@ describe('loop-governance check', () => {
       expect(result.score).toBe(100);
       expect(result.data.agentLoops).toBe(1);
     });
+
+    // Second hop: the loop runs `make agent`, whose recipe runs a script, which
+    // runs the agent. One hop of resolution leaves the agent invisible.
+    it('resolves a second hop — a make target that runs a script that runs the agent', async () => {
+      const result = await run('loop-indirect-second-hop');
+      const finding = byId(result, 'loop-governance/uncapped-loop');
+      expect(finding).toBeDefined();
+      // The loop is in the shell script — two files from the agent.
+      expect(finding.context.file).toMatch(/run-loop\.sh$/);
+      expect(result.score).toBeLessThan(100);
+    });
+
+    // A script that calls a script that calls the first one must terminate, not
+    // recurse — and the agent behind the cycle is still resolved.
+    it('terminates on a call cycle and still resolves the agent behind it', async () => {
+      const result = await run('loop-indirect-cycle');
+      const finding = byId(result, 'loop-governance/uncapped-loop');
+      expect(finding).toBeDefined();
+      expect(finding.context.file).toMatch(/run\.sh$/);
+    });
+  });
+
+  // A loop written *inside* the indirection target: the make target's call is
+  // resolved, but the `while True:` lives in the module's own control flow.
+  it('reads a `while True:` written inside the Python module a make target invokes', async () => {
+    const result = await run('loop-python-while');
+    const uncapped = byId(result, 'loop-governance/uncapped-loop');
+    expect(uncapped).toBeDefined();
+    // The loop is in the module — that is where the bound goes.
+    expect(uncapped.context.file).toMatch(/loop_agent\.py$/);
+    expect(uncapped.evidence).toContain('while True');
+    expect(ids(result)).toContain('loop-governance/no-stop-condition');
+    expect(result.data.agentLoops).toBe(1);
   });
 
   // A timer is cron in a different file format: the schedule is one unit, the
