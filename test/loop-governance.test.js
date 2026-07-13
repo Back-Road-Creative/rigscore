@@ -146,6 +146,58 @@ describe('loop-governance check', () => {
       expect(finding).toBeDefined();
       expect(finding.context.file).toMatch(/run\.sh$/);
     });
+
+    // Fourth hop: the loop runs `make agent`, whose recipe runs a script, that
+    // runs a script, that runs a script, that runs the agent. Four bodies stand
+    // between the loop and `claude -p`, so three rounds of resolution leave the
+    // make target unindexed and the loop reads as agent-free — the check scored
+    // this repo 100 and certified "agent loops carry a bound" over a `while true`.
+    it('resolves a fourth hop — make → script → script → script → agent', async () => {
+      const result = await run('loop-indirect-fourth-hop');
+      const finding = byId(result, 'loop-governance/uncapped-loop');
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe('warning');
+      // The loop is in the shell script — four files from the agent.
+      expect(finding.context.file).toMatch(/run-loop\.sh$/);
+      expect(ids(result)).toContain('loop-governance/no-stop-condition');
+      expect(result.score).toBeLessThan(100);
+    });
+
+    // The cycle guard has to hold at the new depth too: y → x → y is a back edge
+    // in the middle of a four-link chain. The resolver must terminate and still
+    // reach the agent parked behind it.
+    it('terminates on a cycle inside a four-hop chain and still resolves the agent', async () => {
+      const result = await run('loop-indirect-fourth-hop-cycle');
+      const finding = byId(result, 'loop-governance/uncapped-loop');
+      expect(finding).toBeDefined();
+      expect(finding.context.file).toMatch(/run\.sh$/);
+    });
+
+    // The ceiling is a real ceiling, and a deterministic one. This chain is five
+    // links deep and named so the walk reads the agent-bearing script FIRST —
+    // the order under which a resolver that publishes names mid-round collapses
+    // the whole chain into one pass and flags it. It must not: the same repo has
+    // to score the same however the filesystem happens to order it, and past the
+    // ceiling the honest answer is silence, not a coin flip.
+    it('stops at the ceiling — a five-link chain is missed regardless of walk order', async () => {
+      const result = await run('loop-indirect-past-ceiling');
+      expect(ids(result)).not.toContain('loop-governance/uncapped-loop');
+      expect(ids(result)).not.toContain('loop-governance/no-stop-condition');
+      expect(result.data.agentLoops).toBe(0);
+    });
+
+    // A four-link chain whose last hop is a variable the scanner cannot evaluate
+    // reaches nothing. A repo that *does* hold an agent elsewhere must not have
+    // it attributed to this loop — a false "your loop is uncapped" is the one
+    // outcome this check is tuned to avoid.
+    it('stays silent when the fourth hop cannot be resolved, even with an agent elsewhere', async () => {
+      const result = await run('loop-indirect-unresolvable');
+      expect(ids(result)).not.toContain('loop-governance/uncapped-loop');
+      expect(ids(result)).not.toContain('loop-governance/no-stop-condition');
+      expect(result.findings.every((f) => f.severity === 'pass')).toBe(true);
+      expect(result.data.agentLoops).toBe(0);
+      expect(result.score).toBe(100);
+    });
   });
 
   // A loop written *inside* the indirection target: the make target's call is
