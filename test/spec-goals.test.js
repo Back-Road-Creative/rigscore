@@ -4,11 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/spec-goals.js';
+import { loadConfig } from '../src/config.js';
 import { WEIGHTS, NOT_APPLICABLE_SCORE } from '../src/constants.js';
 import { withTmpDir } from './helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const at = (cwd) => ({ cwd, homedir: '/tmp/nohome', config: {} });
+const at = (cwd, config = {}) => ({ cwd, homedir: '/tmp/nohome', config });
 const ctx = (name) => at(path.join(__dirname, 'fixtures', name));
 const find = (r, id) => r.findings.find((f) => f.findingId === id);
 
@@ -19,8 +20,12 @@ const daysAgo = (n) => new Date(Date.now() - n * DAY_MS).toISOString();
  * Materialise a complete spec-kit tree in `root`. When `goalDate` is given,
  * back it with real git history: the goal file lands on `goalDate`, the specs
  * on `specDate`. No dates → files on disk with no `.git` at all.
+ *
+ * `stale` additionally commits two specs at that older date — one unfinished
+ * (no `tasks.md`) and one finished — so a test can prove staleness flags the
+ * abandoned spec while leaving the equally-old *finished* one alone.
  */
-function specKitRepo(root, { goalDate, specDate } = {}) {
+function specKitRepo(root, { goalDate, specDate, stale } = {}) {
   const w = (rel, body) => {
     const p = path.join(root, rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -42,8 +47,24 @@ function specKitRepo(root, { goalDate, specDate } = {}) {
   g(['init', '-q'], goalDate);
   g(['add', '.specify'], goalDate);
   g(['commit', '-q', '-m', 'goal'], goalDate);
+  if (stale) {
+    w('specs/002-abandoned/spec.md', '# Abandoned\n');
+    w('specs/003-shipped/spec.md', '# Shipped\n');
+    w('specs/003-shipped/tasks.md', '- [x] done\n');
+    g(['add', 'specs/002-abandoned', 'specs/003-shipped'], stale);
+    g(['commit', '-q', '-m', 'old specs'], stale);
+  }
   g(['add', '-A'], specDate);
   g(['commit', '-q', '-m', 'specs'], specDate);
+}
+
+/** Write an OpenSpec change dir with the given tasks.md body. */
+function openspecChange(root, name, tasks) {
+  const dir = path.join(root, 'openspec/changes', name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'proposal.md'), '# Proposal\n');
+  fs.writeFileSync(path.join(dir, 'design.md'), '# Design\n');
+  fs.writeFileSync(path.join(dir, 'tasks.md'), tasks);
 }
 
 describe('spec-goals check', () => {
@@ -117,6 +138,62 @@ describe('spec-goals check', () => {
     await withTmpDir(async (tmp) => {
       specKitRepo(tmp, { goalDate: daysAgo(400), specDate: daysAgo(400) });
       expect(find(await check.run(at(tmp)), 'spec-goals/goal-file-stale')).toBeUndefined();
+    });
+  });
+
+  it('honours a tuned drift window, and falls back to 90 days on a junk value', async () => {
+    await withTmpDir(async (tmp) => {
+      // A 59-day gap: silent under the 90-day default, loud under a 30-day window.
+      specKitRepo(tmp, { goalDate: daysAgo(60), specDate: daysAgo(1) });
+      expect(find(await check.run(at(tmp)), 'spec-goals/goal-file-stale')).toBeUndefined();
+
+      const tuned = find(
+        await check.run(at(tmp, { specGoals: { driftWindowDays: 30 } })),
+        'spec-goals/goal-file-stale',
+      );
+      expect(tuned?.severity).toBe('info');
+      expect(tuned.context.thresholdDays).toBe(30);
+
+      // Non-positive / non-integer values are dropped, not honoured.
+      const junk = await check.run(at(tmp, { specGoals: { driftWindowDays: 0 } }));
+      expect(find(junk, 'spec-goals/goal-file-stale')).toBeUndefined();
+      expect(junk.data.driftWindowDays).toBe(90);
+    });
+  });
+
+  it('merges specGoals.driftWindowDays from .rigscorerc.json instead of dropping it', async () => {
+    await withTmpDir(async (tmp) => {
+      fs.writeFileSync(
+        path.join(tmp, '.rigscorerc.json'),
+        JSON.stringify({ specGoals: { driftWindowDays: 45 } }),
+      );
+      const config = await loadConfig(tmp, null);
+      expect(config.specGoals.driftWindowDays).toBe(45);
+    });
+  });
+
+  it('flags an unfinished spec the tree left behind, but not a finished one of the same age', async () => {
+    await withTmpDir(async (tmp) => {
+      specKitRepo(tmp, { goalDate: daysAgo(400), specDate: daysAgo(1), stale: daysAgo(300) });
+      const r = await check.run(at(tmp));
+      const abandoned = r.findings.filter((f) => f.findingId === 'spec-goals/spec-abandoned');
+      // 003-shipped is just as old but complete — done, not abandoned.
+      expect(abandoned.map((f) => f.context.specDir)).toEqual(['specs/002-abandoned']);
+      expect(abandoned[0].severity).toBe('info');
+      expect(abandoned[0].context.gapDays).toBeGreaterThanOrEqual(90);
+      expect(abandoned[0].context.missing).toEqual(['tasks.md']);
+    });
+  });
+
+  it('flags an OpenSpec change whose tasks are all ticked but was never archived', async () => {
+    await withTmpDir(async (tmp) => {
+      openspecChange(tmp, 'add-auth', '- [x] ship it\n- [x] write docs\n');
+      openspecChange(tmp, 'add-billing', '- [x] schema\n- [ ] still in flight\n');
+      const r = await check.run(at(tmp));
+      const unarchived = r.findings.filter((f) => f.findingId === 'spec-goals/change-unarchived');
+      // add-billing still has an open task — in flight, not sweepable.
+      expect(unarchived.map((f) => f.context.specDir)).toEqual(['openspec/changes/add-auth']);
+      expect(unarchived[0].severity).toBe('info');
     });
   });
 
