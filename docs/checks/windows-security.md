@@ -11,14 +11,14 @@ Surfaces Windows- and WSL-specific isolation weaknesses that aren't covered by t
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
 | Non-Windows platform | SKIPPED | — (SARIF level `none`, suppressed) | No action — check is gated to `process.platform === 'win32'`. |
-| WSL interop enabled with `appendWindowsPath=true` | WARNING | `windows-security` (level `warning`) | Set `appendWindowsPath=false` in `/etc/wsl.conf` `[interop]`. |
-| WSL interop enabled, `appendWindowsPath=false` | INFO | `windows-security` (level `note`) | Informational — exposure is limited. |
+| `/etc/wsl.conf` has `[interop] enabled=true` and `appendWindowsPath` is `true` (or unset, which defaults to true) | WARNING | `windows-security/wsl-interop-exposes-path` | Set `appendWindowsPath=false` in `/etc/wsl.conf` `[interop]`. |
+| `[interop] enabled=true` with an explicit `appendWindowsPath=false` | INFO | `windows-security/wsl-interop-enabled` | Informational — exposure is limited. |
 | WSL interop disabled | PASS | — | — |
-| `.wslconfig` uses `networkingMode=mirrored` | INFO | `windows-security` (level `note`) | Consider NAT mode for stronger host/guest isolation. |
-| `.wslconfig` missing `firewall=true` | INFO | `windows-security` (level `note`) | Add `firewall=true` to `.wslconfig`. |
+| `%USERPROFILE%\.wslconfig` sets `networkingMode=mirrored` | INFO | `windows-security/wsl-mirrored-networking` | Consider NAT mode for stronger host/guest isolation. |
+| `.wslconfig` exists but has no `firewall=true` line | INFO | `windows-security/wsl-firewall-not-enabled` | Add `firewall=true` to `.wslconfig`. |
 | `.wslconfig` has `firewall=true` | PASS | — | — |
-| Windows Defender excludes project paths / `node_modules` | WARNING | `windows-security` (level `warning`) | Remove project-path exclusions via `Remove-MpPreference -ExclusionPath`. |
-| NTFS permissions advisory (always emitted on Windows) | INFO | `windows-security` (level `note`) | Run `icacls .env /inheritance:r /grant:r "%USERNAME%":F` on sensitive files. |
+| A Defender `ExclusionPath` contains `node_modules` or the scanned project path | WARNING | `windows-security/defender-excludes-project-paths` | Remove project-path exclusions via `Remove-MpPreference -ExclusionPath`. |
+| NTFS permissions advisory — unconditional, appended to every Windows run | INFO | `windows-security/ntfs-permissions-advisory` | Run `icacls .env /inheritance:r /grant:r "%USERNAME%":F` on sensitive files. |
 
 ## Weight rationale
 
@@ -32,8 +32,7 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 
 ## SARIF
 
-- Tool component: `rigscore`
-- Rule ID emitted: `windows-security` (check-level rule; per-finding discrimination is via message text).
+- Tool component: `rigscore`; rule IDs are the per-finding `windows-security/*` ids in the Triggers table, with `windows-security` as the check-level fallback rule.
 - Level mapping: WARNING → `warning`, INFO → `note`, SKIPPED/PASS → `none` (suppressed from SARIF output).
 - Location data: no physical file location for `/etc/wsl.conf` or `.wslconfig` (they live outside the scanned project); Defender findings carry the exclusion path string in the message.
 

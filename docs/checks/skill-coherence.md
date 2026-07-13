@@ -10,11 +10,13 @@ Checks that skills and agents act consistently with the governance text that cla
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Skill matches configured `appliesTo` pattern, governance matches `governancePattern`, skill content matches no `awarenessPatterns` | configurable (default WARNING) | `skill-coherence` (level per severity) | Add awareness language to the skill, or relax the constraint. |
-| Hook content matches `hookPattern` while settings `allow`/`localAllow` contains a match for `settingsPattern` | configurable (default WARNING) | `skill-coherence` (level `warning`) | Remove the allow entry or update the hook. |
-| `Bash(cmd:...)` prefix appears in both `allow` and `deny` (or more specific `allow` shadows a broader `deny`) | INFO | `skill-coherence` (level `note`) | Remove one side, or document the intentional precedence. |
+| Skill matches configured `appliesTo` pattern, governance matches `governancePattern`, skill content matches no `awarenessPatterns` | configurable (default WARNING) | skill-coherence/constraint-unaware-{constraint id} † | Add awareness language to the skill, or relax the constraint. |
+| Hook content matches `hookPattern` while settings `allow`/`localAllow` contains a match for `settingsPattern` | configurable (default WARNING) | skill-coherence/hook-settings-allow-conflict † | Remove the allow entry or update the hook. |
+| `Bash(cmd:…)` prefix is identical in `allow` and `deny`, or the `allow` entry is the `deny` entry plus a space-separated suffix (a narrower `allow` shadowing a broader `deny`) | INFO | `skill-coherence/settings-allow-deny-conflict` | Remove one side, or document the intentional precedence. |
 | No configuration and no settings conflicts | N/A | — | — |
 | Configured but clean | PASS | — | — |
+
+† The first two ids are **config-shaped, not fixed**: the trailing `{constraint id}` in row 1 is the `id` of the `.rigscorerc.json` constraint entry that fired, and either entry can override the whole id by setting its own `findingId`. The source emits both as `||` fallbacks (`findingId: entry.findingId || '…'`) rather than bare literals, so they are written here without backticks — the only ruleId this check *always* emits verbatim is `skill-coherence/settings-allow-deny-conflict`.
 
 ## Weight rationale
 
@@ -29,8 +31,7 @@ No `fixes` export. `--fix --yes` is a no-op.
 
 ## SARIF
 
-- Tool component: `rigscore`
-- Rule ID emitted: `skill-coherence` (check-level; per-finding discrimination via message text, which names the skill or the conflicting `Bash(...)` prefix).
+- Tool component: `rigscore`; rule IDs are the per-finding `skill-coherence/*` ids in the Triggers table, with `skill-coherence` as the check-level fallback rule. Only the allow↔deny id is fixed — the other two are config-shaped (see the note under the table).
 - Level mapping: WARNING → `warning`, INFO → `note`, PASS → `none`.
 - Location data: findings carry the skill's relative path in the detail field; settings/hook findings reference the conflicting string rather than a line.
 
