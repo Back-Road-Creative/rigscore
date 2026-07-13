@@ -32,6 +32,18 @@ function cleanFixtureState() {
   try { fs.rmSync(statePath, { force: true }); } catch { /* ignore */ }
 }
 
+// windows-security's WSL-guest arm reads absolute HOST paths (`/etc/wsl.conf`,
+// `/proc/sys/kernel/osrelease`) that no cwd/homedir override can reach. rigscore is
+// developed on a WSL guest and CI runs on plain Linux, so leaving them at their
+// defaults would let the dev box's own wsl.conf contribute a finding the runner never
+// sees — the locked count below would silently become machine-dependent. Pin both
+// inside the throwaway home (nothing is written there) so every machine scans the
+// fixture as "not a WSL guest". Never widen countTolerance to paper over this.
+const hermeticWsl = (home) => ({
+  wslConfPath: path.join(home, 'no-wsl.conf'),
+  wslOsReleasePath: path.join(home, 'no-osrelease'),
+});
+
 // Locked expectations — updated via UPDATE_FIXTURES=1.
 // Keep these tight enough to catch regressions, loose enough to absorb
 // incidental churn (±4 on count, a documented band on score).
@@ -102,7 +114,7 @@ describe('dogfood fixture: scored-project', () => {
     // Use a throwaway HOME so homedir skills/CLAUDE.md don't leak in.
     const emptyHome = fs.mkdtempSync(path.join(__dirname, 'fixtures', '_fixture-home-'));
     try {
-      const result = await scan({ cwd: FIXTURE, homedir: emptyHome });
+      const result = await scan({ cwd: FIXTURE, homedir: emptyHome, ...hermeticWsl(emptyHome) });
 
       expect(result).toHaveProperty('score');
       expect(result).toHaveProperty('results');
@@ -116,7 +128,7 @@ describe('dogfood fixture: scored-project', () => {
   it('locks total finding count within tolerance', async () => {
     const emptyHome = fs.mkdtempSync(path.join(__dirname, 'fixtures', '_fixture-home-'));
     try {
-      const result = await scan({ cwd: FIXTURE, homedir: emptyHome });
+      const result = await scan({ cwd: FIXTURE, homedir: emptyHome, ...hermeticWsl(emptyHome) });
       const total = countActionableFindings(result.results);
 
       if (process.env.UPDATE_FIXTURES === '1') {
@@ -135,7 +147,7 @@ describe('dogfood fixture: scored-project', () => {
   it('locks overall score within documented band', async () => {
     const emptyHome = fs.mkdtempSync(path.join(__dirname, 'fixtures', '_fixture-home-'));
     try {
-      const result = await scan({ cwd: FIXTURE, homedir: emptyHome });
+      const result = await scan({ cwd: FIXTURE, homedir: emptyHome, ...hermeticWsl(emptyHome) });
 
       if (process.env.UPDATE_FIXTURES === '1') {
         // Covered by the count test's update path — keep this assertion silent.
@@ -152,7 +164,7 @@ describe('dogfood fixture: scored-project', () => {
   it('fires each designed critical finding (findingId preferred, title substring fallback)', async () => {
     const emptyHome = fs.mkdtempSync(path.join(__dirname, 'fixtures', '_fixture-home-'));
     try {
-      const result = await scan({ cwd: FIXTURE, homedir: emptyHome });
+      const result = await scan({ cwd: FIXTURE, homedir: emptyHome, ...hermeticWsl(emptyHome) });
       const flat = flattenFindings(result.results);
 
       for (const assertion of CRITICAL_ASSERTIONS) {
@@ -196,6 +208,10 @@ describe('dogfood fixture: scored-project', () => {
       const cliOut = JSON.parse(cliRes.stdout);
 
       cleanFixtureState();
+      // Deliberately NOT hermeticWsl()-pinned: the CLI has no such seam, so both
+      // sides must see the same real host to make this an apples-to-apples
+      // equality. It asserts CLI==library, never an absolute count, so it holds
+      // on a WSL guest and a plain Linux runner alike.
       const libRes = await import('../src/scanner.js').then((m) => m.scan({ cwd: FIXTURE, homedir: emptyHome }));
 
       // Headline score must match. If a future refactor splits "what the

@@ -3,6 +3,29 @@ import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { calculateCheckScore } from '../scoring.js';
 import { readFileSafe, execSafe } from '../utils.js';
 
+// Absolute HOST paths — they ignore cwd/homedir, so they are read through the
+// scan context (`scan({ wslConfPath, wslOsReleasePath })`) with these as the
+// production defaults. Tests pin them at a tmp dir; without that seam a suite
+// run on a WSL workstation and one on a Linux CI runner would disagree.
+const DEFAULT_WSL_CONF_PATH = '/etc/wsl.conf';
+const DEFAULT_WSL_OSRELEASE_PATH = '/proc/sys/kernel/osrelease';
+
+/**
+ * Are we running INSIDE a WSL guest (where /etc/wsl.conf actually exists)?
+ *
+ * Marker: the kernel's own release string — "…microsoft-standard-WSL2" on WSL2,
+ * "…Microsoft" on WSL1. Chosen over $WSL_DISTRO_NAME because the env var is only
+ * inherited from an interactive WSL login shell: systemd units, cron jobs and
+ * containers on the WSL kernel don't have it, and a check that goes blind in CI
+ * is worse than one that reads a file. A container on the WSL2 kernel matches
+ * too — correctly, since it shares that kernel; the interop arm then still only
+ * speaks if a wsl.conf is actually present.
+ */
+async function isWslGuest(context) {
+  const osRelease = await readFileSafe(context.wslOsReleasePath ?? DEFAULT_WSL_OSRELEASE_PATH);
+  return osRelease !== null && /microsoft/i.test(osRelease);
+}
+
 export default {
   id: 'windows-security',
   enforcementGrade: 'mechanical',
@@ -12,19 +35,26 @@ export default {
   async run(context) {
     const findings = [];
 
-    // Only run on Windows
-    if (process.platform !== 'win32') {
+    // Two arms, two platforms. The interop arm parses /etc/wsl.conf, a LINUX-guest
+    // file that never exists on the Windows host — gating it on win32 made it
+    // unreachable. The .wslconfig / Defender / NTFS arms are genuinely host-side.
+    const onWindowsHost = process.platform === 'win32';
+    const onWslGuest = process.platform === 'linux' && (await isWslGuest(context));
+
+    if (!onWindowsHost && !onWslGuest) {
       findings.push({
         severity: 'skipped',
         title: 'Windows checks skipped (non-Windows platform)',
-        detail: 'Windows-specific security checks only run on Windows.',
+        detail: 'Windows/WSL security checks only run on a Windows host or inside a WSL guest.',
       });
       return { score: NOT_APPLICABLE_SCORE, findings };
     }
 
-    // Check WSL interop settings
+    // Check WSL interop settings — guest-side only.
     try {
-      const wslConf = await readFileSafe('/etc/wsl.conf');
+      const wslConf = onWslGuest
+        ? await readFileSafe(context.wslConfPath ?? DEFAULT_WSL_CONF_PATH)
+        : null;
       if (wslConf) {
         const interopEnabled = /\[interop\][\s\S]*?enabled\s*=\s*true/i.test(wslConf);
         const appendPath = /\[interop\][\s\S]*?appendWindowsPath\s*=\s*true/i.test(wslConf) ||
@@ -57,9 +87,9 @@ export default {
       // Not in WSL or can't read config — skip
     }
 
-    // Check .wslconfig
+    // Check .wslconfig — host-side: it lives under %USERPROFILE% on Windows.
     try {
-      const userProfile = process.env.USERPROFILE || process.env.HOME;
+      const userProfile = onWindowsHost ? process.env.USERPROFILE || process.env.HOME : null;
       if (userProfile) {
         const wslConfig = await readFileSafe(path.join(userProfile, '.wslconfig'));
         if (wslConfig) {
@@ -94,18 +124,22 @@ export default {
       // Can't read .wslconfig — skip
     }
 
-    // Check Windows Defender exclusions. A6: use execSafe (async, 5s
+    // Check Windows Defender exclusions — host-side. A6: use execSafe (async, 5s
     // timeout) so the event loop is never blocked on a hung PowerShell
-    // call. Argument list is explicit — no shell interpolation.
-    const output = await execSafe(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-Command',
-        'Get-MpPreference | Select-Object -ExpandProperty ExclusionPath',
-      ],
-      { timeout: 5000 },
-    );
+    // call. Argument list is explicit — no shell interpolation. Never shelled from
+    // the guest: powershell.exe is reachable over interop, but Defender posture is
+    // the host's, and a scan must not cross that boundary to go get it.
+    const output = onWindowsHost
+      ? await execSafe(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          'Get-MpPreference | Select-Object -ExpandProperty ExclusionPath',
+        ],
+        { timeout: 5000 },
+      )
+      : null;
     if (output) {
       const exclusions = output.split('\n').map((s) => s.trim()).filter(Boolean);
       const riskyExclusions = exclusions.filter((p) =>
@@ -130,14 +164,17 @@ export default {
       });
     }
 
-    // NTFS permissions advisory — always shown on Windows
-    findings.push({
-      findingId: 'windows-security/ntfs-permissions-advisory',
-      severity: 'info',
-      title: 'NTFS permissions advisory',
-      detail: 'On Windows, use icacls to verify that sensitive files (credentials, keys, .env) are not accessible to other users.',
-      remediation: 'Run: icacls .env /inheritance:r /grant:r "%USERNAME%":F',
-    });
+    // NTFS permissions advisory — always shown on Windows, and only there: icacls
+    // and NTFS ACLs are host concepts, meaningless against the guest's ext4 rootfs.
+    if (onWindowsHost) {
+      findings.push({
+        findingId: 'windows-security/ntfs-permissions-advisory',
+        severity: 'info',
+        title: 'NTFS permissions advisory',
+        detail: 'On Windows, use icacls to verify that sensitive files (credentials, keys, .env) are not accessible to other users.',
+        remediation: 'Run: icacls .env /inheritance:r /grant:r "%USERNAME%":F',
+      });
+    }
 
     return {
       score: calculateCheckScore(findings),
