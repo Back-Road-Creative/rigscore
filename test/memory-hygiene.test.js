@@ -190,6 +190,31 @@ describe('memory-hygiene: single home per rule', () => {
     }
   });
 
+  // A governance file nested past the walk's depth cap is a SILENT give-up unless
+  // depthTruncated is honoured — the same sibling-cap gap the file cap already
+  // discloses. Fires the SAME finding id, never a silent "clean bill of health".
+  it('discloses a depth-truncated governance walk (same finding id)', async () => {
+    const dir = tmpMemoryDir();
+    // A memory file keeps the check out of N/A so the walk actually runs.
+    fs.writeFileSync(
+      path.join(dir, '.claude/memory/notes.md'),
+      '# Notes\n\nAn operational note worth keeping across sessions.\n',
+    );
+    // Nest a governance CLAUDE.md deeper than the default maxDepth of 50.
+    let deep = dir;
+    for (let i = 0; i < 55; i++) deep = path.join(deep, `lvl${i}`);
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, 'CLAUDE.md'), '# Deep gov\n\n- a rule past the depth cap\n');
+    try {
+      const r = await run(dir);
+      const capped = r.findings.find((f) => f.findingId === 'memory-hygiene/governance-file-cap-reached');
+      expect(capped, 'a governance file past the depth cap must surface the truncation finding').toBeDefined();
+      expect(capped.severity).toBe('info');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('sees a rule duplicated in home governance only when home is opted in', async () => {
     const rule = 'Never merge a pull request yourself — emit the merge command for the operator.';
     const home = tmpMemoryDir();

@@ -101,7 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dangerous) hook from passing as clean — was dead for the depth path. A new
   distinct `depthTruncated` flag now fires at the depth cut, and every caller that
   disclosed `truncated` (`claude-settings`, `loop-governance`, `deep-secrets`,
-  `sandbox-posture`) discloses it too, with wording naming both causes. Finding
+  `sandbox-posture`, `memory-hygiene`) discloses it too, with wording naming both
+  causes. Finding
   ids are unchanged (SARIF ruleId stability); `truncated` keeps meaning "hit
   maxFiles" so the file-cap detail never misreports the cause.
 
