@@ -1,4 +1,4 @@
-import { SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, WEIGHTS, PRACTICE_WEIGHTS, NOT_APPLICABLE_SCORE, COVERAGE_PENALTY_THRESHOLD } from './constants.js';
+import { SEVERITY_DEDUCTIONS, INFO_ONLY_FLOOR, WEIGHTS, PRACTICE_WEIGHTS, NOT_APPLICABLE_SCORE } from './constants.js';
 
 /**
  * Calculate a check's score (0-100) from its findings.
@@ -40,14 +40,14 @@ export function calculateCheckScore(findings) {
  *
  * ── Coverage scaling (design note) ──────────────────────────────────────
  *
- * "Coverage" means the sum of WEIGHTS[id] for every check that was actually
- * applicable to this project (i.e. not N/A). Scoring is additive-deduction
- * within each check, then combined across checks as a weight-proportional
- * average. When applicable coverage is low — fewer than
- * COVERAGE_PENALTY_THRESHOLD points of weight out of 100 — we additionally
- * scale the result by (totalApplicableWeight / 100). A project where only a
- * handful of checks can reach a verdict should not be able to claim a
- * perfect 100; partial coverage means partial confidence.
+ * "Coverage" (W) means the sum of WEIGHTS[id] for every check that was
+ * actually applicable to this project (i.e. not N/A). Scoring is additive-
+ * deduction within each check, then combined across checks as a weight-
+ * proportional average. That average is then scaled by min(1, W / 100) —
+ * ALWAYS, with no threshold and no step. Partial coverage means partial
+ * confidence: W is the reachable ceiling, so a project where only part of
+ * the check suite can reach a verdict cannot claim a perfect 100 (at W = 80,
+ * an all-passing scan reports 80). Full coverage (W >= 100) is a no-op.
  *
  * Why additive deduction + coverage scaling, not averaged confidence:
  *   - The per-check score already answers "how clean is this one surface?".
@@ -56,18 +56,14 @@ export function calculateCheckScore(findings) {
  *   - Conflating the two (e.g. ignoring N/A checks entirely) rewards
  *     under-configured projects for being invisible to the scanner.
  *
- * Known edge — discontinuity at the threshold:
- *   At coverage just below 50, the reported score is scaled; at coverage of
- *   exactly 50 and above, it is not. This produces a visible step. It is
- *   intentional and user-decision-gated: smoothing the curve would shift
- *   every existing score for zero correctness benefit. The sequence is
- *   monotonically non-decreasing (no dip), which is the hard contract.
- *   See H1 in the hostile review and test/scoring-coverage.test.js for the
- *   characterization tests that pin this behavior exactly.
+ * Order of operations: coverage scaling first, THEN the security-axis
+ * compound-risk penalty (coherence CRITICAL) subtracts a flat 10 points from
+ * the already-scaled score, floored at 0. The penalty is not itself scaled.
  *
- * If you ever need to change coverage scaling, update the characterization
- * tests first, get sign-off on the score shift, then update the formula —
- * in that order.
+ * test/scoring-coverage.test.js holds the characterization tests that pin
+ * this behavior exactly. If you ever need to change coverage scaling, update
+ * those tests first, get sign-off on the score shift, then update the
+ * formula — in that order.
  */
 export function calculateOverallScore(results, customWeights, options = {}) {
   const w = customWeights || WEIGHTS;
@@ -95,12 +91,14 @@ export function calculateOverallScore(results, customWeights, options = {}) {
 
   // C6: continuous coverage scaling. Previous formula applied
   //   score *= (totalApplicableWeight / 100)
-  // ONLY when totalApplicableWeight < COVERAGE_PENALTY_THRESHOLD (50). That
-  // step created a gameable cliff: a single stub governance file that
-  // pushed applicable weight from 48 → 50 jumped the reported score from
-  // (scaled) to (unscaled). Now the scale factor is always applied, up to
-  // a ceiling of 1 (i.e. coverage >= 100 is a no-op). Partial coverage
-  // means partial confidence — every time.
+  // ONLY when totalApplicableWeight was below 50 — the legacy
+  // COVERAGE_PENALTY_THRESHOLD, still exported from constants.js for external
+  // consumers but deliberately no longer read here. That step created a
+  // gameable cliff: a single stub governance file that pushed applicable
+  // weight from 48 → 50 jumped the reported score from (scaled) to
+  // (unscaled). Now the scale factor is always applied, up to a ceiling of 1
+  // (i.e. coverage >= 100 is a no-op). Partial coverage means partial
+  // confidence — every time.
   const scale = Math.min(1, totalApplicableWeight / 100);
   let score = Math.round(total * scale);
 

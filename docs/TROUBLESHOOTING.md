@@ -5,13 +5,18 @@ Common issues, in rough order of "new-user complaints."
 ## "rigscore gives my project F — why?"
 
 Most common reason: your project doesn't exercise the full check surface.
-rigscore scales the overall score by **applicable coverage** — if fewer
-than 50 points of check weight apply (no MCP config, no Dockerfile, no
-skill files, no `.claude/settings.json`, etc.), the score is scaled down
-proportionally.
+rigscore scales the overall score by **applicable coverage**: the score is
+multiplied by `min(1, W / 100)`, where W is the total weight of the checks
+that could actually reach a verdict. When much of the suite has nothing to
+scan (no MCP config, no Dockerfile, no skill files, no
+`.claude/settings.json`, etc.), W is small and the score shrinks in
+proportion. This happens at **every** W below 100 — there is no threshold to
+clear and no step to jump.
 
-This is intentional: a project where only a handful of checks can reach a
-verdict should not be able to claim a perfect 100.
+This is intentional: a project where only part of the check suite can reach a
+verdict should not be able to claim a perfect 100. **W is your reachable
+ceiling** — at W = 80, an all-passing scan still reports 80/100, and the
+`Coverage:` line in the report discloses the `×0.80` scaling.
 
 rigscore does this to itself — the self-score is 35/100 F. See the
 [Dogfooding](../README.md#dogfooding) section for the calibration and the
@@ -39,9 +44,9 @@ The specific cases that move scores:
 - **New checks added.** Adding a new scored check changes the denominator
   and can shift existing scores; advisory (weight-0) additions do not.
 - **Weight changes.** Documented in `CHANGELOG.md`.
-- **Coverage scaling recalibration.** Changes to `COVERAGE_PENALTY_THRESHOLD`
-  or the coverage math in `src/scoring.js` are called out explicitly in
-  the changelog. These ship with characterization tests
+- **Coverage scaling recalibration.** Changes to the coverage math in
+  `src/scoring.js` — the `min(1, W / 100)` scale factor — are called out
+  explicitly in the changelog. These ship with characterization tests
   (`test/scoring-coverage.test.js`) that pin exact behavior — your score
   moves because a documented recalibration moved it, not because of
   hidden drift.
