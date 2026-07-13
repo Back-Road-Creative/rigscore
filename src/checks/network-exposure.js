@@ -379,7 +379,11 @@ export default {
     if (allFindings.length === 0) {
       return {
         score: NOT_APPLICABLE_SCORE,
-        findings: [{ severity: 'info', title: 'No AI service network exposure detected' }],
+        findings: [{
+          findingId: 'network-exposure/no-exposure-detected',
+          severity: 'info',
+          title: 'No AI service network exposure detected',
+        }],
         data: {
           mcpServers: mcpResult.data,
           dockerPorts: dockerResult.data,

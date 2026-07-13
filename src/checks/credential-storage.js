@@ -70,7 +70,11 @@ export default {
     if (filesScanned === 0) {
       return {
         score: NOT_APPLICABLE_SCORE,
-        findings: [{ severity: 'info', title: 'No AI client config files found' }],
+        findings: [{
+          findingId: 'credential-storage/no-client-configs-found',
+          severity: 'info',
+          title: 'No AI client config files found',
+        }],
         data: { filesScanned: 0, secretsFound: 0 },
       };
     }
