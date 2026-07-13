@@ -171,6 +171,29 @@ function abandonedSpecs(dated, newest, windowDays) {
 }
 
 /**
+ * The tree the repo left behind wholesale. `abandonedSpecs` dates each spec against the
+ * newest spec, so a tree where *every* spec is equally ancient trails nothing and stays
+ * silent. The second yardstick for exactly that case is the scan root's own pulse — the
+ * newest commit touching `cwd` (pathspec `.`) — never the wall clock and never a date from
+ * outside the scanned tree. Both halves of the gap are committer dates the tree already
+ * carries, so the verdict is frozen the moment the tree is committed: no run can start
+ * firing because a calendar page turned, only because someone committed.
+ *
+ * Firing needs both halves of "adopted, then dropped": the repo kept committing for a
+ * window while no spec moved, *and* unfinished specs are still sitting in the tree. A tree
+ * that is old but complete is finished work — the same rule `abandonedSpecs` applies. A
+ * repo archived wholesale (code stopped too) has a zero gap and is silent by construction.
+ */
+function dormantTree(cwd, dated, newest, windowDays) {
+  const rootMs = lastCommitMs(cwd, '.');
+  if (Number.isNaN(rootMs)) return null;
+  const gapDays = Math.floor((rootMs - newest.ms) / DAY_MS);
+  if (gapDays < windowDays) return null;
+  const unfinished = dated.filter((s) => s.missing.length > 0).map((s) => s.specDir);
+  return unfinished.length > 0 ? { gapDays, unfinished } : null;
+}
+
+/**
  * Kiro requirement files whose requirements are not written in EARS. Kiro is the layout that
  * mandates the grammar, so it is the only one held to it. Two shapes fail: a file with no
  * EARS requirement at all (freeform prose, which used to pass by merely existing), and one
@@ -331,6 +354,17 @@ export default {
         detail: `\`${s.specDir}/\` is still missing \`${s.missing.join('`, `')}\` and its last commit is ${s.gapDays} days behind \`${dates.newest.rel}\` (threshold ${windowDays}) — the spec tree moved on without it, so it reads as abandoned rather than mid-flight. Commit dates proxy attention, so read this as a prompt, not proof.`,
         remediation: `Finish \`${s.specDir}\` or archive it — an unfinished spec agents can still read is a goal no one is steering.`,
         context: { specDir: s.specDir, missing: s.missing, gapDays: s.gapDays, thresholdDays: windowDays, framework: s.framework },
+      });
+    }
+
+    const dormant = dates ? dormantTree(cwd, dates.dated, dates.newest, windowDays) : null;
+    if (dormant) {
+      findings.push({
+        findingId: 'spec-goals/spec-tree-dormant', severity: 'info',
+        title: `The whole spec tree has sat still for the ${dormant.gapDays} days the repo kept committing`,
+        detail: `No spec has been touched since \`${dates.newest.rel}\`, ${dormant.gapDays} days before the scan root's own last commit (threshold ${windowDays}), and ${dormant.unfinished.length} spec(s) are still unfinished (\`${dormant.unfinished.join('`, `')}\`) — the repo moved on while the entire tree stood still, so spec-driven development reads as adopted and then dropped. Per-spec staleness cannot see this: no spec trails any other when all are equally ancient. Commit dates proxy attention, so read this as a prompt, not proof.`,
+        remediation: `Finish or archive \`${dormant.unfinished[0]}\` and its siblings, or remove the spec scaffolding if the project no longer runs on it — an unfinished spec no one has touched in ${dormant.gapDays} days of active development is a goal agents still read and no one is steering.`,
+        context: { newestSpec: dates.newest.rel, gapDays: dormant.gapDays, thresholdDays: windowDays, unfinished: dormant.unfinished },
       });
     }
 
