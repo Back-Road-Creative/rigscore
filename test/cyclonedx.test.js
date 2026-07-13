@@ -1,43 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Validation } from '@cyclonedx/cyclonedx-library';
 import { formatCycloneDx } from '../src/cyclonedx.js';
 import { parseArgs } from '../src/index.js';
 import { withTmpDir } from './helpers.js';
 
-// Contract distilled from the real CycloneDX 1.6 JSON schema —
-// https://raw.githubusercontent.com/CycloneDX/specification/master/schema/bom-1.6.schema.json
-// — every `required` field on the objects we emit, the closed enums we emit into,
-// and bom-ref uniqueness/resolvability. NOT a JSON-Schema validator: CI carries
-// none (docs/cyclonedx.md § Limits says why, and how to wire one).
-const COMPONENT_TYPES = ['application', 'framework', 'library', 'container', 'platform', 'operating-system',
-  'device', 'device-driver', 'firmware', 'file', 'machine-learning-model', 'data', 'cryptographic-asset'];
-const EXT_REF_TYPES = ['configuration', 'other', 'website'];
+// The real CycloneDX 1.6 JSON schema, run by the upstream library's strict
+// validator — not a hand-transcribed restatement of it. `validate()` resolves
+// to `null` when the document conforms, or to an array of ajv errors when it
+// does not.
+const validator = new Validation.JsonStrictValidator('1.6');
 
-function contractErrors(bom) {
-  const e = [];
-  const refs = new Set();
-  if (bom.bomFormat !== 'CycloneDX') e.push('bomFormat');
-  if (bom.specVersion !== '1.6') e.push('specVersion');
-  if (!Number.isInteger(bom.version) || bom.version < 1) e.push('version');
-  if (!/^urn:uuid:[0-9a-f-]{36}$/.test(bom.serialNumber)) e.push('serialNumber');
-  if (Number.isNaN(Date.parse(bom.metadata.timestamp))) e.push('metadata.timestamp');
-  for (const c of [bom.metadata.component, ...bom.metadata.tools.components, ...bom.components]) {
-    if (!COMPONENT_TYPES.includes(c.type)) e.push(`component.type=${c.type}`);
-    if (!c.name) e.push('component.name');
-    if (c['bom-ref']) {
-      if (refs.has(c['bom-ref'])) e.push(`duplicate bom-ref ${c['bom-ref']}`);
-      refs.add(c['bom-ref']);
-    }
-    for (const h of c.hashes || []) if (h.alg !== 'SHA-256' || !/^[a-f0-9]{64}$/.test(h.content)) e.push('hash');
-    for (const p of c.properties || []) if (!p.name || typeof p.value !== 'string') e.push('property');
-    for (const r of c.externalReferences || []) if (!EXT_REF_TYPES.includes(r.type) || !r.url) e.push('extRef');
-  }
-  for (const d of bom.dependencies) {
-    for (const ref of [d.ref, ...d.dependsOn]) if (!refs.has(ref)) e.push(`unresolvable ref ${ref}`);
-  }
-  return e;
-}
+const schemaErrors = (bom) => validator.validate(JSON.stringify(bom));
 
 function fixture(tmp) {
   const github = { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github@1.2.3'],
@@ -50,24 +25,33 @@ function fixture(tmp) {
 }
 
 describe('CycloneDX 1.6 AI-BOM export', () => {
-  it('meets the 1.6 required-field contract', async () => {
+  it('validates against the real CycloneDX 1.6 JSON schema', async () => {
     await withTmpDir(async (tmp) => {
       fixture(tmp);
       const bom = await formatCycloneDx({ score: 88, config: { profile: 'default' } }, { cwd: tmp });
-      expect(contractErrors(bom)).toEqual([]);
+      await expect(schemaErrors(bom)).resolves.toBeNull();
       expect(bom.$schema).toBe('http://cyclonedx.org/schema/bom-1.6.schema.json');
       expect(bom.metadata.properties).toContainEqual({ name: 'rigscore:score', value: '88' });
     });
   });
 
-  it('stays contract-clean with no AI wiring, and the check rejects an off-spec BOM', async () => {
+  it('validates with no AI wiring, and the schema rejects an off-spec BOM', async () => {
     await withTmpDir(async (tmp) => {
       const bom = await formatCycloneDx({ score: 0 }, { cwd: tmp });
       expect(bom.components).toEqual([]);
-      expect(contractErrors(bom)).toEqual([]);
-      // Guard against a vacuous pass: the check must actually bite.
+      await expect(schemaErrors(bom)).resolves.toBeNull();
+
+      // Guard against a vacuous pass: a validator that silently no-opped would
+      // still "pass" every assertion above. Feed it a component whose `type` is
+      // outside the closed 1.6 enum and require it to bite — at that exact path,
+      // for that exact reason, so a merely-incidental error cannot satisfy this.
       bom.components.push({ type: 'not-a-cyclonedx-type', name: 'bogus' });
-      expect(contractErrors(bom)).toContain('component.type=not-a-cyclonedx-type');
+      const errors = await schemaErrors(bom);
+      expect(errors).not.toBeNull();
+      expect(errors).toContainEqual(expect.objectContaining({
+        instancePath: '/components/0/type',
+        keyword: 'enum',
+      }));
     });
   });
 

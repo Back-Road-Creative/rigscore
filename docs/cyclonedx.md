@@ -5,6 +5,23 @@ discovers during a scan — so an auditor asking *"what AI wiring does this repo
 machine-readable answer. Schema worked from:
 <https://raw.githubusercontent.com/CycloneDX/specification/master/schema/bom-1.6.schema.json>
 
+## Schema validation
+
+The emitted BOM is validated in CI against the **real** CycloneDX 1.6 JSON schema —
+`test/cyclonedx.test.js` runs the upstream `Validation.JsonStrictValidator('1.6')` from
+[`@cyclonedx/cyclonedx-library`](https://www.npmjs.com/package/@cyclonedx/cyclonedx-library), not a
+hand-transcribed restatement of it. A companion negative test mutates a component `type` to an
+off-spec value and requires the validator to reject it, so a validator that silently no-opped could
+not produce a green run.
+
+> **Pin the dep to v7, not v8+.** v8 requires Node ≥20.18; the CI matrix (`.github/workflows/ci.yml`)
+> still includes **18.17**, which `package.json` `engines` also declares support for. v7 needs only
+> Node ≥14. Bump to v8 *only* together with dropping the 18.17 leg.
+>
+> The library's XML validator pulls the native addon `libxmljs2`, but only as an **optional**
+> dependency — rigscore validates JSON only (pure-JS `ajv`), so a failed native build is harmless and
+> does not fail `npm ci`.
+
 ## What lands in the BOM
 
 | Discovered thing | CycloneDX shape |
@@ -37,13 +54,6 @@ The config file each server is declared in, and a network server's endpoint URL,
 
 ## Limits
 
-- **Not schema-validated in CI.** `test/cyclonedx.test.js` asserts the emitted document against the
-  1.6 **required-field contract** (required fields, closed `type` enums, `bom-ref` uniqueness and
-  resolvability), hand-transcribed from the schema above — a JSON-Schema validator does *not* run.
-  Wiring one is a one-command follow-up: `npm i -D @cyclonedx/cyclonedx-library@^7.1.0` (v7, not v8+:
-  v8 needs Node ≥20.18 and the CI matrix includes 18.17), then assert
-  `new Validation.JsonStrictValidator('1.6').validate(json)` is `null` — the emitted BOM passes that
-  today; the dep was dropped only because its lockfile churn trips our pre-push diff-cap gate.
 - **Repo-scoped.** Home-dir client configs the scan also reads (`~/.cursor/mcp.json`, …) are
   excluded: a BOM is shippable and must not carry a developer's machine layout.
 - **Single project.** `--cyclonedx` with `--recursive` exits 2 (a BOM has one `metadata.component`);
