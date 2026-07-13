@@ -10,6 +10,10 @@ const SKIP_DIRS = new Set([
   'dist', 'build', 'coverage', 'fixtures',
 ]);
 const MAX_FILES = 2000;
+// How many rounds of call-following the index runs. A loop naming a target that
+// names a script that runs the agent is two hops out; three rounds buys that
+// with room to spare, and *bounds* the work — the resolver can never run away.
+const MAX_HOPS = 3;
 
 // The binary must sit in command position — line start or after a shell
 // separator — so `.claude/settings.json` or `codexample` cannot match.
@@ -24,12 +28,13 @@ const SKIP_PERMS = /--dangerously-skip-permissions\b/;
 const LOOP_START = /(?:^|[\s;&|])(?:while|until|for)\b/;
 const LOOP_END = /(?:^|[\s;&|])done\b/;
 
-// A header that can never become false on its own. Exactly the three written
-// forms — `while :` and friends are a deliberate miss (see the doc page).
+// A header that can never become false on its own. Exactly the written forms —
+// `while :` and friends are a deliberate miss (see the doc page).
 const UNCONDITIONAL_HEADER = [
   /(?:^|[\s;&|])while\s+true\b/,
   /(?:^|[\s;&|])until\s+false\b/,
   /(?:^|[\s;&|])for\s*\(\(\s*;\s*;\s*\)\)/,
+  /(?:^|[\s;&|])while\s+(?:True|1)\s*:/, // python
 ];
 
 // Anything here means the body evaluates *something* to decide it is done.
@@ -93,28 +98,30 @@ const CAP_PATTERNS = [
 const hasAgent = (text) => AGENT_PATTERNS.some((p) => p.test(text));
 
 /**
- * Resolve ONE level of call: record every make target, npm script, and python
- * module that actually reaches an agent. A loop that runs `make agent` drives
- * an agent just as surely as one that types `claude -p` — the binary is simply
- * a file away. One level only: `make a` → `make b` → agent is not followed.
+ * Collect the *body* of every make target, npm script, python module and shell
+ * script — anything a loop can name in place of the agent binary. Agent-ness is
+ * decided later, in resolveIndirection: a body may call another body, and no
+ * index is complete until every file has been read.
  */
-function indexIndirection(file, lines, raw, idx) {
+function collectBodies(file, lines, raw, bodies, idx) {
   if (isMakefile(file)) {
     let target = null;
+    const recipes = new Map();
     for (const line of lines) {
       // Recipe lines are tab-indented; the block ends at the next flush line.
       if (/^\t/.test(line)) {
-        if (target && hasAgent(line)) idx.make.add(target);
+        if (target) recipes.set(target, `${recipes.get(target) || ''}${line}\n`);
         continue;
       }
       const m = line.match(MAKE_TARGET);
       target = m ? m[1] : null;
     }
+    for (const [name, text] of recipes) bodies.push({ kind: 'make', name, text });
   } else if (isPkgJson(file)) {
     try {
       const scripts = JSON.parse(raw).scripts || {};
       for (const [name, cmd] of Object.entries(scripts)) {
-        if (typeof cmd === 'string' && hasAgent(cmd)) idx.npm.add(name);
+        if (typeof cmd === 'string') bodies.push({ kind: 'npm', name, text: cmd });
       }
     } catch { /* an unparseable package.json is not this check's business */ }
   } else if (isService(file)) {
@@ -125,14 +132,42 @@ function indexIndirection(file, lines, raw, idx) {
       bounded: lines.some((l) => SVC_BOUND.test(l)),
     });
   } else if (isPython(file)) {
+    // A subprocess call must be present: the word `claude` in a docstring next
+    // to no Popen at all is not an agent invocation.
     const text = lines.join('\n');
-    // Both must hold: a subprocess call, and an agent in its arguments. The
-    // word `claude` in a docstring next to an unrelated Popen is not a loop.
-    if (PY_SUBPROCESS.test(text) && hasAgent(pyCommandish(text))) idx.py.add(path.basename(file));
+    if (PY_SUBPROCESS.test(text)) {
+      bodies.push({ kind: 'py', name: path.basename(file), text: pyCommandish(text) });
+    }
+  } else if (isShell(file)) {
+    bodies.push({ kind: 'sh', name: path.basename(file), text: lines.join('\n') });
   }
 }
 
-/** Does this text invoke an agent-bearing make target / npm script / python module? */
+/**
+ * Follow calls until the index stops growing, or MAX_HOPS rounds elapse. Round
+ * one indexes the bodies holding an agent outright; each later round indexes
+ * the bodies that *call* an already-indexed one — so `make agent` → a script →
+ * `claude -p` resolves, which one hop could not see.
+ *
+ * Termination is structural, not a visited-set: a round only ever ADDS names to
+ * a set it never removes from, so a script that calls itself (or a cycle of
+ * scripts calling each other) simply contributes nothing new and the loop ends.
+ * MAX_HOPS is the belt to that braces — the work is bounded either way.
+ */
+function resolveIndirection(bodies, idx) {
+  let pending = bodies;
+  for (let hop = 0; hop < MAX_HOPS && pending.length; hop++) {
+    const unresolved = [];
+    for (const b of pending) {
+      if (hasAgent(b.text) || callsIndirectAgent(b.text, idx)) idx[b.kind].add(b.name);
+      else unresolved.push(b);
+    }
+    if (unresolved.length === pending.length) break; // fixed point — nothing grew
+    pending = unresolved;
+  }
+}
+
+/** Does this text invoke an agent-bearing make target / npm script / module / script? */
 function callsIndirectAgent(text, idx) {
   for (const m of text.matchAll(/(?:^|[\s;|&(`])make\s+([^\n;|&]+)/g)) {
     // Covers `make agent`, `make -C sub agent`, `make lint agent`.
@@ -144,7 +179,35 @@ function callsIndirectAgent(text, idx) {
   for (const m of text.matchAll(/(?:^|[\s;|&(`])(?:python3?|uv|poetry|pipenv)\b[^\n;|&]*?([\w./-]+\.py)\b/g)) {
     if (idx.py.has(path.basename(m[1]))) return true;
   }
+  // `./scripts/agent.sh`, `bash scripts/agent.sh`, `source lib/agent.sh` — the
+  // path is matched, the basename is what the index is keyed on.
+  for (const m of text.matchAll(/(?:^|[\s;|&(`])([\w./-]+\.(?:sh|bash))\b/g)) {
+    if (idx.sh.has(path.basename(m[1]))) return true;
+  }
   return false;
+}
+
+/**
+ * Loop blocks in a Python module — the one place this check reads a language
+ * other than shell. Python has no `done`: a block is the run of lines indented
+ * deeper than its header, so that is what the body is taken to be.
+ */
+function findPyLoops(lines) {
+  const loops = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)(?:while|for)\b.*:\s*$/);
+    if (!m) continue;
+    const body = [lines[i]];
+    for (let j = i + 1; j < lines.length; j++) {
+      const indent = lines[j].length - lines[j].trimStart().length;
+      if (lines[j].trim() !== '' && indent <= m[1].length) break;
+      body.push(lines[j]);
+    }
+    // Quotes and commas out, so the shared command-position patterns apply to
+    // `subprocess.run(["claude", "-p", …])` exactly as they do to a shell line.
+    loops.push({ header: lines[i], text: pyCommandish(body.join('\n')) });
+  }
+  return loops;
 }
 
 const isCapped = (header, text) =>
@@ -199,9 +262,13 @@ export default {
         isPython(full) || isTimer(full) || isService(full),
     });
 
-    // Pass 1 — read each file once and resolve one level of call, so pass 2 can
-    // see the agent behind `make agent` / `npm run agent` / `python agent.py`.
-    const indirect = { make: new Set(), npm: new Set(), py: new Set(), svc: new Map() };
+    // Pass 1 — read each file once, then follow calls up to MAX_HOPS, so pass 2
+    // can see the agent behind `make agent` / `npm run agent` / `python agent.py`,
+    // and behind a `make agent` whose recipe merely runs another script.
+    const indirect = {
+      make: new Set(), npm: new Set(), py: new Set(), sh: new Set(), svc: new Map(),
+    };
+    const bodies = [];
     const docs = [];
     for (const file of files) {
       const raw = await readFileSafe(file);
@@ -213,10 +280,11 @@ export default {
         .map((l) => (/^\s*#/.test(l) ? '' : l))
         .map((l) => (isMakefile(file) ? l.replace(/^\t[@+-]+/, '\t') : l));
       docs.push({ file, rel: path.relative(context.cwd, file), lines, text: lines.join('\n') });
-      indexIndirection(file, lines, raw, indirect);
+      collectBodies(file, lines, raw, bodies, indirect);
     }
+    resolveIndirection(bodies, indirect);
 
-    // An agent reached directly, or one call away.
+    // An agent reached directly, or up to MAX_HOPS calls away.
     const agentIn = (text) => hasAgent(text) || callsIndirectAgent(text, indirect);
 
     // Pass 2 — findings.
@@ -257,13 +325,15 @@ export default {
         continue;
       }
 
-      // package.json, *.py and *.service hold no loop this check can read — they
-      // are resolved (pass 1), not parsed. Their flag above still counts.
-      if (!isLoopFile(file)) continue;
-      if (!agentIn(text)) continue;
-      surfaceFound = true;
+      // package.json and *.service hold no loop this check can read — they are
+      // resolved (pass 1), not parsed. Their flag above still counts. A *.py is
+      // resolved too, and additionally parsed for a loop of its own (below).
+      const py = isPython(file);
+      if (!isLoopFile(file) && !py) continue;
+      if (!agentIn(py ? pyCommandish(text) : text)) continue;
 
       if (isCronFile(file)) {
+        surfaceFound = true;
         // A cron line is a loop whose iteration is the schedule: it terminates
         // each tick, so only the spend of one unattended tick is in question.
         const jobs = lines.filter((l) => isCronLine(l) && agentIn(l));
@@ -284,8 +354,15 @@ export default {
         continue;
       }
 
-      // One finding per file — a nested loop would otherwise report twice.
-      const loops = findLoops(lines).filter((l) => agentIn(l.text));
+      // One finding per file — a nested loop would otherwise report twice. In a
+      // Python module this is the loop written *inside* an indirection target:
+      // its callers are resolved by name, but a `while True:` in the module
+      // itself is only visible by reading the module's own control flow.
+      const loops = (py ? findPyLoops(lines) : findLoops(lines)).filter((l) => agentIn(l.text));
+      // A module with no loop of its own is not a surface — its *call* is, and
+      // that is read wherever the call is written (a shell loop, a cron line).
+      if (py && loops.length === 0) continue;
+      surfaceFound = true;
       agentLoops += loops.length;
 
       const stopless = loops.find((l) => hasNoStopCondition(l.header, l.text));
