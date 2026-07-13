@@ -156,6 +156,9 @@ npx github:Back-Road-Creative/rigscore --fix
 # Apply auto-fixes
 npx github:Back-Road-Creative/rigscore --fix --yes
 
+# Apply auto-fixes AND install the starter packs that target your red checks
+npx github:Back-Road-Creative/rigscore --fix --yes --install-packs
+
 # Use a scoring profile
 npx github:Back-Road-Creative/rigscore --profile minimal
 
@@ -672,7 +675,8 @@ npx github:Back-Road-Creative/rigscore --online                  # Enable online
 npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
 npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan ~/.claude/skills and ~/.claude/commands (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
-npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations
+npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations (edits existing files only — never scaffolds new ones)
+npx github:Back-Road-Creative/rigscore --fix --yes --install-packs # Also install the starter packs that target your red checks (creates new files)
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
 npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-not-gitignored,skill-files/shell-exec" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). See docs/FINDING_IDS.md for the stable ID list. Title-substring still works as a legacy fallback.
@@ -752,6 +756,30 @@ npx github:Back-Road-Creative/rigscore --fix --yes
 - `chmod 600` on SSH private keys
 
 rigscore never modifies governance file content.
+
+#### `--install-packs` — scaffolding is a separate opt-in
+
+`--yes` means *"don't prompt me"*. It does **not** mean *"scaffold governance files I never
+asked for"* — so `--fix --yes` only remediates checks that are already red, and creates no
+file the repo did not already have.
+
+A [starter pack](docs/init-packs.md) is the other kind of remediation: it drops a whole
+baseline in (`.claude/settings.json`, a pre-commit hook, `AGENTS.md`). `--fix` still *offers*
+the packs that target your red checks — listing them costs nothing — but installing them needs
+its own consent:
+
+```bash
+# Offered, not installed: names the packs and the flag that would install them
+npx github:Back-Road-Creative/rigscore --fix --yes
+
+# Install them too
+npx github:Back-Road-Creative/rigscore --fix --yes --install-packs
+```
+
+`--install-packs` only widens what `--yes` may write — it never writes on its own, so
+`--fix --install-packs` (no `--yes`) is still a dry run. An install never overwrites an
+existing file: it is reported `skipped (exists)` and left byte-for-byte alone. To install one
+specific pack, or to overwrite deliberately, use `rigscore init --<pack> [--force]`.
 
 ### Plugins
 
