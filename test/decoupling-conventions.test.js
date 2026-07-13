@@ -132,6 +132,23 @@ describe('W2/T2.1–T2.3: coherence allow-governance pairings are opt-in', () =>
     }
     const repoRoot = path.resolve(__dirname, '..');
     const srcFiles = await walk(path.join(repoRoot, 'src'));
+
+    // ANCHOR — `expect(hits).toEqual([])` is satisfied just as well by scanning NOTHING
+    // as by scanning a clean tree. Rename src/, and the walk returns [] and this guard
+    // passes forever while reporting success. Pin the input set to non-empty.
+    expect(
+      srcFiles.length,
+      'the src/ walk found (almost) no files — this guard is scanning an empty set and ' +
+        'its clean result is meaningless',
+    ).toBeGreaterThan(20);
+
+    // POSITIVE CONTROL — the forbidden phrase is a reconstruction, so nothing so far
+    // proves the matcher COULD catch it. Run the identical matcher over a string that
+    // does contain it; if this stops matching, the guard above is a no-op and we want
+    // to hear about it here rather than trust a green that never had a chance to fail.
+    const control = `// remediation: ${forbidden} in this repository.`;
+    expect(control.includes(forbidden), 'matcher cannot detect the phrase it guards').toBe(true);
+
     const hits = [];
     for (const f of srcFiles) {
       const content = await fs.promises.readFile(f, 'utf-8');

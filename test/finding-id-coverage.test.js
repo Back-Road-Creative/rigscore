@@ -54,19 +54,28 @@ function matchClose(source, i, open, close) {
 }
 
 /**
- * Object literals passed to `findings.push({...})`, as source substrings.
+ * Object literals pushed onto a findings accumulator, as source substrings.
+ *
+ * The accumulator is NOT always literally named `findings`: site-security.js builds its
+ * result in `allFindings` and returns it as `findings:`. Keying off the fixed substring
+ * `'findings.push({'` was blind to those sites — and a blind extractor yields no blocks,
+ * hence no offenders, hence a green guard that reports success because it saw nothing.
+ * Match any accumulator whose name ends in `findings`/`Findings` instead.
+ *
+ * Deliberately NOT any `<ident>.push({`: most of those in src/checks/ (`stack`, `files`,
+ * `out`, `configs`, …) are plain data structures, not findings, and would be pure false
+ * positives. Helpers that are spread in (`findings.push(...checkFoo(f))`) accumulate into
+ * their own local `findings` array, so their sites are already covered.
  */
 function extractFindingsPushBlocks(source) {
   const blocks = [];
-  const patt = 'findings.push({';
-  let i = 0;
-  while (i < source.length) {
-    const idx = source.indexOf(patt, i);
-    if (idx === -1) break;
-    const start = idx + patt.length;
+  const patt = /(?:^|[^A-Za-z0-9_$])[A-Za-z0-9_$]*[Ff]indings\.push\(\s*\{/g;
+  let m;
+  while ((m = patt.exec(source)) !== null) {
+    const start = m.index + m[0].length; // index just past the '{'
     const end = matchClose(source, start, '{', '}');
     blocks.push(source.slice(start, end));
-    i = end + 1;
+    patt.lastIndex = end + 1;
   }
   return blocks;
 }
@@ -184,6 +193,65 @@ describe('E4: every SARIF-reaching finding emits an explicit findingId', () => {
       offenders,
       `finding sites without findingId (their SARIF ruleId would be silently derived from the title):\n${offenders.join('\n')}`,
     ).toHaveLength(0);
+  });
+
+  /**
+   * ANCHOR 1 — the guard above compares a DERIVED set (finding sites the extractors
+   * can see) against a rule (each must carry a findingId). A module the extractors
+   * cannot see contributes zero sites, therefore zero offenders, therefore green —
+   * the guard reports success precisely because it saw nothing. `scanAllChecks`
+   * already computes the per-file block count and then throws it away; assert on it.
+   *
+   * The global `seen.size > 50` anchor in the no-collision test below is NOT a
+   * substitute: it is computed from a different derivation (findingId regexes, not
+   * parsed blocks) and it is global, so a single module going invisible to the block
+   * extractors leaves it comfortably above 50 and green.
+   */
+  it('ANCHOR: the extractors see finding sites in EVERY check module', () => {
+    const { stats } = scanAllChecks();
+    const files = Object.keys(stats);
+    expect(files.length).toBeGreaterThan(20);
+
+    const blind = files.filter((f) => stats[f].total === 0);
+    expect(
+      blind,
+      'the extractors found ZERO finding sites in these modules, so the coverage guard ' +
+        'above is structurally blind to them and would stay green no matter what they ' +
+        `emit:\n${blind.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  /**
+   * ANCHOR 2 — a positive control. Anchor 1 proves the extractors see *something* in
+   * each module; it cannot prove they would CATCH an id-less finding. Run them over a
+   * synthetic module carrying every emission shape that ships in src/checks/ and assert
+   * both that each shape is parsed and that the id-less ones are flagged. Without this,
+   * an extractor that quietly stopped recognising a shape would still pass anchor 1 on
+   * the strength of the shapes it still sees.
+   *
+   * The `allFindings.push({...})` line is not hypothetical: site-security.js accumulates
+   * into `allFindings` and returns it as `findings:`. An id-less finding there reaches
+   * SARIF with a ruleId that src/sarif.js slugifies from its TITLE — reword the title and
+   * every consumer's `--ignore <ruleId>` silently breaks.
+   */
+  it('ANCHOR: the extractors actually catch an id-less finding (positive control)', () => {
+    const synthetic = [
+      "const findings = []; const allFindings = [];",
+      "findings.push({ findingId: 'demo/has-id', severity: 'warning', title: 'Has an id' });",
+      "allFindings.push({ severity: 'warning', title: 'Missing HSTS header' });",
+      "return { score: 100, findings: [{ severity: 'info', title: 'Inline, no id' }] };",
+    ].join('\n');
+
+    const blocks = [
+      ...extractFindingsPushBlocks(synthetic),
+      ...extractInlineFindingsBlocks(synthetic),
+    ];
+    expect(blocks, 'an emission shape that ships in src/checks/ was not parsed').toHaveLength(3);
+
+    const idless = blocks
+      .filter((b) => reachesSarif(extractSeverity(b)) && !hasFindingId(b))
+      .map((b) => (b.match(/title:\s*['"`]([^'"`]+)/) || [])[1]);
+    expect(idless.sort()).toEqual(['Inline, no id', 'Missing HSTS header']);
   });
 
   it('no two modules emit the same findingId (no-collision)', () => {
