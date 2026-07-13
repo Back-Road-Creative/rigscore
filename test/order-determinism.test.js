@@ -1,10 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { slugify } from '../src/findings.js';
 import { withTmpDir } from './helpers.js';
 import deepSecrets from '../src/checks/deep-secrets.js';
 import loopGovernance from '../src/checks/loop-governance.js';
+import memoryHygiene from '../src/checks/memory-hygiene.js';
+import sandboxPosture from '../src/checks/sandbox-posture.js';
 
 // Regression harness for a bug class that has now shipped twice: a check whose
 // verdict depends on the order the filesystem handed back entries. `walkDirSafe`
@@ -165,6 +168,146 @@ describe('order-determinism — verdicts must not depend on readdir order', () =
       }
       expect(out.reversed).toEqual(out.natural);
       expect(out.shuffle).toEqual(out.natural);
+    });
+  }, 30000);
+
+  // ── memory-hygiene: the governance walk (MAX_GOVERNANCE_FILES = 100) ──────────
+  //
+  // NOTE the cap counts *included* files, not files walked: `walkDirSafe` gates on
+  // `files.length`, which is the post-`shouldInclude` list. So this truncates at 100
+  // GOVERNANCE files (a monorepo's `packages/<pkg>/CLAUDE.md`), not 100 files.
+  //
+  // The walk feeds exactly one finding — `duplicate-rule` — so truncation cannot make
+  // this check N/A (the N/A gate is `memFiles.length === 0`, decided by `discoverMemory`
+  // before the walk ever runs). What it CAN do is let the check print its PASS,
+  // "Agent memory is within budget and free of stale files", over a rule whose other
+  // home sat in a governance file the walk never reached.
+
+  const SHARED_RULE =
+    '- Never merge a pull request yourself — always emit the merge command for the operator to run.';
+
+  /** A memory file restating a rule whose ONLY governance home is `zz-pkg/CLAUDE.md`,
+   *  which sorts last and so falls past the cap once `pkgCount` >= 100. */
+  function buildGovernanceFixture(tmp, pkgCount) {
+    fs.mkdirSync(path.join(tmp, '.claude', 'memory'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, '.claude', 'memory', 'merge.md'),
+      `# Merge policy\n\n${SHARED_RULE}\n\nThe operator merges by hand: an agent that merges its own PR bypasses review entirely.\n`,
+    );
+    for (let i = 0; i < pkgCount; i++) {
+      const dir = path.join(tmp, `pkg-${String(i).padStart(4, '0')}`);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'CLAUDE.md'),
+        `# pkg ${i}\n\n- Package ${i} builds with the workspace toolchain and ships nothing on its own.\n`,
+      );
+    }
+    const last = path.join(tmp, 'zz-pkg');
+    fs.mkdirSync(last, { recursive: true });
+    fs.writeFileSync(path.join(last, 'CLAUDE.md'), `# zz\n\n${SHARED_RULE}\n`);
+  }
+
+  const memoryContext = (tmp) => ({
+    cwd: tmp,
+    homedir: fs.mkdtempSync(path.join(os.tmpdir(), 'rs-mem-home-')),
+    config: {},
+    includeHomeSkills: false,
+  });
+
+  const PASS_ID = 'memory-hygiene/agent-memory-is-within-budget-and-free-of-stale-files';
+
+  it('memory-hygiene: a truncated governance walk NEVER reports clean, under any ordering', async () => {
+    await withTmpDir(async (tmp) => {
+      buildGovernanceFixture(tmp, 105); // 105 + zz-pkg > the 100-governance-file cap
+      const { out, totalReordered } = await runUnderEachOrdering(memoryHygiene, memoryContext(tmp));
+      expect(totalReordered).toBeGreaterThan(0); // the harness really permuted
+
+      expect(out.reversed).toEqual(out.natural); // determinism
+      expect(out.shuffle).toEqual(out.natural);
+
+      for (const mode of ORDERINGS) {
+        // It must SAY it stopped looking...
+        expect(out[mode].findingIds).toContain('memory-hygiene/governance-file-cap-reached');
+        // ...and it must not certify memory it never finished reading.
+        expect(out[mode].findingIds).not.toContain(PASS_ID);
+        expect(out[mode].score).toBeLessThan(100);
+      }
+    });
+  }, 30000);
+
+  it('memory-hygiene: an untruncated walk finds the duplicate rule under every ordering', async () => {
+    await withTmpDir(async (tmp) => {
+      // Same fixture, same duplicate rule, same `zz-pkg` home — only now the walk
+      // reaches it. This is what proves the capped run above is hiding something real.
+      buildGovernanceFixture(tmp, 10);
+      const { out, totalReordered } = await runUnderEachOrdering(memoryHygiene, memoryContext(tmp));
+      expect(totalReordered).toBeGreaterThan(0);
+      for (const mode of ORDERINGS) {
+        expect(out[mode].findingIds).toContain('memory-hygiene/duplicate-rule');
+        expect(out[mode].findingIds).not.toContain('memory-hygiene/governance-file-cap-reached');
+        expect(out[mode].score).toBe(98); // one INFO duplicate-rule
+      }
+    });
+  }, 30000);
+
+  // ── sandbox-posture: the .devcontainer walk (maxFiles: 200) ───────────────────
+  //
+  // This walk passes NO `shouldInclude` and NO `skipDirs`, so every file under
+  // `.devcontainer/` counts against the 200 cap. Truncation here is the loud one: the
+  // file naming the agent install can fall past the cap, `AGENT_INSTALL` then never
+  // matches, `scanDevcontainer` returns null, `surfacesScanned` stays 0 — and the check
+  // returns NOT_APPLICABLE, i.e. "this repo configures no sandbox surface at all",
+  // over a container that runs an agent with no egress boundary whatsoever.
+
+  /** Filler + the one file that installs an agent CLI and carries no egress control.
+   *  It sorts last, so a walk capped before the tail never reads it. */
+  function buildDevcontainerFixture(tmp, fillerCount) {
+    const dc = path.join(tmp, '.devcontainer');
+    fs.mkdirSync(dc, { recursive: true });
+    for (let i = 0; i < fillerCount; i++) {
+      fs.writeFileSync(path.join(dc, `filler-${String(i).padStart(4, '0')}.txt`), `note ${i}\n`);
+    }
+    fs.writeFileSync(
+      path.join(dc, 'zz-devcontainer.json'),
+      JSON.stringify({ name: 'agent', postCreateCommand: 'npm i -g @anthropic-ai/claude-code' }, null, 2),
+    );
+  }
+
+  const sandboxContext = (tmp) => ({
+    cwd: tmp,
+    homedir: fs.mkdtempSync(path.join(os.tmpdir(), 'rs-sandbox-home-')),
+    config: {},
+  });
+
+  it('sandbox-posture: a truncated devcontainer walk is never NOT_APPLICABLE', async () => {
+    await withTmpDir(async (tmp) => {
+      buildDevcontainerFixture(tmp, 205); // 206 files > the 200 cap
+      const { out, totalReordered } = await runUnderEachOrdering(sandboxPosture, sandboxContext(tmp));
+      expect(totalReordered).toBeGreaterThan(0);
+
+      expect(out.reversed).toEqual(out.natural); // determinism
+      expect(out.shuffle).toEqual(out.natural);
+
+      for (const mode of ORDERINGS) {
+        // "I did not read the container" must never render as "there is no container".
+        expect(out[mode].score).not.toBe(-1);
+        expect(out[mode].findingIds).toContain('sandbox-posture/devcontainer-file-cap-reached');
+      }
+    });
+  }, 30000);
+
+  it('sandbox-posture: an untruncated walk finds the containment gap under every ordering', async () => {
+    await withTmpDir(async (tmp) => {
+      // Same container, same missing egress boundary — only now the walk reaches the
+      // file that declares the agent install.
+      buildDevcontainerFixture(tmp, 10);
+      const { out, totalReordered } = await runUnderEachOrdering(sandboxPosture, sandboxContext(tmp));
+      expect(totalReordered).toBeGreaterThan(0);
+      for (const mode of ORDERINGS) {
+        expect(out[mode].findingIds).toContain('sandbox-posture/devcontainer-no-egress-control');
+        expect(out[mode].findingIds).not.toContain('sandbox-posture/devcontainer-file-cap-reached');
+        expect(out[mode].score).toBe(85); // one WARNING
+      }
     });
   }, 30000);
 });

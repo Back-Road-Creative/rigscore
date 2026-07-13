@@ -167,13 +167,19 @@ function ruleLines(content) {
  * Every governance file whose rules could be a memory file's other home:
  * the root set, every nested governance file in the project tree (monorepo
  * package rules), and — only under --include-home-skills, the same gate the
- * memory scan uses — the user's home governance. Returns full path → display label.
+ * memory scan uses — the user's home governance. Returns `{ paths, truncated }`,
+ * where `paths` is full path → display label.
+ *
+ * `truncated` is `walkDirSafe`'s signal that the nested walk hit
+ * MAX_GOVERNANCE_FILES and stopped early, so `paths` is an INCOMPLETE picture of
+ * where the project states its rules. Note the cap counts *matched* governance
+ * files, not files walked — `walkDirSafe` gates on the post-`shouldInclude` list.
  */
 async function governancePaths(cwd, homedir, includeHomeSkills) {
   const paths = new Map();
   for (const rel of GOVERNANCE_FILES) paths.set(path.join(cwd, rel), rel);
 
-  const { files } = await walkDirSafe(cwd, {
+  const { files, truncated } = await walkDirSafe(cwd, {
     skipDirs: SKIP_DIRS,
     maxFiles: MAX_GOVERNANCE_FILES,
     shouldInclude: (full) => GOVERNANCE_BASENAMES.has(path.basename(full)),
@@ -186,13 +192,15 @@ async function governancePaths(cwd, homedir, includeHomeSkills) {
     paths.set(path.join(homedir, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md');
     paths.set(path.join(homedir, 'CLAUDE.md'), '~/CLAUDE.md');
   }
-  return paths;
+  return { paths, truncated };
 }
 
-/** Normalized rule → set of governance files stating it. */
+/** `{ byRule, truncated }` — normalized rule → set of governance files stating it,
+ *  plus whether the walk that found them gave up early (see `governancePaths`). */
 async function collectGovernanceRules(cwd, homedir, includeHomeSkills) {
   const byRule = new Map();
-  for (const [full, label] of await governancePaths(cwd, homedir, includeHomeSkills)) {
+  const { paths, truncated } = await governancePaths(cwd, homedir, includeHomeSkills);
+  for (const [full, label] of paths) {
     const stat = await statSafe(full);
     if (!stat || !stat.isFile() || stat.size > MAX_GOVERNANCE_BYTES) continue;
     const content = (await readFileSafe(full)) ?? '';
@@ -201,7 +209,7 @@ async function collectGovernanceRules(cwd, homedir, includeHomeSkills) {
       byRule.get(norm).add(label);
     }
   }
-  return byRule;
+  return { byRule, truncated };
 }
 
 /** 'empty' (no content), 'stub' (frontmatter/heading, no body), or null. */
@@ -268,7 +276,7 @@ export default {
     // 3. Single home per rule — a rule stated in both a governance file and a
     // memory file has two homes, so editing one silently fails to take effect.
     // Governance is the root set + nested project files + (opt-in) home.
-    const govRules = await collectGovernanceRules(cwd, homedir, includeHomeSkills);
+    const { byRule: govRules, truncated: govTruncated } = await collectGovernanceRules(cwd, homedir, includeHomeSkills);
     if (govRules.size > 0) {
       for (const file of memFiles) {
         for (const [norm, raw] of ruleLines(file.content)) {
@@ -288,6 +296,33 @@ export default {
           });
         }
       }
+    }
+
+    // A capped governance walk read only SOME of the places a rule can live, so a rule
+    // with a second home past the cap is unreportable. Disclose it: without this, the
+    // check scored a clean 100 and printed "memory is within budget and free of stale
+    // files" over exactly that.
+    //
+    // INFO, deliberately NOT the WARNING the other truncation disclosures use. This walk
+    // feeds exactly one finding — `duplicate-rule`, itself INFO — so an unread governance
+    // file can conceal nothing worse than an INFO, and the disclosure is priced in the
+    // same currency as the thing it stands in for. WARNING would over-price it twice
+    // over: it costs 15 against a hidden 2, and (the real damage) it would switch OFF the
+    // INFO_ONLY_FLOOR, which `calculateCheckScore` applies only while warningCount === 0
+    // — so a big monorepo would be docked harder for being big than a repo is for
+    // actually having the duplicated rules. The deduction is not what removes the lie;
+    // the suppressed PASS below is, because any finding at all makes `findings.length`
+    // non-zero. Truncation cannot make this check N/A: that gate is `memFiles.length`,
+    // decided by `discoverMemory` before this walk ever runs.
+    if (govTruncated) {
+      findings.push({
+        findingId: 'memory-hygiene/governance-file-cap-reached',
+        severity: 'info',
+        title: `Governance scan capped at ${MAX_GOVERNANCE_FILES} files`,
+        detail: `The nested-governance walk hit the ${MAX_GOVERNANCE_FILES}-file limit and stopped, so governance files past the cap were never read. A memory rule whose other home sits in one of them cannot be reported — this result is not a clean bill of health for duplicate rules.`,
+        evidence: `${MAX_GOVERNANCE_FILES}-governance-file cap reached; the tree holds more`,
+        remediation: `Move vendored or generated trees out of the scan so the whole governance surface fits under the ${MAX_GOVERNANCE_FILES}-file cap.`,
+      });
     }
 
     // 4. Every index entry resolves to a memory file the scan can see. Topic files are
