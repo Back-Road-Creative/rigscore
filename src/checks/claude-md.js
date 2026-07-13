@@ -1,7 +1,37 @@
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { calculateCheckScore } from '../scoring.js';
 import { GOVERNANCE_FILES, NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, execSafe, hasAnyAITooling } from '../utils.js';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Ask git itself whether `file` matches the gitignore rules in effect at
+ * `cwd`. Mirrors env-exposure.js: `--no-index` so a tracked-but-ignored file
+ * is still reported ignored (a governance file hidden behind a `.gitignore`
+ * rule is exactly what we want to flag), and git's own matcher handles
+ * anchored (`/CLAUDE.md`), glob (`*.md`), and recursive double-star syntax
+ * that an exact-string match against the bare name would miss.
+ *
+ * Git exit codes: 0 = ignored, 1 = not ignored, 128 = not a git repo / fatal.
+ * Returns 'ignored' | 'not-ignored' | 'unknown'; 'unknown' lets the caller
+ * fall back to the legacy exact-string match — a degraded matcher must fail
+ * toward the old MISS, never toward a false positive.
+ */
+async function gitCheckIgnore(cwd, file) {
+  try {
+    await execFileAsync('git', ['check-ignore', '--quiet', '--no-index', file], {
+      cwd,
+      timeout: 5000,
+    });
+    return 'ignored';
+  } catch (err) {
+    if (err && err.code === 1) return 'not-ignored';
+    return 'unknown';
+  }
+}
 
 const QUALITY_CHECKS = [
   {
@@ -347,7 +377,10 @@ export default {
     const gitignorePath = path.join(cwd, '.gitignore');
     const gitignoreContent = await readFileSafe(gitignorePath);
 
-    // Check if governance file is in .gitignore
+    // Check if governance file is in .gitignore. Query git's own matcher so
+    // anchored (`/CLAUDE.md`), glob (`*.md`), and `**/`-prefixed rules are
+    // caught, not just the bare name; fall back to the legacy exact-string
+    // match only when git can't answer (missing / not a git repo).
     if (gitignoreContent) {
       const gitignoreLines = gitignoreContent.split('\n').map(l => l.trim());
       for (const govFile of GOVERNANCE_FILES) {
@@ -355,7 +388,11 @@ export default {
         const govContent = await readFileSafe(govPath);
         if (!govContent) continue;
 
-        if (gitignoreLines.includes(govFile)) {
+        const verdict = await gitCheckIgnore(cwd, govFile);
+        const gitignored = verdict === 'ignored'
+          || (verdict === 'unknown' && gitignoreLines.includes(govFile));
+
+        if (gitignored) {
           findings.push({
             findingId: 'claude-md/governance-file-gitignored',
             severity: 'critical',
