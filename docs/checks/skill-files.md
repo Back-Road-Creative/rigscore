@@ -16,19 +16,20 @@ Findings in a skill file are treated as seriously as findings in CLAUDE.md itsel
 | Injection pattern in non-defensive context (single-line or 2-line window) | CRITICAL | `skill-files/injection` | Rephrase or remove override pattern |
 | Shell execution pattern (`run \``…\`` `, `execute bash`, `curl http`, `wget http`) | WARNING | `skill-files/shell-exec` | Review shell instructions for necessity |
 | Data exfiltration pattern (`send … to https`, `post … to https`, `upload … to`, `curl … -d`, `redirect output to`) | WARNING | `skill-files/exfiltration` | Remove or restrict outbound transfer |
-| Privilege escalation pattern (`sudo`, `run as root`, `chmod 777`, `chmod +x`, `disable …security`, `turn off …firewall`) | WARNING | `skill-files/escalation` | Remove escalation instructions |
+| Privilege escalation pattern (`sudo`, `run as root`, `chmod 777`, `chmod +x`, `disable …security`, `turn off …firewall`) — one finding per matched pattern id | WARNING (CRITICAL at ≥3 distinct pattern ids) | `skill-files/escalation-<patternId>` | Remove escalation instructions |
 | Persistence pattern (`crontab`, `systemctl enable`, `startup script`, `modify bashrc`, `npm -g`) | WARNING | `skill-files/persistence` | Remove persistence instructions |
 | Indirect injection pattern (`eval(`, `new Function(`, `fetch and run`, `download and execute`) | CRITICAL | `skill-files/indirect-injection` | Remove dynamic code execution |
 | Trust exploitation pattern (CVE-2025-54136 — "always approve", "skip verification", "trust output from…") | WARNING | `skill-files/trust-exploitation` | Remove blind-trust instructions |
 | Bidirectional override characters (U+202A-202E, U+2066-2069) | CRITICAL | `skill-files/bidi-override` | Remove bidi characters |
 | Zero-width characters (ZWJ/ZWNJ/ZWS/BOM/ZWNBS, U+200B-200D, U+2060, U+FEFF) | WARNING | `skill-files/zero-width` | Strip with `cat -v` inspection |
-| Homoglyphs in classic ranges (Greek, Cyrillic, Armenian, Georgian, Cherokee) | WARNING | `skill-files/homoglyph-classic` | Replace with ASCII equivalents |
-| Homoglyphs in modern prompt-injection ranges (Mathematical Bold/Italic Latin, Fullwidth Latin, Cherokee) | WARNING | `skill-files/homoglyph-modern` | Replace with ASCII equivalents |
-| Non-TLS `http://` URLs | WARNING | `skill-files/http-url` | Use HTTPS |
-| `https://` URLs present | INFO | `skill-files/https-url` | Verify URLs are legitimate |
-| Possible base64 blob (≥50 chars, whitespace-bounded) | WARNING | `skill-files/base64` | Decode and review |
+| Homoglyphs in classic ranges (Greek, Cyrillic, Armenian, Georgian, Cherokee) | WARNING | `skill-files/homoglyph` | Replace with ASCII equivalents |
+| Homoglyphs in modern prompt-injection ranges (Mathematical Bold/Italic Latin, Fullwidth Latin, Cherokee) — same ruleId as the classic range | WARNING | `skill-files/homoglyph` | Replace with ASCII equivalents |
+| Non-TLS `http://` URLs | WARNING | `skill-files/non-tls-urls` | Use HTTPS |
+| `https://` URLs present | INFO | `skill-files/https-urls` | Verify URLs are legitimate |
+| Possible base64 blob (≥50 chars, whitespace-bounded) | WARNING | `skill-files/possible-base64` | Decode and review |
 | Skill file is world-writable (mode `& 0o002`, POSIX only) | WARNING | `skill-files/world-writable` | `chmod 644 <file>` |
-| No skill files found | INFO (score = N/A) | — | None — check inapplicable |
+| The walker detected a symlink cycle and skipped it | INFO | `skill-files/symlink-loop-skipped` | Informational — traversal continued safely |
+| No skill files found | INFO (score = N/A) | `skill-files/no-skill-files` | None — check inapplicable |
 | All skill files clean | PASS | — | — |
 
 ## Weight rationale
@@ -48,7 +49,7 @@ Out of scope for auto-fix: every finding related to file CONTENT. Injection patt
 ## SARIF
 
 - Tool component: `rigscore`
-- Rule IDs emitted: see Triggers — all prefixed `skill-files/`.
+- Rule IDs emitted: see Triggers — every id is namespaced under the check id. All are literal except the escalation family, which interpolates the matched pattern id (`` skill-files/escalation-${patternId} ``: `sudo`, `run-as-root`, `run-as-admin`, `elevated-privilege`, `chmod-777`, `chmod-plus-x`, `chmod-a-plus`, `disable-security`, `disable-firewall`, `disable-antivirus`).
 - Level mapping: CRITICAL → `error`, WARNING → `warning`, INFO → `note`.
 - OWASP tag: `owasp-agentic:ASI01` on every finding via `properties.tags`.
 - Location: when a finding title contains a relative path (e.g. `Injection pattern found in .claude/commands/deploy.md`), SARIF emits `physicalLocation.artifactLocation.uri` pointing at that file. Otherwise the finding attaches only the logical `supply-chain` module location.
@@ -103,4 +104,4 @@ Allowlist matching is keyed by directory name alone — an attacker-planted skil
 
 - **`skill-files/escalation-sudo` on operator skills** — legitimate sudo in `sops-status`, `drive-resume`, `skill-manager`. Use the allowlist above rather than a bulk suppress entry.
 - **`skill-files/shell-exec` on `execute bash` in defensive rules** — the defensive-phrase detector catches most ("do not execute bash") but weak phrasings ("be careful when you execute bash") miss. Rephrase to use `STRONG_DEFENSIVE_RE` trigger terms ("never", "forbidden", "refuse") or allowlist the skill.
-- **`skill-files/https-url` INFO flood on skills with learn-more links** — fires for every HTTPS URL in skill docs. No security signal; filter via suppress `"skill-files/https-url"` if you don't review these.
+- **`skill-files/https-urls` INFO flood on skills with learn-more links** — fires for every HTTPS URL in skill docs. No security signal; filter via suppress `"skill-files/https-urls"` if you don't review these.

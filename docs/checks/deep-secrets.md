@@ -12,10 +12,12 @@ Gated behind `--deep`. The check returns `NOT_APPLICABLE` when the flag is absen
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| `.json` file contains `"type": "service_account"` and `"private_key"` (GCP dual-field) | CRITICAL | `deep-secrets/gcp-service-account` | Delete the key file; use workload identity or env-based auth |
+| `.json` file contains `"type": "service_account"` and `"private_key"` (GCP dual-field) | CRITICAL | `deep-secrets/gcp-service-account-key` | Delete the key file; use workload identity or env-based auth |
 | Line matches a `KEY_PATTERNS` regex and is neither a comment nor a placeholder | CRITICAL | `deep-secrets/hardcoded-secret` | Move the secret to `.env` or a secrets manager and rotate it |
 | Line matches a `KEY_PATTERNS` regex but sits in a comment or resembles an example/placeholder | INFO | `deep-secrets/possible-secret-comment` | Verify the value is not a real key; remove or clearly mark as placeholder |
-| File walker reached the configured cap (`deepScan.maxFiles`, default 1000) | INFO | `deep-secrets/scan-cap-reached` | Raise `deepScan.maxFiles` in `.rigscorerc.json` or narrow the scan root |
+| File walker reached the configured cap (`deepScan.maxFiles`, default 1000) | INFO | `deep-secrets/file-cap-reached` | Raise `deepScan.maxFiles` in `.rigscorerc.json` or narrow the scan root |
+| One or more files exceeded `limits.maxFileBytes` and were skipped unscanned | INFO | `deep-secrets/oversize-skipped` | Raise `limits.maxFileBytes` if a skipped file needs scanning |
+| The walker detected a symlink cycle and skipped it | INFO | `deep-secrets/symlink-loop-skipped` | Informational — traversal continued safely |
 | No source files matched the include list | INFO | `deep-secrets/no-source-files` | Informational — returns `NOT_APPLICABLE` |
 | Scan completed with zero matches | PASS | — | — |
 | `--deep` not set | N/A | — | Check returns `NOT_APPLICABLE` without walking files |

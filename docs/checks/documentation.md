@@ -14,11 +14,11 @@ The check auto-skips when scanning a project that is not rigscore-shaped (missin
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Check module has no matching doc page | WARNING | `documentation/missing` | Run `npm run verify:docs -- --stub <id>` to create stub from `docs/checks/_template.md` |
-| Doc page missing one or more required H2 sections | WARNING | `documentation/incomplete` | Fill the listed sections (see `_template.md`) |
-| Doc page has H1 that doesn't match check id | WARNING | `documentation/h1-mismatch` | Rename H1 to `# <id>` exactly |
-| Doc page does not state the check's weight (or "advisory" for weight 0) | WARNING | `documentation/weight-drift` | Add weight rationale referencing current weight from `src/constants.js` |
-| `docs/checks/<id>.md` exists with no matching check module | INFO | `documentation/orphan` | Delete doc or restore the removed check |
+| Check module has no matching doc page | WARNING | `documentation/docs-gate-missing` | Run `npm run verify:docs -- --stub <id>` to create stub from `docs/checks/_template.md` |
+| Doc page missing one or more required H2 sections | WARNING | `documentation/docs-gate-incomplete` | Fill the listed sections (see `_template.md`) |
+| Doc page has H1 that doesn't match check id | WARNING | `documentation/docs-gate-h1-mismatch` | Rename H1 to `# <id>` exactly |
+| Doc page does not state the check's weight (or "advisory" for weight 0) | WARNING | `documentation/docs-gate-weight-drift` | Add weight rationale referencing current weight from `src/constants.js` |
+| `docs/checks/<id>.md` exists with no matching check module | INFO | `documentation/orphan-doc` | Delete doc or restore the removed check |
 | Project is not rigscore-shaped | SKIPPED | — | No action — check only applies to rigscore and plugin repos |
 | All checks documented, no orphans | PASS | — | — |
 
@@ -35,7 +35,7 @@ Advisory — weight 0. This check's signal is only meaningful when scanning rigs
 ## SARIF
 
 - Tool component: `rigscore`
-- Rule IDs emitted: `documentation/missing`, `documentation/incomplete`, `documentation/h1-mismatch`, `documentation/weight-drift`, `documentation/orphan`.
+- Rule IDs emitted: the four gate reasons are interpolated as `` documentation/docs-gate-${reason} `` — `documentation/docs-gate-missing`, `documentation/docs-gate-incomplete`, `documentation/docs-gate-h1-mismatch`, `documentation/docs-gate-weight-drift` — plus the literal `documentation/orphan-doc`.
 - Level mapping: all WARNING findings (`missing`, `incomplete`, `h1-mismatch`, `weight-drift`) → `warning`; orphan INFO → `note`.
 - Location data: repo root. Specific paths (the offending `src/checks/<id>.js` or `docs/checks/<id>.md`) are surfaced in the finding detail field rather than as a `physicalLocation` line anchor, since the finding is about doc coverage across the repo, not a single line of source.
 
