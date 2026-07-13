@@ -94,8 +94,13 @@ Options:
   --include-home-skills  Also scan ~/.claude/skills and ~/.claude/commands
                          (default: scan cwd only; home findings do not
                          affect project scores unless this flag is set)
-  --fix              Show auto-fixable issues (dry run)
-  --fix --yes        Apply safe auto-remediations
+  --fix              Show auto-fixable issues and installable packs (dry run)
+  --fix --yes        Apply safe auto-remediations. Only edits files that already
+                     exist — packs are offered, never installed
+  --install-packs    With --fix --yes, also install the starter packs targeting
+                     your red checks (creates new files: .claude/settings.json,
+                     a pre-commit hook, AGENTS.md). Opt-in: --yes alone means
+                     "don't prompt me", not "scaffold governance files"
   --watch            Watch for changes and re-run automatically
   --verify-state     CI gate for MCP rug-pulls (CVE-2025-54136). Read-only; runs
                      no checks. Exit 1 if a server pinned in .rigscore-state.json

@@ -19,9 +19,12 @@ import { SEVERITY } from './constants.js';
  *      is emitted the first time a legacy matcher is used in a process.
  *
  * There are two remediation sources, and callers must keep them distinct in
- * their output: a file-level auto-fix (findApplicableFixes / applyFixes, above)
- * edits one file in place, while a pack install (findApplicablePacks /
- * installPacks, below) drops a whole starter baseline in.
+ * their output — they are two different consents, not one. A file-level auto-fix
+ * (findApplicableFixes / applyFixes, above) repairs a red check in a file that
+ * already exists; a pack install (findApplicablePacks / installPacks, below)
+ * scaffolds a whole starter baseline of files the repo never had. `--yes` means
+ * "don't prompt me" and unlocks only the first; scaffolding requires the caller's
+ * explicit `--install-packs` opt-in.
  *
  * Never modifies governance content: an auto-fix is append-only, and a pack
  * install writes NEW files only — installPack is never called with `force`, so
@@ -154,7 +157,8 @@ export function findApplicablePacks(results, templatesDir = TEMPLATES_DIR) {
 }
 
 /**
- * Install the given packs into `cwd`. Only ever called behind `--yes`.
+ * Install the given packs into `cwd`. Only ever called behind `--yes
+ * --install-packs` (or `init --<pack>`) — never as a side effect of `--yes`.
  *
  * Deliberately does NOT pass `force`: installPack skips a dest that already
  * exists, so this adds missing governance files and never rewrites one the
