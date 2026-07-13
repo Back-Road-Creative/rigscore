@@ -36,6 +36,8 @@ A failure typically means an MCP server was added without reviewing its args, a 
 | Server only configured in one of multiple detected clients | INFO | `mcp-config/single-client-server` | None — informational |
 | Repo-level MCP server shape hash changed between scans (CVE-2025-54136 rug-pull) | WARNING | `mcp-config/server-hash-drift` | Review diff in `.mcp.json`; to accept, delete the server's entry from `.rigscore-state.json` and re-scan |
 | Corrupted `.rigscore-state.json` | INFO | `mcp-config/state-file-corrupted` | Auto-reset; no action needed |
+| `--no-state-write` suppressed a pin that was due — the repo's MCP servers are now unpinned or partly pinned | WARNING | `mcp-config/state-write-disabled` | Drop `--no-state-write` and commit `.rigscore-state.json`, or accept losing rug-pull detection |
+| `--no-state-write` passed but the pin was already current (the write would have been a no-op) | INFO | `mcp-config/state-write-disabled` | None — drift detection is intact |
 | Runtime tool pin recorded for server | INFO | `mcp-config/runtime-tool-pin-recorded` | Verify with `rigscore mcp-verify <name>` |
 | Runtime tool pin missing for server | INFO | `mcp-config/runtime-tool-pin-missing` | Pin via `rigscore mcp-hash \| rigscore mcp-pin <name>` |
 | No MCP config files found | INFO (score = N/A) | `mcp-config/no-config-found` | None — check inapplicable |
@@ -81,11 +83,30 @@ rigscore re-pins anything it is not already pinning, and your `rigscore mcp-pin`
 tool hashes (the separate `servers` map) survive untouched. Deleting the whole file also
 works, but throws those runtime pins away.
 
-Scan writes are suppressible in-process via `context.writeState === false` (used by the
-test suite); there is no CLI flag for it, because a repo with MCP servers and no pin is
-exactly the unprotected state `--verify-state` exits 2 on.
+### Opting out: `--no-state-write` (and what it costs)
 
-State writes are not fixes — they are the detection substrate.
+`rigscore --no-state-write .` suppresses the write entirely — for a read-only checkout, a
+CI workspace you don't want dirtied, or a repo you don't own. (In-process, the same switch
+is `context.writeState === false`, which the test suite uses.)
+
+The opt-out is **never silent**: a repo with MCP servers and no pin is exactly the
+unprotected state `--verify-state` exits 2 on, so the run that created it says so. Every
+scan carrying the flag emits `mcp-config/state-write-disabled`, and its severity is keyed
+on the *same* predicate as the write above — so the disclosure can neither claim a loss the
+run didn't take nor hide one it did:
+
+| The flag suppressed… | Finding | Because |
+|---|---|---|
+| a pin that was **due** (first scan, or a server added) | **WARNING** | Those servers are now unpinned: nothing to compare the next scan against, and `--verify-state` has nothing to verify. The scan checked *less* than a default scan — the score must show it. |
+| a write that would have been **skipped anyway** (pin current, or drift already blocking it) | INFO | The run lost nothing; drift detection is intact. Warning here would be crying wolf. |
+
+`--verify-state` is a separate read-only path and is unaffected by the flag — it is the
+zero-write way to keep full protection in CI.
+
+State writes are not fixes — they are the detection substrate. There is deliberately **no
+`.rigscorerc.json` key** for this: a committed config key would disable rug-pull detection
+for everyone who clones the repo, invisibly and permanently, which is the failure mode the
+disclosure above exists to prevent. Opting out stays a per-invocation, on-the-record act.
 
 ## SARIF
 

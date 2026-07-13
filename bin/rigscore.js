@@ -106,6 +106,14 @@ Options:
                      no checks. Exit 1 if a server pinned in .rigscore-state.json
                      changed its command/args/env-key shape, 0 if every pin
                      matches, 2 if nothing is pinned (cannot verify).
+  --no-state-write   Do not write .rigscore-state.json into the scanned repo.
+                     A scan writes exactly one file: the MCP config-shape pin
+                     that rug-pull detection (CVE-2025-54136) compares against.
+                     Use for read-only checkouts / repos you don't own — but it
+                     is not free: without the pin there is nothing to detect
+                     drift against, so rigscore reports the lost coverage as a
+                     mcp-config/state-write-disabled finding. Commit the pin;
+                     do not .gitignore it (it stores hashes, never env values)
   --verbose, -v      Show passing checks and info-level findings
   --ignore <list>    Suppress findings matching patterns (comma-separated)
   --init-hook        Install a pre-commit hook that runs rigscore
