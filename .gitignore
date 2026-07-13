@@ -12,8 +12,11 @@ coverage/
 /.env.*
 !/.env.example
 
-# Dogfood fixture artifacts
-test/fixtures/scored-project/.rigscore-state.json
+# Dogfood fixture artifacts.
+# Scanning any fixture that ships a `.mcp.json` writes a first-scan TOFU pin into
+# it (see docs/checks/mcp-config.md), so ignore the strays. Tracked pins — the
+# verify-state-* fixtures — are unaffected; a NEW tracked one needs `git add -f`.
+test/fixtures/**/.rigscore-state.json
 test/fixtures/scored-project/a-plain-file.txt
 test/fixtures/scored-project/.claude/skills/test-file.md
 test/fixtures/_fixture-home-*/

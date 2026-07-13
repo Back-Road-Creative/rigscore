@@ -486,18 +486,48 @@ export function checkCrossClientDrift(clientServers) {
 }
 
 /**
+ * True when the on-disk pin already says exactly what a rewrite would say.
+ * Values are hex digests and `servers` is carried over by reference, so the
+ * only thing that can differ is the `mcpServers` name→hash map itself.
+ */
+function pinIsUpToDate(state, currentHashes) {
+  const pinned = (state && state.version === STATE_VERSION && state.mcpServers && typeof state.mcpServers === 'object')
+    ? state.mcpServers
+    : null;
+  if (!pinned) return false;
+  const names = Object.keys(currentHashes);
+  return Object.keys(pinned).length === names.length
+    && names.every((name) => pinned[name] === currentHashes[name]);
+}
+
+/**
  * Hash-pinning / rug-pull detection (CVE-2025-54136 / "MCPoison" class).
  * Compares current repo-level MCP server config-shape hashes against the
- * on-disk state file and writes a fresh state back unless writeState is
- * explicitly false (tests). Diff rules:
+ * on-disk state file. Diff rules:
  *   - hash changed on existing entry → WARN
  *   - new entries → silently record
  *   - removed entries → silently drop
  *   - missing state file → first scan, no warnings
  *   - corrupt state file → INFO finding + reset
  *
- * Preserves any existing `state.servers` map (runtime tool-hash pins
- * written by `rigscore mcp-pin`) when rewriting.
+ * The state write ESTABLISHES or EXTENDS the pin — it never destroys it. Two
+ * cases are therefore never written, and each is a real bug the unconditional
+ * rewrite used to cause:
+ *
+ *   - DRIFT. Re-pinning the changed hash re-approves, on the spot, the rug-pull
+ *     this function just reported: the WARNING fires once, the next scan is
+ *     silent, and `--verify-state` goes green on a compromised repo. The pin is
+ *     the detection substrate — the detector must not eat it. Acceptance stays
+ *     an explicit human act (drop the entry, re-scan), which is also what the
+ *     drift remediation now says.
+ *   - NO CHANGE. An identical-content rewrite still reformats a hand-committed
+ *     pin and bumps its mtime, so a read-only scan dirties every working tree
+ *     and CI checkout it runs in.
+ *
+ * Still written: first scan (trust-on-first-use pin), corrupt-state reset, and
+ * added/removed servers. `writeState: false` (tests) suppresses all writes.
+ * Preserves any existing `state.servers` map (runtime tool-hash pins written by
+ * `rigscore mcp-pin`) when rewriting.
  */
 export async function checkHashPinning(cwd, currentHashes, writeState) {
   const findings = [];
@@ -518,16 +548,18 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
     ? state.mcpServers
     : null;
 
+  let drifted = false;
   if (previousHashes) {
     for (const [name, hash] of Object.entries(currentHashes)) {
       const prev = previousHashes[name];
       if (typeof prev === 'string' && prev !== hash) {
+        drifted = true;
         findings.push({
           findingId: 'mcp-config/server-hash-drift',
           severity: 'warning',
           title: `MCP server "${name}" changed shape between scans (possible rug-pull)`,
           detail: `The configured command/args/env-key-set for "${name}" differs from the recorded hash in ${STATE_FILENAME}. This is how MCPoison-class attacks (CVE-2025-54136) pivot trusted MCP servers.`,
-          remediation: `Review the diff in ${path.join(cwd, '.mcp.json')} against version control. If the change is intentional, re-run rigscore to update the state file.`,
+          remediation: `Review the diff in ${path.join(cwd, '.mcp.json')} against version control. rigscore keeps the ORIGINAL pin — scanning never re-approves a changed server, so this warning persists until you act on it. If the change is intentional, accept it explicitly: delete "${name}" from the mcpServers map in ${STATE_FILENAME}, then re-run rigscore to re-pin it.`,
           learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
           context: { serverName: name, prevHash: prev, currentHash: hash },
         });
@@ -539,7 +571,7 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
   const preservedServers = (state && state.servers && typeof state.servers === 'object')
     ? state.servers
     : undefined;
-  if (writeState !== false) {
+  if (writeState !== false && !drifted && !pinIsUpToDate(state, currentHashes)) {
     const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
     if (preservedServers) nextState.servers = preservedServers;
     await saveState(cwd, nextState);
@@ -901,9 +933,10 @@ export default {
 
     // Cross-client drift, hash-pinning, and runtime tool-hash pin status —
     // see helpers. Each preserves the prior contract: drift flag rolled
-    // up into `data`; hash-pinning gated on `context.writeState !== false`
-    // so tests can suppress the on-disk write; runtime pin surface
-    // controlled by config.mcpConfig.surfaceRuntimeHashStatus.
+    // up into `data`; hash-pinning only ever establishes or extends the pin
+    // (it never overwrites a drifted or already-current one) and is gated on
+    // `context.writeState !== false` so tests can suppress the write outright;
+    // runtime pin surface controlled by config.mcpConfig.surfaceRuntimeHashStatus.
     const driftResult = checkCrossClientDrift(clientServers);
     findings.push(...driftResult.findings);
     if (driftResult.driftDetected) driftDetected = true;
