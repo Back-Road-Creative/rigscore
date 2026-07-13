@@ -294,17 +294,23 @@ export async function verifyCheckDocs(opts = {}) {
     if (source !== null) {
       ruleIdOffenders.push(...ruleIdDrift(id, source, body, docPath));
 
-      // Contract coverage: a check that emits ANY finding id must have its namespace
-      // documented in FINDING_IDS.md. Per-namespace (not per-id) — the page uses
-      // dynamic-fragment shorthands and omits degenerate ids a per-id gate would
-      // false-flag. Consumes extractRuleIds READ-ONLY; its `<id>/` namespace filter
-      // is deliberate (the collision guard depends on it) and stays untouched.
+      // Contract coverage: EVERY literal finding id a check emits must be named in
+      // FINDING_IDS.md, the public stability contract (SARIF ruleIds, `--ignore <id>`,
+      // baseline diffs). Per-NAMESPACE was too coarse — one documented id per check
+      // satisfied it, so 39 emitted ids (3 critical, 15 warning) drifted off the page
+      // with CI green. Only `literals` are gated, which is exactly why the old
+      // dynamic-fragment objection dissolves: interpolated ids arrive as `prefixes`
+      // and keep their `<fragment>` shorthand treatment via EXPANDERS, untouched.
+      // A check whose ids are ALL dynamic still owes the page a section, so it keeps
+      // the namespace-level assertion. Consumes extractRuleIds READ-ONLY; its `<id>/`
+      // namespace filter is deliberate (the collision guard depends on it).
       if (findingIdsBody !== null) {
         const { literals, prefixes } = extractRuleIds(source, id);
-        if (
-          (literals.length > 0 || prefixes.length > 0) &&
-          extractDocumentedRuleIds(findingIdsBody, id).length === 0
-        ) {
+        const documented = new Set(extractDocumentedRuleIds(findingIdsBody, id));
+        for (const ruleId of literals.filter((lit) => !documented.has(lit))) {
+          findingIdsOffenders.push({ id, ruleId, reason: 'finding-ids-uncovered' });
+        }
+        if (literals.length === 0 && prefixes.length > 0 && documented.size === 0) {
           findingIdsOffenders.push({ id, reason: 'finding-ids-uncovered' });
         }
       }
@@ -409,10 +415,13 @@ export function formatVerifyResult(result, { scriptName = 'verify-docs' } = {}) 
       );
     }
   }
-  for (const { id } of result.findingIdsOffenders || []) {
+  for (const { id, ruleId } of result.findingIdsOffenders || []) {
     lines.push(
-      `docs-gate: FINDING-IDS-UNCOVERED ${id} — src/checks/${id}.js emits finding ids but ` +
-        `docs/FINDING_IDS.md documents none of them. Add a \`### ${id}\` section listing them.`,
+      ruleId
+        ? `docs-gate: FINDING-IDS-UNCOVERED ${id} — src/checks/${id}.js emits \`${ruleId}\`, but ` +
+            `docs/FINDING_IDS.md never names it. Add it under the \`### ${id}\` section.`
+        : `docs-gate: FINDING-IDS-UNCOVERED ${id} — src/checks/${id}.js emits finding ids but ` +
+            `docs/FINDING_IDS.md documents none of them. Add a \`### ${id}\` section listing them.`,
     );
   }
   if (lines.length === 0) {

@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   falling back to defaults. (The previously-documented `profile`-key precedence,
   #88, is one instance of this general rule, not a separate one.)
 
+### Changed
+- **`docs/FINDING_IDS.md` coverage is now enforced per finding ID, not per
+  check.** The stability contract claimed to cover every emitted finding, but
+  `verify:docs` only checked that each check had *some* documented id, so 39
+  literal ids — 3 critical, 15 warning (e.g. `env-exposure/gcp-service-account-key`,
+  `claude-settings/http-hook-external-endpoint`, `skill-files/bidi-override`,
+  `mcp-config/state-write-disabled`) — drifted off the page with CI green. Those
+  ids are exactly what consumers pin for SARIF ruleIds, `--ignore <id>`, and
+  baseline diffs. The gate now fails when any literal id a built-in check emits
+  is absent from the page and names the missing id; all 39 are backfilled.
+  Dynamic-fragment ids keep their `<category>`/`<reason>` shorthand treatment.
+
 ### Fixed
 - **mcp-config: a corrupt `.rigscore-state.json` no longer silently destroys the
   runtime tool pins.** The realistic trigger is a merge conflict in the pin (two

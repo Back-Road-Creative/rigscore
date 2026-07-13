@@ -325,37 +325,65 @@ describe('E4: every SARIF-reaching finding emits an explicit findingId', () => {
  * reaches into their `<checkId>/` namespace filter (the collision guard above
  * depends on that filter; loosening it is a settled "won't do").
  *
- * Granularity is per-CHECK-NAMESPACE, not per-finding-id, and deliberately so: the
- * page documents dynamic-fragment ids via `<category>`/`<reason>`/`<patternId>`
- * shorthands and omits degenerate internal ids (mcp-config/no-config-found, …),
- * both of which a per-id gate would false-flag on ~15 already-documented checks.
- * A whole check absent from the contract is the drift that actually happened.
+ * Granularity is per-LITERAL-ID. A per-namespace gate is satisfied by ONE documented
+ * id per check, which is why 39 emitted ids — 3 critical, 15 warning — sat off the
+ * contract while CI stayed green. The old objection to going per-id (dynamic-fragment
+ * shorthands would false-flag) is answered by the extractor itself: it already returns
+ * `literals` separately from `prefixes`, and only `literals` are gated here. Ids built
+ * from an interpolated template keep their `<category>`/`<reason>`/`<patternId>`
+ * shorthand treatment via EXPANDERS, untouched.
+ *
+ * A check whose ids are ALL dynamic (ci-agent-caps) contributes no literals, so it
+ * keeps the namespace-level assertion — otherwise dropping its section would be free.
  */
 describe('FINDING_IDS.md is a complete, gated stability contract', () => {
-  const emitsIds = (id) => {
-    const src = fs.readFileSync(path.join(CHECKS_DIR, `${id}.js`), 'utf8');
-    const { literals, prefixes } = extractRuleIds(src, id);
-    return literals.length > 0 || prefixes.length > 0;
-  };
-  const uncovered = () => REGISTERED_CHECK_IDS.filter(
-    (id) => emitsIds(id) && extractDocumentedRuleIds(FINDING_IDS, id).length === 0,
+  const emitted = (id) => extractRuleIds(
+    fs.readFileSync(path.join(CHECKS_DIR, `${id}.js`), 'utf8'), id,
   );
+  /** Literal ids a check emits that the contract page never names. */
+  const undocumented = () => REGISTERED_CHECK_IDS.flatMap((id) => {
+    const documented = new Set(extractDocumentedRuleIds(FINDING_IDS, id));
+    return emitted(id).literals.filter((lit) => !documented.has(lit));
+  }).sort();
+  /** Dynamic-only checks with no section at all — the namespace floor. */
+  const uncovered = () => REGISTERED_CHECK_IDS.filter((id) => {
+    const { literals, prefixes } = emitted(id);
+    return literals.length === 0 && prefixes.length > 0
+      && extractDocumentedRuleIds(FINDING_IDS, id).length === 0;
+  });
 
-  it('documents a finding-id namespace for every check that emits ids', () => {
+  it('documents EVERY literal finding id a built-in check emits', () => {
     expect(
-      uncovered(),
-      'these checks emit finding ids but FINDING_IDS.md documents NONE of them — a ' +
-        'consumer pinning --ignore/SARIF/baselines to them is flying blind',
+      undocumented(),
+      'these ids ship as SARIF ruleIds and are legal `--ignore <id>` / baseline targets, ' +
+        'but FINDING_IDS.md — the stability contract — never names them, so a consumer ' +
+        'pinning to them is flying blind',
     ).toEqual([]);
+  });
+
+  it('documents a finding-id namespace for every check that emits only dynamic ids', () => {
+    expect(uncovered(), 'these checks emit finding ids but FINDING_IDS.md documents NONE').toEqual([]);
   });
 
   it('verifyCheckDocs() gates verify:docs on that coverage (not vacuously)', async () => {
     const result = await verifyCheckDocs({ root: ROOT });
     // The gate must see exactly the contract spec above: proves it is wired, and
     // that a bare [] is real coverage, not a gate blind to the whole page.
-    expect((result.findingIdsOffenders || []).map((o) => o.id).sort()).toEqual(uncovered());
+    const offenders = result.findingIdsOffenders || [];
+    expect(offenders.filter((o) => o.ruleId).map((o) => o.ruleId).sort()).toEqual(undocumented());
+    expect(offenders.filter((o) => !o.ruleId).map((o) => o.id).sort()).toEqual(uncovered());
     // A complete contract leaves this axis of the gate green.
-    expect(result.findingIdsOffenders || []).toEqual([]);
+    expect(offenders).toEqual([]);
+  });
+
+  it('formatVerifyResult names the missing id, not just its check', () => {
+    const out = formatVerifyResult({
+      offenders: [], orphans: [], ruleIdOffenders: [],
+      findingIdsOffenders: [{ id: 'skill-files', ruleId: 'skill-files/zero-width', reason: 'finding-ids-uncovered' }],
+      counts: { checks: 27, docs: 27 },
+    });
+    expect(out).toContain('FINDING-IDS-UNCOVERED skill-files');
+    expect(out).toContain('`skill-files/zero-width`');
   });
 
   it('formatVerifyResult prints an actionable line for an uncovered check', () => {
