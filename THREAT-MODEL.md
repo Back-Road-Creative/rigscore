@@ -10,7 +10,7 @@ Companion document: [`docs/known-limits.md`](docs/known-limits.md) — shorter, 
 
 ## 1. What rigscore inspects
 
-All checks are pure functions of the local filesystem. Default mode makes zero network calls. The `--online` flag opts in to npm-registry and MCP-registry lookups — nothing else.
+All checks are pure functions of the local filesystem. Default mode makes zero network calls. The `--online` flag opts in to npm-registry and MCP-registry lookups, plus — if `sites` is configured in `.rigscorerc.json` — HTTP(S) probes of those user-listed hosts via [`site-security`](src/checks/site-security.js). Nothing beyond those.
 
 | Surface | Check module | Mechanism |
 |---|---|---|
@@ -32,7 +32,7 @@ Advisory-weight (scored 0, surfaced only): `windows-security`, `network-exposure
 ## 2. Trust boundaries
 
 - **Local filesystem only** in default mode. rigscore reads files under the scan target and a small set of `$HOME` paths (`~/.claude/settings.json`, `~/.claude/skills/`). It writes `.rigscore-state.json` into the scan target.
-- **No network unless `--online`.** The online opt-in reaches the npm registry and the MCP registry for typosquat augmentation. It does not spawn MCP servers, does not call LLM APIs, does not exfiltrate.
+- **No network unless `--online`.** The online opt-in reaches the npm registry and the MCP registry for typosquat augmentation, plus — if `sites` is configured — HTTP(S) probes of those user-listed hosts via [`site-security`](src/checks/site-security.js). It does not spawn MCP servers, does not call LLM APIs, does not exfiltrate.
 - **Assumes a user-controlled machine.** rigscore does not sandbox the files it reads. A maliciously crafted `package.json` that triggers a parser exploit in `JSON.parse` is on Node, not on rigscore.
 - **Does not sandbox itself.** The CLI runs with the invoking user's privileges. A compromised dependency in rigscore's own supply chain (chalk, yaml) would run with those privileges. See Stream A (`.github/workflows/release.yml`) for the signed-release + SBOM mitigation.
 - **Point-in-time.** Each scan is a snapshot. There is no daemon, no watcher by default (`--watch` exists but restarts the same point-in-time scan on change). Anything that happens between scans is invisible.
