@@ -202,22 +202,35 @@ export function formatSarif(result) {
     }
   }
 
+  const run = {
+    tool: {
+      driver: {
+        name: 'rigscore',
+        version,
+        informationUri: 'https://github.com/Back-Road-Creative/rigscore',
+        rules,
+      },
+    },
+    results: sarifResults,
+  };
+
+  // Suppression transparency: record how many findings config/--ignore muted,
+  // and which ids, as a run-level property (SARIF §3.14.36 property bag). The
+  // dropped findings are deliberately NOT resurrected into `run.results` — a
+  // count/note, not a SARIF `suppressions[]` semantic change — so a muted
+  // finding is visible to SARIF consumers, not only in a .rigscorerc.json diff.
+  const suppressed = result.suppressed;
+  if (suppressed && suppressed.count > 0) {
+    run.properties = {
+      suppressedCount: suppressed.count,
+      suppressedIds: suppressed.ids,
+    };
+  }
+
   return {
     $schema: 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json',
     version: '2.1.0',
-    runs: [
-      {
-        tool: {
-          driver: {
-            name: 'rigscore',
-            version,
-            informationUri: 'https://github.com/Back-Road-Creative/rigscore',
-            rules,
-          },
-        },
-        results: sarifResults,
-      },
-    ],
+    runs: [run],
   };
 }
 
