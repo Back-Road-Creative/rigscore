@@ -23,6 +23,13 @@ const ENV_GITIGNORE_PATTERNS = [
 // Negation patterns that are safe — they un-ignore example/template files, not real .env
 const SAFE_NEGATION_RE = /^!\.env\.(example|sample|template)$/;
 
+// A dangerous negation is a `!` line that un-ignores a real `.env`-family file:
+// `!.env`, `!.env.local`, or a path-prefixed `!config/.env`. `.env` must be an
+// anchored path token (start of the basename), NOT a bare substring — otherwise
+// unrelated lines like `!venv/keep.txt`, `!environment/`, or `!.eslintrc.env-notes`
+// would spuriously flag an already-ignored `.env` as exposed.
+const DANGEROUS_NEGATION_RE = /^!(?:.*\/)?\.env(?:\..+)?$/;
+
 /**
  * Run `git check-ignore --quiet --no-index <file>` to ask git itself whether
  * a path matches gitignore rules. `--no-index` is required: without it, git
@@ -71,7 +78,7 @@ async function isInGitignore(cwd, envFile = '.env') {
   if (content) {
     const lines = content.split('\n').map((l) => l.trim());
     const hasDangerousNegation = lines.some(
-      (l) => l.startsWith('!') && (l.includes('.env') || l.includes('env')) && !SAFE_NEGATION_RE.test(l),
+      (l) => DANGEROUS_NEGATION_RE.test(l) && !SAFE_NEGATION_RE.test(l),
     );
     if (hasDangerousNegation) return false;
   }
