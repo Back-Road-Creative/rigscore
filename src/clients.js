@@ -61,7 +61,11 @@ export const CLIENTS = [
   { id: 'amp', name: 'Amp',
     mcp: [{ path: '.amp/mcp.json', base: 'home' }],
     credentials: [{ dir: '.amp', file: 'mcp.json' }] },
-  { id: 'zed', name: 'Zed', mcp: [{ path: '.config/zed/settings.json', base: 'home' }] },
+  // Zed nests its servers under `context_servers`; `~/.config/zed/settings.json` on both
+  // Linux and macOS. Project `.zed/settings.json` is documented as editor/language options
+  // only, so it holds no servers. zed-industries/zed docs/src/ai/mcp.md + configuring-zed.md.
+  { id: 'zed', name: 'Zed',
+    mcp: [{ path: '.config/zed/settings.json', base: 'home', key: 'context_servers' }] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';
