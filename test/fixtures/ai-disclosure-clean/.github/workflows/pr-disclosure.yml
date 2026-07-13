@@ -1,0 +1,10 @@
+name: PR AI disclosure
+on: pull_request
+jobs:
+  disclosure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the generative-AI declaration to be ticked
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: echo "$BODY" | grep -q '^- \[x\] I \(did not use\|used\) generative AI' || exit 1
