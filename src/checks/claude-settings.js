@@ -25,6 +25,37 @@ const DANGEROUS_ALLOW_PATTERNS = [
 // The 4 meaningful Claude Code lifecycle hooks
 const CLAUDE_LIFECYCLE_HOOKS = ['PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit'];
 
+/**
+ * Flatten every shell command configured under one hook event.
+ *
+ * The documented schema (https://code.claude.com/docs/en/hooks) nests the
+ * command two levels down, behind a matcher:
+ *   "PreToolUse": [ { "matcher": "Bash",
+ *                     "hooks": [ { "type": "command", "command": "…", "args": [] } ] } ]
+ * Hand-written and older configs put the command straight on the entry:
+ *   "PreToolUse": [ { "command": "…" } ]
+ * Read BOTH — scanning only the flat shape makes every real-world hook command
+ * invisible to the dangerous-pattern scan below. `args` are folded into the
+ * command string so `bash -c "<payload>"` cannot hide the payload.
+ * Non-command handler types (http, mcp_tool, prompt, agent) carry no shell
+ * command and contribute nothing.
+ */
+function extractHookCommands(hookList) {
+  const commands = [];
+  const collect = (entry) => {
+    if (!entry || typeof entry.command !== 'string') return;
+    const args = Array.isArray(entry.args) ? entry.args.filter(a => typeof a === 'string') : [];
+    const cmd = [entry.command, ...args].join(' ').trim();
+    if (cmd) commands.push(cmd);
+  };
+  for (const entry of Array.isArray(hookList) ? hookList : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    collect(entry);                                                  // flat / legacy shape
+    for (const inner of Array.isArray(entry.hooks) ? entry.hooks : []) collect(inner); // real schema
+  }
+  return commands;
+}
+
 export default {
   id: 'claude-settings',
   enforcementGrade: 'mechanical',
@@ -100,10 +131,7 @@ export default {
       if (settings.hooks && typeof settings.hooks === 'object') {
         for (const [hookName, hookList] of Object.entries(settings.hooks)) {
           allConfiguredHooks.add(hookName);
-          const hooks = Array.isArray(hookList) ? hookList : [];
-          for (const hook of hooks) {
-            const cmd = hook?.command || '';
-
+          for (const cmd of extractHookCommands(hookList)) {
             // Dangerous pattern check
             for (const pattern of DANGEROUS_HOOK_RE) {
               if (pattern.test(cmd)) {
@@ -182,16 +210,18 @@ export default {
     const missingLifecycleHooks = CLAUDE_LIFECYCLE_HOOKS.filter(h => !allConfiguredHooks.has(h));
 
     if (allConfiguredHooks.size > 0 && missingLifecycleHooks.length > 0) {
-      // Hooks exist but some lifecycle events are uncovered
-      for (const missing of missingLifecycleHooks) {
-        findings.push({
-          findingId: 'claude-settings/lifecycle-hook-missing',
-          severity: 'info',
-          title: `Claude Code lifecycle hook not configured: ${missing}`,
-          detail: `No ${missing} hook found. This lifecycle event is unmonitored — tool calls, stops, or prompts in this phase execute without any hook interception.`,
-          remediation: `Add a ${missing} hook to settings.json to monitor or enforce rules at this lifecycle stage.`,
-        });
-      }
+      // ONE rollup INFO for partial coverage — never one INFO per missing hook.
+      // Per-hook deductions made partial adoption score *worse* than zero
+      // adoption (one hook = 3 missing = -6 → 94; no hooks = one rollup = -2 →
+      // 98), i.e. the score punished the first step toward coverage and paid
+      // out only at four. Adding a hook must never lower the score.
+      findings.push({
+        findingId: 'claude-settings/lifecycle-hook-missing',
+        severity: 'info',
+        title: `Claude Code lifecycle hooks not configured: ${missingLifecycleHooks.join(', ')}`,
+        detail: `Configured: ${configuredHooks.join(', ')}. The remaining lifecycle events are unmonitored — tool calls, stops, or prompts in those phases execute without any hook interception.`,
+        remediation: `Add ${missingLifecycleHooks.join(' / ')} hook(s) to settings.json to monitor or enforce rules at those lifecycle stages.`,
+      });
     } else if (allConfiguredHooks.size === 0) {
       findings.push({
         findingId: 'claude-settings/no-lifecycle-hooks',

