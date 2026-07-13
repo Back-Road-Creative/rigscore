@@ -313,7 +313,11 @@ export default {
     if (sites.length === 0) {
       return {
         score: NOT_APPLICABLE_SCORE,
-        findings: [{ severity: 'info', title: 'No sites configured — add "sites" array to .rigscorerc.json' }],
+        findings: [{
+          findingId: 'site-security/no-sites-configured',
+          severity: 'info',
+          title: 'No sites configured — add "sites" array to .rigscorerc.json',
+        }],
       };
     }
 

@@ -12,7 +12,7 @@ Inspects the MCP env maps inside AI-client config files in `~/` — Claude Deskt
 |---|---|---|---|
 | A declared env value (`mcpServers[<server>].env[<key>]`, or the client's own keys — Zed `context_servers[].env`, opencode `mcp[].environment`) matches a `KEY_PATTERNS` regex, does not start with `op://`, is not `${VAR}`, and does not match the example/placeholder word list | CRITICAL | `credential-storage/plaintext-credential-in-client-config` | Replace with `op://<vault>/<item>/<field>`, `${VAR}`, or an OS-keychain reference |
 | Same as above, but the value contains `example` / `placeholder` / `demo` / `sample` / `template` / `your_key` / `xxx` / `changeme` / `replace_me` | INFO | `credential-storage/example-credential-in-client-config` | Replace the example value before using the config |
-| No client config files found in `~/` | N/A | — | Check returns `NOT_APPLICABLE` — no score impact |
+| No client config files found in `~/` | INFO (N/A) | `credential-storage/no-client-configs-found` | Check returns `NOT_APPLICABLE` — no score impact |
 | Config files present with no plaintext credentials | PASS | — | — |
 
 The trigger list is deliberately short: the check is a pattern scan against `KEY_PATTERNS` (the same ~40 provider regexes used by `env-exposure` and `deep-secrets`), and each regex hit becomes exactly one of the two severity rows above depending on the example-word check.

@@ -16,7 +16,7 @@ Detects AI-adjacent services (Ollama, LM Studio, Open WebUI, LiteLLM, vLLM, Fast
 | `OLLAMA_HOST=0.0.0.0` in an `ollama.service.d` systemd drop-in (`override.conf` / `environment.conf`) | WARNING | `network-exposure/ollama-systemd-all-interfaces` | Change `OLLAMA_HOST` to `127.0.0.1` in the systemd drop-in. |
 | `OLLAMA_HOST=0.0.0.0` in `~/.ollama/.env` or `~/.ollama/environment` | WARNING | `network-exposure/ollama-config-all-interfaces` | Remove or replace `0.0.0.0` with `127.0.0.1`. |
 | `ss` / `lsof` shows a live listener on an AI port (or the MCP SSE range) bound to `0.0.0.0`, `*`, `[::]`, or any non-safe address | WARNING | `network-exposure/live-listener-non-loopback` | Reconfigure the service to bind loopback; restart. |
-| No AI service network exposure detected on any of the four surfaces | INFO (N/A) | — | — |
+| No AI service network exposure detected on any of the four surfaces | INFO (N/A) | `network-exposure/no-exposure-detected` | — |
 
 Ports considered AI services (from `AI_SERVICE_PORTS` in `src/constants.js`): `11434` (Ollama), `1234`/`1235` (LM Studio), `8080` (Open WebUI), `3001` (MCP SSE), `4000` (LiteLLM), `5001` (LocalAI), `9090` (vLLM), `8000` (FastChat). Plus the MCP SSE heuristic range `3000–3999` applied only to live-listener detection.
 

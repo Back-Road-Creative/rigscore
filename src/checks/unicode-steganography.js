@@ -119,7 +119,11 @@ export default {
     if (filesScanned === 0) {
       return {
         score: NOT_APPLICABLE_SCORE,
-        findings: [{ severity: 'info', title: 'No governance or config files found' }],
+        findings: [{
+          findingId: 'unicode-steganography/no-files-scanned',
+          severity: 'info',
+          title: 'No governance or config files found',
+        }],
         data: { filesScanned: 0, filesWithIssues: 0 },
       };
     }

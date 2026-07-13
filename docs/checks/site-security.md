@@ -11,7 +11,7 @@ Probes deployed web endpoints listed in `.rigscorerc.json` under `sites: [...]` 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
 | `--online` flag not set | SKIPPED | — | Re-run with `--online`. |
-| No sites configured | INFO (N/A) | — | Add a `sites: ["https://example.com"]` array to `.rigscorerc.json`. |
+| No sites configured | INFO (N/A) | `site-security/no-sites-configured` | Add a `sites: ["https://example.com"]` array to `.rigscorerc.json`. |
 | A `sites` entry `new URL()` cannot parse (that entry is skipped, the rest still run) | INFO | `site-security/invalid-url` | Fix the entry in `.rigscorerc.json`. |
 | A `sites` entry whose scheme is not `http:` / `https:` (e.g. `file:`, `ftp:`) — skipped before any probe | INFO | `site-security/unsupported-scheme` | Point the entry at an `http(s)` URL. |
 | Missing CSP / HSTS / X-Frame-Options / X-Content-Type-Options | CRITICAL | `site-security/missing-security-header` | Add header at server/CDN. |

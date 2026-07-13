@@ -10,7 +10,13 @@ function safeText(value) {
   return stripAnsi(value);
 }
 
-const SEVERITY_MAP = {
+/**
+ * Severity → SARIF level. `none` means the finding is dropped from SARIF
+ * entirely (see `formatSarif`), so it never carries a public ruleId. Exported
+ * so the findingId-coverage gate reads the same map instead of hardcoding its
+ * own pass/skipped set — one source of truth.
+ */
+export const SEVERITY_MAP = {
   critical: 'error',
   warning: 'warning',
   info: 'note',

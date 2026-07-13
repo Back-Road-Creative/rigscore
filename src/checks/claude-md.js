@@ -196,6 +196,7 @@ export default {
         return {
           score: NOT_APPLICABLE_SCORE,
           findings: [{
+            findingId: 'claude-md/no-ai-tooling-detected',
             severity: 'info',
             title: 'No AI tooling detected — governance check skipped',
             detail: 'No CLAUDE.md, .cursorrules, .claude/, .cursor/, MCP config, or other AI tooling markers found in cwd. Governance rules are evaluated only when AI tooling is actually in use.',

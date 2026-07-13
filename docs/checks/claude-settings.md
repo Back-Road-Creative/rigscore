@@ -21,7 +21,7 @@ Scans `.claude/settings.json` and `.claude/settings.local.json` (both project-lo
 | Allow-list entry matches a dangerous pattern (`sudo -u … bash`, `sudo -u dev`, `Bash(docker run …)`, `Bash(pip install …)`) | WARNING | `claude-settings/dangerous-allow-list-entry` | Remove the entry; specify narrower tool+arg scopes |
 | At least one hook exists but the four tracked lifecycle events (`PreToolUse`, `PostToolUse`, `Stop`, `UserPromptSubmit`) are not all covered — **one rollup INFO listing every uncovered event**, not one per event | INFO | `claude-settings/lifecycle-hook-missing` | Add a hook for each missing lifecycle stage |
 | No lifecycle hooks configured at all | INFO | `claude-settings/no-lifecycle-hooks` | Add `PreToolUse` / `PostToolUse` / `Stop` / `UserPromptSubmit` hooks to enforce runtime governance |
-| No settings files found anywhere | N/A | — | Check returns `NOT_APPLICABLE` — no score impact |
+| No settings files found anywhere | INFO (N/A) | `claude-settings/no-settings-found` | Check returns `NOT_APPLICABLE` — no score impact |
 
 ## Weight rationale
 

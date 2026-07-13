@@ -12,6 +12,7 @@ Failure to detect a governance file is CRITICAL and short-circuits the check —
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
+| No AI tooling detected anywhere in `cwd` — the check short-circuits before any of the rows below | INFO (N/A) | `claude-md/no-ai-tooling-detected` | None — a repo that never claimed to be AI-tooled is not scored on governance |
 | No governance file found in any known location | CRITICAL | `claude-md/no-governance-file` | Create CLAUDE.md (or equivalent) with boundaries, forbidden actions, approval gates |
 | Multiple governance files detected | PASS | — | None — informational positive signal |
 | Longest governance file < 50 lines | WARNING | `claude-md/governance-file-short` | Add forbidden actions, approval gates, path restrictions, anti-injection rules |
