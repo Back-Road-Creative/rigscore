@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.rigscorerc.json` raises a `ConfigParseError` and exits 2 rather than silently
   falling back to defaults. (The previously-documented `profile`-key precedence,
   #88, is one instance of this general rule, not a separate one.)
+- **The README's GitHub Action recipe is pinned to an exact released tag.** It
+  showed `uses: Back-Road-Creative/rigscore@v2.0.0` as `@v1` — a tag that does
+  not exist (the published tags are `v0.1.0 … v1.0.0`, `v2.0.0`, `v2.1.0-rc1`;
+  no moving major tag is cut). Worse, `action.yml` deliberately rejects any ref
+  that is not an exact `vX.Y.Z`, so even a moving `@v1` would have hard-errored
+  at the guard — whose own message already says "Pin to a tag like @v1.0.0". A
+  user copying the canonical recipe out of the README got an action that could
+  not resolve. The docs now match the guard, and `test/action-yml.test.js`
+  extracts the guard's regex from `action.yml` itself and asserts every action
+  ref shown in `README.md` / `docs/**` satisfies it, so the two cannot drift
+  apart again.
+- **`--verbose` is described accurately in `--help` and the README.** Both said
+  it surfaces info-level (and, in the README, skipped) findings. It does not:
+  `src/reporter.js` gates only `pass` findings behind the flag, and `info` and
+  `skipped` print on every default scan. The flag adds passing checks and
+  nothing else.
 
 ### Changed
 - **`docs/FINDING_IDS.md` coverage is now enforced per finding ID, not per

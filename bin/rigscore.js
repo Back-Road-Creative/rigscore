@@ -115,7 +115,8 @@ Options:
                      drift against, so rigscore reports the lost coverage as a
                      mcp-config/state-write-disabled finding. Commit the pin;
                      do not .gitignore it (it stores hashes, never env values)
-  --verbose, -v      Show passing checks and info-level findings
+  --verbose, -v      Also show passing checks (info and skipped findings are
+                     already shown by default)
   --ignore <list>    Suppress findings matching patterns (comma-separated)
   --init-hook        Install a pre-commit hook that runs rigscore
   --baseline <path>  Baseline mode. On first run writes findings to <path>;
