@@ -89,6 +89,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and consuming the caller's `deepScan.maxFiles` budget. `.rigscore-action-src` is
   now in the hardcoded `SKIP_DIRS` set, so the walk never descends into it and the
   `action.yml` comment states the real path.
+- **`walkDirSafe`: the depth cap now discloses truncation like the file cap
+  does.** `truncated` fired only when `maxFiles` cut the walk; the `maxDepth` cut
+  returned silently, so a depth-truncated walk was indistinguishable from a
+  complete one — violating the walker's own stated invariant that "a scan that
+  gave up must never be indistinguishable from a clean one." The realistic
+  trigger is `claude-settings`, which walks plugin/skill hook sources at a low
+  `maxDepth: 6`: a `.claude/settings.json` or hooks file nested deeper in a
+  monorepo was silently skipped while the check read as complete, so its
+  `hook-file-cap-reached` WARNING — the disclosure that keeps an unread (possibly
+  dangerous) hook from passing as clean — was dead for the depth path. A new
+  distinct `depthTruncated` flag now fires at the depth cut, and every caller that
+  disclosed `truncated` (`claude-settings`, `loop-governance`, `deep-secrets`,
+  `sandbox-posture`, `memory-hygiene`) discloses it too, with wording naming both
+  causes. Finding
+  ids are unchanged (SARIF ruleId stability); `truncated` keeps meaning "hit
+  maxFiles" so the file-cap detail never misreports the cause.
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an

@@ -174,24 +174,26 @@ async function scanHooks(hooksObj, rel, { homedir, findings, configuredHooks }) 
 /** Every `<plugin>/hooks/hooks.json` under a plugins root, via the shared
  *  symlink-loop-safe, depth-capped walker. Never hand-roll a walker here. */
 async function findPluginHookFiles(root, walkState) {
-  const { files, truncated } = await walkDirSafe(root, {
+  const { files, truncated, depthTruncated } = await walkDirSafe(root, {
     maxDepth: 6,
     maxFiles: 200,
     shouldInclude: (full, dirent) =>
       dirent.name === 'hooks.json' && path.basename(path.dirname(full)) === 'hooks',
   });
   if (truncated) walkState.truncated = true;
+  if (depthTruncated) walkState.depthTruncated = true;
   return files;
 }
 
 /** Every markdown file under a skills/commands/agents root, via the same shared walker. */
 async function findMarkdownFiles(root, walkState) {
-  const { files, truncated } = await walkDirSafe(root, {
+  const { files, truncated, depthTruncated } = await walkDirSafe(root, {
     maxDepth: 6,
     maxFiles: 200,
     shouldInclude: (_full, dirent) => dirent.name.endsWith('.md'),
   });
   if (truncated) walkState.truncated = true;
+  if (depthTruncated) walkState.depthTruncated = true;
   return files;
 }
 
@@ -374,7 +376,7 @@ export default {
 
     // Plugin hooks run with no settings file present, so finding one is itself enough
     // to make the check applicable — else a hook-only plugin scores NOT_APPLICABLE.
-    const walkState = { truncated: false };
+    const walkState = { truncated: false, depthTruncated: false };
     for (const [root, prefix] of [[cwd, ''], [homedir, '~/']]) {
       for (const hookFile of await findPluginHookFiles(path.join(root, PLUGIN_ROOT), walkState)) {
         const pluginHooks = await readJsonSafe(hookFile);
@@ -421,14 +423,15 @@ export default {
     // WARNING: a truncated walk leaves hook files unread, and an unread hook can be
     // any severity up to critical (a dangerous plugin/frontmatter hook). "No settings
     // found" over a walk that stopped early would be a false N/A, so the truncation
-    // both speaks and keeps the check applicable.
-    if (walkState.truncated) {
+    // both speaks and keeps the check applicable. Fires for EITHER cap — the 200-file
+    // limit or the depth limit; a hook file nested past the depth cap is just as unread.
+    if (walkState.truncated || walkState.depthTruncated) {
       findings.push({
         findingId: 'claude-settings/hook-file-cap-reached',
         severity: 'warning',
-        title: 'Hook-file scan capped at 200 files',
-        detail: 'The walk hit the 200-file limit, so plugin/skill hook files beyond the cap were never read and any dangerous hook in them is unscanned.',
-        remediation: 'Narrow the scan by moving generated or vendored trees out of the plugin/skill roots.',
+        title: 'Hook-file scan stopped early (cap reached)',
+        detail: 'The walk stopped early (200-file limit and/or directory-depth limit), so plugin/skill hook files beyond the cap were never read and any dangerous hook in them is unscanned.',
+        remediation: 'Move generated or vendored trees out of the plugin/skill roots, or reduce nesting / raise the walk depth so the whole hook surface fits under the cap.',
       });
       foundAny = true;
     }

@@ -113,7 +113,8 @@ describe('deep-secrets check', () => {
         fs.writeFileSync(path.join(tmpDir, `file${i}.js`), 'const x = 1;');
       }
       const result = await check.run({ cwd: tmpDir, deep: true, config: { deepScan: { maxFiles: 2 } } });
-      const capped = result.findings.find(f => f.title.includes('capped'));
+      // Match the stable finding id, not the human title (which now names either cap cause).
+      const capped = result.findings.find(f => f.findingId === 'deep-secrets/file-cap-reached');
       expect(capped).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });

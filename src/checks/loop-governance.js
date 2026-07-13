@@ -318,7 +318,7 @@ export default {
     // Shell scripts + crontabs, plus the three indirection surfaces. skipHidden
     // drops `.github` — CI agent jobs are the `ci-agent-caps` check's surface,
     // and double-flagging would double-deduct.
-    const { files, truncated } = await walkDirSafe(context.cwd, {
+    const { files, truncated, depthTruncated } = await walkDirSafe(context.cwd, {
       skipDirs: SKIP_DIRS,
       maxFiles: MAX_FILES,
       shouldInclude: (full) =>
@@ -466,20 +466,20 @@ export default {
     // shipped — a repo with a live `while true; do claude -p; done` in an unwalked
     // file scoring N/A ("runs no agent loops"). Not critical: truncation is an
     // unproven scan, not a proven violation.
-    if (truncated) {
+    if (truncated || depthTruncated) {
       findings.push({
         findingId: 'loop-governance/file-cap-reached',
         severity: 'warning',
-        title: `Agent-loop scan capped at ${MAX_FILES} files`,
-        detail: `The walk hit the ${MAX_FILES}-file limit and stopped — files beyond the cap were never read, so this repo cannot be certified as having no unbounded agent loop. Absence of evidence is not evidence of absence.`,
-        remediation: 'Narrow the scan (e.g. drop generated/vendored trees into a skipped directory) so the whole agent-loop surface fits under the cap.',
+        title: 'Agent-loop scan stopped early (cap reached)',
+        detail: `The walk stopped early (${MAX_FILES}-file limit and/or directory-depth limit) — files beyond the cap were never read, so this repo cannot be certified as having no unbounded agent loop. Absence of evidence is not evidence of absence.`,
+        remediation: 'Drop generated/vendored trees into a skipped directory, or reduce nesting, so the whole agent-loop surface fits under the cap.',
       });
     }
 
     // Most repos have no agent-loop surface, so N/A is the honest answer — but ONLY
     // when the walk finished. "I did not look" and "there is nothing there" are
-    // different claims, and a truncated walk never earns the second one.
-    if (!surfaceFound && !truncated) {
+    // different claims, and a truncated walk (file OR depth cap) never earns the second one.
+    if (!surfaceFound && !truncated && !depthTruncated) {
       return { score: NOT_APPLICABLE_SCORE, findings: [], data: {} };
     }
 
