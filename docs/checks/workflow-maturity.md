@@ -23,7 +23,7 @@ Measures how well a project's AI-dev artifacts (skills, MCP servers, memory, pip
 
 **Skill discovery**: `.claude/skills/*/SKILL.md` and `.claude/commands/*/SKILL.md` under both cwd and homedir.
 
-**MCP server discovery**: `.mcp.json` and `.claude/settings.json` under both cwd and homedir — `mcpServers` key.
+**MCP server discovery**: every MCP config declared by a known AI client in `src/clients.js` (the same union `mcp-config` scans — `.mcp.json`, `.vscode/mcp.json`, Cursor, Windsurf, Cline, Continue, Gemini CLI, opencode, Amp, Claude Desktop, Zed), plus `.claude/settings.json` under both cwd and homedir. The server key is resolved per client, not assumed: `mcpServers` for most, `mcp` for opencode, `context_servers` for Zed. Paths no client claims fall back to `mcpServers`.
 
 **Memory discovery**: `~/.claude/projects/*/memory/*.md` and `{cwd}/.claude/memory/*.md`.
 
