@@ -8,47 +8,47 @@ Scans container configuration — `docker-compose.yml` / `compose.yaml`, `Docker
 
 ## Triggers
 
-Every `findings.push(...)` in `src/checks/docker-security.js` becomes a row here. The `SARIF ruleId` column shows the finding-id convention (`<check-id>/<slugified-title>`) used by `--ignore` and surfaced as `tags`/`rule.id` in the SARIF run. Titles with container/stage/file variables are shown with `<name>` placeholders; the real slug is computed at runtime.
+Every `findings.push(...)` in `src/checks/docker-security.js` becomes a row here. The `SARIF ruleId` column is the literal `findingId` string the source emits — used by `--ignore` and surfaced as `tags`/`rule.id` in the SARIF run. Finding ids are **static constants**, not slugified titles: the container name, stage, matched capability, and filename appear only in the human-readable `title`, never in the id. One id therefore covers every service/file that trips the same condition.
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Compose service has `privileged: true` | CRITICAL | `docker-security/container-name-running-with-privileged-true` | Remove `privileged`; use explicit `cap_add` |
-| Compose service uses `network_mode: host` | WARNING | `docker-security/container-name-uses-host-network-mode` | Use bridge networking with explicit ports |
-| Compose service uses `ipc: host` | CRITICAL | `docker-security/container-name-uses-ipc-host` | Remove `ipc: host` |
-| Compose service uses `pid: host` | CRITICAL | `docker-security/container-name-uses-pid-host` | Remove `pid: host` |
-| Compose service uses `volumes_from` | WARNING | `docker-security/container-name-uses-volumes-from` | Define explicit volume mounts |
-| Compose service `cap_add` includes `SYS_ADMIN`/`SYS_PTRACE`/`SYS_MODULE`/`DAC_OVERRIDE`/`NET_ADMIN` | CRITICAL | `docker-security/container-name-adds-dangerous-capability-cap` | Drop the capability |
-| Compose service mounts `docker.sock` or `podman.sock` | CRITICAL | `docker-security/container-name-mounts-docker-socket` | Remove socket mount; use rootless or DinD |
-| Compose volume host path contains `..` | WARNING | `docker-security/container-name-volume-mount-uses-path-traversal` | Use absolute, project-scoped paths |
-| Compose volume mounts `/`, `/etc`, `/root`, or `/home` | CRITICAL | `docker-security/container-name-mounts-sensitive-path-sensitive` | Scope to specific project directories |
-| Compose service missing `cap_drop: [ALL]` | WARNING | `docker-security/container-name-missing-cap-drop-all` | Add `cap_drop: [ALL]` |
-| Compose service missing `no-new-privileges` | INFO | `docker-security/container-name-missing-no-new-privileges` | Add `security_opt: [no-new-privileges]` |
-| Compose service has no `user` directive | WARNING | `docker-security/container-name-has-no-user-directive` | Add a non-root `user` |
-| Compose service has no memory limit | INFO | `docker-security/container-name-has-no-memory-limit` | Set `mem_limit` or `deploy.resources.limits.memory` |
-| Included compose file fails to parse | INFO | `docker-security/failed-to-parse-included-file-filename` | Fix YAML in the included file |
-| Top-level compose file fails to parse | WARNING | `docker-security/failed-to-parse-filename` | Fix YAML syntax |
-| K8s pod spec has `hostNetwork: true` | WARNING | `docker-security/k8s-label-hostnetwork-enabled` | Remove `hostNetwork: true` |
-| K8s pod spec has `hostPID: true` | WARNING | `docker-security/k8s-label-hostpid-enabled` | Remove `hostPID: true` |
-| K8s pod spec has `hostIPC: true` | WARNING | `docker-security/k8s-label-hostipc-enabled` | Remove `hostIPC: true` |
-| K8s pod has no pod-level `runAsNonRoot` | INFO | `docker-security/k8s-label-no-pod-level-runasnonroot` | Set `securityContext.runAsNonRoot: true` |
-| K8s container `securityContext.privileged: true` | CRITICAL | `docker-security/k8s-clabel-privileged-container` | Remove `privileged: true` |
-| K8s container does not drop `ALL` capabilities | INFO | `docker-security/k8s-clabel-capabilities-not-dropped` | Set `capabilities.drop: [ALL]` |
-| K8s container allows `allowPrivilegeEscalation: true` | WARNING | `docker-security/k8s-clabel-allowprivilegeescalation-is-true` | Set to `false` |
-| K8s container has no resource limits | INFO | `docker-security/k8s-clabel-no-resource-limits` | Add `resources.limits` |
-| K8s volume `hostPath` mounts `/`, `/etc`, `/root`, or `/home` | CRITICAL | `docker-security/k8s-label-hostpath-mounts-sensitive` | Use PVCs instead of hostPath |
-| Dockerfile has no `USER` directive | WARNING | `docker-security/df-has-no-user-directive` | Add `USER` |
-| Dockerfile multi-stage final stage has no `USER` | WARNING | `docker-security/df-multi-stage-build-runs-as-root-in-final-stage` | Add `USER` to final stage |
-| Dockerfile `FROM` uses unpinned or `:latest` tag | WARNING | `docker-security/df-unpinned-base-image-image` | Pin to version tag or `@sha256:` digest |
-| Dockerfile `ADD` with remote URL | WARNING | `docker-security/df-add-with-remote-url` | Replace with `RUN curl` + checksum + `COPY` |
-| Dockerfile `COPY`/`ADD` copies `.env`, `credentials.json`, `*.pem`, `*.key`, `id_rsa` | WARNING | `docker-security/df-copies-sensitive-file-matched` | Use `.dockerignore` or runtime mount |
-| Dockerfile `RUN` has `curl\|wget` piped to shell | WARNING | `docker-security/df-pipe-to-shell-in-run-instruction` | Download, verify checksum, then execute |
-| Dockerfile `RUN` contains secret pattern (`KEY_PATTERNS`) | CRITICAL | `docker-security/df-secret-in-run-instruction` | Use `--mount=type=secret` build secrets |
-| Dockerfile `RUN` contains `chmod 777` | WARNING | `docker-security/df-chmod-777-in-run-instruction` | Use restrictive modes (755, 700) |
-| Dockerfile `RUN` runs `apt-get install` without `--no-install-recommends` | INFO | `docker-security/df-apt-get-install-without-no-install-recommends` | Add the flag |
-| Dockerfile `RUN` runs `apk add` without `--no-cache` | INFO | `docker-security/df-apk-add-without-no-cache` | Add `--no-cache` |
-| Dockerfile `EXPOSE 22` | WARNING | `docker-security/df-exposes-ssh-port-22` | Remove `EXPOSE 22`; use `docker exec` |
+| Compose service has `privileged: true` | CRITICAL | `docker-security/container-running-with-privileged-true` | Remove `privileged`; use explicit `cap_add` |
+| Compose service uses `network_mode: host` | WARNING | `docker-security/container-uses-host-network-mode` | Use bridge networking with explicit ports |
+| Compose service uses `ipc: host` | CRITICAL | `docker-security/container-uses-ipc-host` | Remove `ipc: host` |
+| Compose service uses `pid: host` | CRITICAL | `docker-security/container-uses-pid-host` | Remove `pid: host` |
+| Compose service uses `volumes_from` | WARNING | `docker-security/container-uses-volumes-from` | Define explicit volume mounts |
+| Compose service `cap_add` includes `SYS_ADMIN`/`SYS_PTRACE`/`SYS_MODULE`/`DAC_OVERRIDE`/`NET_ADMIN` | CRITICAL | `docker-security/container-adds-dangerous-capability` | Drop the capability |
+| Compose service mounts `docker.sock` or `podman.sock` | CRITICAL | `docker-security/container-mounts-docker-socket` | Remove socket mount; use rootless or DinD |
+| Compose volume host path contains `..` | WARNING | `docker-security/container-volume-mount-uses-path-traversal` | Use absolute, project-scoped paths |
+| Compose volume mounts `/`, `/etc`, `/root`, or `/home` | CRITICAL | `docker-security/container-mounts-sensitive-path` | Scope to specific project directories |
+| Compose service missing `cap_drop: [ALL]` | WARNING | `docker-security/container-missing-cap-drop-all` | Add `cap_drop: [ALL]` |
+| Compose service missing `no-new-privileges` | INFO | `docker-security/container-missing-no-new-privileges` | Add `security_opt: [no-new-privileges]` |
+| Compose service has no `user` directive | WARNING | `docker-security/container-has-no-user-directive` | Add a non-root `user` |
+| Compose service has no memory limit | INFO | `docker-security/container-has-no-memory-limit` | Set `mem_limit` or `deploy.resources.limits.memory` |
+| Included compose file fails to parse | INFO | `docker-security/failed-to-parse-included-file` | Fix YAML in the included file |
+| Top-level compose file fails to parse | WARNING | `docker-security/failed-to-parse` | Fix YAML syntax |
+| K8s pod spec has `hostNetwork: true` | WARNING | `docker-security/k8s-hostnetwork-enabled` | Remove `hostNetwork: true` |
+| K8s pod spec has `hostPID: true` | WARNING | `docker-security/k8s-hostpid-enabled` | Remove `hostPID: true` |
+| K8s pod spec has `hostIPC: true` | WARNING | `docker-security/k8s-hostipc-enabled` | Remove `hostIPC: true` |
+| K8s pod has no pod-level `runAsNonRoot` | INFO | `docker-security/k8s-no-pod-level-runasnonroot` | Set `securityContext.runAsNonRoot: true` |
+| K8s container `securityContext.privileged: true` | CRITICAL | `docker-security/k8s-privileged-container` | Remove `privileged: true` |
+| K8s container does not drop `ALL` capabilities | INFO | `docker-security/k8s-capabilities-not-dropped` | Set `capabilities.drop: [ALL]` |
+| K8s container allows `allowPrivilegeEscalation: true` | WARNING | `docker-security/k8s-allowprivilegeescalation-is-true` | Set to `false` |
+| K8s container has no resource limits | INFO | `docker-security/k8s-no-resource-limits` | Add `resources.limits` |
+| K8s volume `hostPath` mounts `/`, `/etc`, `/root`, or `/home` | CRITICAL | `docker-security/k8s-hostpath-mounts` | Use PVCs instead of hostPath |
+| Dockerfile has no `USER` directive | WARNING | `docker-security/has-no-user-directive` | Add `USER` |
+| Dockerfile multi-stage final stage has no `USER` | WARNING | `docker-security/multi-stage-build-runs-as-root-in-final-stage` | Add `USER` to final stage |
+| Dockerfile `FROM` uses unpinned or `:latest` tag | WARNING | `docker-security/unpinned-base-image` | Pin to version tag or `@sha256:` digest |
+| Dockerfile `ADD` with remote URL | WARNING | `docker-security/add-with-remote-url` | Replace with `RUN curl` + checksum + `COPY` |
+| Dockerfile `COPY`/`ADD` copies `.env`, `credentials.json`, `*.pem`, `*.key`, `id_rsa` | WARNING | `docker-security/copies-sensitive-file` | Use `.dockerignore` or runtime mount |
+| Dockerfile `RUN` has `curl\|wget` piped to shell | WARNING | `docker-security/pipe-to-shell-in-run-instruction` | Download, verify checksum, then execute |
+| Dockerfile `RUN` contains secret pattern (`KEY_PATTERNS`) | CRITICAL | `docker-security/secret-in-run-instruction` | Use `--mount=type=secret` build secrets |
+| Dockerfile `RUN` contains `chmod 777` | WARNING | `docker-security/chmod-777-in-run-instruction` | Use restrictive modes (755, 700) |
+| Dockerfile `RUN` runs `apt-get install` without `--no-install-recommends` | INFO | `docker-security/apt-get-install-without-no-install-recommends` | Add the flag |
+| Dockerfile `RUN` runs `apk add` without `--no-cache` | INFO | `docker-security/apk-add-without-no-cache` | Add `--no-cache` |
+| Dockerfile `EXPOSE 22` | WARNING | `docker-security/exposes-ssh-port-22` | Remove `EXPOSE 22`; use `docker exec` |
 | `devcontainer.json` has `--privileged` in `runArgs` | CRITICAL | `docker-security/devcontainer-uses-privileged-mode` | Remove `--privileged` |
-| `devcontainer.json` `capAdd` includes `SYS_ADMIN`/`NET_ADMIN`/`SYS_PTRACE`/`ALL` | WARNING | `docker-security/devcontainer-adds-capabilities-caps` | Drop capability |
+| `devcontainer.json` `capAdd` includes `SYS_ADMIN`/`NET_ADMIN`/`SYS_PTRACE`/`ALL` | WARNING | `docker-security/devcontainer-adds-capabilities` | Drop capability |
 | `devcontainer.json` mounts `docker.sock`/`podman.sock` | CRITICAL | `docker-security/devcontainer-mounts-docker-socket` | Remove socket mount |
 | No container config found anywhere | INFO | `docker-security/no-container-configuration-found` | N/A — check returns N/A |
 | All container config looks clean | PASS | — | — |
