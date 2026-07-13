@@ -1,0 +1,13 @@
+jobs:
+  aider:
+    runs-on: ubuntu-latest
+    steps:
+      # aider's own scripting docs prescribe --yes for non-interactive runs: not a bypass.
+      - run: aider --message "fix the failing test" --yes src/app.py
+  opencode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - run: opencode run "fix the failing test"
+      # `--auto` here belongs to gh, not opencode — matching it repo-wide would be a false CRITICAL.
+      - run: gh pr merge --auto
