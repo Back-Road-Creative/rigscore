@@ -36,7 +36,7 @@ Failure to detect a governance file is CRITICAL and short-circuits the check —
 | Quality pattern present but NEGATED — `definition of done` | CRITICAL | `claude-md/actively-negates-definition-of-done` | Replace with a genuine definition of "done" |
 | Quality pattern present but NEGATED — `git workflow rules` | CRITICAL | `claude-md/actively-negates-git-workflow-rules` | Replace with a genuine branch / PR workflow rule |
 | Injection pattern ("ignore previous instructions", "you are now", "from now on you…") in governance, non-defensive | CRITICAL | `claude-md/injection-pattern` | Remove override pattern or rephrase as defensive |
-| Governance file listed in `.gitignore` | CRITICAL | `claude-md/governance-file-gitignored` | Remove from `.gitignore` and commit |
+| Governance file ignored by `.gitignore` — any git-honored pattern: bare name, anchored (`/CLAUDE.md`), glob (`*.md`), or recursive (`**`) | CRITICAL | `claude-md/governance-file-gitignored` | Remove from `.gitignore` and commit |
 | Governance file exists but `git ls-files` shows untracked | WARNING | `claude-md/governance-file-untracked` | `git add <file>` |
 | All checks pass | PASS | — | — |
 
@@ -85,6 +85,7 @@ No auto-fix. The `claude-md.js` module does not export a `fixes` array. This is 
 - The union of all governance files is used for quality-pattern matching — having `CLAUDE.md` cover half the patterns and `.cursorrules` cover the other half is treated as passing. Length check (50-line minimum) is measured on the LONGEST single file only, not the union, to prevent padding the score via many short files.
 - Negation detection uses a 150-character look-back bounded by sentence punctuation (`.`, `!`, `?`, `\n`). Negations that span a longer distance may be missed; false positives on "never say never"-style prose are possible.
 - The defensive-phrase detector `INJECTION_DEFENSIVE_RE` is narrower than skill-files' equivalent — governance files are expected to be authoritative, so borderline phrasings default to flagging.
-- Git tracking checks are skipped when no `.git` directory is present.
+- The `.gitignore` check asks git itself (`git check-ignore --no-index`), so anchored (`/CLAUDE.md`), glob (`*.md`), and recursive-double-star patterns are caught, not just the bare filename. When git is unavailable or `cwd` is not a git repo it falls back to an exact-string match against the local `.gitignore` — a degraded matcher fails toward the old miss, never a false CRITICAL.
+- The `git ls-files` tracking check is skipped when no `.git` directory is present.
 - Config override: `.rigscorerc.json` key `paths.claudeMd` adds extra files to the candidate list.
 - Exports `data.matchedPatterns` and `data.governanceText` for the `coherence` check; other checks should not depend on this internal shape.
