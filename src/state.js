@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readJsonSafe } from './utils.js';
+import { readJsonSafe, execSafe } from './utils.js';
 
 export const STATE_FILENAME = '.rigscore-state.json';
 export const STATE_VERSION = 1;
@@ -48,6 +48,11 @@ export async function loadState(cwd) {
   } catch {
     return { state: null, corrupt: false };
   }
+  return parseState(raw);
+}
+
+/** Parse a state-file body. @returns {{state: object|null, corrupt: boolean}} */
+function parseState(raw) {
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') {
@@ -57,6 +62,32 @@ export async function loadState(cwd) {
   } catch {
     return { state: null, corrupt: true };
   }
+}
+
+/**
+ * Load the pin from the COMMITTED tree — `git show HEAD:<prefix>/.rigscore-state.json`.
+ *
+ * Provenance is the entire value of a pin: it is evidence only if a human committed
+ * and reviewed it. A normal `rigscore .` scan mints a trust-on-first-use pin from
+ * whatever `.mcp.json` is in the WORKING TREE, and `action.yml` runs a scan BEFORE the
+ * `--verify-state` step. So an attacker who rewrites `.mcp.json` and deletes (or
+ * corrupts) the pin gets the scan to re-approve their own config, and the gate goes
+ * green on a compromised repo. Reading HEAD makes that structurally impossible.
+ *
+ * `cwd` may be a SUBDIRECTORY of the repo, so the pin path is resolved through
+ * `rev-parse --show-prefix`. Returns `null` when `cwd` is not inside a git repo (or
+ * git is unavailable): there is no commit provenance to read, and the supply-chain
+ * threat this gate answers is a git-hosted PR — so the caller falls back to the
+ * working tree.
+ *
+ * @returns {Promise<{state: object|null, corrupt: boolean, present: boolean}|null>}
+ */
+async function loadCommittedState(cwd) {
+  const prefix = await execSafe('git', ['rev-parse', '--show-prefix'], { cwd });
+  if (prefix === null) return null;
+  const raw = await execSafe('git', ['show', `HEAD:${prefix.trim()}${STATE_FILENAME}`], { cwd });
+  if (raw === null) return { state: null, corrupt: false, present: false };
+  return { ...parseState(raw), present: true };
 }
 
 /**
@@ -109,14 +140,32 @@ async function readRepoServers(cwd) {
  * — critically — zero writes. A normal scan REWRITES the pin, which would
  * silently erase the drift this gate exists to catch.
  *
- * verified (0) | drift (1) | unpinned (2) | corrupt (2) | not-applicable (0).
- * ADDED / REMOVED are reported but do NOT fail — only a *pinned* server
- * mutating under an already-approved name is a rug-pull. Each case is justified
+ * The pin is read from HEAD (see loadCommittedState) — a working-tree pin a scan
+ * minted moments earlier is NOT an approval, so a scan cannot launder this gate.
+ * Today's working-tree `.mcp.json` is still what gets compared: that is the config
+ * that would actually run; only the PIN's provenance is in question.
+ *
+ * verified (0) | drift (1) | unpinned (2) | uncommitted (2) | corrupt (2) |
+ * not-applicable (0). ADDED / REMOVED are reported but do NOT fail — only a *pinned*
+ * server mutating under an already-approved name is a rug-pull. Each case is justified
  * in docs/checks/mcp-config.md § "CI gate: rigscore --verify-state".
  */
 export async function verifyState(cwd) {
   const current = await readRepoServers(cwd);
-  const { state, corrupt } = await loadState(cwd);
+  const committed = await loadCommittedState(cwd);
+  const working = await loadState(cwd);
+
+  // A pin the working tree carries but HEAD does not is exactly the pin a scan mints
+  // (or an attacker plants). Nobody reviewed it, so it verifies nothing — refuse (2)
+  // rather than "verify" the attacker's own config against itself.
+  if (committed !== null && !committed.present && Object.keys(current).length > 0
+    && (working.state !== null || working.corrupt)) {
+    return { changed: [], added: [], removed: [], matched: [], status: 'uncommitted', exitCode: 2 };
+  }
+
+  // Outside a git repo — or inside one with no pin at HEAD — the working tree is all
+  // there is, and there is no provenance to lose by reading it.
+  const { state, corrupt } = committed?.present ? committed : working;
   const raw = (state && state.version === STATE_VERSION && state.mcpServers && typeof state.mcpServers === 'object')
     ? state.mcpServers
     : null;
@@ -150,6 +199,7 @@ export async function verifyState(cwd) {
 const UNVERIFIABLE_REASON = {
   corrupt: `${STATE_FILENAME} is unreadable or not version ${STATE_VERSION} — re-pin with \`rigscore .\` and commit it.`,
   unpinned: `.mcp.json declares MCP servers but ${STATE_FILENAME} pins none — nothing is being verified. Pin with \`rigscore .\` and commit it.`,
+  uncommitted: `${STATE_FILENAME} exists in the working tree but is not committed at HEAD — an uncommitted pin proves nothing. A scan mints one from whatever .mcp.json is sitting there, so verifying against it would just check the current config against itself. Review .mcp.json, then commit ${STATE_FILENAME}.`,
   'not-applicable': 'No repo-level MCP servers and no pin — nothing to verify.',
 };
 
@@ -176,7 +226,7 @@ export function formatVerifyStateReport(r, cwd) {
 
   lines.push('');
   if (r.exitCode === 1) lines.push(`FAIL: ${r.changed.length} pinned MCP server(s) changed shape. Review the diff before trusting this repo.`);
-  else if (r.exitCode === 2) lines.push('FAIL: cannot verify — see above. This gate refuses to report success on an unpinned repo.');
+  else if (r.exitCode === 2) lines.push('FAIL: cannot verify — see above. This gate refuses to report success on a repo whose pin it cannot trust.');
   else lines.push(`PASS: ${r.matched.length} pinned MCP server(s) verified.`);
   return lines.join('\n');
 }
