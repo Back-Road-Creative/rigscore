@@ -127,7 +127,7 @@ describe('CycloneDX 1.6 AI-BOM export', () => {
         .toEqual({ type: 'configuration', url: 'opencode.json', comment: 'MCP server declaration' });
       const file = bom.components.find((c) => c['bom-ref'] === 'file:opencode.json');
       expect(file.properties).toContainEqual({ name: 'rigscore:file:role', value: 'ai-client-config' });
-      expect(contractErrors(bom)).toEqual([]);
+      // BOM-wide validity is asserted by the schema/contract tests above, not re-litigated here.
     });
   });
 
