@@ -34,7 +34,7 @@ A failure typically means an MCP server was added without reviewing its args, a 
 | Repo `.mcp.json` + `enableAllProjectMcpServers: true` (CVE-2025-59536 compound) | CRITICAL | `mcp-config/cve-2025-59536-auto-approve-on-clone` | Set `enableAllProjectMcpServers` to false |
 | Same server name has divergent args/env/transport across clients | WARNING | `mcp-config/cross-client-drift` | Align configs across all AI clients |
 | Server only configured in one of multiple detected clients | INFO | `mcp-config/single-client-server` | None — informational |
-| Repo-level MCP server shape hash changed between scans (CVE-2025-54136 rug-pull) | WARNING | `mcp-config/server-hash-drift` | Review diff in `.mcp.json`; re-run to acknowledge |
+| Repo-level MCP server shape hash changed between scans (CVE-2025-54136 rug-pull) | WARNING | `mcp-config/server-hash-drift` | Review diff in `.mcp.json`; to accept, delete the server's entry from `.rigscore-state.json` and re-scan |
 | Corrupted `.rigscore-state.json` | INFO | `mcp-config/state-file-corrupted` | Auto-reset; no action needed |
 | Runtime tool pin recorded for server | INFO | `mcp-config/runtime-tool-pin-recorded` | Verify with `rigscore mcp-verify <name>` |
 | Runtime tool pin missing for server | INFO | `mcp-config/runtime-tool-pin-missing` | Pin via `rigscore mcp-hash \| rigscore mcp-pin <name>` |
@@ -55,7 +55,37 @@ No auto-fix. The `mcp-config.js` module does not export a `fixes` array. Every f
 - CVE-2025-59536 and CVE-2026-21852 findings require reviewing whether the `.mcp.json` was planted versus legitimately committed.
 - Rug-pull drift requires a git diff review — silently rewriting the state file would defeat the detection.
 
-State writes (`.rigscore-state.json`) are not fixes — they are the detection substrate and happen on every run unless `context.writeState === false`.
+## The one file a scan writes: `.rigscore-state.json`
+
+Every other check in rigscore is read-only. This one is not: `mcp-config` maintains a
+trust-on-first-use pin — a `{server → sha256(command, args, envKeys)}` map — in
+`.rigscore-state.json` **at the root of the repo being scanned**. Without it there is no
+"between scans" to compare against, so `mcp-config/server-hash-drift` and the
+`--verify-state` CI gate simply do not exist. **Commit the file** — a pin that isn't in git
+cannot survive a fresh CI checkout, and it deliberately stores hashes only (never env
+values), so it is safe to commit. Do **not** gitignore it.
+
+The write only ever *establishes* or *extends* the pin. It is skipped when:
+
+| Situation | Written? | Why |
+|---|---|---|
+| No state file (first scan) | yes | Creates the TOFU pin. |
+| Server added / removed | yes | Extends coverage; no approved pin is destroyed. |
+| Corrupt state file | yes | Reset, with an INFO finding. |
+| **Nothing changed** | **no** | An identical rewrite would still reformat a hand-committed pin and bump its mtime — a read-only scan must not dirty the tree or the CI checkout it runs in. |
+| **Drift detected** | **no** | Re-pinning the changed hash would re-approve the rug-pull the scan just reported: the WARNING would fire once, the next scan would be silent, and `--verify-state` would go green on a compromised repo. The pin is the detection substrate; the detector must not eat it. |
+
+So a drift warning **persists** until a human accepts it. Accepting is deliberate: delete
+that server's entry from the `mcpServers` map in `.rigscore-state.json` and re-scan —
+rigscore re-pins anything it is not already pinning, and your `rigscore mcp-pin` runtime
+tool hashes (the separate `servers` map) survive untouched. Deleting the whole file also
+works, but throws those runtime pins away.
+
+Scan writes are suppressible in-process via `context.writeState === false` (used by the
+test suite); there is no CLI flag for it, because a repo with MCP servers and no pin is
+exactly the unprotected state `--verify-state` exits 2 on.
+
+State writes are not fixes — they are the detection substrate.
 
 ## SARIF
 
@@ -86,7 +116,7 @@ State writes (`.rigscore-state.json`) are not fixes — they are the detection s
 
 The `mcp-config/server-hash-drift` finding above is a WARNING — it cannot fail a build, and a supply-chain guard a compromised repo can print a warning past is not a guard. `--verify-state` turns the same pin into an exit code.
 
-It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.json` machinery the check writes — one hash function, one pin. It never rewrites the state file (a normal scan does, which would erase the drift), runs no other checks, and makes no network calls. CI recipe — add one step to `.github/workflows/ci.yml`:
+It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.json` machinery the check writes — one hash function, one pin. It never rewrites the state file, runs no other checks, and makes no network calls. (A normal scan does not rewrite a drifted pin either — see "The one file a scan writes" above — so the gate reports the same drift whether or not a scan ran first.) CI recipe — add one step to `.github/workflows/ci.yml`:
 
 ```yaml
 - run: npx rigscore --verify-state .   # fails the build on an MCP rug-pull
