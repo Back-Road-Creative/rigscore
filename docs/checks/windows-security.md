@@ -4,25 +4,34 @@
 
 ## Purpose
 
-Surfaces Windows- and WSL-specific isolation weaknesses that aren't covered by the cross-platform hygiene checks: WSL interop bridging Windows and Linux process space, `.wslconfig` networking modes that collapse the host/guest boundary, Windows Defender exclusions that silently disable scanning for project paths, and an NTFS permissions advisory for sensitive files. A passing check means either (a) the host is non-Windows and the check short-circuits to N/A, or (b) WSL interop is scoped, `.wslconfig` uses NAT + firewall, and Defender has no project-path exclusions. A failure means one of those guardrails is open — typically the highest-impact one is `appendWindowsPath=true` under interop, which lets WSL processes execute Windows binaries directly. No OWASP Agentic Top 10 mapping: this check is about host-level isolation, not agent behavior.
+Surfaces Windows- and WSL-specific isolation weaknesses that aren't covered by the cross-platform hygiene checks: WSL interop bridging Windows and Linux process space, `.wslconfig` networking modes that collapse the host/guest boundary, Windows Defender exclusions that silently disable scanning for project paths, and an NTFS permissions advisory for sensitive files. A passing check means either (a) the machine is neither a Windows host nor a WSL guest, and the check short-circuits to N/A, or (b) WSL interop is scoped, `.wslconfig` uses NAT + firewall, and Defender has no project-path exclusions. A failure means one of those guardrails is open — typically the highest-impact one is `appendWindowsPath=true` under interop, which lets WSL processes execute Windows binaries directly. No OWASP Agentic Top 10 mapping: this check is about host-level isolation, not agent behavior.
+
+**Two arms, two platforms.** The findings split by where the file they read actually lives, and each arm only runs where that is:
+
+| Arm | Reads | Runs when |
+|---|---|---|
+| WSL interop | `/etc/wsl.conf` | **WSL guest** — the kernel reports a WSL marker. This is a Linux-guest file, and never exists on the Windows host. |
+| `.wslconfig`, Defender exclusions, NTFS advisory | `%USERPROFILE%\.wslconfig`, `Get-MpPreference`, — | **Windows host** (`process.platform === 'win32'`). |
+
+A plain (non-WSL) Linux or macOS machine matches neither arm and stays N/A. Guest detection reads the kernel's own release string (`/proc/sys/kernel/osrelease`, which contains `microsoft` under WSL1/WSL2) rather than `$WSL_DISTRO_NAME`, which is absent from systemd units, cron jobs, and containers. That marker is the only signal — `process.platform` is not also consulted, which keeps the arm exercisable from a test on any OS. Both that path and `/etc/wsl.conf` are absolute host paths, so they are injectable through the scan context (`scan({ wslConfPath, wslOsReleasePath })`) — tests pin them instead of reading the real machine.
 
 ## Triggers
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Non-Windows platform | SKIPPED | — (SARIF level `none`, suppressed) | No action — check is gated to `process.platform === 'win32'`. |
-| `/etc/wsl.conf` has `[interop] enabled=true` and `appendWindowsPath` is `true` (or unset, which defaults to true) | WARNING | `windows-security/wsl-interop-exposes-path` | Set `appendWindowsPath=false` in `/etc/wsl.conf` `[interop]`. |
-| `[interop] enabled=true` with an explicit `appendWindowsPath=false` | INFO | `windows-security/wsl-interop-enabled` | Informational — exposure is limited. |
-| WSL interop disabled | PASS | — | — |
-| `%USERPROFILE%\.wslconfig` sets `networkingMode=mirrored` | INFO | `windows-security/wsl-mirrored-networking` | Consider NAT mode for stronger host/guest isolation. |
-| `.wslconfig` exists but has no `firewall=true` line | INFO | `windows-security/wsl-firewall-not-enabled` | Add `firewall=true` to `.wslconfig`. |
-| `.wslconfig` has `firewall=true` | PASS | — | — |
-| A Defender `ExclusionPath` contains `node_modules` or the scanned project path | WARNING | `windows-security/defender-excludes-project-paths` | Remove project-path exclusions via `Remove-MpPreference -ExclusionPath`. |
-| NTFS permissions advisory — unconditional, appended to every Windows run | INFO | `windows-security/ntfs-permissions-advisory` | Run `icacls .env /inheritance:r /grant:r "%USERNAME%":F` on sensitive files. |
+| Neither a Windows host nor a WSL guest (plain Linux, macOS) | SKIPPED | — (SARIF level `none`, suppressed) | No action — neither arm applies. |
+| **Guest:** `/etc/wsl.conf` has `[interop] enabled=true` and `appendWindowsPath` is `true` (or unset, which defaults to true) | WARNING | `windows-security/wsl-interop-exposes-path` | Set `appendWindowsPath=false` in `/etc/wsl.conf` `[interop]`. |
+| **Guest:** `[interop] enabled=true` with an explicit `appendWindowsPath=false` | INFO | `windows-security/wsl-interop-enabled` | Informational — exposure is limited. |
+| **Guest:** WSL interop disabled | PASS | — | — |
+| **Host:** `%USERPROFILE%\.wslconfig` sets `networkingMode=mirrored` | INFO | `windows-security/wsl-mirrored-networking` | Consider NAT mode for stronger host/guest isolation. |
+| **Host:** `.wslconfig` exists but has no `firewall=true` line | INFO | `windows-security/wsl-firewall-not-enabled` | Add `firewall=true` to `.wslconfig`. |
+| **Host:** `.wslconfig` has `firewall=true` | PASS | — | — |
+| **Host:** a Defender `ExclusionPath` contains `node_modules` or the scanned project path | WARNING | `windows-security/defender-excludes-project-paths` | Remove project-path exclusions via `Remove-MpPreference -ExclusionPath`. |
+| **Host:** NTFS permissions advisory — unconditional, appended to every Windows-host run | INFO | `windows-security/ntfs-permissions-advisory` | Run `icacls .env /inheritance:r /grant:r "%USERNAME%":F` on sensitive files. |
 
 ## Weight rationale
 
-Advisory — weight 0. This check only produces signal on a single platform (`win32`) and short-circuits everywhere else; scoring it would penalize or credit cross-platform projects based on where they happen to be scanned, which is noise. The findings are also configuration-advice in nature (WSL/Defender posture) rather than concrete vulnerabilities with deterministic remediations, so they belong in the advisory lane rather than competing for moat-first budget with scored checks like `mcp-config` or `env-exposure`.
+Advisory — weight 0. This check only produces signal on a Windows host or a WSL guest and short-circuits everywhere else; scoring it would penalize or credit cross-platform projects based on where they happen to be scanned, which is noise. The findings are also configuration-advice in nature (WSL/Defender posture) rather than concrete vulnerabilities with deterministic remediations, so they belong in the advisory lane rather than competing for moat-first budget with scored checks like `mcp-config` or `env-exposure`.
 
 ## Fix semantics
 
@@ -51,7 +60,8 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 
 ## Scope and limitations
 
-- Platform gate: returns `NOT_APPLICABLE` on any `process.platform !== 'win32'`. Linux and macOS scans will never show findings from this module.
-- WSL detection reads `/etc/wsl.conf` (guest side) and `%USERPROFILE%\.wslconfig` (host side). Only runs when the respective file exists.
-- Defender check shells out to `powershell.exe Get-MpPreference` with a 5s timeout; on systems without PowerShell in PATH, or where Defender is managed by a third party, it silently degrades.
-- The NTFS permissions row is an advisory reminder that always fires on Windows — it's a prompt, not a detected weakness.
+- Platform gate: returns `NOT_APPLICABLE` unless the machine is a Windows host (`win32`) or a WSL guest (the kernel release string contains `microsoft`). A plain Linux or macOS scan will never show findings from this module — neither has that marker.
+- Each arm only runs when the file it parses exists: `/etc/wsl.conf` on the guest, `%USERPROFILE%\.wslconfig` on the host. A WSL guest with no `wsl.conf` at all reports nothing rather than assuming WSL's defaults.
+- A container running on the WSL2 kernel matches the guest marker (it shares that kernel). This is intended, and harmless: the interop arm still only speaks if a `wsl.conf` is actually present in that filesystem.
+- Defender check shells out to `powershell.exe Get-MpPreference` with a 5s timeout, **from the Windows host only** — `powershell.exe` is reachable from a WSL guest over interop, but the guest deliberately does not cross that boundary to query the host's posture. On systems without PowerShell in PATH, or where Defender is managed by a third party, it silently degrades.
+- The NTFS permissions row is an advisory reminder that always fires on a Windows host (never on the guest, whose rootfs is ext4) — it's a prompt, not a detected weakness.
