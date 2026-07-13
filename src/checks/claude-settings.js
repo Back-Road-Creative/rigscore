@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readJsonSafe, walkDirSafe } from '../utils.js';
+import { readFileSafe, readJsonSafe, walkDirSafe } from '../utils.js';
 
 const DANGEROUS_HOOK_RE = [
   /\bcurl\b/, /\bwget\b/, /\brm\s+-rf\b/, /\beval\b/, /\bbase64\s+-d\b/,
@@ -17,6 +18,14 @@ const SETTINGS_FILES = [
 // Plugins ship hooks at <plugin>/hooks/hooks.json and Claude Code executes them
 // exactly like settings hooks; scanning only SETTINGS_FILES left them unscanned.
 const PLUGIN_ROOT = '.claude/plugins';
+
+// Skills and agents may declare hooks in their YAML frontmatter, and those hooks
+// execute exactly like settings hooks. Same exploit class as the plugin gap above:
+// a dangerous command hides in a source the scanner never opens. Directories match
+// the discovery convention the skill-files / skill-coherence / agent-output-schemas
+// checks already use.
+const FRONTMATTER_HOOK_DIRS = ['.claude/skills', '.claude/commands', '.claude/agents'];
+
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 
 // Allow-list entries that grant dangerous broad access
@@ -174,6 +183,47 @@ async function findPluginHookFiles(root) {
   return files;
 }
 
+/** Every markdown file under a skills/commands/agents root, via the same shared walker. */
+async function findMarkdownFiles(root) {
+  const { files } = await walkDirSafe(root, {
+    maxDepth: 6,
+    maxFiles: 200,
+    shouldInclude: (_full, dirent) => dirent.name.endsWith('.md'),
+  });
+  return files;
+}
+
+/**
+ * Pull the `hooks:` mapping out of a markdown file's leading YAML frontmatter.
+ *
+ * Returns `{ hooks }` when the frontmatter parses and declares a hooks mapping,
+ * `{ unparseable: true }` when it declares a `hooks:` key but the YAML does not
+ * parse, and `null` when there is no frontmatter or no hooks at all (such a file
+ * is not a hook source and must not make the check applicable).
+ *
+ * The unparseable arm exists because "couldn't scan" must never render as
+ * "scanned, clean" — a hook source we failed to read is a blind spot, and a
+ * silently-skipped file is exactly how a dangerous command survives the scan.
+ * An `Array` hooks value is not a valid mapping of event → handlers; treat it as
+ * unparseable rather than feeding index keys ("0", "1") in as event names.
+ */
+function readFrontmatterHooks(content) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
+  const block = match[1];
+  if (!/^hooks\s*:/m.test(block)) return null;
+  let parsed;
+  try {
+    parsed = YAML.parse(block);
+  } catch {
+    return { unparseable: true };
+  }
+  const hooks = parsed && typeof parsed === 'object' ? parsed.hooks : null;
+  if (!hooks || typeof hooks !== 'object') return null;
+  if (Array.isArray(hooks)) return { unparseable: true };
+  return { hooks };
+}
+
 export default {
   id: 'claude-settings',
   enforcementGrade: 'mechanical',
@@ -311,6 +361,40 @@ export default {
         if (!pluginHooks) continue;
         foundAny = true;
         await scanHooks(pluginHooks.hooks || pluginHooks, prefix + path.relative(root, hookFile), ctx);
+      }
+    }
+
+    // Skill/agent frontmatter hooks — fed to the SAME three scans as settings and
+    // plugin hooks, because Claude Code executes them the same way. Two deliberate
+    // differences from the plugin loop:
+    //  - They are NOT credited toward lifecycle coverage (throwaway `configuredHooks`
+    //    set). A skill hook fires only while that skill is active; it is not project
+    //    lifecycle governance, and crediting it would let any skill silently satisfy
+    //    the coverage rollup and raise the score.
+    //  - Finding one still makes the check applicable, exactly as a plugin hooks.json
+    //    does — otherwise a repo whose only hook source is a SKILL.md scores
+    //    NOT_APPLICABLE and ships that hook unscanned.
+    const fmCtx = { ...ctx, configuredHooks: new Set() };
+    for (const [root, prefix] of [[cwd, ''], [homedir, '~/']]) {
+      for (const dir of FRONTMATTER_HOOK_DIRS) {
+        for (const mdFile of await findMarkdownFiles(path.join(root, dir))) {
+          const content = await readFileSafe(mdFile);
+          const fm = content ? readFrontmatterHooks(content) : null;
+          if (!fm) continue;
+          foundAny = true;
+          const rel = prefix + path.relative(root, mdFile);
+          if (fm.unparseable) {
+            findings.push({
+              findingId: 'claude-settings/frontmatter-hooks-unparseable',
+              severity: 'warning',
+              title: `Unparseable frontmatter hooks in ${rel}`,
+              detail: `${rel} declares hooks in its YAML frontmatter, but that frontmatter does not parse as a hooks mapping — its hook commands cannot be scanned and are a blind spot.`,
+              remediation: 'Fix the YAML frontmatter so its hooks can be read, or remove the hooks key.',
+            });
+            continue;
+          }
+          await scanHooks(fm.hooks, rel, fmCtx);
+        }
       }
     }
 
