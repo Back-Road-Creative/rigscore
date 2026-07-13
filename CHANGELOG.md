@@ -77,6 +77,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk + overlap (not the file size — the reason a readline-based fix was
   rejected). The `deep-secrets/oversize-skipped` id is retained for SARIF
   contract stability and now reports the stream-scanned count.
+- **deep-secrets: `--deep` no longer scans the Action's own vendored checkout.**
+  The GitHub Action checks rigscore's source out to `.rigscore-action-src/`, which
+  `actions/checkout` forces to be a leading-dot SUBDIRECTORY of the caller's scan
+  root (its `path:` is constrained to `$GITHUB_WORKSPACE` — a true sibling is
+  impossible, despite the old `action.yml` comment's claim). Because the deep walk
+  runs with `skipHidden: false`, it descended into that dir and scanned ~161 of
+  rigscore's OWN files as if they were the caller's — surfacing phantom
+  `deep-secrets` findings about `.rigscore-action-src/...` in the caller's SARIF
+  (files the caller can't act on, minted during CI and invisible in their PR diff),
+  and consuming the caller's `deepScan.maxFiles` budget. `.rigscore-action-src` is
+  now in the hardcoded `SKIP_DIRS` set, so the walk never descends into it and the
+  `action.yml` comment states the real path.
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
