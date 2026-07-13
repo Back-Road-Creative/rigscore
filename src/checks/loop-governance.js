@@ -35,6 +35,8 @@ const UNCONDITIONAL_HEADER = [
   /(?:^|[\s;&|])until\s+false\b/,
   /(?:^|[\s;&|])for\s*\(\(\s*;\s*;\s*\)\)/,
   /(?:^|[\s;&|])while\s+(?:True|1)\s*:/, // python
+  /(?:^|[\s;&|}])while\s*\(\s*(?:true|1)\s*\)/, // js: while (true) / } while (1);
+  /(?:^|[\s;&|])for\s*\(\s*;\s*;\s*\)/,        // js: for (;;)
 ];
 
 // Anything here means the body evaluates *something* to decide it is done.
@@ -64,8 +66,10 @@ const isCronLine = (line) => CRON_SHORTHAND.test(line) || CRON_FIELDS.test(line)
 const isMakefile = (full) => /^(?:GNUmakefile|[Mm]akefile)$|\.mk$/.test(path.basename(full));
 const isPkgJson = (full) => path.basename(full) === 'package.json';
 const isPython = (full) => /\.py$/.test(full);
+const isJs = (full) => /\.(?:js|mjs|cjs)$/.test(full);
 const isShell = (full) => /\.(?:sh|bash)$/.test(full);
-// Where a loop can actually be read. package.json and *.py are resolved, not parsed.
+// Where a loop can actually be read. package.json is resolved, not parsed; *.py
+// and *.js are resolved *and* read for a loop of their own (findPyLoops/findJsLoops).
 const isLoopFile = (full) => isShell(full) || isMakefile(full) || isCronFile(full);
 
 // systemd: a `.timer` schedules a `.service`, and the agent is in its ExecStart.
@@ -82,9 +86,16 @@ const execCommand = (line) => line.replace(/^\s*[@+!-]*(?:\/\S+\/)/, '');
 // A target line (`build:`), not a variable assignment (`CC := gcc`).
 const MAKE_TARGET = /^([A-Za-z0-9_.\-/]+)\s*:(?!=)/;
 const PY_SUBPROCESS = /(?:subprocess\.(?:run|Popen|call|check_call|check_output)|os\.system)\s*\(/;
-// Rebuild a shell-ish command line from a Python arg list so the shared
+// The JS twin: the node child-process module, imported or called. Something must
+// spawn — the word `claude` in a module that shells out to nothing is prose, and
+// in a JS repo *every* file would otherwise be a surface. The import name is the
+// `[_]` class so that THIS file, which spells the module in its own pattern table,
+// does not match itself; a bare `exec(` is out because `re.exec(s)` is the most
+// common call in the language, and the import covers that spelling anyway.
+const JS_SUBPROCESS = /child[_]process|(?:spawn|spawnSync|execSync|execFile|execFileSync|execa)\s*\(/;
+// Rebuild a shell-ish command line from a Python/JS arg list so the shared
 // AGENT_PATTERNS apply: ["claude", "-p", x] → [ claude -p , x].
-const pyCommandish = (src) => src.replace(/['"]\s*,\s*['"]/g, ' ').replace(/['"]/g, ' ');
+const commandish = (src) => src.replace(/['"`]\s*,\s*['"`]/g, ' ').replace(/['"`]/g, ' ');
 
 // Any single hit clears a loop. The bias is deliberate: a missed uncapped loop
 // is cheaper than a false "your loop is uncapped".
@@ -136,8 +147,11 @@ function collectBodies(file, lines, raw, bodies, idx) {
     // to no Popen at all is not an agent invocation.
     const text = lines.join('\n');
     if (PY_SUBPROCESS.test(text)) {
-      bodies.push({ kind: 'py', name: path.basename(file), text: pyCommandish(text) });
+      bodies.push({ kind: 'py', name: path.basename(file), text: commandish(text) });
     }
+  } else if (isJs(file)) {
+    // Gated at read time on JS_SUBPROCESS, so reaching here means it spawns.
+    bodies.push({ kind: 'js', name: path.basename(file), text: commandish(lines.join('\n')) });
   } else if (isShell(file)) {
     bodies.push({ kind: 'sh', name: path.basename(file), text: lines.join('\n') });
   }
@@ -184,6 +198,11 @@ function callsIndirectAgent(text, idx) {
   for (const m of text.matchAll(/(?:^|[\s;|&(`])([\w./-]+\.(?:sh|bash))\b/g)) {
     if (idx.sh.has(path.basename(m[1]))) return true;
   }
+  // `node scripts/runner.js`, `npx tsx runner.mjs`, `./scripts/runner.cjs` — as
+  // for shell, the path is matched and the basename is what the index is keyed on.
+  for (const m of text.matchAll(/(?:^|[\s;|&(`])([\w./-]+\.(?:js|mjs|cjs))\b/g)) {
+    if (idx.js.has(path.basename(m[1]))) return true;
+  }
   return false;
 }
 
@@ -205,14 +224,45 @@ function findPyLoops(lines) {
     }
     // Quotes and commas out, so the shared command-position patterns apply to
     // `subprocess.run(["claude", "-p", …])` exactly as they do to a shell line.
-    loops.push({ header: lines[i], text: pyCommandish(body.join('\n')) });
+    loops.push({ header: lines[i], text: commandish(body.join('\n')) });
+  }
+  return loops;
+}
+
+// A loop header, brace-bodied: `while (…) {`, `for (…) {`, `do {`. A line that
+// *opens* with `}` is a closer — `} while (true);` ends a do-block, it starts nothing.
+const JS_LOOP_HEADER = /(?:^|[\s;])(?:while|for)\s*\(|(?:^|[\s;])do\s*\{/;
+
+/**
+ * Loop blocks in a JS module — the same job findPyLoops does, one language over.
+ * JS has no `done` and no significant indentation: a block runs from its header
+ * to the line where brace depth returns to where the header found it.
+ */
+function findJsLoops(lines) {
+  const loops = [];
+  const stack = [];
+  let depth = 0;
+  for (const line of lines) {
+    for (const frame of stack) frame.body.push(line);
+    if (!/^\s*\}/.test(line) && JS_LOOP_HEADER.test(line)) {
+      stack.push({ header: line, body: [line], depth });
+    }
+    depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+    while (stack.length && depth <= stack[stack.length - 1].depth) {
+      const f = stack.pop();
+      // `do { … } while (true);` writes its condition on the *closing* line —
+      // that, not `do {`, is the header the cap and stop tests must read.
+      const header = /^\s*\}\s*while\b/.test(line) ? line : f.header;
+      loops.push({ header, text: commandish(f.body.join('\n')) });
+    }
   }
   return loops;
 }
 
 const isCapped = (header, text) =>
-  // `for x in <finite list>` is bounded by construction; `for ((;;))` is not.
-  (/(?:^|[\s;&|])for\b/.test(header) && /\sin\s/.test(header)) ||
+  // `for x in <finite list>` / `for (const x of xs)` is bounded by construction;
+  // `for ((;;))` and `for (;;)` are not.
+  (/(?:^|[\s;&|])for\b/.test(header) && /\s(?:in|of)\s/.test(header)) ||
   CAP_PATTERNS.some((p) => p.test(text));
 
 // Orthogonal to isCapped: a `--max-turns` loop is bounded per iteration and
@@ -259,25 +309,28 @@ export default {
       maxFiles: MAX_FILES,
       shouldInclude: (full) =>
         isShell(full) || isCronFile(full) || isMakefile(full) || isPkgJson(full) ||
-        isPython(full) || isTimer(full) || isService(full),
+        isPython(full) || isJs(full) || isTimer(full) || isService(full),
     });
 
     // Pass 1 — read each file once, then follow calls up to MAX_HOPS, so pass 2
     // can see the agent behind `make agent` / `npm run agent` / `python agent.py`,
     // and behind a `make agent` whose recipe merely runs another script.
     const indirect = {
-      make: new Set(), npm: new Set(), py: new Set(), sh: new Set(), svc: new Map(),
+      make: new Set(), npm: new Set(), py: new Set(), js: new Set(), sh: new Set(), svc: new Map(),
     };
     const bodies = [];
     const docs = [];
     for (const file of files) {
       const raw = await readFileSafe(file);
       if (!raw) continue;
+      // A JS module that never spawns a process cannot run an agent CLI — drop it
+      // before it is ever a surface, so a JS repo's every file is not one.
+      if (isJs(file) && !JS_SUBPROCESS.test(raw)) continue;
       // Blank out whole-line comments so a commented-out loop never counts, and
       // strip make's `@`/`-`/`+` recipe prefixes so `@claude -p` reads as a command.
       const lines = raw
         .split('\n')
-        .map((l) => (/^\s*#/.test(l) ? '' : l))
+        .map((l) => (/^\s*(?:#|\/\/)/.test(l) ? '' : l))
         .map((l) => (isMakefile(file) ? l.replace(/^\t[@+-]+/, '\t') : l));
       docs.push({ file, rel: path.relative(context.cwd, file), lines, text: lines.join('\n') });
       collectBodies(file, lines, raw, bodies, indirect);
@@ -326,11 +379,12 @@ export default {
       }
 
       // package.json and *.service hold no loop this check can read — they are
-      // resolved (pass 1), not parsed. Their flag above still counts. A *.py is
-      // resolved too, and additionally parsed for a loop of its own (below).
+      // resolved (pass 1), not parsed. Their flag above still counts. A *.py and
+      // a *.js are resolved too, and additionally read for a loop of their own.
       const py = isPython(file);
-      if (!isLoopFile(file) && !py) continue;
-      if (!agentIn(py ? pyCommandish(text) : text)) continue;
+      const js = isJs(file);
+      if (!isLoopFile(file) && !py && !js) continue;
+      if (!agentIn(py || js ? commandish(text) : text)) continue;
 
       if (isCronFile(file)) {
         surfaceFound = true;
@@ -355,13 +409,14 @@ export default {
       }
 
       // One finding per file — a nested loop would otherwise report twice. In a
-      // Python module this is the loop written *inside* an indirection target:
-      // its callers are resolved by name, but a `while True:` in the module
-      // itself is only visible by reading the module's own control flow.
-      const loops = (py ? findPyLoops(lines) : findLoops(lines)).filter((l) => agentIn(l.text));
+      // Python or JS module this is the loop written *inside* an indirection
+      // target: its callers are resolved by name, but a `while True:` / `for (;;)`
+      // in the module itself is only visible by reading its own control flow.
+      const read = py ? findPyLoops : js ? findJsLoops : findLoops;
+      const loops = read(lines).filter((l) => agentIn(l.text));
       // A module with no loop of its own is not a surface — its *call* is, and
       // that is read wherever the call is written (a shell loop, a cron line).
-      if (py && loops.length === 0) continue;
+      if ((py || js) && loops.length === 0) continue;
       surfaceFound = true;
       agentLoops += loops.length;
 
@@ -408,7 +463,8 @@ export default {
         uncappedLoops,
         cronJobs,
         timerJobs,
-        indirectAgents: indirect.make.size + indirect.npm.size + indirect.py.size,
+        indirectAgents:
+          indirect.make.size + indirect.npm.size + indirect.py.size + indirect.js.size,
       },
     };
   },

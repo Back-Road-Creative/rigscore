@@ -161,6 +161,34 @@ describe('loop-governance check', () => {
     expect(result.data.agentLoops).toBe(1);
   });
 
+  // Same shape, one language over: the npm script's call is resolved, but the
+  // loop lives in the `.js` runner's own control flow — and the agent is two
+  // hops past it (`./scripts/agent.sh` → `claude -p`), so no loop the old
+  // check could read ever held an agent invocation.
+  it('reads `for (;;)` / `while (true)` / `do … while (1)` inside the JS runner an npm script invokes', async () => {
+    const result = await run('loop-js-while');
+    const uncapped = result.findings.filter((f) => f.findingId === 'loop-governance/uncapped-loop');
+    // One finding per file — three runners, three loops, three findings.
+    expect(uncapped.map((f) => f.context.file).sort()).toEqual([
+      'scripts/poll.mjs', 'scripts/runner.js', 'scripts/watch.cjs',
+    ]);
+    expect(uncapped.every((f) => f.severity === 'warning')).toBe(true);
+    // The bound goes in the runner, so the evidence is its loop header.
+    expect(uncapped.find((f) => f.context.file === 'scripts/runner.js').evidence).toContain('for (;;)');
+    expect(ids(result)).toContain('loop-governance/no-stop-condition');
+    expect(result.data.agentLoops).toBe(3);
+    expect(result.score).toBeLessThan(100);
+  });
+
+  it('stays silent on a `for (const task of tasks)` runner — bounded by construction', async () => {
+    const result = await run('loop-js-bounded');
+    expect(ids(result)).not.toContain('loop-governance/uncapped-loop');
+    expect(ids(result)).not.toContain('loop-governance/no-stop-condition');
+    expect(result.findings.every((f) => f.severity === 'pass')).toBe(true);
+    expect(result.score).toBe(100);
+    expect(result.data.agentLoops).toBe(1);
+  });
+
   // A timer is cron in a different file format: the schedule is one unit, the
   // agent another. Reaching it means pairing the .timer to its .service.
   it('flags a systemd timer whose service runs an unbounded agent, and clears the bounded one', async () => {
