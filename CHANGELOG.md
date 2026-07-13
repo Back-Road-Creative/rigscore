@@ -187,6 +187,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   below-baseline regression. This closes the same asymmetry `--verify-state`
   already covers for MCP pins.
 
+- **A present-but-malformed MCP config is disclosed instead of being reported as absent**
+  (`mcp-config/config-unparseable`, WARNING). `readJsonSafe` returns `null` for *both* "file
+  absent" and "file present but unparseable JSON", and the scan skipped on that alone — so a
+  broken `.mcp.json` sitting in the tree produced the INFO finding `No MCP configuration
+  found` and a `not-applicable` score, a false statement about a repo whose file is right
+  there and whose servers are consequently scanned by nothing and hash-pinned by nothing. An
+  absent config still reports `no-config-found` / N/A, exactly as before. Mirrors the existing
+  `claude-settings/settings-unparseable` disclosure.
+
 - **skill-files: a truncated skill walk is disclosed instead of being reported as
   "clean".** The walk destructured only `{ files, loopDetected }` from `walkDirSafe`,
   discarding `truncated`/`depthTruncated` — the only one of seven consumers to do so.
@@ -204,6 +213,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   walk now reads the knob, matching sibling `deep-secrets`. Unset behaves exactly as
   before (depth 50, `walkDirSafe`'s own default), so default scan scope is unchanged;
   raising it now actually reaches the governance files past the old cut.
+
 
 
 ### Added
