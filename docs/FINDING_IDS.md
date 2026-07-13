@@ -359,6 +359,7 @@ Grouped by check. Each ID is stable within the current major.
 - `skill-files/https-urls` (info) — HTTPS URLs in a skill file (inventory only).
 - `skill-files/symlink-loop-skipped` (info) — a symlink cycle was skipped during traversal.
 - `skill-files/no-skill-files` (info) — no skill/instruction files to scan.
+- `skill-files/walk-cap-reached` (warning) — the skill-directory walk hit the depth (or file) cap, so skill files past it were never read and the result is not a clean bill of health for injection/exfiltration.
 
 ### unicode-steganography
 
@@ -422,7 +423,7 @@ Grouped by check. Each ID is stable within the current major.
 - `memory-hygiene/stale-memory-file` (warning/info) — an empty (warning) or stub (info) memory file is loaded every session but teaches nothing.
 - `memory-hygiene/unresolvable-index-entry` (warning/info) — a `MEMORY.md` index entry points at a missing file (warning) or one outside every memory dir (info).
 - `memory-hygiene/duplicate-rule` (info) — a rule stated in both a governance file and a memory file has two homes.
-- `memory-hygiene/governance-file-cap-reached` (info) — the nested-governance walk hit its file cap, so duplicate-rule coverage is incomplete.
+- `memory-hygiene/governance-file-cap-reached` (info) — the nested-governance walk hit its file cap or its depth cap (`limits.maxWalkDepth`), so duplicate-rule coverage is incomplete.
 
 ### sandbox-posture
 
