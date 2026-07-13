@@ -1,0 +1,37 @@
+# gitleaks config for rigscore.
+#
+# rigscore is itself a secret scanner, so its test suite and fixtures carry
+# deliberately secret-shaped strings as test data. Those — and ONLY those —
+# are allowlisted, by PATH.
+#
+# Two rules govern edits to this file:
+#
+#   1. Allowlist by PATH, never by pattern. A pattern/regex allowlist would
+#      blind the scanner across the whole repo; a path allowlist only excuses
+#      the directories that are, by design, full of fake credentials.
+#   2. Never add a path outside the test tree. src/, bin/, scripts/, .github/
+#      and repo-root config are always scanned. A secret-shaped string found
+#      in any of them is a real finding — fix it, do not allowlist it.
+#
+# The paths below were derived empirically: scanning with useDefault rules and
+# no allowlist produces exactly 5 findings (all rule `generic-api-key`), in
+#   test/secret-patterns.test.js  (2)
+#   test/file-size-cap.test.js    (1)
+#   test/env-exposure.test.js     (1)
+#   test/deep-secrets.test.js     (1)
+# all of which are inline fake keys asserted against by the tests themselves.
+
+title = "rigscore gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test specs and fixtures — rigscore's own fake-credential test data."
+paths = [
+  # Fixture tree: a deliberately insecure sample project (fake AWS/OpenAI keys
+  # in .env, documented as intentional in its README) that the checks score.
+  '''^test/fixtures/''',
+  # Test specs: inline fake keys used as detector inputs and assertions.
+  '''^test/[^/]+\.test\.js$''',
+]
