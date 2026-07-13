@@ -93,6 +93,46 @@ describe('suppress semantics', () => {
     expect(results[1].findings).toEqual([]);
   });
 
+  it('bare check id suppresses every finding in that check namespace', () => {
+    const results = [
+      {
+        id: 'mcp-config',
+        findings: [
+          { severity: 'critical', title: 'Broad filesystem access', findingId: 'mcp-config/broad-filesystem-access' },
+          { severity: 'warning', title: 'Network transport enabled', findingId: 'mcp-config/network-transport' },
+        ],
+      },
+      {
+        id: 'docker-security',
+        findings: [
+          { severity: 'critical', title: 'Container runs privileged', findingId: 'docker-security/container-running-with-privileged-true' },
+        ],
+      },
+    ];
+    suppressFindings(results, ['mcp-config']);
+    // The bare check id is documented (FINDING_IDS.md) to mute the whole check.
+    expect(results[0].findings).toEqual([]);
+    // A different check is left completely untouched.
+    expect(results[1].findings.length).toBe(1);
+  });
+
+  it('bare check id never suppresses a different check with a shared prefix', () => {
+    // `docker` is a text-prefix of the `docker-security` check id but is not
+    // its own check segment. The trailing-slash anchor must keep it isolated,
+    // so a bare `docker` token silences nothing here.
+    const results = [
+      {
+        id: 'docker-security',
+        findings: [
+          { severity: 'critical', title: 'Container runs privileged', findingId: 'docker-security/container-running-with-privileged-true' },
+          { severity: 'warning', title: 'Host network mode', findingId: 'docker-security/container-uses-host-network-mode' },
+        ],
+      },
+    ];
+    suppressFindings(results, ['docker']);
+    expect(results[0].findings.length).toBe(2);
+  });
+
   it('recalculates per-check score after removal', () => {
     const results = [
       {
