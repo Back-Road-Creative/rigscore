@@ -87,9 +87,10 @@ const byControl = (control, ids) => Object.fromEntries(ids.map((id) => [id, cont
 // Upstream is BETA (Phase 3, "Beta Release and Pilot Testing"): IDs and rankings may still
 // move, which is why the framework's `status` says so and the report prints it.
 // Deliberately sparse: this list is scoped to MCP servers and the protocol, so a rigscore
-// check earns a row here only when it inspects an MCP surface (or the host controls that
-// contain what an MCP server can execute). Checks that scan agent prose with no MCP nexus —
-// `claude-md`, `skill-files`, `git-hooks` — are left UNMAPPED rather than padded in.
+// check earns a row here only when it inspects an MCP surface. Checks that scan agent prose
+// with no MCP nexus — `claude-md`, `skill-files`, `git-hooks` — are left UNMAPPED rather than
+// padded in, as are the containment checks (`docker-security`, `infrastructure-security`):
+// see MCP05 below.
 export const OWASP_MCP_MAP = {
   // Secret exposure: plaintext creds in MCP `env` maps, `.mcp.json`, source, or on disk.
   ...byControl('MCP01', ['credential-storage', 'env-exposure', 'deep-secrets',
@@ -97,9 +98,10 @@ export const OWASP_MCP_MAP = {
   'claude-settings': 'MCP02',        // auto-approve/bypass hands every server full scope
   'unicode-steganography': 'MCP03',  // hidden instruction chars in .mcp.json = the poisoning primitive
   'mcp-config': 'MCP04',             // unpinned npx, typosquats, rug-pull hash drift
-  // Containment of what an MCP server may execute (see `note` — rigscore cannot introspect
-  // a running server's tool implementations, so MCP05 evidence is containment-side only).
-  ...byControl('MCP05', ['docker-security', 'infrastructure-security']),
+  // MCP05 is intentionally absent (renders NOT EVIDENCED). Sandbox/container posture bounds
+  // the blast radius of an injected command but never shows a tool sanitizes its input, and
+  // rigscore cannot introspect a running server's tool implementations. Citing the containment
+  // checks here would sell containment to an auditor as injection evidence. See `note`.
   'coherence': 'MCP09',              // a configured server undeclared in governance IS a shadow server
 };
 
@@ -149,7 +151,7 @@ export const FRAMEWORKS = {
     url: 'https://owasp.org/www-project-mcp-top-10/',
     coverage: 'partial',
     map: OWASP_MCP_MAP,
-    note: 'rigscore inspects MCP configuration at rest; it does not execute or introspect a running MCP server. So MCP05 evidence is containment-side (sandbox/container posture), never proof a tool sanitizes its input, and MCP06/07/08/10 — runtime intent, auth flows, audit telemetry, live context — are NOT EVIDENCED by design.',
+    note: 'rigscore inspects MCP configuration at rest; it never executes or introspects a running MCP server. So MCP05, MCP06, MCP07, MCP08 and MCP10 are NOT EVIDENCED by design — input sanitization, runtime intent, auth flows, audit telemetry and live context are all properties of a server in execution. Sandbox/container posture (docker-security, infrastructure-security) bounds the blast radius of an injected command but is never proof a tool sanitizes its input, so it is not cited as MCP05 evidence; it is scored on its own axes instead.',
     controls: {
       MCP01: 'Token Mismanagement & Secret Exposure',
       MCP02: 'Privilege Escalation via Scope Creep',

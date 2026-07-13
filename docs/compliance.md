@@ -40,9 +40,10 @@ Release and Pilot Testing"). IDs and rankings may still change, so its `status` 
 and the report prints that status on every run — it must never read to an auditor as settled.
 
 Coverage is **partial by design**. The list is scoped to MCP servers and the protocol, so a check
-earns a row only where it inspects an MCP surface (or the host controls that contain what an MCP
-server can execute). `claude-md`, `skill-files` and `git-hooks` scan agent prose and commit gates
-with no MCP nexus — they are left `UNMAPPED` rather than padded in to make the table look full.
+earns a row only where it inspects an MCP surface. `claude-md`, `skill-files` and `git-hooks` scan
+agent prose and commit gates with no MCP nexus — they are left `UNMAPPED` rather than padded in to
+make the table look full, as are the containment checks `docker-security` and
+`infrastructure-security` (see `MCP05` below).
 
 | Control | Evidenced by |
 |---|---|
@@ -50,13 +51,19 @@ with no MCP nexus — they are left `UNMAPPED` rather than padded in to make the
 | `MCP02` Privilege Escalation via Scope Creep | `claude-settings` (auto-approve / `bypassPermissions`) |
 | `MCP03` Tool Poisoning | `unicode-steganography` (hidden instruction chars in `.mcp.json`) |
 | `MCP04` Software Supply Chain Attacks & Dependency Tampering | `mcp-config` (unpinned `npx`, typosquats, rug-pull drift) |
-| `MCP05` Command Injection & Execution | `docker-security`, `infrastructure-security` — **containment only** |
 | `MCP09` Shadow MCP Servers | `coherence` (a configured server undeclared in governance) |
-| `MCP06`, `MCP07`, `MCP08`, `MCP10` | `NOT EVIDENCED` — runtime intent, auth flows, audit telemetry and live context |
+| `MCP05`, `MCP06`, `MCP07`, `MCP08`, `MCP10` | `NOT EVIDENCED` — input sanitization, runtime intent, auth flows, audit telemetry and live context |
 
 rigscore reads MCP configuration **at rest**; it never executes or introspects a running server.
-That is why `MCP05` evidence is containment-side (sandbox/container posture) and is *not* proof
-that a tool sanitizes its input, and why the four runtime controls are reported as gaps.
+Every NOT EVIDENCED control above is a property of a server *in execution*, which is why they are
+reported as gaps rather than mapped.
+
+`MCP05` is the one worth spelling out, because it is the tempting one to fake. A sandbox or
+hardened container — what `docker-security` and `infrastructure-security` measure — bounds the
+**blast radius** of an injected command. It never shows that a tool **sanitizes its input**, which
+is what the control actually asks. Citing containment posture as `MCP05` evidence would sell an
+auditor a control rigscore cannot see, so `MCP05` reads `NOT EVIDENCED` and those two checks are
+scored on the axes they *do* evidence (`ASI05`/`ASI02`, `MEASURE 2.7`, `Article 15`).
 
 > Two IDs are widely mis-stated by secondary sources: **`MCP03` is Tool Poisoning** and
 > **`MCP05` is Command Injection & Execution**. Both are transcribed from the primary source
