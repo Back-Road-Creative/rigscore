@@ -7,12 +7,19 @@ converge at OS primitives — no cross-vendor permission/sandbox manifest exists
 step toward that normalizer: it reduces an agent's sandbox config to **a single posture** (`restricted` /
 `partial` / `unrestricted`) in `data.postures`, and flags the dangerous combinations. Maps to **ASI02 —
 Tool Misuse & Exploitation**; passing means the client is not both free of approval prompts and able to
-reach the network. Exactly one client ships a sandbox-config surface today — **Codex CLI**,
-`.codex/config.toml` (`$HOME`, then the project file, which wins) — so that is what it reads:
-`approval_policy`, `sandbox_mode`, `[sandbox_workspace_write] network_access`, per the
-[Codex config reference](https://developers.openai.com/codex/config-reference). Those paths are carried
-in the check itself, as every other check here carries its own; the posture vocabulary is vendor-neutral
-so a second client slots in without redefining it (see *Not covered (yet)*).
+reach the network.
+
+**The client registry (`src/clients.js`) is the surface list** — the check owns no client table. It scans
+every client declaring a `sandbox` entry (`{ path, base: 'cwd'|'home', format }`), reading each client's
+files in declaration order (`$HOME` first, then the project file, which wins). `format` selects the reader,
+so a **new client is picked up with no change to this check's logic**. Two formats exist:
+
+- `toml` — **Codex CLI**, `.codex/config.toml`: `approval_policy`, `sandbox_mode`,
+  `[sandbox_workspace_write] network_access`, per the
+  [Codex config reference](https://developers.openai.com/codex/config-reference).
+- `json` — **Claude Code**, `.claude/settings.json` + `.claude/settings.local.json`: the **posture**
+  question only — are there *any* `permissions.deny` rules? — plus `defaultMode`. Which *allow* entries are
+  dangerous is `claude-settings`' job; this check never re-grades them.
 
 ## Triggers
 
@@ -21,15 +28,22 @@ so a second client slots in without redefining it (see *Not covered (yet)*).
 | `sandbox_mode = "danger-full-access"` (detail also names `approval_policy = "never"` when both are set — the lethal trifecta) | CRITICAL | `sandbox-posture/codex-no-sandbox` | Set `sandbox_mode = "workspace-write"` / `"read-only"` |
 | `approval_policy = "never"` **and** network reachable (`workspace-write` + `network_access = true`) | CRITICAL | `sandbox-posture/codex-auto-approve-networked` | `network_access = false`, or raise `approval_policy` |
 | `approval_policy = "never"` with write capability, no network | WARNING | `sandbox-posture/codex-auto-approve` | Set `approval_policy = "on-request"` |
+| A Claude Code settings file **exists** but declares **zero** `permissions.deny` entries (detail also names `defaultMode = "bypassPermissions"` when set — nothing denied *and* nothing prompted) | WARNING | `sandbox-posture/claude-no-deny-rules` | Add `permissions.deny` entries (e.g. `"Bash(curl:*)"`, `"Read(./.env)"`) to `.claude/settings.json` |
 | Surface present, nothing above matches → PASS. No sandbox surface anywhere → N/A (`-1`), never 0 | PASS / N/A | — | — |
+
+A **missing** settings file is not a posture finding — absence is `claude-settings`' report, not this one.
+Deny rules are counted as the **union** across a client's files: one file with rules covers the pair.
 
 Posture levels (`data.postures`, keyed by client id):
 
 | Level | Rule |
 |---|---|
 | `restricted` | `sandbox_mode = "read-only"` — the sandbox binds whatever the approval setting says |
-| `unrestricted` | `danger-full-access`, or `approval_policy = "never"` while writes are still possible |
-| `partial` | Everything else — e.g. `workspace-write` with approvals left on |
+| `unrestricted` | `danger-full-access`; `approval_policy = "never"` while writes are still possible; or zero deny rules **and** `bypassPermissions` (nothing refused, nothing asked) |
+| `partial` | Everything else — e.g. `workspace-write` with approvals left on, or a deny list that binds *something* |
+
+Claude Code never reaches `restricted`: it ships no sandbox to read, so the deny list plus the approval
+mode are its whole boundary — an honest ceiling of `partial`, not a claim of containment.
 
 ## Weight rationale
 
@@ -40,8 +54,9 @@ from the coverage denominator in `src/scoring.js`, so this check moves no existi
 ## Fix semantics
 
 No auto-fix. Every finding is a capability decision — how much autonomy this agent gets on this machine —
-not a typo; rewriting an `approval_policy` or `sandbox_mode` is a governance edit a scanner must propose,
-never perform. Out of scope: editing `.codex/config.toml`.
+not a typo; rewriting an `approval_policy`, a `sandbox_mode` or a deny list is a governance edit a scanner
+must propose, never perform (an invented deny rule is worse than none — it reads as containment). Out of
+scope: editing `.codex/config.toml` or `.claude/settings*.json`.
 
 ## SARIF
 
@@ -55,7 +70,10 @@ CRITICAL→`error`, WARNING→`warning`, INFO→`note`. Location: the config pat
   CRITICAL Codex CLI sandbox disabled in .codex/config.toml
     sandbox_mode = "danger-full-access" drops the filesystem and network boundary,
     and approval_policy = "never" drops the approval prompt.
-  postures: codex=unrestricted
+  WARNING Claude Code declares no deny rules in .claude/settings.json
+    permissions.deny is empty or absent — no tool call is refused outright, so the
+    allow list plus an approval prompt are the whole boundary.
+  postures: codex=unrestricted claude-code=partial
 ```
 
 ## Scope and limitations
@@ -68,19 +86,13 @@ CRITICAL→`error`, WARNING→`warning`, INFO→`note`. Location: the config pat
   *dangerous*, so an unparseable config is never flagged; a `[profiles.*]` block re-enabling
   `danger-full-access` is a known blind spot.
 - `network_access` binds only `workspace-write`; under `read-only` it is inert, never read as open network.
+- **The JSON reader counts deny rules; it does not read them.** A deny list of one junk string scores the
+  same as a real one — this measures *whether anyone drew a boundary*, not whether the boundary holds.
+  Unparseable JSON reads as **absent** (unknown, never dangerous), matching the TOML reader's stance, so a
+  malformed settings file is never flagged. Enterprise/managed policy files are not read.
 
 ## Not covered (yet)
 
-All three were scoped, then cut to keep this PR inside its line budget. Deferred, not forgotten:
-
-- **The client registry (`src/clients.js`, PR #182).** Once it lands on `main`, this check should consume
-  it instead of carrying `CODEX.configs` locally — it would iterate every client declaring a `sandbox`
-  surface, so new clients are picked up with **no change to this check's logic**. Carrying the 296-line
-  registry into *this* PR to read one config path was a bad trade; the follow-up deletes the local table.
-- **Claude Code deny-rule posture** — `.claude/settings*.json` with zero `permissions.deny` entries: the
-  posture question (are there ANY deny rules?) that `claude-settings` never asks, since it grades
-  dangerous *allow* entries instead. Nearly free once the registry lands — add a `sandbox` entry for
-  Claude Code there and this check reads it like any other.
 - **Devcontainer egress hardening** — a `.devcontainer/` running an agent with no firewall, proxy,
   default-deny rule or cap-drop. A *presence* check — grepping for evidence that someone attempted egress
   control — so it can never prove containment: a hit proves an attempt, not a contained container. That weakness is why it is queued, not shipped.
