@@ -315,9 +315,22 @@ export async function run(args) {
     // Mirrors the non-recursive branch but doesn't recompute scores — recursive
     // formatters present per-project numbers as-scanned.
     if (options.ignore && options.ignore.length > 0) {
+      // Aggregate the mute summary across projects so the recursive report /
+      // JSON can surface it too (same transparency rationale as single-project).
+      const aggregate = { count: 0, ids: [] };
+      const seenIds = new Set();
       for (const project of result.projects) {
-        if (project.results) suppressFindings(project.results, options.ignore);
+        if (!project.results) continue;
+        const summary = suppressFindings(project.results, options.ignore);
+        aggregate.count += summary.count;
+        for (const id of summary.ids) {
+          if (!seenIds.has(id)) {
+            seenIds.add(id);
+            aggregate.ids.push(id);
+          }
+        }
       }
+      if (aggregate.count > 0) result.suppressed = aggregate;
     }
 
     if (options.sarif) {
@@ -347,7 +360,10 @@ export async function run(args) {
     // Apply suppress/ignore patterns
     const suppressPatterns = [...(result.config?.suppress || []), ...(options.ignore || [])];
     if (suppressPatterns.length > 0) {
-      suppressFindings(result.results, suppressPatterns);
+      // Thread the mute summary onto `result` so every output branch (human /
+      // SARIF / JSON) can surface it — suppression stays a delete-from-scoring,
+      // it is just no longer silent.
+      result.suppressed = suppressFindings(result.results, suppressPatterns);
       // Mirror scan()'s scoring branch so --check + suppress doesn't fall back
       // to weighted scoring (which dilutes the single-check score).
       if (options.checkFilter) {
