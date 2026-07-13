@@ -23,10 +23,13 @@ filesystem modes (`~/.ssh`, world-readable `*.pem`/`*.key`, governance-file owne
 opens `settings.json`, so nothing here can raise it. Claiming it would be a false statement in a
 machine-readable file.
 
-**Why `claude-settings` is 98, not 100:** the last 2 points are one `info` — no Claude Code
-lifecycle hooks configured. Each *missing* lifecycle hook is a separate -2, so configuring one
-token hook scores *worse* (94) than configuring none (98); only a genuine set of four reaches 100.
-Deferred rather than ship four stub hooks to chase 2 points on a weight-8 check.
+**Why `claude-settings` is 98, not 100:** the last 2 points are one `info` — this pack ships no
+Claude Code lifecycle hooks, and it says so. 98 is the honest score for that, and it is now also
+the *floor*: lifecycle coverage costs at most one `info` regardless of how partial it is, so the
+check no longer scores one hook (formerly 94) below zero hooks (98). Chasing the last 2 points here
+would mean shipping four stub hooks that do no work — exactly the keyword-gaming the pack's own
+`pre-commit` refuses to do. A pack earns 100 on this check by hooking lifecycle events it genuinely
+uses, not by filling slots.
 
 ## The secret scan is real, not a presence check
 
