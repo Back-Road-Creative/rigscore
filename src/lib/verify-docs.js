@@ -272,8 +272,15 @@ export async function verifyCheckDocs(opts = {}) {
     .map((f) => path.basename(f, '.md'))
     .sort();
 
+  // FINDING_IDS.md is rigscore's public stability contract. Read it once, relative
+  // to the docs dir so a --cwd/override still resolves it. A repo without one — a
+  // plugin or third-party tree reached via the documentation check — simply skips
+  // this axis, exactly as the weights fallback above skips weight-drift.
+  const findingIdsBody = await readFileSafe(path.join(path.dirname(docsDir), 'FINDING_IDS.md'));
+
   const offenders = [];
   const ruleIdOffenders = [];
+  const findingIdsOffenders = [];
 
   for (const id of checkIds) {
     const docPath = path.join(docsDir, `${id}.md`);
@@ -286,6 +293,21 @@ export async function verifyCheckDocs(opts = {}) {
     const source = await readFileSafe(path.join(checksDir, `${id}.js`));
     if (source !== null) {
       ruleIdOffenders.push(...ruleIdDrift(id, source, body, docPath));
+
+      // Contract coverage: a check that emits ANY finding id must have its namespace
+      // documented in FINDING_IDS.md. Per-namespace (not per-id) — the page uses
+      // dynamic-fragment shorthands and omits degenerate ids a per-id gate would
+      // false-flag. Consumes extractRuleIds READ-ONLY; its `<id>/` namespace filter
+      // is deliberate (the collision guard depends on it) and stays untouched.
+      if (findingIdsBody !== null) {
+        const { literals, prefixes } = extractRuleIds(source, id);
+        if (
+          (literals.length > 0 || prefixes.length > 0) &&
+          extractDocumentedRuleIds(findingIdsBody, id).length === 0
+        ) {
+          findingIdsOffenders.push({ id, reason: 'finding-ids-uncovered' });
+        }
+      }
     }
 
     const headingId = h1Id(body);
@@ -311,16 +333,22 @@ export async function verifyCheckDocs(opts = {}) {
   const orphans = docIds.filter((id) => !checkIdSet.has(id));
 
   return {
-    ok: offenders.length === 0 && orphans.length === 0 && ruleIdOffenders.length === 0,
+    ok:
+      offenders.length === 0 &&
+      orphans.length === 0 &&
+      ruleIdOffenders.length === 0 &&
+      findingIdsOffenders.length === 0,
     offenders,
     orphans,
     ruleIdOffenders,
+    findingIdsOffenders,
     counts: {
       checks: checkIds.length,
       docs: docIds.length,
       offenders: offenders.length,
       orphans: orphans.length,
       ruleIdOffenders: ruleIdOffenders.length,
+      findingIdsOffenders: findingIdsOffenders.length,
     },
   };
 }
@@ -381,13 +409,20 @@ export function formatVerifyResult(result, { scriptName = 'verify-docs' } = {}) 
       );
     }
   }
+  for (const { id } of result.findingIdsOffenders || []) {
+    lines.push(
+      `docs-gate: FINDING-IDS-UNCOVERED ${id} — src/checks/${id}.js emits finding ids but ` +
+        `docs/FINDING_IDS.md documents none of them. Add a \`### ${id}\` section listing them.`,
+    );
+  }
   if (lines.length === 0) {
     lines.push(`docs-gate: OK (${result.counts.checks} checks, ${result.counts.docs} docs)`);
   } else {
     lines.push('');
     lines.push(
       `docs-gate: ${result.offenders.length} offenders, ${result.orphans.length} orphans, ` +
-        `${(result.ruleIdOffenders || []).length} ruleId mismatches across ${result.counts.checks} checks`,
+        `${(result.ruleIdOffenders || []).length} ruleId mismatches, ` +
+        `${(result.findingIdsOffenders || []).length} contract gaps across ${result.counts.checks} checks`,
     );
   }
   return lines.join('\n');
