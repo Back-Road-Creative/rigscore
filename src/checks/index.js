@@ -13,6 +13,15 @@ let _registeredFixes = null;
  * Auto-discover all check modules in this directory (excluding index.js).
  * Then discover rigscore-check-* plugins from node_modules.
  * Also collects self-registered fixes from check modules that export a `fixes` array.
+ *
+ * @param {object} [options]
+ * @param {string} [options.cwd] - Project root scanned for rigscore-check-* plugins.
+ * @param {string[]} [options.extraCheckDirs] - Extra directories scanned for check
+ *   modules, in addition to this one (default: none — behaviour is unchanged).
+ *   A caller that needs to register a check module which does NOT live in
+ *   src/checks — an out-of-tree module, or a throwaway fixture — passes its
+ *   directory here. Writing such a module into src/checks instead mutates a
+ *   source directory other readers scan concurrently.
  */
 export async function loadChecks(options = {}) {
   // Reset the module-level fixer cache up front, BEFORE any await. Doing it
@@ -20,28 +29,31 @@ export async function loadChecks(options = {}) {
   // stale-but-populated cache while we're mid-load.
   _registeredFixes = {};
 
-  const files = await fs.promises.readdir(__dirname);
-  const checkFiles = files.filter(
-    (f) => f.endsWith('.js') && f !== 'index.js',
-  );
-
   const checks = [];
+  const checkDirs = [__dirname, ...(options.extraCheckDirs || [])];
 
-  for (const file of checkFiles) {
-    const mod = await import(path.join(__dirname, file));
-    checks.push(mod.default);
+  for (const dir of checkDirs) {
+    const files = await fs.promises.readdir(dir);
+    const checkFiles = files.filter(
+      (f) => f.endsWith('.js') && f !== 'index.js',
+    );
 
-    // Collect self-registered fixes. A fixer must declare EITHER a `match`
-    // predicate function OR a non-empty `findingIds` array — the two matching
-    // paths supported by src/fixer.js. Requiring `match` alone silently
-    // dropped findingIds-only fixers at load time.
-    if (Array.isArray(mod.fixes)) {
-      for (const fix of mod.fixes) {
-        if (!fix.id || typeof fix.apply !== 'function') continue;
-        const hasMatch = typeof fix.match === 'function';
-        const hasFindingIds = Array.isArray(fix.findingIds) && fix.findingIds.length > 0;
-        if (!hasMatch && !hasFindingIds) continue;
-        _registeredFixes[fix.id] = fix;
+    for (const file of checkFiles) {
+      const mod = await import(path.join(dir, file));
+      checks.push(mod.default);
+
+      // Collect self-registered fixes. A fixer must declare EITHER a `match`
+      // predicate function OR a non-empty `findingIds` array — the two matching
+      // paths supported by src/fixer.js. Requiring `match` alone silently
+      // dropped findingIds-only fixers at load time.
+      if (Array.isArray(mod.fixes)) {
+        for (const fix of mod.fixes) {
+          if (!fix.id || typeof fix.apply !== 'function') continue;
+          const hasMatch = typeof fix.match === 'function';
+          const hasFindingIds = Array.isArray(fix.findingIds) && fix.findingIds.length > 0;
+          if (!hasMatch && !hasFindingIds) continue;
+          _registeredFixes[fix.id] = fix;
+        }
       }
     }
   }
