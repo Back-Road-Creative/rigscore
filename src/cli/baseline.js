@@ -39,18 +39,47 @@ export function buildBaseline(scanResult) {
 }
 
 /**
- * Load a baseline JSON from disk. Returns null if file is missing or
- * malformed (caller treats as "no baseline yet — create one").
+ * Discriminated baseline loader — distinguishes a MISSING file from a
+ * CORRUPT existing one, which a plain null collapses together.
+ *
+ *   - `missing`: the path does not exist (ENOENT). First run — the caller
+ *     may legitimately mint a fresh baseline (documented regenerate flow:
+ *     `rm <baseline> && rigscore --baseline`, docs/TROUBLESHOOTING.md).
+ *   - `corrupt`: the file EXISTS but is unparseable JSON, has no findings
+ *     array, or is otherwise unreadable. Never a valid committed state — a
+ *     CI gate must NOT silently re-mint over it (that fails a regression
+ *     gate OPEN when an attacker overwrites the committed baseline).
+ *   - `ok`: a well-formed baseline document.
+ *
+ * @returns {{status: 'missing'|'corrupt'|'ok', baseline: object|null}}
+ */
+export function readBaseline(baselinePath) {
+  let raw;
+  try {
+    raw = fs.readFileSync(baselinePath, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return { status: 'missing', baseline: null };
+    // Present-but-unreadable (EACCES, EISDIR, …) is not "first run" either.
+    return { status: 'corrupt', baseline: null };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { status: 'corrupt', baseline: null };
+  }
+  if (!parsed || !Array.isArray(parsed.findings)) return { status: 'corrupt', baseline: null };
+  return { status: 'ok', baseline: parsed };
+}
+
+/**
+ * Back-compat loader. Returns the baseline document, or null if the file is
+ * missing OR malformed. Callers that must distinguish the two (a gate that
+ * cannot fail open on corruption) should use readBaseline() instead.
  */
 export function loadBaseline(baselinePath) {
-  try {
-    const raw = fs.readFileSync(baselinePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.findings)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  const { status, baseline } = readBaseline(baselinePath);
+  return status === 'ok' ? baseline : null;
 }
 
 /**
@@ -145,8 +174,20 @@ export function runDiffSubcommand(args) {
  * @returns {void} Always exits the process.
  */
 export function runBaselineMode(scanResult, baselinePath) {
-  const existing = loadBaseline(baselinePath);
-  if (!existing) {
+  const { status, baseline: existing } = readBaseline(baselinePath);
+  // A corrupt COMMITTED baseline is never legitimate — refuse rather than
+  // re-mint the current (possibly attacker-controlled) findings as the new
+  // "known" set, which would fail this regression gate OPEN. Mirrors
+  // verifyState()/runDiffSubcommand, which already fail closed on corruption.
+  if (status === 'corrupt') {
+    process.stderr.write(
+      `rigscore: baseline ${baselinePath} is malformed ` +
+      `(unparseable JSON or missing findings array); refusing to silently ` +
+      `re-mint. Fix or regenerate it.\n`,
+    );
+    process.exit(2);
+  }
+  if (status === 'missing') {
     const newBaseline = buildBaseline(scanResult);
     writeBaseline(baselinePath, newBaseline);
     process.stderr.write(

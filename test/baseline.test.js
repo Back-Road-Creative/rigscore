@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   flattenFindings,
   buildBaseline,
@@ -10,6 +12,10 @@ import {
   diffFindings,
 } from '../src/cli/baseline.js';
 import { assignFindingIds } from '../src/scanner.js';
+
+const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'rigscore.js');
+const runBin = (args) =>
+  spawnSync('node', [BIN, ...args], { encoding: 'utf-8', env: { ...process.env, NO_COLOR: '1' } });
 
 describe('baseline helpers', () => {
   let tmp;
@@ -89,6 +95,42 @@ describe('baseline helpers', () => {
 
   it('empty baseline + empty current → no added', () => {
     expect(diffFindings([], [])).toEqual([]);
+  });
+
+  it('runBaselineMode: a CORRUPT existing baseline fails closed (exit 2, never re-minted)', () => {
+    // Security regression (Wave 9): an attacker who overwrites a committed
+    // baseline with junk must NOT get the gate to silently re-seed their
+    // current (attacker-controlled) findings and ship green. A corrupt
+    // existing baseline is never a legitimate state → hard-fail, don't mint.
+    const target = path.join(tmp, 'target');
+    fs.mkdirSync(target);
+    const basePath = path.join(tmp, 'rigscore-baseline.json');
+    const junk = '{ not valid json';
+    fs.writeFileSync(basePath, junk);
+
+    const res = runBin(['--baseline', basePath, target]);
+
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/malformed/);
+    expect(res.stderr).not.toMatch(/^\s*at /m); // no Node stack trace
+    // The corrupt file must survive untouched — proof the gate refused to re-mint.
+    expect(fs.readFileSync(basePath, 'utf8')).toBe(junk);
+  });
+
+  it('runBaselineMode: a MISSING baseline still mints + exits 0 (documented regenerate flow)', () => {
+    // Guard the documented `rm <baseline> && rigscore --baseline` flow
+    // (docs/TROUBLESHOOTING.md): a missing file is first-run, not corruption.
+    const target = path.join(tmp, 'target');
+    fs.mkdirSync(target);
+    const basePath = path.join(tmp, 'fresh-baseline.json');
+    expect(fs.existsSync(basePath)).toBe(false);
+
+    const res = runBin(['--baseline', basePath, target]);
+
+    expect(res.status).toBe(0);
+    expect(fs.existsSync(basePath)).toBe(true);
+    const parsed = JSON.parse(fs.readFileSync(basePath, 'utf8'));
+    expect(Array.isArray(parsed.findings)).toBe(true);
   });
 
   it('flattenFindings and assignFindingIds slugify titles identically', () => {

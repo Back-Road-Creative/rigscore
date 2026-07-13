@@ -185,6 +185,14 @@ rm <baseline-path>
 npx github:Back-Road-Creative/rigscore --baseline <baseline-path>  # writes fresh
 ```
 
+Note: a **corrupt** baseline (the file still exists but is unparseable JSON,
+or has no `findings` array) now **hard-fails with exit `2`** instead of
+silently regenerating — otherwise an attacker who overwrites a committed
+baseline could make the regression gate re-seed their current findings and
+ship green. The documented `rm && re-run` regenerate flow above is unaffected:
+a **missing** baseline is still treated as first-run and minted (exit `0`).
+Fix or regenerate the corrupt file (e.g. `rm` it, then re-run) to recover.
+
 ## See also
 
 - [`FINDING_IDS.md`](FINDING_IDS.md) — stable IDs for `--ignore` / `suppress:`
