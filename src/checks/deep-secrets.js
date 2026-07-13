@@ -14,6 +14,12 @@ const SKIP_DIRS = new Set([
   '.turbo', '.parcel-cache', '.yarn', '.pnpm-store', '.tox',
   '.pytest_cache', '.mypy_cache', '.ruff_cache', '.ipynb_checkpoints',
   '.svelte-kit', '.astro', '.angular', '.terraform', '.serverless',
+  // The GitHub Action checks rigscore's OWN source out here (action.yml), a
+  // leading-dot SUBDIR of the caller's scan root — actions/checkout forces
+  // `path:` under $GITHUB_WORKSPACE, so it can't be a true sibling. Skip it by
+  // name so `--deep` never scans rigscore's vendored files as the caller's and
+  // pollutes the caller's SARIF with findings about files they don't own.
+  '.rigscore-action-src',
 ]);
 
 const INCLUDE_EXTENSIONS = new Set([

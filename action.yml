@@ -57,7 +57,10 @@ runs:
     # (e.g. Back-Road-Creative/rigscore@v1.0.0 → clones v1.0.0 here).
     # `github.action_ref` resolves to the ref used in the caller's `uses:` line
     # and has been tag-validated in the previous step.
-    # We clone into a sibling path so we don't clobber the caller's checkout.
+    # actions/checkout forces `path:` under $GITHUB_WORKSPACE, so a true sibling
+    # is impossible — this lands in a `.rigscore-action-src` SUBDIRECTORY of the
+    # scan root. deep-secrets' SKIP_DIRS excludes that dir from `--deep` scans so
+    # rigscore's own source never pollutes the caller's results.
     - name: Check out rigscore source
       uses: actions/checkout@v6
       with:
