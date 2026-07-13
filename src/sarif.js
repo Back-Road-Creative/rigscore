@@ -11,6 +11,29 @@ function safeText(value) {
 }
 
 /**
+ * Normalize an optional check-supplied string for SARIF: strip ANSI, trim, and
+ * report empty/whitespace-only as absent. Callers omit the property entirely
+ * rather than emitting `"remediation": null` / `""` noise into the bag.
+ */
+function optionalText(value) {
+  if (typeof value !== 'string') return null;
+  const text = stripAnsi(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+/**
+ * A finding's `learnMore` becomes its rule's `helpUri` (SARIF 2.1.0 §3.49.12),
+ * whose value MUST be a URI. Only absolute http(s) URLs are emitted — anything
+ * else (relative text, a `javascript:` scheme) is dropped rather than handed to
+ * a SARIF viewer to render as a clickable link.
+ */
+function safeHelpUri(value) {
+  const text = optionalText(value);
+  if (!text) return null;
+  return /^https?:\/\//i.test(text) ? text : null;
+}
+
+/**
  * Severity → SARIF level. `none` means the finding is dropped from SARIF
  * entirely (see `formatSarif`), so it never carries a public ruleId. Exported
  * so the findingId-coverage gate reads the same map instead of hardcoding its
@@ -122,27 +145,56 @@ export function formatSarif(result) {
       const ruleId = deriveFindingRuleId(r.id, finding);
       const safeTitle = safeText(finding.title);
       const safeDetail = safeText(finding.detail);
+      const remediation = optionalText(finding.remediation);
       if (!knownRuleIds.has(ruleId)) {
         knownRuleIds.add(ruleId);
-        rules.push({
+        const rule = {
           id: ruleId,
           shortDescription: { text: safeTitle || r.name },
           defaultConfiguration: { level: 'warning' },
-        });
+        };
+        // `learnMore` is a constant doc URL per finding class, so it is genuinely
+        // rule-level: `helpUri` (§3.49.12) is a reportingDescriptor property and
+        // never a result property. GitHub code scanning does not render helpUri,
+        // so the same link also goes in `help` (§3.49.13), which it does render
+        // beside each result.
+        //
+        // `remediation` deliberately does NOT go here: many findings share one
+        // ruleId (`workflow-maturity/skill-no-eval` fires once per skill, each
+        // with its own fix), so hoisting it would render the first finding's fix
+        // next to every sibling's result. It stays per-result, below.
+        const helpUri = safeHelpUri(finding.learnMore);
+        if (helpUri) {
+          rule.helpUri = helpUri;
+          rule.help = {
+            text: `Learn more: ${helpUri}`,
+            markdown: `[Learn more](${helpUri})`,
+          };
+        }
+        rules.push(rule);
       }
 
       const properties = { tags };
       if (finding.evidence) properties.evidence = safeText(finding.evidence);
+      // The fix the check already computed, machine-readable for SARIF consumers
+      // that read property bags (§3.8). Omitted outright when there is no fix.
+      if (remediation) properties.remediation = remediation;
       // Enforcement-grade label per result — plugin-safe fallback to 'pattern'
       // mirrors scanner.js behavior for third-party `rigscore-check-*` modules
       // that don't declare the field.
       properties.enforcementGrade = r.enforcementGrade || 'pattern';
 
+      // GitHub code scanning ignores property bags it does not understand, so a
+      // property-bag-only remediation would be invisible in the one UI that
+      // action.yml actually ships to. `message.text` is the per-result text it
+      // always renders — the fix rides there too, per-result, never misattributed.
+      const message = safeDetail ? `${safeTitle}: ${safeDetail}` : safeTitle;
+
       sarifResults.push({
         ruleId,
         level,
         message: {
-          text: safeDetail ? `${safeTitle}: ${safeDetail}` : safeTitle,
+          text: remediation ? `${message}\n\nFix: ${remediation}` : message,
         },
         properties,
         locations: [location],
