@@ -126,4 +126,55 @@ describe('ai-disclosure check', () => {
       });
     }
   });
+  // The repo asking is not the repo enforcing. A disclosure checkbox nothing can fail
+  // is honour-system only — but only a repo that ASKS can be un-enforcing, so the
+  // finding is gated on the ask (a repo that never asks gets no-ai-policy instead).
+  describe('unenforced disclosure', () => {
+    const ID = 'ai-disclosure/disclosure-not-enforced';
+    const ASKING = {
+      ...CLAUDE,
+      'CONTRIBUTING.md': '# Contributing\n## Generative AI policy\nAI use must be disclosed in the pull request.\n',
+      '.github/pull_request_template.md': '## Summary\n- [ ] I used generative AI tools and a human checked the code.\n',
+    };
+    it('fires when the repo asks for a disclosure but nothing enforces it', async () => {
+      const r = await runWith(ASKING);
+      expect(ids(r)).toContain(ID);
+      // Governance weakness, not a vulnerability — and the repo already did the asking.
+      expect(sev(r, ID)).toBe('info');
+    });
+    it('does not fire when a workflow reads the PR body and fails on it', async () => {
+      const wf = [
+        'on: pull_request',
+        'jobs:',
+        '  disclosure:',
+        '    steps:',
+        '      - env:',
+        '          BODY: ${{ github.event.pull_request.body }}',
+        '        run: echo "$BODY" | grep -q "\\[x\\]" || exit 1',
+      ].join('\n');
+      const r = await runWith({ ...ASKING, '.github/workflows/disclosure.yml': wf });
+      expect(ids(r)).not.toContain(ID);
+    });
+    it('does not fire on a repo that never asks for a disclosure (that is no-ai-policy)', async () => {
+      expect(ids(await runWith(CLAUDE))).not.toContain(ID);
+      expect(ids(await fixture('ai-disclosure-none'))).not.toContain(ID);
+      expect(ids(await fixture('ai-disclosure-nonai'))).not.toContain(ID);
+    });
+    it('fires on a workflow that merely mentions AI without gating on the PR body', async () => {
+      const wf = 'name: AI review\non: pull_request\njobs:\n  ai:\n    steps:\n      - uses: anthropics/claude-code-action@v1\n';
+      expect(ids(await runWith({ ...ASKING, '.github/workflows/ai.yml': wf }))).toContain(ID);
+    });
+    it('accepts a checklist-enforcer action as enforcement', async () => {
+      const wf = 'on: pull_request\njobs:\n  c:\n    steps:\n      - uses: mheap/require-checklist-action@v2\n';
+      expect(ids(await runWith({ ...ASKING, '.github/workflows/c.yml': wf }))).not.toContain(ID);
+    });
+    it('accepts a Dangerfile that fails on the PR body', async () => {
+      const df = 'if (!danger.github.pr.body.includes("[x]")) fail("Tick the AI-disclosure box");\n';
+      expect(ids(await runWith({ ...ASKING, 'dangerfile.js': df }))).not.toContain(ID);
+    });
+    it('does not accept CODEOWNERS review as enforcement of a disclosure', async () => {
+      const r = await runWith({ ...ASKING, '.github/CODEOWNERS': '* @maintainers\n' });
+      expect(ids(r)).toContain(ID);
+    });
+  });
 });

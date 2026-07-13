@@ -21,6 +21,14 @@ const MCP_CONFIGS = ['.mcp' + '.json', 'mcp_config.json', '.cursor/mcp' + '.json
 const AI_TERM = '\\b(generative ai|gen-?ai|ai|a\\.i\\.|artificial intelligence|llm|large language model|copilot|chatgpt|claude|cursor|codex|coding agent|machine[ -]generated)\\b';
 const DISCLOSURE_TERM = /\b(disclos\w*|declar\w*|attribut\w*|co-?authors?|policy|policies|transparen\w*|acknowledg\w*|prohibit\w*|permitted|human (?:review\w*|checked|oversight))\b/i;
 const AGENT_CI = /(claude-code-action|anthropics\/claude|openai\/codex|gemini-cli|aider|sweep-ai|devin)/i;
+// Enforcement = something committed to the repo that could FAIL a pull request on the
+// strength of the PR's own body. Reading the body is one half; a way to fail is the other
+// — a workflow that merely names an AI tool, or a CODEOWNERS review requirement, is not a
+// disclosure gate. Named checklist/body linters fail by construction, so they count alone.
+const PR_BODY_REF = /(?:pull_request|\bpr)\s*(?:\.|\[["'])\s*["']?body/i;
+const FAIL_SIGNAL = /(exit\s+1|setFailed|::error|throw new Error|\bfail\(|\bgrep\b|\bassert)/i;
+const ENFORCER_ACTION = /(require-checklist|checklist-enforcer|pull-?request-?lint|pr-?lint|pr-?body-?check|danger(?:js)?[/-]danger)/i;
+const ENFORCEMENT_CONFIGS = ['dangerfile.js', 'dangerfile.ts', 'Dangerfile', 'Dangerfile.js', '.github/dangerfile.js'];
 const WINDOW = 400; // chars either side of an AI term searched for policy language
 const mentionsAi = (text) => new RegExp(AI_TERM, 'i').test(text || '');
 const readdirSafe = async (d) => { try { return await fs.promises.readdir(d); } catch { return []; } };
@@ -77,6 +85,21 @@ async function findPrTemplates(cwd) {
   return [...found.values()];
 }
 
+// The committed file that would fail a PR ignoring the disclosure ask, or null.
+async function findEnforcement(cwd) {
+  const wf = '.github/workflows';
+  const workflows = (await readdirSafe(path.join(cwd, wf)))
+    .filter((e) => /\.ya?ml$/i.test(e))
+    .map((e) => path.join(wf, e));
+  for (const rel of [...workflows, ...ENFORCEMENT_CONFIGS]) {
+    const content = await readFileSafe(path.join(cwd, rel));
+    if (!content) continue;
+    if (ENFORCER_ACTION.test(content)) return rel;
+    if (PR_BODY_REF.test(content) && FAIL_SIGNAL.test(content)) return rel;
+  }
+  return null;
+}
+
 export default {
   id: 'ai-disclosure',
   enforcementGrade: 'keyword',
@@ -120,17 +143,30 @@ export default {
         remediation: 'Add a "Generative AI declaration" to the PR template — e.g. a checkbox pair: did not use generative AI / used it, but a human has checked the code.',
       });
     }
+    // Asking is not enforcing. Gated on the ask: a repo that never asks already gets
+    // no-ai-policy / pr-template-no-ai-field, and must not be double-reported here.
+    const asks = [policy, disclosing?.rel].filter(Boolean);
+    const enforcement = asks.length > 0 ? await findEnforcement(cwd) : null;
+    if (asks.length > 0 && !enforcement) {
+      findings.push({
+        findingId: 'ai-disclosure/disclosure-not-enforced',
+        severity: 'info',
+        title: 'AI disclosure is requested but nothing enforces it',
+        detail: `The repo asks for an AI disclosure (${asks.join(', ')}), but no committed mechanism would fail a pull request that ignored the ask: no workflow reads the pull-request body and fails on it, and no checklist/PR-body linter (require-checklist, Danger) is configured. The ask is honour-system only — a PR can skip it and still merge green.`,
+        remediation: 'Add a pull_request-triggered job that reads github.event.pull_request.body (or a checklist enforcer such as require-checklist-action) and exits non-zero when the AI-disclosure box is unticked, then make it a required status check.',
+      });
+    }
     if (findings.length === 0) {
       findings.push({
         severity: 'pass',
         title: 'AI-use policy present',
-        detail: `Policy stated in ${policy}${disclosing ? `; ${disclosing.rel} carries an AI-disclosure field` : ''}.`,
+        detail: `Policy stated in ${policy}${disclosing ? `; ${disclosing.rel} carries an AI-disclosure field` : ''}; enforced by ${enforcement}.`,
       });
     }
     return {
       score: calculateCheckScore(findings),
       findings,
-      data: { aiSurface: surface, policyFile: policy, prTemplates: templates.map((t) => t.rel), hasDisclosureField: Boolean(disclosing) },
+      data: { aiSurface: surface, policyFile: policy, prTemplates: templates.map((t) => t.rel), hasDisclosureField: Boolean(disclosing), enforcementFile: enforcement },
     };
   },
 };
