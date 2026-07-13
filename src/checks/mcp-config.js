@@ -4,7 +4,7 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readJsonSafe, readFileSafe } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
-import { computeServerHash, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
+import { readRepoServers, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
 import { mcpConfigPaths, mcpServersIn } from '../clients.js';
 
@@ -886,9 +886,14 @@ export default {
     // Collect all servers per config file for cross-client drift detection
     const clientServers = new Map(); // configPath → { name → server }
 
-    // Hash each repo-level MCP server by name for rug-pull detection (CVE-2025-54136).
-    // Only repo-level configs (.mcp.json at cwd) are hashed — home-dir configs are per-user.
-    const currentHashes = {}; // serverName → sha256hex
+    // Hash every server in every COMMITTED repo-level config for rug-pull detection
+    // (CVE-2025-54136), minted by the SAME function `--verify-state` verifies against
+    // (state.js readRepoServers) so the pin and the gate cannot disagree about scope.
+    // Hashing only `.mcp.json` here left the other three configs unpinned and the gate
+    // vacuous. Home-dir configs stay unpinned: per-user, untouchable by a pull request.
+    const currentHashes = Object.fromEntries(
+      Object.entries(await readRepoServers(cwd)).map(([name, { hash }]) => [name, hash]),
+    );
 
     for (const configPath of configPaths) {
       const mcpConfig = await readJsonSafe(configPath);
@@ -918,14 +923,7 @@ export default {
       clientCount++;
       serverCount += Object.keys(servers).length;
 
-      const isRepoConfig = configPath === path.join(cwd, '.mcp.json');
-
       for (const [name, server] of Object.entries(servers)) {
-        // Record hash for repo-level servers (rug-pull / hash-pinning detection)
-        if (isRepoConfig && !currentHashes[name]) {
-          currentHashes[name] = computeServerHash(server);
-        }
-
         // Transport-type detection — see checkTransportType().
         const transportResult = checkTransportType(server, name, relPath, safeHosts);
         findings.push(...transportResult.findings);
