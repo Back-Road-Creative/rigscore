@@ -34,9 +34,17 @@ WORKDIR /app
 
 # Copy only the runtime artefacts. Tests, fixtures, and worktrees are
 # excluded via .dockerignore.
+#
+# templates/ and docs/checks/ are READ AT RUNTIME by the shipped code, so they
+# are runtime artefacts, not docs: src/cli/packs.js readdirs templates/ for
+# `--fix` and `init --<pack>` (a missing dir yields a SILENT empty pack list),
+# and src/cli/explain.js reads docs/checks/<id>.md for `rigscore explain`.
+# .dockerignore must un-ignore both — test/docker-image-parity.test.js guards it.
 COPY package.json package-lock.json ./
 COPY bin/ ./bin/
 COPY src/ ./src/
+COPY templates/ ./templates/
+COPY docs/checks/ ./docs/checks/
 
 RUN npm ci --omit=dev --no-audit --no-fund \
  && chmod +x /app/bin/rigscore.js \

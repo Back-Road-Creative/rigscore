@@ -9,7 +9,24 @@ scripts
 worktree-agent-*
 **/*.test.js
 **/*.md
+# ORDER-SENSITIVE — last matching rule wins, so these negations MUST stay below
+# `docs` and `**/*.md` or they are inert. `!README.md` only rescues the ROOT
+# readme, not nested ones: the docs pack's payload is AGENTS.md + CLAUDE.md, so
+# without a negation the image gets a pack.json whose declared files are gone —
+# loadPack throws and --fix silently offers no packs at all.
+#
+# `!templates/**` (not `!templates`) is deliberate and verified against a real
+# build: docker only EVALUATES a negation for a path that is currently excluded.
+# Nothing excludes the templates/ directory itself — only its .md files — so a
+# bare `!templates` is never evaluated there, records no match, and cannot
+# rescue the files beneath it. The glob matches each file path directly.
 !README.md
+!templates/**
+# `rigscore explain <check>` reads docs/checks/<id>.md at runtime; only that
+# subtree is read by shipped code, so the rest of docs/ stays out of the image.
+# `docs/` IS excluded above, so this dir-form negation is evaluated and does
+# propagate to the files below it.
+!docs/checks
 .rigscore-action-src
 .DS_Store
 coverage
