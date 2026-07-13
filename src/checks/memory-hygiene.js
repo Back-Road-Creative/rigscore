@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, statSafe } from '../utils.js';
+import { readFileSafe, statSafe, walkDirSafe } from '../utils.js';
 
 // Thresholds and the reasoning behind them: docs/checks/memory-hygiene.md.
 // 40 KB ≈ 10k tokens ≈ 5% of a 200k-token window. Override per-repo with
@@ -17,6 +17,19 @@ const MIN_BODY_CHARS = 20; // non-whitespace body chars; below this it's a stub
 const MIN_RULE_CHARS = 40;
 const MAX_DUPLICATE_FINDINGS = 10;
 const MAX_GOVERNANCE_BYTES = 1_048_576;
+
+// Governance lives outside the root set too: a monorepo states package-local
+// rules in `packages/<pkg>/CLAUDE.md`, and a user states machine-wide ones in
+// `~/.claude/CLAUDE.md`. Both are loaded alongside memory, so both can be a
+// rule's other home. Vendored and fixture trees are skipped — a dependency's
+// or a test sample's CLAUDE.md is not this project's governance, and matching
+// against one would be a false "two homes" on a rule the project never wrote.
+const GOVERNANCE_BASENAMES = new Set(GOVERNANCE_FILES.map((f) => path.basename(f)));
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', '.venv', 'venv', '__pycache__',
+  'dist', 'build', 'coverage', 'vendor', 'fixtures',
+]);
+const MAX_GOVERNANCE_FILES = 100;
 
 const readdirSafe = async (dir) => {
   try { return await fs.promises.readdir(dir); } catch { return []; }
@@ -72,39 +85,84 @@ function normalizeRule(line) {
 }
 
 /**
- * Every line of a markdown file that could carry a rule, normalized. Headings,
- * fenced code, table rows, and link-only lines are skipped — they duplicate for
- * structural reasons, not because a rule has two homes. Returns a Map of
- * normalized text → first raw line, so a repeat within one file counts once.
+ * Every rule-bearing unit of a markdown file, normalized: each eligible line,
+ * plus each *wrapped block* — a bullet or paragraph continued on the following
+ * line — joined back into one. The join is what lets a rule hard-wrapped in one
+ * file match the same rule written on one line in the other; it stays exact
+ * equality after normalization, never a similarity score. A block ends at a
+ * blank line, heading, fence, table row, or the next list marker, so two
+ * separate bullets are never glued into one rule.
+ *
+ * Headings, fenced code, table rows, and link-only lines are skipped — they
+ * duplicate for structural reasons, not because a rule has two homes. Returns a
+ * Map of normalized text → first raw line, so a repeat within one file counts once.
  */
 function ruleLines(content) {
   const rules = new Map();
+  const remember = (raw) => {
+    const norm = normalizeRule(raw);
+    if (norm.length < MIN_RULE_CHARS) return;
+    if (!rules.has(norm)) rules.set(norm, raw);
+  };
+
   let inFence = false;
+  let block = [];
+  const flush = () => {
+    if (block.length > 1) remember(block.join(' '));
+    block = [];
+  };
+
   for (const raw of content.split(/\r?\n/)) {
     const trimmed = raw.trim();
-    if (/^(```|~~~)/.test(trimmed)) { inFence = !inFence; continue; }
+    if (/^(```|~~~)/.test(trimmed)) { flush(); inFence = !inFence; continue; }
     if (inFence) continue;
-    if (trimmed === '' || /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('|')) continue;
+    if (trimmed === '' || /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('|')) { flush(); continue; }
+    if (/^(?:[-*+]|\d+[.)])\s+/.test(trimmed)) flush(); // a new list item starts a new block
     const body = trimmed.replace(/^(?:[-*+]|\d+[.)])\s+/, '');
-    if (/^!?\[[^\]]*\]\([^)]*\)$/.test(body) || /^https?:\/\/\S+$/.test(body)) continue;
-    const norm = normalizeRule(raw);
-    if (norm.length < MIN_RULE_CHARS) continue;
-    if (!rules.has(norm)) rules.set(norm, trimmed);
+    if (/^!?\[[^\]]*\]\([^)]*\)$/.test(body) || /^https?:\/\/\S+$/.test(body)) { flush(); continue; }
+    remember(trimmed);
+    block.push(trimmed);
   }
+  flush();
   return rules;
 }
 
-/** Normalized rule → set of governance files stating it (project root only). */
-async function collectGovernanceRules(cwd) {
+/**
+ * Every governance file whose rules could be a memory file's other home:
+ * the root set, every nested governance file in the project tree (monorepo
+ * package rules), and — only under --include-home-skills, the same gate the
+ * memory scan uses — the user's home governance. Returns full path → display label.
+ */
+async function governancePaths(cwd, homedir, includeHomeSkills) {
+  const paths = new Map();
+  for (const rel of GOVERNANCE_FILES) paths.set(path.join(cwd, rel), rel);
+
+  const { files } = await walkDirSafe(cwd, {
+    skipDirs: SKIP_DIRS,
+    maxFiles: MAX_GOVERNANCE_FILES,
+    shouldInclude: (full) => GOVERNANCE_BASENAMES.has(path.basename(full)),
+  });
+  for (const full of files) {
+    if (!paths.has(full)) paths.set(full, path.relative(cwd, full) || full);
+  }
+
+  if (includeHomeSkills && homedir && homedir !== cwd) {
+    paths.set(path.join(homedir, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md');
+    paths.set(path.join(homedir, 'CLAUDE.md'), '~/CLAUDE.md');
+  }
+  return paths;
+}
+
+/** Normalized rule → set of governance files stating it. */
+async function collectGovernanceRules(cwd, homedir, includeHomeSkills) {
   const byRule = new Map();
-  for (const rel of GOVERNANCE_FILES) {
-    const full = path.join(cwd, rel);
+  for (const [full, label] of await governancePaths(cwd, homedir, includeHomeSkills)) {
     const stat = await statSafe(full);
     if (!stat || !stat.isFile() || stat.size > MAX_GOVERNANCE_BYTES) continue;
     const content = (await readFileSafe(full)) ?? '';
     for (const norm of ruleLines(content).keys()) {
       if (!byRule.has(norm)) byRule.set(norm, new Set());
-      byRule.get(norm).add(rel);
+      byRule.get(norm).add(label);
     }
   }
   return byRule;
@@ -173,7 +231,8 @@ export default {
 
     // 3. Single home per rule — a rule stated in both a governance file and a
     // memory file has two homes, so editing one silently fails to take effect.
-    const govRules = await collectGovernanceRules(cwd);
+    // Governance is the root set + nested project files + (opt-in) home.
+    const govRules = await collectGovernanceRules(cwd, homedir, includeHomeSkills);
     if (govRules.size > 0) {
       for (const file of memFiles) {
         for (const [norm, raw] of ruleLines(file.content)) {

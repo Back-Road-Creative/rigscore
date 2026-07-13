@@ -172,6 +172,83 @@ describe('memory-hygiene: single home per rule', () => {
     }
   });
 
+  it('finds a rule duplicated in a nested governance file, not just the root set', async () => {
+    const rule = 'Every pull request stays under three hundred changed lines, insertions plus deletions.';
+    const dir = tmpMemoryDir();
+    fs.mkdirSync(path.join(dir, 'packages', 'api'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'packages/api/CLAUDE.md'), `# API rules\n\n- ${rule}\n`);
+    fs.writeFileSync(
+      path.join(dir, '.claude/memory/notes.md'),
+      `# Diff cap\n\nThe 2026-04 revert: a 900-line PR shipped a regression nobody could bisect.\n\n${rule}\n`,
+    );
+    try {
+      const found = dupes(await run(dir));
+      expect(found).toHaveLength(1);
+      expect(found[0].detail).toContain(path.join('packages', 'api', 'CLAUDE.md'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('sees a rule duplicated in home governance only when home is opted in', async () => {
+    const rule = 'Never merge a pull request yourself — emit the merge command for the operator.';
+    const home = tmpMemoryDir();
+    fs.writeFileSync(path.join(home, '.claude/CLAUDE.md'), `# Global\n\n- ${rule}\n`);
+    const dir = tmpMemoryDir();
+    fs.writeFileSync(
+      path.join(dir, '.claude/memory/notes.md'),
+      `# Merge policy\n\nThe 2026-03 incident: an agent self-merged a red-CI PR.\n\n${rule}\n`,
+    );
+    try {
+      expect(dupes(await run(dir, { homedir: home }))).toHaveLength(0);
+      const on = dupes(await run(dir, { homedir: home, includeHomeSkills: true }));
+      expect(on).toHaveLength(1);
+      expect(on[0].detail).toContain('~/.claude/CLAUDE.md');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores governance files inside dependency and fixture trees', async () => {
+    const rule = 'Every pull request stays under three hundred changed lines, insertions plus deletions.';
+    const dir = tmpMemoryDir();
+    for (const sub of ['node_modules/some-pkg', 'test/fixtures/demo']) {
+      fs.mkdirSync(path.join(dir, sub), { recursive: true });
+      fs.writeFileSync(path.join(dir, sub, 'CLAUDE.md'), `# Vendored\n\n- ${rule}\n`);
+    }
+    fs.writeFileSync(path.join(dir, '.claude/memory/notes.md'), `# Diff cap\n\nWhy: the 2026-04 revert.\n\n${rule}\n`);
+    try {
+      expect(dupes(await run(dir))).toHaveLength(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('matches a rule hard-wrapped across two lines against its single-line home', async () => {
+    const dir = tmpGoverned(
+      '# CLAUDE.md\n\n- Never merge a pull request yourself — emit the merge command for the operator.\n',
+      '# Merge policy\n\nThe 2026-03 incident.\n\n- Never merge a pull request yourself — emit the merge\n  command for the operator.\n',
+    );
+    try {
+      expect(dupes(await run(dir))).toHaveLength(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never glues two separate bullets into one rule', async () => {
+    const dir = tmpGoverned(
+      '# CLAUDE.md\n\n- Run the full test suite before you push, and never merge a pull request yourself.\n',
+      '# Notes\n\n- Run the full test suite before you push, and\n- never merge a pull request yourself.\n',
+    );
+    try {
+      expect(dupes(await run(dir))).toHaveLength(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('is N/A with no memory surface, and ignores home memory unless opted in', async () => {
     const home = tmpMemoryDir();
     const note = '# Note\n\nA home memory file the project scan must not reach by default.\n';
