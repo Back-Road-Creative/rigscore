@@ -40,6 +40,8 @@ this check's business, and reads as no surface at all rather than as a passing o
 | A `.devcontainer/` (or `.devcontainer.json`) **installs an agent CLI** and contains **no** firewall, proxy, default-deny network rule or capability drop — no attempt at egress control is visible anywhere in it | WARNING | `sandbox-posture/devcontainer-no-egress-control` | Internal-only network + deny-by-default proxy, `--cap-drop=ALL`, `--security-opt=no-new-privileges` (`templates/container` is a worked example) |
 | Surface present, nothing above matches → PASS. No sandbox surface anywhere → N/A (`-1`), never 0 | PASS / N/A | — | — |
 
+The first four ruleIds are **not literals in the source**: each is the `id` of an entry in the ordered rule tables (`CODEX_RULES`, `DENY_RULES`), interpolated at emit time as `` sandbox-posture/${rule.id} ``. Add a rule-table entry and its id becomes a ruleId with no other change — so a ruleId extractor must read the rule tables, not just scan for quoted `findingId:` values. Only `sandbox-posture/devcontainer-no-egress-control` is written literally.
+
 A **missing** settings file is not a posture finding — absence is `claude-settings`' report, not this one.
 Deny rules are counted as the **union** across a client's files: one file with rules covers the pair.
 
@@ -73,7 +75,7 @@ scope: editing `.codex/config.toml` or `.claude/settings*.json`.
 
 ## SARIF
 
-Tool component `rigscore`; rule IDs are the per-finding `sandbox-posture/*` ids above. Levels:
+Tool component `rigscore`; rule IDs are the per-finding ids listed in the Triggers table above. Levels:
 CRITICAL→`error`, WARNING→`warning`, INFO→`note`. Location: the config path relative to the project root (`$HOME` configs render with `~`).
 
 ## Example

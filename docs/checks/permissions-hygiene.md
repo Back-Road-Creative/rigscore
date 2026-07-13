@@ -12,12 +12,12 @@ This check is **POSIX-only**. On Windows it emits a single `SKIPPED` finding and
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Running on `win32` | SKIPPED | `permissions-hygiene/file-permission-checks-skipped-on-windows` | Verify manually via `icacls` |
-| `~/.ssh` mode ≠ `700` | WARNING | `permissions-hygiene/ssh-directory-permissions-too-open` | `chmod 700 ~/.ssh` |
-| SSH private key `~/.ssh/id_*` (not `*.pub`) mode ≠ `600` | CRITICAL | `permissions-hygiene/ssh-private-key-entry-permissions-too-open` | `chmod 600 ~/.ssh/<key>` |
-| File in cwd matching `*.pem` / `*.key` / `*credentials*` has world-read bit set | WARNING | `permissions-hygiene/sensitive-file-entry-is-world-readable` | `chmod 600 <file>` |
-| File in cwd subdirectory (depth 2, excluding `node_modules`/`.git`/dotdirs) ending in `.pem` / `.key` has world-read bit set | WARNING | `permissions-hygiene/sensitive-file-dir-entry-is-world-readable` | `chmod 600 <dir>/<file>` |
-| Governance files (`AI_CONFIG_FILES`) have more than one distinct owning uid | WARNING | `permissions-hygiene/governance-files-have-mixed-file-ownership` | Reunify ownership under the intended user |
+| Running on `win32` | SKIPPED | — (no ruleId emitted) | Verify manually via `icacls` |
+| `~/.ssh` mode ≠ `700` | WARNING | `permissions-hygiene/ssh-dir-permissions` | `chmod 700 ~/.ssh` |
+| SSH private key `~/.ssh/id_*` (not `*.pub`) mode ≠ `600` | CRITICAL | `permissions-hygiene/ssh-key-permissions` | `chmod 600 ~/.ssh/<key>` |
+| File in cwd matching `*.pem` / `*.key` / `*credentials*` has world-read bit set | WARNING | `permissions-hygiene/sensitive-file-world-readable` | `chmod 600 <file>` |
+| File in cwd subdirectory (depth 2, excluding `node_modules`/`.git`/dotdirs) ending in `.pem` / `.key` has world-read bit set — same ruleId as the depth-1 row | WARNING | `permissions-hygiene/sensitive-file-world-readable` | `chmod 600 <dir>/<file>` |
+| Governance files (`AI_CONFIG_FILES`) have more than one distinct owning uid | WARNING | `permissions-hygiene/governance-mixed-ownership` | Reunify ownership under the intended user |
 | No issues found on POSIX | PASS | — | — |
 
 ## Weight rationale
