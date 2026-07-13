@@ -38,8 +38,11 @@ function cleanFixtureState() {
 // C6 (Track C) dropped the scored-project's overall score by the coverage-
 // scale factor. The band below has been recalibrated from 18–34 to 6–22
 // to reflect continuous scaling. The finding count target is unchanged.
+// Re-centred on the observed count (was 42) after ai-disclosure gained its INFO
+// "no PR template at all" arm, which fires on this fixture; band width unchanged,
+// and the score is unmoved because ai-disclosure is weight 0 (advisory).
 const EXPECTED = {
-  totalFindings: 42,
+  totalFindings: 49,
   countTolerance: 6,
   scoreMin: 6,
   scoreMax: 22,
