@@ -9,7 +9,10 @@ import path from 'node:path';
  *   mcp         — JSON configs holding MCP servers: { path, base: 'cwd'|'home', key? }.
  *                 `key` defaults to 'mcpServers' (opencode nests its servers under 'mcp').
  *   credentials — $HOME configs whose `mcpServers[].env` can hold plaintext secrets
- *   sandbox     — non-JSON config declaring sandbox/approval policy: { path, base, format }
+ *   sandbox     — config declaring the agent's approval/sandbox boundary: { path, base, format }.
+ *                 `format` picks the reader: 'toml' (Codex's approval_policy/sandbox_mode),
+ *                 'json' (Claude Code's permissions.deny). Entries are listed in precedence
+ *                 order — later files override/extend earlier ones.
  *
  * Paths for the three newest clients are from primary vendor docs:
  *   Codex CLI  developers.openai.com/codex/config-reference — ~/.codex/config.toml and project
@@ -23,7 +26,9 @@ import path from 'node:path';
  */
 export const CLIENTS = [
   { id: 'claude-code', name: 'Claude Code', governance: ['CLAUDE.md'],
-    mcp: [{ path: '.mcp.json', base: 'cwd' }] },
+    mcp: [{ path: '.mcp.json', base: 'cwd' }],
+    sandbox: [{ path: '.claude/settings.json', base: 'cwd', format: 'json' },
+      { path: '.claude/settings.local.json', base: 'cwd', format: 'json' }] },
   { id: 'claude-desktop', name: 'Claude Desktop',
     mcp: [{ path: '.claude/claude_desktop_config.json', base: 'home' }],
     credentials: [{ dir: '.claude', file: 'claude_desktop_config.json' }] },

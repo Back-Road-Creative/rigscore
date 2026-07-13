@@ -1,14 +1,11 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe } from '../utils.js';
+import { CLIENTS } from '../clients.js';
+import { readFileSafe, readJsonSafe } from '../utils.js';
 
-const DOCS = 'https://developers.openai.com/codex/config-reference';
-
-// Only client with a sandbox-config surface today; carried here, not imported from a registry (see docs).
-const CODEX_ID = 'codex';
-const CODEX_NAME = 'Codex CLI';
-const CODEX_CONFIG = '.codex/config.toml';
+const CODEX_DOCS = 'https://developers.openai.com/codex/config-reference';
+const CLAUDE_DOCS = 'https://docs.claude.com/en/docs/claude-code/settings';
 
 // Targeted key reader for Codex's `config.toml` — NOT a TOML parser. Reads only
 // `approval_policy`/`sandbox_mode` (root) + `network_access` ([sandbox_workspace_write]).
@@ -81,6 +78,58 @@ const CODEX_RULES = [
     remediation: 'Set approval_policy = "on-request" (or "untrusted") in .codex/config.toml.' },
 ];
 
+/**
+ * Claude Code's posture surface. It ships no sandbox knob: `permissions.deny` plus the
+ * approval mode ARE the boundary. Only the posture question is read here — how many deny
+ * rules exist at all — never *which* allow entries are dangerous; `claude-settings` grades those.
+ */
+export function readDenyKeys(settings) {
+  const deny = settings?.permissions?.deny;
+  return {
+    denyCount: Array.isArray(deny) ? deny.length : 0,
+    bypass: settings?.defaultMode === 'bypassPermissions',
+  };
+}
+
+/** Nothing denied and nothing prompted is unrestricted; otherwise something still binds. */
+function denyPosture(k) {
+  if (k.denyCount === 0 && k.bypass) return 'unrestricted';
+  return 'partial'; // `restricted` needs a real sandbox — Claude Code has none to read.
+}
+
+const DENY_RULES = [
+  { id: 'claude-no-deny-rules', severity: 'warning', verb: 'declares no deny rules',
+    when: (k) => k.denyCount === 0,
+    detail: (k) => `permissions.deny is empty or absent — no tool call is refused outright, so the allow list plus an approval prompt are the whole boundary${k.bypass ? ', and defaultMode = "bypassPermissions" removes the prompt too' : ''}.`,
+    remediation: 'Add permissions.deny entries (e.g. "Bash(curl:*)", "Read(./.env)") to .claude/settings.json.' },
+];
+
+/**
+ * One reader + rule set per declared `format` in the client registry. The run loop below
+ * knows nothing about any specific client: a new registry entry declaring a `sandbox`
+ * surface in a known format is scanned with no change here. `merge` folds a client's files
+ * in precedence order ($HOME first, project last).
+ */
+const FORMATS = {
+  toml: {
+    read: async (file) => {
+      const text = await readFileSafe(file);
+      return text === null ? null : readCodexKeys(text);
+    },
+    merge: (a, b) => Object.assign(a, b), // later file wins, key by key
+    posture: codexPosture, rules: CODEX_RULES, docs: CODEX_DOCS,
+  },
+  json: {
+    // Unparseable JSON reads as absent — unknown, never dangerous (same stance as the TOML reader).
+    read: async (file) => {
+      const settings = await readJsonSafe(file);
+      return settings === null ? null : readDenyKeys(settings);
+    },
+    merge: (a, b) => ({ denyCount: a.denyCount + b.denyCount, bypass: a.bypass || b.bypass }),
+    posture: denyPosture, rules: DENY_RULES, docs: CLAUDE_DOCS,
+  },
+};
+
 export default {
   id: 'sandbox-posture',
   enforcementGrade: 'mechanical',
@@ -94,24 +143,31 @@ export default {
     let surfacesScanned = 0;
     const label = (f) => (f.startsWith(homedir) ? f.replace(homedir, '~') : path.relative(cwd, f));
 
-    // $HOME first, then the project file — which wins, matching Codex precedence.
-    const keys = {};
-    const files = [];
-    for (const base of [homedir, cwd]) {
-      const file = path.join(base, CODEX_CONFIG);
-      const text = await readFileSafe(file);
-      if (text === null) continue;
-      files.push(file);
-      Object.assign(keys, readCodexKeys(text));
-    }
-    if (files.length > 0) {
+    // The registry is the surface list. Each client's entries are read in declaration
+    // order — $HOME first, then the project file, which wins. A client's entries share
+    // one format; an unknown format is skipped (unknown, never dangerous).
+    for (const client of CLIENTS.filter((c) => c.sandbox)) {
+      let keys = null;
+      let format = null;
+      let last = null;
+      for (const entry of client.sandbox) {
+        const fmt = FORMATS[entry.format];
+        if (!fmt) continue;
+        const file = path.join(entry.base === 'home' ? homedir : cwd, entry.path);
+        const read = await fmt.read(file);
+        if (read === null) continue;
+        keys = keys === null ? read : fmt.merge(keys, read);
+        format = fmt;
+        last = file;
+      }
+      if (keys === null) continue; // client declares a surface, this machine has no file
       surfacesScanned++;
-      postures[CODEX_ID] = codexPosture(keys);
-      const rule = CODEX_RULES.find((r) => r.when(keys));
+      postures[client.id] = format.posture(keys);
+      const rule = format.rules.find((r) => r.when(keys));
       if (rule) findings.push({
         findingId: `sandbox-posture/${rule.id}`, severity: rule.severity,
-        title: `${CODEX_NAME} ${rule.verb} in ${label(files[files.length - 1])}`,
-        detail: rule.detail(keys), remediation: rule.remediation, learnMore: DOCS,
+        title: `${client.name} ${rule.verb} in ${label(last)}`,
+        detail: rule.detail(keys), remediation: rule.remediation, learnMore: format.docs,
       });
     }
 
