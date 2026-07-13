@@ -261,8 +261,15 @@ export default {
     }
 
     if (findings.length === 0) {
-      // No contradictions found — but only if we had enough data to check
-      const hasGovernance = claudeMdResult && claudeMdResult.score !== NOT_APPLICABLE_SCORE;
+      // No contradictions found — but only if we had enough data to check.
+      // `hasGovernance` must reflect real governance TEXT to check against,
+      // NOT merely a non-N/A claude-md score: claude-md's no-governance-file
+      // path returns a CRITICAL (score 0, not the -1 N/A sentinel) and exports
+      // no `governanceText`. Keying off the score there wrongly reported a
+      // PASS for a repo with zero governance (reverse coherence is likewise
+      // gated on non-empty governanceText, so it never ran). Per the Triggers
+      // table, no governance => N/A.
+      const hasGovernance = governanceText.length > 0;
       const hasConfig = (mcpResult && mcpResult.score !== NOT_APPLICABLE_SCORE) ||
                        (dockerResult && dockerResult.score !== NOT_APPLICABLE_SCORE) ||
                        (skillResult && skillResult.score !== NOT_APPLICABLE_SCORE);

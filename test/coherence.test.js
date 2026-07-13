@@ -31,7 +31,13 @@ describe('coherence check', () => {
           id: 'claude-md',
           score: 100,
           findings: [],
-          data: { matchedPatterns: ['network restrictions', 'path restrictions', 'forbidden actions'] },
+          // A passing claude-md always exports governanceText (claude-md.js
+          // returns it on every non-early-return path); coherence keys N/A-vs-
+          // PASS off real governance text, so the fixture must carry it.
+          data: {
+            matchedPatterns: ['network restrictions', 'path restrictions', 'forbidden actions'],
+            governanceText: 'No external network access. Paths restricted to the project directory. Forbidden actions are defined.',
+          },
         },
         {
           id: 'mcp-config',
