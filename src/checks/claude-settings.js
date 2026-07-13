@@ -317,7 +317,11 @@ export default {
     if (!foundAny) {
       return {
         score: NOT_APPLICABLE_SCORE,
-        findings: [{ severity: 'info', title: 'No Claude settings found' }],
+        findings: [{
+          findingId: 'claude-settings/no-settings-found',
+          severity: 'info',
+          title: 'No Claude settings found',
+        }],
         data: { filesScanned: 0, configuredHooks: [], missingLifecycleHooks: CLAUDE_LIFECYCLE_HOOKS, hasBypassPermissions: false, defaultMode: null, allowListEntries: [] },
       };
     }

@@ -17,7 +17,7 @@ Each call to `findings.push(...)` in `src/checks/unicode-steganography.js` becom
 | File contains classic homoglyphs (Greek U+0370–03FF, Cyrillic U+0400–052F, Armenian U+0530–058F, Georgian U+10A0–10FF, Cherokee U+13A0–13FF) after NFKC normalization | WARNING | `unicode-steganography/homoglyph` | Replace with ASCII equivalents |
 | File contains modern homoglyphs (Mathematical Alphanumeric Symbols U+1D400–1D7FF, Fullwidth Latin U+FF00–FF5E, Cherokee U+13A0–13FF) on raw text — same ruleId as the classic range; one finding covers both | WARNING | `unicode-steganography/homoglyph` | Replace with ASCII equivalents |
 | File contains Unicode tag characters (U+E0001–E007F) | WARNING | `unicode-steganography/tag-chars` | Remove tag characters from the file |
-| No governance or config files present to scan | INFO | — (no ruleId emitted) | N/A — check returns N/A |
+| No governance or config files present to scan | INFO (N/A) | `unicode-steganography/no-files-scanned` | N/A — check returns N/A |
 | All scanned files clean | PASS | — | — |
 
 Note: classic and modern homoglyph detections share the same finding title (`Homoglyph characters in <file>`) and therefore the same slug — the `detail` field enumerates which ranges matched.
