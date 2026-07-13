@@ -34,9 +34,12 @@ export async function loadChecks(options = {}) {
 
   for (const dir of checkDirs) {
     const files = await fs.promises.readdir(dir);
-    const checkFiles = files.filter(
-      (f) => f.endsWith('.js') && f !== 'index.js',
-    );
+    // .sort() is PRECAUTIONARY, not a live-bug fix: `deduplicateFindings` breaks
+    // cross-check ties by `results[]` order, which is this readdir's order — and
+    // no two checks collide on a findingId today. One line, landmine gone.
+    const checkFiles = files
+      .filter((f) => f.endsWith('.js') && f !== 'index.js')
+      .sort();
 
     for (const file of checkFiles) {
       const mod = await import(path.join(dir, file));
