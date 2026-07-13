@@ -1,6 +1,6 @@
 # documentation
 
-**Enforcement grade:** `mechanical` — directory-entry set comparison between `src/checks/*.js` and `docs/checks/*.md`, plus H1 / weight structural checks. Deterministic.
+**Enforcement grade:** `mechanical` — directory-entry set comparison between `src/checks/*.js` and `docs/checks/*.md`, plus H1 / weight structural checks and a reconciliation of the SARIF ruleIds each module emits against the ones its doc page documents. Deterministic.
 
 ## Purpose
 
@@ -18,6 +18,10 @@ The check auto-skips when scanning a project that is not rigscore-shaped (missin
 | Doc page missing one or more required H2 sections | WARNING | `documentation/docs-gate-incomplete` | Fill the listed sections (see `_template.md`) |
 | Doc page has H1 that doesn't match check id | WARNING | `documentation/docs-gate-h1-mismatch` | Rename H1 to `# <id>` exactly |
 | Doc page does not state the check's weight (or "advisory" for weight 0) | WARNING | `documentation/docs-gate-weight-drift` | Add weight rationale referencing current weight from `src/constants.js` |
+| Doc page documents a SARIF ruleId the check module never emits | WARNING | `documentation/docs-gate-ruleid-ghost` | Rename the Triggers row to a real id, or delete it |
+| Check module emits a SARIF ruleId the doc page never lists | WARNING | `documentation/docs-gate-ruleid-undocumented` | Add a Triggers row for the id |
+| Check module emits a bare `<id>/` prefix, so every documented id would pass vacuously | WARNING | `documentation/docs-gate-ruleid-unexpandable` | Add an expander for the check in `src/lib/verify-docs.js` |
+| Documented id only prefix-matches a dynamic id whose value set is not enumerable — not verified | INFO | `documentation/docs-gate-ruleid-unverified` | Add an expander so the id is matched exactly, not by prefix |
 | `docs/checks/<id>.md` exists with no matching check module | INFO | `documentation/orphan-doc` | Delete doc or restore the removed check |
 | Project is not rigscore-shaped | SKIPPED | — | No action — check only applies to rigscore and plugin repos |
 | All checks documented, no orphans | PASS | — | — |
@@ -35,8 +39,9 @@ Advisory — weight 0. This check's signal is only meaningful when scanning rigs
 ## SARIF
 
 - Tool component: `rigscore`
-- Rule IDs emitted: the four gate reasons are interpolated as `` documentation/docs-gate-${reason} `` — `documentation/docs-gate-missing`, `documentation/docs-gate-incomplete`, `documentation/docs-gate-h1-mismatch`, `documentation/docs-gate-weight-drift` — plus the literal `documentation/orphan-doc`.
-- Level mapping: all WARNING findings (`missing`, `incomplete`, `h1-mismatch`, `weight-drift`) → `warning`; orphan INFO → `note`.
+- Rule IDs emitted: the eight gate reasons are interpolated as `` documentation/docs-gate-${reason} `` — four structural (`documentation/docs-gate-missing`, `documentation/docs-gate-incomplete`, `documentation/docs-gate-h1-mismatch`, `documentation/docs-gate-weight-drift`) and four ruleId-drift (`documentation/docs-gate-ruleid-ghost`, `documentation/docs-gate-ruleid-undocumented`, `documentation/docs-gate-ruleid-unexpandable`, `documentation/docs-gate-ruleid-unverified`) — plus the literal `documentation/orphan-doc`.
+- Level mapping: WARNING findings (`missing`, `incomplete`, `h1-mismatch`, `weight-drift`, `ruleid-ghost`, `ruleid-undocumented`, `ruleid-unexpandable`) → `warning`; INFO findings (`ruleid-unverified` and orphan) → `note`.
+- `ruleid-unverified` is INFO because the gate could not enumerate the id's value set — a "couldn't check", not a proven defect. It is still reported, never silently passed: "couldn't check" must not look like "checked, fine".
 - Location data: repo root. Specific paths (the offending `src/checks/<id>.js` or `docs/checks/<id>.md`) are surfaced in the finding detail field rather than as a `physicalLocation` line anchor, since the finding is about doc coverage across the repo, not a single line of source.
 
 ## Example
@@ -47,6 +52,8 @@ Advisory — weight 0. This check's signal is only meaningful when scanning rigs
     Run: npm run verify:docs -- --stub foo
   WARNING INCOMPLETE docs/checks/bar.md missing sections: ## Fix semantics, ## SARIF
     Fill the listed sections. See docs/checks/_template.md.
+  WARNING RULEID-GHOST docs/checks/baz.md documents `baz/old-id`, which src/checks/baz.js
+          never emits. It emits: baz/new-id. Rename the row to a real id or delete it.
   INFO    ORPHAN docs/checks/zombie.md has no matching src/checks/zombie.js
     Delete doc or restore the removed check.
 ```
