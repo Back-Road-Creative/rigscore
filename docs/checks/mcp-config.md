@@ -137,7 +137,9 @@ disclosure above exists to prevent. Opting out stays a per-invocation, on-the-re
 
 The `mcp-config/server-hash-drift` finding above is a WARNING — it cannot fail a build, and a supply-chain guard a compromised repo can print a warning past is not a guard. `--verify-state` turns the same pin into an exit code.
 
-It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.json` machinery the check writes — one hash function, one pin. It never rewrites the state file, runs no other checks, and makes no network calls. (A normal scan does not rewrite a drifted pin either — see "The one file a scan writes" above — so the gate reports the same drift whether or not a scan ran first.) CI recipe — add one step to `.github/workflows/ci.yml`:
+It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.json` machinery the check writes — one hash function, one pin. It never rewrites the state file, runs no other checks, and makes no network calls.
+
+**The gate reads the pin from `HEAD`, not from the working tree** (`git show HEAD:<path>/.rigscore-state.json`), and that is what makes it safe to run after a scan. A pin is evidence only if a human committed and reviewed it. A scan mints a trust-on-first-use pin from whatever `.mcp.json` is *sitting in the working tree* — and the GitHub Action runs a scan before this gate — so an attacker who rewrites `.mcp.json` **and** deletes (or corrupts) the pin in the same PR would otherwise have that scan re-approve their own config, turning a failing gate green. Reading `HEAD` makes that structurally impossible: a working-tree pin `HEAD` does not carry is `uncommitted` (exit 2), never `verified`. The current *`.mcp.json`* is still the one compared — it is the config that would actually run; only the pin's provenance must come from a commit. Outside a git repo there is no commit provenance to read, so the gate falls back to the working-tree pin. Together with the fact that a normal scan never rewrites a *drifted* pin (see "The one file a scan writes" above), the gate reports the same drift whether or not a scan ran first. CI recipe — add one step to `.github/workflows/ci.yml`:
 
 ```yaml
 - run: npx rigscore --verify-state .   # fails the build on an MCP rug-pull
@@ -148,11 +150,14 @@ It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.j
 | `0` | `verified` | Every pinned server still hashes to its pin |
 | `0` | `not-applicable` | No repo MCP servers and no pin — nothing to protect |
 | `1` | `drift` | A **pinned** server's `{command, args, envKeys}` changed |
-| `2` | `unpinned` / `corrupt` | Nothing pinned, or the state file is unreadable/wrong-version — the gate **cannot** verify |
+| `2` | `unpinned` | `.mcp.json` declares servers but nothing is pinned — the gate **cannot** verify |
+| `2` | `uncommitted` | A pin exists in the working tree but not at `HEAD` — nobody reviewed it, so it proves nothing |
+| `2` | `corrupt` | The committed state file is unreadable / wrong-version — the gate **cannot** verify |
 
 ### Why each case decides the way it does
 
 - **No state file (`unpinned`) → exit 2, not 0.** A gate that returns success while verifying nothing teaches you it works when it doesn't — the worst of the three outcomes. Exit 2 is distinct from exit 1 (`drift`) so CI logs tell "you never pinned" apart from "you were rug-pulled". The remedy is one command: run `rigscore .` once and commit `.rigscore-state.json`. A repo with **no** MCP servers at all is genuinely not-applicable and exits 0, so the flag is safe to drop into a shared CI template on day one.
+- **Pin present but not committed (`uncommitted`) → exit 2, not 0.** This is the shape a *scan-minted* pin has: `.rigscore-state.json` on disk, absent from `HEAD`. Verifying against it would compare the current `.mcp.json` to a hash taken from that same `.mcp.json` seconds earlier — a tautology that always passes, including on the attacker's config. Distinct from `unpinned` so the CI log tells "you never pinned" apart from "something wrote a pin nobody committed". Remedy: review `.mcp.json`, then `git add .rigscore-state.json && git commit`.
 - **Server added → reported, exit 0.** Adding a server is not the MCPoison threat model. MCPoison (CVE-2025-54136) works by mutating a server the host has *already approved*, so the stale approval carries the new payload silently. A brand-new server name gets a fresh approval prompt from the host and shows up as a new block in the `.mcp.json` diff — code review and the other `mcp-config` triggers (typosquat, unpinned npx, sensitive env, broad filesystem) are the controls for it. Failing here would also red-CI every legitimate "add an MCP server" PR. The report names it as `ADDED` and tells you to re-pin so it becomes covered.
 - **Server removed → reported, exit 0.** A server that is no longer in `.mcp.json` cannot execute; its shape did not "change", it is gone. This is a stale pin, not a security event. Reported as `REMOVED`.
 - **Rename** (`old` gone, `new` appears) therefore reads as one `REMOVED` + one `ADDED`, both exit 0 — correct, because the renamed server re-prompts for approval rather than inheriting the old one's.

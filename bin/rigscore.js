@@ -103,9 +103,10 @@ Options:
                      "don't prompt me", not "scaffold governance files"
   --watch            Watch for changes and re-run automatically
   --verify-state     CI gate for MCP rug-pulls (CVE-2025-54136). Read-only; runs
-                     no checks. Exit 1 if a server pinned in .rigscore-state.json
+                     no checks. Reads the pin COMMITTED at HEAD, so a pin a scan
+                     just minted cannot satisfy it. Exit 1 if a pinned server
                      changed its command/args/env-key shape, 0 if every pin
-                     matches, 2 if nothing is pinned (cannot verify).
+                     matches, 2 if the pin is missing, uncommitted, or corrupt.
   --no-state-write   Do not write .rigscore-state.json into the scanned repo.
                      A scan writes exactly one file: the MCP config-shape pin
                      that rug-pull detection (CVE-2025-54136) compares against.
