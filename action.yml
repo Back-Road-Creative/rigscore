@@ -62,7 +62,7 @@ runs:
     # scan root. deep-secrets' SKIP_DIRS excludes that dir from `--deep` scans so
     # rigscore's own source never pollutes the caller's results.
     - name: Check out rigscore source
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         repository: Back-Road-Creative/rigscore
         ref: ${{ github.action_ref }}
