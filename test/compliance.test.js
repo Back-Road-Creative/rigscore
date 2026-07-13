@@ -41,6 +41,19 @@ describe('formatCompliance', () => {
     expect(text).toMatch(/Digital Omnibus/);
   });
 
+  it('renders the OWASP MCP list with its upstream BETA state visible to the auditor', () => {
+    expect(text).toContain('OWASP MCP Top 10');
+    // The one upstream-beta list: the beta state must reach the OUTPUT, not just the constant,
+    // so a pilot-phase list can never be read as settled.
+    expect(FRAMEWORKS['owasp-mcp'].status).toMatch(/beta/i);
+    expect(text, 'beta status must render, not just be recorded').toMatch(/Status: .*[Bb]eta/);
+  });
+
+  it('carries the corrected MCP03/MCP05 titles that secondary sources get wrong', () => {
+    expect(text).toContain('MCP03 — Tool Poisoning');
+    expect(text).toContain('MCP05 — Command Injection');
+  });
+
   it('surfaces honest gaps rather than hiding them', () => {
     // Art. 50: rigscore produces no end-user-disclosure evidence, and says so.
     expect(text).toContain('NOT EVIDENCED');
@@ -57,6 +70,7 @@ describe('compliance frameworks', () => {
   const scored = Object.keys(WEIGHTS).filter((id) => WEIGHTS[id] > 0);
   const ID_SHAPE = {
     'owasp-agentic': /^ASI\d{2}$/,
+    'owasp-mcp': /^MCP\d{2}$/,
     'nist-ai-rmf': /^(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+$/,
     'eu-ai-act': /^Article \d+$/,
   };
