@@ -201,6 +201,188 @@ describe('SARIF output', () => {
     expect(sarifResult.locations[0].physicalLocation).toBeUndefined();
   });
 
+  // --- remediation / learnMore reach the SARIF surface -------------------
+  //
+  // Checks already compute `remediation` (how to fix) and sometimes a
+  // `learnMore` URL, and the terminal reporter renders both. Before this
+  // suite they never reached SARIF, so a user whose only surface is GitHub
+  // code scanning saw *what* was wrong but never the fix.
+  //
+  // Placement (SARIF 2.1.0):
+  //   - `remediation` is PER-RESULT: several findings share one ruleId (e.g.
+  //     `workflow-maturity/skill-no-eval` fires once per skill, each with its
+  //     own fix text), so it must NOT be hoisted to the rule — a rule-level
+  //     `help` would show the first skill's fix next to every other skill's
+  //     finding. It goes in the result property bag (§3.8) and is appended to
+  //     `message.text`, the per-result text GitHub code scanning renders.
+  //   - `learnMore` IS per-rule (a constant doc URL per finding class), so it
+  //     becomes the reportingDescriptor's `helpUri` (§3.49.12) and `help`
+  //     (§3.49.13) — `helpUri` is a rule property, never a result property.
+  const remediationResult = {
+    score: 40,
+    results: [{
+      id: 'docker-security',
+      name: 'Docker security',
+      category: 'infrastructure',
+      weight: 10,
+      score: 0,
+      findings: [
+        {
+          severity: 'critical',
+          title: 'Docker socket mounted',
+          detail: 'Container can control the host daemon.',
+          evidence: 'volumes: /var/run/docker.sock',
+          remediation: 'Remove the /var/run/docker.sock bind mount.',
+          learnMore: 'https://headlessmode.com/tools/rigscore/#docker-socket-risk',
+        },
+        { severity: 'warning', title: 'Running as root' }, // no remediation, no learnMore
+      ],
+    }],
+  };
+
+  function ruleFor(sarif, ruleId) {
+    return sarif.runs[0].tool.driver.rules.find((rule) => rule.id === ruleId);
+  }
+
+  it('carries finding.remediation into SARIF result.properties.remediation', () => {
+    const sarif = formatSarif(remediationResult);
+    const sarifResult = sarif.runs[0].results[0];
+    expect(sarifResult.properties.remediation).toBe('Remove the /var/run/docker.sock bind mount.');
+  });
+
+  it('appends remediation to message.text (the per-result text GitHub renders)', () => {
+    const sarif = formatSarif(remediationResult);
+    const text = sarif.runs[0].results[0].message.text;
+    // Existing message shape (`<title>: <detail>`) is preserved verbatim...
+    expect(text).toContain('Docker socket mounted: Container can control the host daemon.');
+    // ...and the fix now rides along on the same rendered surface.
+    expect(text).toContain('Fix: Remove the /var/run/docker.sock bind mount.');
+  });
+
+  it('keeps a remediation-less message.text byte-identical to the old shape', () => {
+    const sarif = formatSarif(remediationResult);
+    expect(sarif.runs[0].results[1].message.text).toBe('Running as root');
+  });
+
+  it('surfaces learnMore as rule-level helpUri, not a result property', () => {
+    const sarif = formatSarif(remediationResult);
+    const sarifResult = sarif.runs[0].results[0];
+    const rule = ruleFor(sarif, sarifResult.ruleId);
+    expect(rule.helpUri).toBe('https://headlessmode.com/tools/rigscore/#docker-socket-risk');
+    // helpUri is a reportingDescriptor property (§3.49.12) — never on a result.
+    expect(sarifResult.helpUri).toBeUndefined();
+    // GitHub does not render helpUri, so the link is also woven into `help`,
+    // which it does render next to the result.
+    expect(rule.help.markdown).toContain('https://headlessmode.com/tools/rigscore/#docker-socket-risk');
+    expect(rule.help.text).toContain('https://headlessmode.com/tools/rigscore/#docker-socket-risk');
+  });
+
+  it('never hoists per-result remediation onto the shared rule', () => {
+    // Two findings, ONE ruleId, different fixes — the exact shape that makes
+    // rule-level remediation a misattribution.
+    const sarif = formatSarif({
+      score: 10,
+      results: [{
+        id: 'workflow-maturity',
+        name: 'Workflow maturity',
+        category: 'governance',
+        weight: 10,
+        score: 0,
+        findings: [
+          { severity: 'warning', title: 'Skill has no eval', findingId: 'workflow-maturity/skill-no-eval', remediation: 'Create `evals/audit/`.' },
+          { severity: 'warning', title: 'Skill has no eval', findingId: 'workflow-maturity/skill-no-eval', remediation: 'Create `evals/publish/`.' },
+        ],
+      }],
+    });
+    const [first, second] = sarif.runs[0].results;
+    expect(first.ruleId).toBe(second.ruleId);
+    // Each result keeps its OWN fix...
+    expect(first.properties.remediation).toBe('Create `evals/audit/`.');
+    expect(second.properties.remediation).toBe('Create `evals/publish/`.');
+    // ...and the shared rule claims neither.
+    const rule = ruleFor(sarif, first.ruleId);
+    expect('help' in rule).toBe(false);
+  });
+
+  it('omits remediation entirely when the finding has none (no null/empty noise)', () => {
+    const sarif = formatSarif(remediationResult);
+    const bare = sarif.runs[0].results[1]; // 'Running as root'
+    expect(bare.properties.remediation).toBeUndefined();
+    expect('remediation' in bare.properties).toBe(false);
+    const rule = ruleFor(sarif, bare.ruleId);
+    expect('help' in rule).toBe(false);
+    expect('helpUri' in rule).toBe(false);
+    expect(JSON.stringify(sarif)).not.toContain('"remediation":null');
+    expect(JSON.stringify(sarif)).not.toContain('"remediation":""');
+  });
+
+  it('omits whitespace-only remediation and non-http learnMore', () => {
+    const sarif = formatSarif({
+      score: 10,
+      results: [{
+        id: 'claude-md',
+        name: 'CLAUDE.md governance',
+        category: 'governance',
+        weight: 10,
+        score: 0,
+        findings: [
+          { severity: 'critical', title: 'Empty fix', remediation: '   ', learnMore: 'javascript:alert(1)' },
+        ],
+      }],
+    });
+    const sarifResult = sarif.runs[0].results[0];
+    expect('remediation' in sarifResult.properties).toBe(false);
+    expect(sarifResult.message.text).toBe('Empty fix');
+    const rule = ruleFor(sarif, sarifResult.ruleId);
+    expect('help' in rule).toBe(false);
+    expect('helpUri' in rule).toBe(false);
+  });
+
+  it('strips ANSI from remediation before it reaches SARIF', () => {
+    const sarif = formatSarif({
+      score: 10,
+      results: [{
+        id: 'env-exposure',
+        name: 'Secret exposure',
+        category: 'secrets',
+        weight: 8,
+        score: 0,
+        findings: [
+          { severity: 'critical', title: '.env tracked', remediation: '[31mRun git rm --cached .env[0m' },
+        ],
+      }],
+    });
+    expect(sarif.runs[0].results[0].properties.remediation).toBe('Run git rm --cached .env');
+  });
+
+  it('regression: tags, evidence and enforcementGrade still emit alongside remediation', () => {
+    const sarif = formatSarif({
+      score: 40,
+      results: [{
+        id: 'mcp-config',
+        name: 'MCP server configuration',
+        category: 'supply-chain',
+        weight: 18,
+        score: 0,
+        enforcementGrade: 'deterministic',
+        findings: [
+          {
+            severity: 'warning',
+            title: 'Network transport',
+            evidence: 'Server uses SSE.',
+            remediation: 'Pin the server to stdio transport.',
+          },
+        ],
+      }],
+    });
+    const properties = sarif.runs[0].results[0].properties;
+    expect(properties.tags).toContain('owasp-agentic:ASI04');
+    expect(properties.tags).toContain('category:supply-chain');
+    expect(properties.evidence).toBe('Server uses SSE.');
+    expect(properties.enforcementGrade).toBe('deterministic');
+    expect(properties.remediation).toBe('Pin the server to stdio transport.');
+  });
+
   it('preserves logicalLocations alongside physicalLocation', () => {
     const result = {
       score: 50,

@@ -23,6 +23,26 @@ In SARIF output the finding ID appears as the per-result `ruleId`. In JSON
 output it is the `findingId` field on each finding. `--ignore
 <check-id>/<slug>` matches on this string (exact, case-insensitive).
 
+## What else a SARIF result carries
+
+Alongside `ruleId`, each SARIF result carries the fix text the check computed:
+
+- **`result.properties.remediation`** — the fix, machine-readable. Remediation
+  is **per-result, not per-rule**: several findings routinely share one
+  `ruleId` (`workflow-maturity/skill-no-eval` fires once per skill, each with
+  its own fix text), so it is never hoisted onto the rule.
+- **`result.message.text`** — the same fix is appended as `Fix: <remediation>`
+  after the existing `<title>: <detail>` line. GitHub code scanning ignores
+  SARIF property bags it does not understand, so this is the surface that
+  actually renders the fix in the code-scanning UI.
+- **`rules[].helpUri` / `rules[].help`** — a finding's `learnMore` URL. This
+  one *is* rule-level: it is a constant doc link per finding class, and
+  `helpUri` is a `reportingDescriptor` property in SARIF 2.1.0 (§3.49.12),
+  never a result property.
+
+A finding with no `remediation` emits no `remediation` key at all — no `null`,
+no empty string. Same for `learnMore` / `helpUri`.
+
 ## Stability contract
 
 - **No renames within a major version.** Once a finding ID ships in a
