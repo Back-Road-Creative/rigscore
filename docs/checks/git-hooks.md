@@ -12,21 +12,21 @@ Returns N/A when the project is not a git repository (no `.git` directory).
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| No `.git` directory in `cwd` | INFO | `git-hooks/not-a-git-repository` | N/A — check returns N/A |
-| `.git/hooks/pre-commit` exists but is empty | WARNING | `git-hooks/pre-commit-hook-is-empty` | Add meaningful checks |
-| `.git/hooks/pre-commit` exists but is not executable (POSIX) | INFO | `git-hooks/pre-commit-hook-is-not-executable` | `chmod +x .git/hooks/pre-commit` |
-| `.git/hooks/pre-commit` only runs trivial commands (`exit 0`, `:`, `true`, `echo`, `printf`, `sleep`, `ls`, etc.) | WARNING | `git-hooks/pre-commit-hook-is-a-no-op` | Add meaningful checks |
-| `.git/hooks/pre-commit` has content but no recognised substantive pattern (lint/test/scan/`exit 1`/`if…then`) | INFO | `git-hooks/pre-commit-hook-may-lack-substance` | Verify the hook performs real checks |
+| No `.git` directory in `cwd` | INFO | `git-hooks/not-a-git-repo` | N/A — check returns N/A |
+| `.git/hooks/pre-commit` exists but is empty | WARNING | `git-hooks/hook-empty` | Add meaningful checks |
+| `.git/hooks/pre-commit` exists but is not executable (POSIX) | INFO | `git-hooks/hook-not-executable` | `chmod +x .git/hooks/pre-commit` |
+| `.git/hooks/pre-commit` only runs trivial commands (`exit 0`, `:`, `true`, `echo`, `printf`, `sleep`, `ls`, etc.) | WARNING | `git-hooks/hook-noop` | Add meaningful checks |
+| `.git/hooks/pre-commit` has content but no recognised substantive pattern (lint/test/scan/`exit 1`/`if…then`) | INFO | `git-hooks/hook-lacks-substance` | Verify the hook performs real checks |
 | `.git/hooks/pre-commit` validated | PASS | — | — |
-| Same emptiness / non-executable / no-op / low-substance / pass findings for `.git/hooks/pre-push` | WARNING / INFO / WARNING / INFO / PASS | `git-hooks/pre-push-hook-…` | As above |
+| Same emptiness / non-executable / no-op / low-substance / pass findings for `.git/hooks/pre-push` | WARNING / INFO / WARNING / INFO / PASS | same four ids as above — the hook name lives in the finding title, not the ruleId | As above |
 | `.husky/` directory present | PASS | — | — |
 | `lefthook.yml` or `lefthook.yaml` present | PASS | — | — |
 | `package.json` has `husky` or `lint-staged` dependency (and no `.husky/`) | PASS | — | — |
 | Claude Code `hooks` block in `~/.claude/settings.json` or `<cwd>/.claude/settings.json` | PASS | — | — |
 | `pushurl = no_push` regex match in `.git/config` | PASS | — | — |
 | External hook directory from `config.paths.hookDirs` exists | PASS | — | — |
-| None of the above detected | WARNING | `git-hooks/no-pre-commit-hooks-installed` | Install Husky or lefthook |
-| Hooks present but none contains `gitleaks` / `trufflehog` / `detect-secrets` (native or husky pre-commit only) | WARNING | `git-hooks/pre-commit-hooks-lack-secret-scanning` | Add a secret-scan step |
+| None of the above detected | WARNING | `git-hooks/no-hooks-installed` | Install Husky or lefthook |
+| Hooks present but none contains `gitleaks` / `trufflehog` / `detect-secrets` (native or husky pre-commit only) | WARNING | `git-hooks/no-secret-scanning` | Add a secret-scan step |
 
 ## Weight rationale
 
