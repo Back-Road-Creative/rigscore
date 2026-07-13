@@ -23,17 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #88, is one instance of this general rule, not a separate one.)
 
 ### Fixed
-- **deep-secrets: stream-scan files over the per-file size cap instead of
-  skipping them unread.** A file larger than `limits.maxFileBytes` (default
-  512 KB) was skipped and never opened, yet the scan still emitted the PASS
-  "Deep scan clean" finding — a live AWS key in a 600 KB bundle scored 98 and
-  passed CI at `--fail-under 80`, while the same key in a 100 KB file scored 0
-  and blocked. Large files are now read via fixed-size chunk streaming with an
-  overlap window sized from the longest credential pattern, so a secret in a
-  large or minified (single-line) bundle is detected with memory bounded by
-  chunk + overlap (not the file size — the reason a readline-based fix was
-  rejected). The `deep-secrets/oversize-skipped` id is retained for SARIF
-  contract stability and now reports the stream-scanned count.
 - deep-secrets: do not stop at first comment-pattern match — escalate to critical when a real secret follows. Fixes a real critical being downgraded to info.
 - `checks/index`: accept fixer registrations that declare `findingIds` without
   a `match` function. Aligns the registration contract with `fixer.js` dispatch,
@@ -51,6 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at least 30 trailing chars in line with real Slack token formats. Reduces
   false positives on base64 blobs / JWTs / identifiers that happen to
   contain a prefix substring.
+- **deep-secrets: stream-scan files over the per-file size cap instead of
+  skipping them unread.** A file larger than `limits.maxFileBytes` (default
+  512 KB) was skipped and never opened, yet the scan still emitted the PASS
+  "Deep scan clean" finding — a live AWS key in a 600 KB bundle scored 98 and
+  passed CI at `--fail-under 80`, while the same key in a 100 KB file scored 0
+  and blocked. Large files are now read via fixed-size chunk streaming with an
+  overlap window sized from the longest credential pattern, so a secret in a
+  large or minified (single-line) bundle is detected with memory bounded by
+  chunk + overlap (not the file size — the reason a readline-based fix was
+  rejected). The `deep-secrets/oversize-skipped` id is retained for SARIF
+  contract stability and now reports the stream-scanned count.
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
