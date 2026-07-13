@@ -1,0 +1,9 @@
+{
+  "name": "loop-js-while-fixture",
+  "private": true,
+  "scripts": {
+    "agent-loop": "node scripts/runner.js",
+    "agent-poll": "node scripts/poll.mjs",
+    "agent-watch": "node scripts/watch.cjs"
+  }
+}

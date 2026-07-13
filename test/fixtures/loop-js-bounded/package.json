@@ -1,0 +1,7 @@
+{
+  "name": "loop-js-bounded-fixture",
+  "private": true,
+  "scripts": {
+    "agent-batch": "node scripts/batch.mjs"
+  }
+}
