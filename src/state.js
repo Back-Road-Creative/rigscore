@@ -82,7 +82,7 @@ function parseState(raw) {
  *
  * @returns {Promise<{state: object|null, corrupt: boolean, present: boolean}|null>}
  */
-async function loadCommittedState(cwd) {
+export async function loadCommittedState(cwd) {
   const prefix = await execSafe('git', ['rev-parse', '--show-prefix'], { cwd });
   if (prefix === null) return null;
   const raw = await execSafe('git', ['show', `HEAD:${prefix.trim()}${STATE_FILENAME}`], { cwd });
