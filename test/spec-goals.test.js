@@ -116,6 +116,45 @@ describe('spec-goals check', () => {
     expect(find(r, 'spec-goals/constitution-missing')?.severity).toBe('warning');
   });
 
+  it('WARNs on a constitution under 100 chars even with zero template tokens, naming the reason', async () => {
+    await withTmpDir(async (tmp) => {
+      // The helper writes a token-free 41-char constitution: real-looking, but far too thin.
+      specKitRepo(tmp, {});
+      const placeholder = find(await check.run(at(tmp)), 'spec-goals/constitution-placeholder');
+      expect(placeholder?.severity).toBe('warning');
+      expect(placeholder.context.reason).toBe('too-short');
+      expect(placeholder.detail).toMatch(/under 100/);
+    });
+  });
+
+  it('does not warn on a filled-out constitution of >=100 chars with no template tokens', async () => {
+    await withTmpDir(async (tmp) => {
+      specKitRepo(tmp, {});
+      fs.writeFileSync(
+        path.join(tmp, '.specify/memory/constitution.md'),
+        '# Constitution\n\n' + 'I. Ship small, reviewable, reversible diffs, each backed by a failing test. '.repeat(2),
+      );
+      expect(find(await check.run(at(tmp)), 'spec-goals/constitution-placeholder')).toBeUndefined();
+    });
+  });
+
+  it('reads the threshold as "under 100": exactly 100 passes, 99 fires (a `<`, not `<=`, gate)', async () => {
+    await withTmpDir(async (tmp) => {
+      specKitRepo(tmp, {});
+      const cpath = path.join(tmp, '.specify/memory/constitution.md');
+
+      const body100 = '# C\n' + 'x'.repeat(96); // no tokens; trims to exactly 100
+      expect(body100.trim().length).toBe(100);
+      fs.writeFileSync(cpath, body100);
+      expect(find(await check.run(at(tmp)), 'spec-goals/constitution-placeholder')).toBeUndefined();
+
+      const body99 = '# C\n' + 'x'.repeat(95); // 99 chars → under 100
+      expect(body99.trim().length).toBe(99);
+      fs.writeFileSync(cpath, body99);
+      expect(find(await check.run(at(tmp)), 'spec-goals/constitution-placeholder')?.severity).toBe('warning');
+    });
+  });
+
   it('flags an AGENTS.md with no runnable setup/test/build command', async () => {
     const r = await check.run(ctx('spec-goals-hollow-agents'));
     expect(find(r, 'spec-goals/agents-md-hollow')?.severity).toBe('info');
