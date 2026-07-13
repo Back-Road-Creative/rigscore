@@ -71,6 +71,60 @@ describe('credential-storage check', () => {
     }
   });
 
+  // Zed nests its servers under `context_servers` and opencode under `mcp` with an
+  // `environment` (not `env`) map. Sources: zed.dev/docs/ai/mcp and
+  // opencode.ai/docs/mcp-servers — both verified 2026-07-12.
+  it('CRITICAL for plaintext key in a Zed context_servers env', async () => {
+    const homedir = makeTmpDir();
+    fs.mkdirSync(path.join(homedir, '.config', 'zed'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'zed', 'settings.json'), JSON.stringify({
+      context_servers: {
+        'zed-server': { command: 'npx', args: ['s'], env: { GH_TOKEN: fakeGhToken } },
+      },
+    }));
+    try {
+      const result = await check.run({ homedir });
+      const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Zed'));
+      expect(finding).toBeDefined();
+      expect(result.data.secretsFound).toBe(1);
+    } finally {
+      fs.rmSync(homedir, { recursive: true });
+    }
+  });
+
+  it('does not read a Zed `mcpServers` block — Zed itself ignores that key', async () => {
+    const homedir = makeTmpDir();
+    fs.mkdirSync(path.join(homedir, '.config', 'zed'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'zed', 'settings.json'), JSON.stringify({
+      mcpServers: { decoy: { command: 'node', env: { GH_TOKEN: fakeGhToken } } },
+    }));
+    try {
+      const result = await check.run({ homedir });
+      expect(result.data.filesScanned).toBe(1);
+      expect(result.data.secretsFound).toBe(0);
+    } finally {
+      fs.rmSync(homedir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL for plaintext key in an opencode mcp[].environment map', async () => {
+    const homedir = makeTmpDir();
+    fs.mkdirSync(path.join(homedir, '.config', 'opencode'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'opencode', 'opencode.json'), JSON.stringify({
+      mcp: {
+        'oc-server': { type: 'local', command: ['npx', 's'], environment: { STRIPE_KEY: fakeStripeKey } },
+      },
+    }));
+    try {
+      const result = await check.run({ homedir });
+      const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('opencode'));
+      expect(finding).toBeDefined();
+      expect(result.data.secretsFound).toBe(1);
+    } finally {
+      fs.rmSync(homedir, { recursive: true });
+    }
+  });
+
   it('N/A when no AI client configs found', async () => {
     const homedir = makeTmpDir();
     try {

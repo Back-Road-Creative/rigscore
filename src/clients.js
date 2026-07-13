@@ -8,7 +8,10 @@ import path from 'node:path';
  *   governance  — instruction files, resolved against the project root
  *   mcp         — JSON configs holding MCP servers: { path, base: 'cwd'|'home', key? }.
  *                 `key` defaults to 'mcpServers' (opencode nests its servers under 'mcp').
- *   credentials — $HOME configs whose `mcpServers[].env` can hold plaintext secrets
+ *   credentials — $HOME configs whose MCP servers' env maps can hold plaintext secrets:
+ *                 { dir, file, envKey? }. Servers are read through `mcpServersIn()`, so the
+ *                 client's own `key` applies (Zed: `context_servers`). `envKey` defaults to
+ *                 'env' (opencode nests its variables under 'environment').
  *   sandbox     — config declaring the agent's approval/sandbox boundary: { path, base, format }.
  *                 `format` picks the reader: 'toml' (Codex's approval_policy/sandbox_mode),
  *                 'json' (Claude Code's permissions.deny). Entries are listed in precedence
@@ -22,7 +25,8 @@ import path from 'node:path';
  *   Gemini CLI github.com/google-gemini/gemini-cli — docs/tools/mcp-server.md (~/.gemini/settings.json,
  *              .gemini/settings.json, `mcpServers`), docs/cli/gemini-md.md (GEMINI.md).
  *   opencode   opencode.ai/docs/config (~/.config/opencode/opencode.json, project opencode.json,
- *              servers under `mcp`) and opencode.ai/docs/rules (AGENTS.md).
+ *              servers under `mcp`, env vars under `environment`) and opencode.ai/docs/rules
+ *              (AGENTS.md).
  */
 export const CLIENTS = [
   { id: 'claude-code', name: 'Claude Code', governance: ['CLAUDE.md'],
@@ -57,7 +61,8 @@ export const CLIENTS = [
     credentials: [{ dir: '.gemini', file: 'settings.json' }] },
   { id: 'opencode', name: 'opencode', governance: ['AGENTS.md'],
     mcp: [{ path: 'opencode.json', base: 'cwd', key: 'mcp' },
-      { path: '.config/opencode/opencode.json', base: 'home', key: 'mcp' }] },
+      { path: '.config/opencode/opencode.json', base: 'home', key: 'mcp' }],
+    credentials: [{ dir: '.config/opencode', file: 'opencode.json', envKey: 'environment' }] },
   { id: 'amp', name: 'Amp',
     mcp: [{ path: '.amp/mcp.json', base: 'home' }],
     credentials: [{ dir: '.amp', file: 'mcp.json' }] },
@@ -65,7 +70,8 @@ export const CLIENTS = [
   // Linux and macOS. Project `.zed/settings.json` is documented as editor/language options
   // only, so it holds no servers. zed-industries/zed docs/src/ai/mcp.md + configuring-zed.md.
   { id: 'zed', name: 'Zed',
-    mcp: [{ path: '.config/zed/settings.json', base: 'home', key: 'context_servers' }] },
+    mcp: [{ path: '.config/zed/settings.json', base: 'home', key: 'context_servers' }],
+    credentials: [{ dir: '.config/zed', file: 'settings.json' }] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';
@@ -90,7 +96,7 @@ export function networkMcpPaths(cwd, homedir) {
   return mcpConfigPaths(cwd, homedir);
 }
 
-/** $HOME client configs whose `mcpServers[].env` can hold plaintext credentials. */
+/** $HOME client configs whose MCP servers' env maps can hold plaintext credentials. */
 export function credentialClients() {
   return CLIENTS.flatMap(c => (c.credentials || []).map(cr => ({ name: c.name, ...cr })));
 }

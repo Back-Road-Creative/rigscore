@@ -113,6 +113,24 @@ describe('CycloneDX 1.6 AI-BOM export', () => {
     });
   });
 
+  // opencode is repo-level (`opencode.json`) and nests its servers under `mcp`.
+  // Source: opencode.ai/docs/config + /docs/mcp-servers, verified 2026-07-12.
+  it('inventories opencode.json servers, honoring its `mcp` key', async () => {
+    await withTmpDir(async (tmp) => {
+      fs.writeFileSync(path.join(tmp, 'opencode.json'), JSON.stringify({
+        mcp: { linear: { type: 'local', command: ['npx', '-y', 'linear-mcp@1.0.0'], environment: { LINEAR_KEY: 'secretvalue' } } },
+      }));
+      const bom = await formatCycloneDx({ score: 70 }, { cwd: tmp });
+      const linear = bom.components.find((c) => c['bom-ref'] === 'mcp-server:linear');
+      expect(linear).toBeDefined();
+      expect(linear.externalReferences[0])
+        .toEqual({ type: 'configuration', url: 'opencode.json', comment: 'MCP server declaration' });
+      const file = bom.components.find((c) => c['bom-ref'] === 'file:opencode.json');
+      expect(file.properties).toContainEqual({ name: 'rigscore:file:role', value: 'ai-client-config' });
+      expect(contractErrors(bom)).toEqual([]);
+    });
+  });
+
   it('--cyclonedx is a plain boolean flag, off by default', () => {
     expect(parseArgs([]).cyclonedx).toBe(false);
     expect(parseArgs(['--cyclonedx']).cyclonedx).toBe(true);
