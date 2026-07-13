@@ -11,15 +11,17 @@ Audits the quality and cost of instruction files — `CLAUDE.md` chains, `.claud
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
 | No instruction files found | SKIPPED | — | — |
-| Single file > 5,000 estimated tokens (char-count / 4) | WARNING | `instruction-effectiveness` (level `warning`) | Condense sections or move detail to on-demand references. |
-| Aggregate instruction tokens > 20% of 200K window | WARNING | `instruction-effectiveness` (level `warning`) | Consolidate redundant instructions; split rarely-needed ones out. |
-| Aggregate 10–20% of 200K window | INFO | `instruction-effectiveness` (level `note`) | Review large files for optimization. |
-| Contradiction: "always/must X" vs. "never/must not X" with Jaccard ≥0.5 and ≥2 overlapping terms (same file) | INFO | `instruction-effectiveness` (level `note`) | Reconcile the conflicting directives. |
-| Dead file reference in backtick path or markdown link | WARNING | `instruction-effectiveness` (level `warning`) | Update or remove the reference. |
-| Vague directive (`use your judgment`, `as appropriate`, `figure it out`, `be smart about`, `when it makes sense`, `where applicable`, `as necessary`, `do what you think`, `up to you`) without colon-criteria or bulleted follow-up | INFO | `instruction-effectiveness` (level `note`) | Add concrete criteria, examples, or decision rules. First 3 per file reported individually, then one summary row. |
-| Governance/skill file > 500 lines (`BLOAT_WARN`) | WARNING | `instruction-effectiveness` (level `warning`) | Split into focused files; archive obsolete sections. |
-| Governance/skill file 300–500 lines (`BLOAT_INFO`) | INFO | `instruction-effectiveness` (level `note`) | Review for condensation opportunities. |
-| Identical normalized line ≥20 chars present in 2+ distinct files | INFO | `instruction-effectiveness` (level `note`) | Consolidate duplicated rules into a single source. First 10 reported individually, then a summary row with the overflow count. |
+| Single file > 5,000 estimated tokens (char-count / 4) | WARNING | `instruction-effectiveness/single-file-over-budget` | Condense sections or move detail to on-demand references. |
+| Aggregate instruction tokens > 20% of 200K window | WARNING | `instruction-effectiveness/context-budget-warn` | Consolidate redundant instructions; split rarely-needed ones out. |
+| Aggregate 10–20% of 200K window | INFO | `instruction-effectiveness/context-budget-info` | Review large files for optimization. |
+| Contradiction: "always/must X" vs. "never/must not X" with Jaccard ≥0.5 and ≥2 overlapping terms (same file) | INFO | `instruction-effectiveness/contradiction` | Reconcile the conflicting directives. |
+| Dead file reference in backtick path or markdown link | WARNING | `instruction-effectiveness/dead-file-reference` | Update or remove the reference. |
+| Vague directive (`use your judgment`, `as appropriate`, `figure it out`, `be smart about`, `when it makes sense`, `where applicable`, `as necessary`, `do what you think`, `up to you`) without colon-criteria or bulleted follow-up | INFO | `instruction-effectiveness/vague-instruction` | Add concrete criteria, examples, or decision rules. First 3 per file reported individually. |
+| More than 3 vague directives in one file | INFO | `instruction-effectiveness/vague-instruction-summary` | One summary row carrying the total count for that file. |
+| Governance/skill file > 500 lines (`BLOAT_WARN`) | WARNING | `instruction-effectiveness/file-bloat` | Split into focused files; archive obsolete sections. |
+| Governance/skill file 300–500 lines (`BLOAT_INFO`) | INFO | `instruction-effectiveness/file-bloat-info` | Review for condensation opportunities. |
+| Identical normalized line ≥20 chars present in 2+ distinct files | INFO | `instruction-effectiveness/redundant-instruction` | Consolidate duplicated rules into a single source. First 10 reported individually. |
+| More than 10 redundant lines across the file set | INFO | `instruction-effectiveness/redundant-instruction-summary` | One summary row carrying the overflow count. |
 | All files clean | PASS | — | — |
 
 Thresholds (from `src/checks/instruction-effectiveness.js`):

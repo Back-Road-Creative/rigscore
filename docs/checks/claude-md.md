@@ -12,22 +12,23 @@ Failure to detect a governance file is CRITICAL and short-circuits the check —
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| No governance file found in any known location | CRITICAL | `claude-md/missing` | Create CLAUDE.md (or equivalent) with boundaries, forbidden actions, approval gates |
-| Multiple governance files detected | PASS | `claude-md/multi-layer` | None — informational positive signal |
-| Longest governance file < 50 lines | WARNING | `claude-md/too-short` | Add forbidden actions, approval gates, path restrictions, anti-injection rules |
+| No governance file found in any known location | CRITICAL | `claude-md/no-governance-file` | Create CLAUDE.md (or equivalent) with boundaries, forbidden actions, approval gates |
+| Multiple governance files detected | PASS | — | None — informational positive signal |
+| Longest governance file < 50 lines | WARNING | `claude-md/governance-file-short` | Add forbidden actions, approval gates, path restrictions, anti-injection rules |
+| Governance header names a quality pattern but a line within 5 of it dismantles it ("no restrictions", "skip approval") | WARNING | `claude-md/governance-reversal-detected` | Rewrite the section body to enforce the rule, or drop the keyword-stuffed header |
 | Quality pattern MISSING (no match anywhere) — `forbidden actions` | WARNING | `claude-md/missing-forbidden-actions` | Add forbidden-action rules |
 | Quality pattern MISSING — `approval gates` | WARNING | `claude-md/missing-approval-gates` | Add approval / human-in-the-loop rules |
 | Quality pattern MISSING — `path restrictions` | WARNING | `claude-md/missing-path-restrictions` | Declare allowed working directories |
 | Quality pattern MISSING — `network restrictions` | WARNING | `claude-md/missing-network-restrictions` | Declare external-network policy |
 | Quality pattern MISSING — `anti-injection` | WARNING | `claude-md/missing-anti-injection` | Add prompt-injection defense rules |
 | Quality pattern MISSING — `shell restrictions` | WARNING | `claude-md/missing-shell-restrictions` | Add bash/shell policy |
-| Quality pattern MISSING — `test-driven development` | WARNING | `claude-md/missing-tdd` | Declare test-first workflow |
-| Quality pattern MISSING — `definition of done` | WARNING | `claude-md/missing-dod` | Declare what "done" means |
-| Quality pattern MISSING — `git workflow rules` | WARNING | `claude-md/missing-git-workflow` | Declare branch / PR workflow |
-| Quality pattern present BUT NEGATED (e.g. "never require approval") | CRITICAL | `claude-md/negated-<pattern>` | Remove negated statement; replace with genuine enforcement |
-| Injection pattern ("ignore previous instructions", "you are now", "from now on you…") in governance, non-defensive | CRITICAL | `claude-md/embedded-injection` | Remove override pattern or rephrase as defensive |
-| Governance file listed in `.gitignore` | CRITICAL | `claude-md/gitignored` | Remove from `.gitignore` and commit |
-| Governance file exists but `git ls-files` shows untracked | WARNING | `claude-md/untracked` | `git add <file>` |
+| Quality pattern MISSING — `test-driven development` | WARNING | `claude-md/missing-test-driven-development` | Declare test-first workflow |
+| Quality pattern MISSING — `definition of done` | WARNING | `claude-md/missing-definition-of-done` | Declare what "done" means |
+| Quality pattern MISSING — `git workflow rules` | WARNING | `claude-md/missing-git-workflow-rules` | Declare branch / PR workflow |
+| Quality pattern present BUT NEGATED (e.g. "never require approval") | CRITICAL | `claude-md/actively-negates-<pattern>` | Remove negated statement; replace with genuine enforcement |
+| Injection pattern ("ignore previous instructions", "you are now", "from now on you…") in governance, non-defensive | CRITICAL | `claude-md/injection-pattern` | Remove override pattern or rephrase as defensive |
+| Governance file listed in `.gitignore` | CRITICAL | `claude-md/governance-file-gitignored` | Remove from `.gitignore` and commit |
+| Governance file exists but `git ls-files` shows untracked | WARNING | `claude-md/governance-file-untracked` | `git add <file>` |
 | All checks pass | PASS | — | — |
 
 ## Weight rationale
