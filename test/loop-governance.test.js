@@ -64,4 +64,57 @@ describe('loop-governance check', () => {
     expect(result.score).toBe(NOT_APPLICABLE_SCORE);
     expect(result.findings).toEqual([]);
   });
+
+  describe('no-stop-condition', () => {
+    it('flags an unconditional loop whose body decides nothing — even when capped', async () => {
+      const result = await run('loop-no-stop');
+      const finding = byId(result, 'loop-governance/no-stop-condition');
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe('warning');
+      expect(finding.context.file).toMatch(/run-agent\.sh$/);
+      // --max-turns bounds the spend, so the cost finding must stay silent:
+      // the two findings are orthogonal, and only this one applies.
+      expect(ids(result)).not.toContain('loop-governance/uncapped-loop');
+      expect(result.score).toBeLessThan(100);
+    });
+
+    it('stays silent when the body evaluates anything at all (break / grep -q / -f sentinel)', async () => {
+      const result = await run('loop-stop-guarded');
+      expect(ids(result)).not.toContain('loop-governance/no-stop-condition');
+      expect(result.findings.every((f) => f.severity === 'pass')).toBe(true);
+    });
+
+    it('stays silent on a conditional header, and on an unconditional loop with no agent', async () => {
+      // loop-capped holds `while [ "$i" -lt "$MAX_ITER" ]` (conditional) and a
+      // `while true; do sleep 60; done` (unconditional, but no agent in it).
+      const result = await run('loop-capped');
+      expect(ids(result)).not.toContain('loop-governance/no-stop-condition');
+    });
+  });
+
+  describe('cron', () => {
+    it('flags an agent on a cron line with nothing bounding the tick', async () => {
+      const result = await run('cron-agent-uncapped');
+      const finding = byId(result, 'loop-governance/uncapped-cron');
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe('warning');
+      expect(finding.context.file).toBe('crontab');
+      expect(finding.evidence).toContain('claude -p');
+      // The commented-out cron line must not count as a second job.
+      expect(result.data.cronJobs).toBe(1);
+    });
+
+    it('passes a capped cron agent across `*.cron` and `*.crontab`', async () => {
+      const result = await run('cron-agent-capped');
+      expect(ids(result)).not.toContain('loop-governance/uncapped-cron');
+      expect(result.findings.every((f) => f.severity === 'pass')).toBe(true);
+      expect(result.data.cronJobs).toBe(2);
+    });
+
+    it('returns N/A on an ordinary crontab with no agent on any line', async () => {
+      const result = await run('cron-no-agent');
+      expect(result.score).toBe(NOT_APPLICABLE_SCORE);
+      expect(result.findings).toEqual([]);
+    });
+  });
 });
