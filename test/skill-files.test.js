@@ -12,7 +12,9 @@ import check, {
   checkUnicode,
   checkPosixPermissions,
   checkEscalation,
+  ESCALATION_RULES,
 } from '../src/checks/skill-files.js';
+import { EXPANDERS } from '../src/lib/verify-docs.js';
 import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -472,5 +474,44 @@ describe('Wave 8 — checkEscalation', () => {
     const ids = findings.map((x) => x.findingId);
     expect(ids).not.toContain('skill-files/escalation-sudo');
     expect(ids).toContain('skill-files/escalation-chmod-777');
+  });
+});
+
+// The id used to be recovered by substring-matching a pattern's SOURCE TEXT, with a
+// catch-all `return 'escalation'` at the bottom: a new pattern added without a matching
+// branch silently collapsed into that bucket and collided with every other unmapped
+// pattern. These tests pin the property that makes that impossible — the id is declared
+// WITH the pattern, so a pattern cannot exist without one, and there is no fallback.
+describe('escalation pattern → id table', () => {
+  const SOURCE = fs.readFileSync(path.join(__dirname, '..', 'src', 'checks', 'skill-files.js'), 'utf8');
+
+  it('declares one row per escalation pattern, each carrying its own id', () => {
+    expect(Array.isArray(ESCALATION_RULES)).toBe(true);
+    expect(ESCALATION_RULES.length).toBeGreaterThan(0);
+    for (const rule of ESCALATION_RULES) {
+      expect(rule.pattern, `row ${rule.id} has no RegExp`).toBeInstanceOf(RegExp);
+      expect(typeof rule.id, `pattern ${rule.pattern} has no id`).toBe('string');
+      expect(rule.id.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every id is unique, and none is the old catch-all "escalation"', () => {
+    const ids = ESCALATION_RULES.map((r) => r.id);
+    expect(new Set(ids).size, `duplicate ids in ${ids.join(', ')}`).toBe(ids.length);
+    expect(ids).not.toContain('escalation');
+  });
+
+  it('has no source-text switch and no catch-all return', () => {
+    expect(SOURCE).not.toMatch(/patternIdForEscalation/);
+    expect(SOURCE).not.toMatch(/return\s+'escalation'/);
+  });
+
+  it('keeps no parallel array of patterns — the scan list is derived from the table', () => {
+    expect(SOURCE).not.toMatch(/const\s+ESCALATION_PATTERNS\s*=\s*\[/);
+  });
+
+  it("verify-docs EXPANDERS['skill-files'] harvests the ids from the table", () => {
+    const expanded = EXPANDERS['skill-files'](SOURCE);
+    expect([...expanded].sort()).toEqual(ESCALATION_RULES.map((r) => r.id).sort());
   });
 });
