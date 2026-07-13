@@ -125,8 +125,10 @@ export function globToRegExp(glob) {
  * Three supported forms:
  *   - `re:/<pattern>/[flags]`  → regex against findingId or title
  *   - `<string>/<wildcard>`    → glob against findingId (contains `*`)
- *   - `<string>`               → exact findingId match OR case-insensitive
- *                                substring match against title (legacy)
+ *   - `<string>`               → exact findingId match, bare check-id
+ *                                namespace match (`<bare>/…`), OR
+ *                                case-insensitive substring match against
+ *                                title (legacy)
  */
 export function compileSuppressPattern(raw) {
   const str = String(raw);
@@ -152,12 +154,16 @@ export function compileSuppressPattern(raw) {
     return (finding) => re.test(finding.findingId || '');
   }
 
-  // Legacy form: exact findingId OR case-insensitive title substring
+  // Legacy form: exact findingId, bare check-id namespace, or title substring.
+  // `id.startsWith(lowered + '/')` mutes a whole check (documented in
+  // docs/FINDING_IDS.md) — the trailing '/' anchors on the exact check
+  // segment, so a bare token can never leak into a longer check id (e.g.
+  // `docker` cannot match `docker-security/…`).
   const lowered = str.toLowerCase();
   return (finding) => {
     const id = (finding.findingId || '').toLowerCase();
     const title = (finding.title || '').toLowerCase();
-    return id === lowered || title.includes(lowered);
+    return id === lowered || id.startsWith(lowered + '/') || title.includes(lowered);
   };
 }
 
