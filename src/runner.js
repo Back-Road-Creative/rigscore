@@ -1,11 +1,31 @@
 import { WEIGHTS } from './constants.js';
 
 /**
+ * Weight to stamp on a result.
+ *
+ * `resolvedWeights` (from `resolveWeights` in config.js) is the profile +
+ * overrides + disabled-checks map that scoring already uses. A check disabled
+ * via `.rigscorerc.json` is expressed there as weight 0, so an entry MUST win
+ * even when it is 0 — hence the explicit `in` test rather than `||`, which
+ * would fall through on a legitimate zero and re-report the static weight.
+ *
+ * Callers that pass no map (direct `runChecks` consumers importing it from
+ * scanner.js) keep the historical static-WEIGHTS behavior, including the
+ * `check.weight` fallback for plugin ids absent from WEIGHTS.
+ */
+function resolveCheckWeight(check, resolvedWeights) {
+  if (resolvedWeights && check.id in resolvedWeights) {
+    return resolvedWeights[check.id];
+  }
+  return WEIGHTS[check.id] || check.weight || 0;
+}
+
+/**
  * Run an array of checks against a context, collect results.
  * Uses Promise.allSettled so one failing check doesn't block others.
  */
 export async function runChecks(checks, context, options = {}) {
-  const { checkFilter } = options;
+  const { checkFilter, resolvedWeights } = options;
 
   let filtered = checks;
   if (checkFilter) {
@@ -27,7 +47,7 @@ export async function runChecks(checks, context, options = {}) {
           id: check.id,
           name: check.name,
           category: check.category,
-          weight: WEIGHTS[check.id] || check.weight || 0,
+          weight: resolveCheckWeight(check, resolvedWeights),
           enforcementGrade,
           score: 0,
           findings: [{
@@ -42,7 +62,7 @@ export async function runChecks(checks, context, options = {}) {
         id: check.id,
         name: check.name,
         category: check.category,
-        weight: WEIGHTS[check.id] || check.weight || 0,
+        weight: resolveCheckWeight(check, resolvedWeights),
         enforcementGrade,
         score: result.score,
         findings: result.findings,
@@ -61,7 +81,7 @@ export async function runChecks(checks, context, options = {}) {
       id: check.id,
       name: check.name,
       category: check.category,
-      weight: WEIGHTS[check.id] || check.weight || 0,
+      weight: resolveCheckWeight(check, resolvedWeights),
       enforcementGrade: check.enforcementGrade || 'pattern',
       score: 0,
       findings: [
