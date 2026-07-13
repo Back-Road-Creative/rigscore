@@ -83,9 +83,14 @@ function classifyBaseline(raw) {
  * authority; the working tree is still what gets scanned for findings.
  *
  *   { inRepo:false }                        — not a git repo → caller uses the working tree
- *   { inRepo:true, status:'absent' }        — git repo, nothing committed at HEAD (first run)
+ *   { inRepo:true, status:'absent' }        — git repo, baseline NEVER tracked (genuine first run)
+ *   { inRepo:true, status:'removed' }       — baseline WAS tracked, then deleted at HEAD → hard-fail
  *   { inRepo:true, status:'corrupt' }       — committed but unparseable → hard-fail
  *   { inRepo:true, status:'ok', baseline }  — the committed authority
+ *
+ * `absent` and `removed` both fail `git show HEAD:<rel>` identically; they are
+ * split by git history so a PR that `git rm`s the committed baseline cannot pose
+ * as a first run and launder its new findings through a silent re-mint.
  *
  * @returns {Promise<object>}
  */
@@ -96,7 +101,17 @@ async function readCommittedBaseline(baselinePath) {
   const rel = path.relative(top.trim(), abs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) return { inRepo: true, status: 'absent' };
   const raw = await execSafe('git', ['-C', top.trim(), 'show', `HEAD:${rel}`]);
-  if (raw === null) return { inRepo: true, status: 'absent' }; // no HEAD / not tracked
+  if (raw === null) {
+    // Absent at HEAD conflates two cases that `git show` cannot tell apart: a
+    // genuine first run (never tracked) and a deletion attack (was tracked,
+    // then `git rm`'d + committed). Discriminate via history — a path with
+    // commit history but absent at HEAD was REMOVED. On a repo with no commits
+    // at all, `git log` errors and execSafe returns null → treated as a first
+    // run (never tracked), which is correct.
+    const history = await execSafe('git', ['-C', top.trim(), 'log', '-1', '--format=%H', '--', rel]);
+    if (history && history.trim()) return { inRepo: true, status: 'removed' };
+    return { inRepo: true, status: 'absent' }; // never tracked → legitimate first run
+  }
   return { inRepo: true, ...classifyBaseline(raw) };
 }
 
@@ -213,6 +228,7 @@ export async function runBaselineMode(scanResult, baselinePath, { refresh = fals
   // corrupt working-tree copy cannot launder findings (mirrors --verify-state).
   const committed = await readCommittedBaseline(baselinePath);
   if (committed.inRepo && committed.status === 'corrupt') failCorrupt(baselinePath, 'committed (HEAD)');
+  if (committed.inRepo && committed.status === 'removed') failRemoved(baselinePath);
   if (committed.inRepo && committed.status === 'ok') diffAndExit(committed.baseline, scanResult);
 
   // Not a git repo, or a git repo with nothing pinned at HEAD: fall back to the
@@ -229,6 +245,21 @@ function failCorrupt(baselinePath, which) {
     `rigscore: ${which} baseline ${baselinePath} is malformed ` +
     `(unparseable JSON or missing findings array); refusing to silently ` +
     `re-mint. Fix or regenerate it with \`rigscore --baseline ${baselinePath} --baseline-refresh\`.\n`,
+  );
+  process.exit(2);
+}
+
+/**
+ * Refuse a committed baseline that was tracked but removed at HEAD (a PR that
+ * `git rm`'d it). Re-minting here would absorb the PR's new findings and ship
+ * green, so this fails closed — exit 2, same provenance-error tier as corrupt.
+ */
+function failRemoved(baselinePath) {
+  process.stderr.write(
+    `rigscore: committed baseline ${baselinePath} was tracked but is absent at HEAD ` +
+    `(removed from the committed tree); refusing to silently re-mint a fresh baseline ` +
+    `that would absorb new findings. Regenerate and commit it with ` +
+    `\`rigscore --baseline ${baselinePath} --baseline-refresh\`.\n`,
   );
   process.exit(2);
 }

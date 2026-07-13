@@ -192,9 +192,14 @@ trusts only the baseline **committed at HEAD** (`git show HEAD:<path>`, like
 in a PR can't make the gate re-seed their findings and ship green. Consequently
 `rm <baseline>` + a plain re-run no longer regenerates while a baseline is
 committed — the gate reads HEAD and diffs; a corrupt baseline committed at HEAD
-hard-fails (exit `2`). Outside a git repo (or before the baseline is committed)
-the old behavior holds: a missing baseline mints on first run (exit `0`), a
-corrupt working-tree file still exits `2`.
+hard-fails (exit `2`). The same fail-closed rule covers HEAD-deletion: a PR that
+`git rm`s the committed baseline (so it is absent at HEAD, not just in the
+working tree) **exits `2`** rather than re-minting a fresh baseline that would
+absorb its new findings — a removed baseline is told apart from a genuine first
+run by git history, so a never-tracked baseline still mints on first run.
+Outside a git repo (or before the baseline is committed) the old behavior holds:
+a missing baseline mints on first run (exit `0`), a corrupt working-tree file
+still exits `2`.
 
 ## See also
 
