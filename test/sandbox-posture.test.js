@@ -94,6 +94,62 @@ describe('sandbox-posture: the client registry is the surface list', () => {
   });
 });
 
+// A devcontainer tree written to a throwaway cwd — no repo fixture needed.
+const tree = (files) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-devc-'));
+  for (const [rel, body] of Object.entries(files)) {
+    const file = path.join(cwd, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, body);
+  }
+  return cwd;
+};
+const DEVC_NO_EGRESS = JSON.stringify({
+  name: 'agent-box',
+  image: 'mcr.microsoft.com/devcontainers/base:ubuntu-24.04',
+  features: { 'ghcr.io/anthropics/devcontainer-features/claude-code:1': {} },
+  postCreateCommand: 'npm install -g @anthropic-ai/claude-code',
+});
+
+describe('sandbox-posture: devcontainer egress (presence-only)', () => {
+  it('flags a devcontainer that installs an agent and attempts no egress control at all', async () => {
+    const r = await run(tree({ '.devcontainer/devcontainer.json': DEVC_NO_EGRESS }));
+    expect(ids(r)).toContain('sandbox-posture/devcontainer-no-egress-control');
+    expect(sev(r, 'sandbox-posture/devcontainer-no-egress-control')).toBe('warning');
+    expect(r.data.surfacesScanned).toBe(1);
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('goes silent on evidence of an attempt — and claims NO posture from that evidence', async () => {
+    // The honesty ceiling: a proxy env + --cap-drop prove someone TRIED to contain this
+    // container. They never prove it IS contained (the proxy may be bypassable, the rule may
+    // not load), so the check may only fall silent — it must not grade the devcontainer.
+    const r = await run(tree({
+      '.devcontainer/devcontainer.json': JSON.stringify({
+        postCreateCommand: 'npm i -g @anthropic-ai/claude-code',
+        runArgs: ['--cap-drop=ALL', '--security-opt=no-new-privileges:true'],
+        containerEnv: { HTTPS_PROXY: 'http://egress-proxy:8888' },
+      }),
+      '.devcontainer/egress/init-firewall.sh': '#!/bin/sh\niptables -P OUTPUT DROP\n',
+    }));
+    expect(ids(r)).not.toContain('sandbox-posture/devcontainer-no-egress-control');
+    expect(r.data.devcontainer.controls).toEqual(
+      expect.arrayContaining(['firewall', 'proxy', 'cap-drop']),
+    );
+    expect(r.data.postures.devcontainer).toBeUndefined(); // presence ≠ containment
+    expect(r.score).toBe(100);
+  });
+
+  it('reads a devcontainer that runs no agent as no surface at all — N/A, never zero', async () => {
+    const r = await run(tree({
+      '.devcontainer/devcontainer.json': JSON.stringify({ image: 'node:22' }),
+    }));
+    expect(ids(r)).not.toContain('sandbox-posture/devcontainer-no-egress-control');
+    expect(r.score).toBe(NOT_APPLICABLE_SCORE);
+    expect(r.data.surfacesScanned).toBe(0);
+  });
+});
+
 describe('sandbox-posture: Claude Code deny-rule posture', () => {
   it('flags a settings file that exists but declares zero permissions.deny entries', async () => {
     // Fixture: settings.json with allow entries only + settings.local.json in
@@ -112,6 +168,28 @@ describe('sandbox-posture: Claude Code deny-rule posture', () => {
       .toHaveLength(0);
     expect(r.data.postures['claude-code']).toBe('partial');
     expect(r.score).toBe(100);
+  });
+
+  it('sees bypassPermissions at its REAL home, permissions.defaultMode (not just top-level)', async () => {
+    // Claude Code writes the approval mode nested under `permissions`; the top-level key is the
+    // legacy shape. Reading only the top level graded a fully permission-bypassing config as if it
+    // had no bypass at all — `unrestricted` never fired on a real-world settings.json. The existing
+    // nodeny fixture happens to use the legacy shape, which is exactly why nothing caught this.
+    const r = await run(tree({
+      '.claude/settings.json': JSON.stringify({
+        permissions: { allow: ['Bash(npm test:*)'], defaultMode: 'bypassPermissions' },
+      }),
+    }));
+    expect(r.data.postures['claude-code']).toBe('unrestricted');
+    expect(r.findings.find((f) => f.findingId === 'sandbox-posture/claude-no-deny-rules').detail)
+      .toContain('bypassPermissions');
+  });
+
+  it('still honors the legacy top-level defaultMode — the fallback, not the primary read', async () => {
+    const r = await run(tree({
+      '.claude/settings.json': JSON.stringify({ defaultMode: 'bypassPermissions' }),
+    }));
+    expect(r.data.postures['claude-code']).toBe('unrestricted');
   });
 
   it('reads an absent settings file as no surface, never as zero deny rules', async () => {

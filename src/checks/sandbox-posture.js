@@ -2,10 +2,47 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { CLIENTS } from '../clients.js';
-import { readFileSafe, readJsonSafe } from '../utils.js';
+import { readFileSafe, readJsonSafe, walkDirSafe } from '../utils.js';
 
 const CODEX_DOCS = 'https://developers.openai.com/codex/config-reference';
 const CLAUDE_DOCS = 'https://docs.claude.com/en/docs/claude-code/settings';
+const DEVCONTAINER_DOCS = 'https://containers.dev/implementors/json_reference/';
+
+// Package / devcontainer-feature identifiers that install an agent CLI into the container.
+// Names, not command words: prose mentioning "claude" is not an install.
+const AGENT_INSTALL =
+  /@anthropic-ai\/claude-code|@openai\/codex|@google\/gemini-cli|@github\/copilot|opencode-ai|aider-chat|cursor-agent|claude-code|codex-cli|gemini-cli/i;
+
+// PRESENCE signals — each is evidence that someone ATTEMPTED egress control, and nothing more.
+// A hit can never prove the container is contained: the script may no-op, the proxy may be
+// bypassable, the rule may never load. So a hit only silences the finding; it grades nothing.
+const EGRESS_CONTROLS = [
+  ['firewall', /\biptables\b|\bip6tables\b|\bnftables\b|\bipset\b|\bufw\b|firewalld|init-firewall/i],
+  ['proxy', /HTTPS?_PROXY|\bhttps?_proxy\b|tinyproxy|\bsquid\b|mitmproxy/i],
+  ['default-deny', /--network[= ]"?none|"network"\s*:\s*"none"|internal:\s*true|FilterDefaultDeny|default[-_]?deny|-P\s+OUTPUT\s+DROP|policy\s+drop|allowlist|allowed[_-]?hosts/i],
+  ['cap-drop', /--cap-drop|cap_drop|no-new-privileges|securityOpt|--security-opt/i],
+];
+
+/**
+ * The devcontainer egress surface: a `.devcontainer/` (or the single-file `.devcontainer.json`)
+ * that installs an agent CLI. Returns null when there is no devcontainer, or when the one here
+ * runs no agent — that is not this check's business, so it is no surface, not a passing one.
+ *
+ * Presence-only BY CONSTRUCTION, which is a ceiling and not a bug — see the docs page.
+ */
+async function scanDevcontainer(cwd) {
+  const { files } = await walkDirSafe(path.join(cwd, '.devcontainer'), {
+    maxFiles: 200, skipHidden: false,
+  });
+  const single = path.join(cwd, '.devcontainer.json'); // the documented single-file form
+  let text = '';
+  for (const file of [...files, single]) text += (await readFileSafe(file)) ?? '';
+  if (!AGENT_INSTALL.test(text)) return null;
+  return {
+    where: files.length ? '.devcontainer/' : '.devcontainer.json',
+    controls: EGRESS_CONTROLS.filter(([, re]) => re.test(text)).map(([id]) => id),
+  };
+}
 
 // Targeted key reader for Codex's `config.toml` — NOT a TOML parser. Reads only
 // `approval_policy`/`sandbox_mode` (root) + `network_access` ([sandbox_workspace_write]).
@@ -87,8 +124,18 @@ export function readDenyKeys(settings) {
   const deny = settings?.permissions?.deny;
   return {
     denyCount: Array.isArray(deny) ? deny.length : 0,
-    bypass: settings?.defaultMode === 'bypassPermissions',
+    bypass: defaultModeOf(settings) === 'bypassPermissions',
   };
+}
+
+/**
+ * Claude Code writes the approval mode at `permissions.defaultMode`; the top-level key is the
+ * legacy shape. Nested is read FIRST, top-level only as the fallback: reading the top level alone
+ * graded a real-world bypassing config as if it had no bypass at all — `bypass` never went true,
+ * so the `unrestricted` posture and the bypass clause of the detail string could not fire.
+ */
+function defaultModeOf(settings) {
+  return settings?.permissions?.defaultMode ?? settings?.defaultMode;
 }
 
 /** Nothing denied and nothing prompted is unrestricted; otherwise something still binds. */
@@ -171,6 +218,22 @@ export default {
       });
     }
 
+    // The devcontainer arm deliberately writes NO entry into `postures`: a posture is a claim
+    // about what the agent can reach, and presence evidence cannot support one in either
+    // direction. Silence on a hit, a finding on none — never a grade.
+    const devcontainer = await scanDevcontainer(cwd);
+    if (devcontainer) {
+      surfacesScanned++;
+      if (devcontainer.controls.length === 0) findings.push({
+        findingId: 'sandbox-posture/devcontainer-no-egress-control',
+        severity: 'warning',
+        title: `Devcontainer runs an agent with no egress control in ${devcontainer.where}`,
+        detail: 'This devcontainer installs an agent CLI and carries no firewall, no proxy, no default-deny network rule and no capability drop — nothing in it even attempts to bound what the agent can reach, so the agent inherits the host\'s network. This is a presence check: it reports that no attempt at containment is visible, and a hit would have proven only an attempt, never containment.',
+        remediation: 'Give the container an egress boundary — an internal-only network plus a deny-by-default proxy, --cap-drop=ALL and --security-opt=no-new-privileges (templates/container is a worked example). Then prove it blocks: a proxy whose filter fails to parse fails OPEN, and a happy-path healthcheck calls that healthy.',
+        learnMore: DEVCONTAINER_DOCS,
+      });
+    }
+
     // No sandbox surface anywhere is N/A, never 0 — most repos configure none.
     if (surfacesScanned === 0) {
       return { score: NOT_APPLICABLE_SCORE, findings: [], data: { postures: {}, surfacesScanned: 0 } };
@@ -178,6 +241,9 @@ export default {
     if (findings.length === 0) {
       findings.push({ severity: 'pass', title: 'No dangerous sandbox or permission combination found' });
     }
-    return { score: calculateCheckScore(findings), findings, data: { postures, surfacesScanned } };
+    return {
+      score: calculateCheckScore(findings), findings,
+      data: { postures, surfacesScanned, devcontainer },
+    };
   },
 };

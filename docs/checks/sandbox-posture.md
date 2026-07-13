@@ -18,8 +18,16 @@ so a **new client is picked up with no change to this check's logic**. Two forma
   `[sandbox_workspace_write] network_access`, per the
   [Codex config reference](https://developers.openai.com/codex/config-reference).
 - `json` — **Claude Code**, `.claude/settings.json` + `.claude/settings.local.json`: the **posture**
-  question only — are there *any* `permissions.deny` rules? — plus `defaultMode`. Which *allow* entries are
-  dangerous is `claude-settings`' job; this check never re-grades them.
+  question only — are there *any* `permissions.deny` rules? — plus the approval mode. Which *allow* entries
+  are dangerous is `claude-settings`' job; this check never re-grades them. The approval mode is read at
+  **`permissions.defaultMode` first**, falling back to a top-level `defaultMode` for legacy configs — the
+  nested key is where Claude Code actually writes it, and reading only the top level let a real
+  `bypassPermissions` config score as though nothing bypassed the prompt.
+
+One surface is **not** registry-driven: the project's `.devcontainer/` (or single-file
+`.devcontainer.json`). It belongs to no client — it is the box every client runs *inside* — so it is
+scanned separately, and only when it installs an agent CLI (a devcontainer that runs no agent is not
+this check's business, and reads as no surface at all rather than as a passing one).
 
 ## Triggers
 
@@ -29,6 +37,7 @@ so a **new client is picked up with no change to this check's logic**. Two forma
 | `approval_policy = "never"` **and** network reachable (`workspace-write` + `network_access = true`) | CRITICAL | `sandbox-posture/codex-auto-approve-networked` | `network_access = false`, or raise `approval_policy` |
 | `approval_policy = "never"` with write capability, no network | WARNING | `sandbox-posture/codex-auto-approve` | Set `approval_policy = "on-request"` |
 | A Claude Code settings file **exists** but declares **zero** `permissions.deny` entries (detail also names `defaultMode = "bypassPermissions"` when set — nothing denied *and* nothing prompted) | WARNING | `sandbox-posture/claude-no-deny-rules` | Add `permissions.deny` entries (e.g. `"Bash(curl:*)"`, `"Read(./.env)"`) to `.claude/settings.json` |
+| A `.devcontainer/` (or `.devcontainer.json`) **installs an agent CLI** and contains **no** firewall, proxy, default-deny network rule or capability drop — no attempt at egress control is visible anywhere in it | WARNING | `sandbox-posture/devcontainer-no-egress-control` | Internal-only network + deny-by-default proxy, `--cap-drop=ALL`, `--security-opt=no-new-privileges` (`templates/container` is a worked example) |
 | Surface present, nothing above matches → PASS. No sandbox surface anywhere → N/A (`-1`), never 0 | PASS / N/A | — | — |
 
 A **missing** settings file is not a posture finding — absence is `claude-settings`' report, not this one.
@@ -44,6 +53,10 @@ Posture levels (`data.postures`, keyed by client id):
 
 Claude Code never reaches `restricted`: it ships no sandbox to read, so the deny list plus the approval
 mode are its whole boundary — an honest ceiling of `partial`, not a claim of containment.
+
+**The devcontainer surface gets no posture row at all** — deliberately. A posture is a claim about what
+the agent can reach, and the devcontainer arm's evidence cannot support one in either direction (below).
+It appears in `data.devcontainer` as raw evidence (`{ where, controls }`) and never in `data.postures`.
 
 ## Weight rationale
 
@@ -73,6 +86,11 @@ CRITICAL→`error`, WARNING→`warning`, INFO→`note`. Location: the config pat
   WARNING Claude Code declares no deny rules in .claude/settings.json
     permissions.deny is empty or absent — no tool call is refused outright, so the
     allow list plus an approval prompt are the whole boundary.
+  WARNING Devcontainer runs an agent with no egress control in .devcontainer/
+    Installs an agent CLI and carries no firewall, no proxy, no default-deny network
+    rule and no capability drop — nothing in it even attempts to bound what the agent
+    can reach. Presence check: no attempt is visible; a hit would have proven only an
+    attempt, never containment.
   postures: codex=unrestricted claude-code=partial
 ```
 
@@ -90,9 +108,17 @@ CRITICAL→`error`, WARNING→`warning`, INFO→`note`. Location: the config pat
   same as a real one — this measures *whether anyone drew a boundary*, not whether the boundary holds.
   Unparseable JSON reads as **absent** (unknown, never dangerous), matching the TOML reader's stance, so a
   malformed settings file is never flagged. Enterprise/managed policy files are not read.
-
-## Not covered (yet)
-
-- **Devcontainer egress hardening** — a `.devcontainer/` running an agent with no firewall, proxy,
-  default-deny rule or cap-drop. A *presence* check — grepping for evidence that someone attempted egress
-  control — so it can never prove containment: a hit proves an attempt, not a contained container. That weakness is why it is queued, not shipped.
+- **The devcontainer arm is presence-only: a hit proves an *attempt* at containment, never containment
+  itself.** Finding a firewall script, a proxy variable or a `--cap-drop` proves only that someone tried —
+  the script may no-op, the proxy may be bypassable, the allowlist may be permissive, the rule may never
+  load — and this check reads none of that; it greps text for evidence and does not run, resolve or
+  otherwise verify a single control. So the arm may only **fall silent** on evidence: silence here means
+  "an attempt is visible", never "this container is contained", and nothing on this page, in the finding
+  text or in `data` may be read as the stronger claim. The finding fires only on the unambiguous
+  direction — **zero** evidence of any attempt — which is why it is a WARNING and assigns no posture.
+  A container that is genuinely contained is proved by a healthcheck that asserts a disallowed host is
+  *refused* (see `templates/container`), not by a scanner grep.
+- Consequently the arm is **evadable and blind in both directions**: a comment reading `# iptables` or an
+  unused `HTTPS_PROXY` silences it, and an agent installed by a name outside its identifier list (a
+  vendored binary, a private base image that bakes the CLI in) is not seen at all. It reads the
+  devcontainer's own files only — not the base image, not `docker-compose` services it references.
