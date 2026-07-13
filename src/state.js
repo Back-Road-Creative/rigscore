@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { readJsonSafe, execSafe } from './utils.js';
+import { repoMcpPaths, mcpServersIn } from './clients.js';
 
 export const STATE_FILENAME = '.rigscore-state.json';
 export const STATE_VERSION = 1;
@@ -119,30 +120,51 @@ export async function saveState(cwd, state) {
 }
 
 /**
- * Hash each server in the repo-level `.mcp.json`. Same scope checks/mcp-config.js
- * pins: repo `.mcp.json` only — home-dir client configs are per-user, never pinned.
+ * Hash every MCP server declared in EVERY committed, repo-level config — `repoMcpPaths()`,
+ * i.e. all four `base: 'cwd'` client configs (`.mcp.json`, `.vscode/mcp.json`,
+ * `.gemini/settings.json`, `opencode.json`). Home-dir configs stay excluded: per-user, not
+ * committed, unreachable from a pull request.
+ *
+ * This used to read `<cwd>/.mcp.json` alone, which made the other three a rug-pull blind
+ * spot — no pin was minted, so `verifyState()` compared an empty set against an empty pin
+ * and printed "PASS: 0 pinned MCP server(s) verified" over a repo whose server had just
+ * been swapped for `bash -c 'curl … | sh'`. checks/mcp-config.js mints the pin from THIS
+ * function, so minting and verification cannot drift apart.
+ *
+ * COLLISIONS. The pin is a flat name→hash map (format unchanged, STATE_VERSION 1). If two
+ * repo configs declare the same server name, the first in `repoMcpPaths()` order keeps the
+ * bare name and each later one is pinned under `<name>@<relpath>`. Both are covered, so a
+ * rug-pull in the shadowed copy still drifts — a first-wins map would have hidden it, which
+ * is the same class of bug this function exists to close.
+ *
  * @returns {Promise<Record<string, {hash: string, shape: object}>>}
  */
-async function readRepoServers(cwd) {
-  const cfg = await readJsonSafe(path.join(cwd, '.mcp.json'));
-  const servers = (cfg && cfg.mcpServers && typeof cfg.mcpServers === 'object') ? cfg.mcpServers : {};
+export async function readRepoServers(cwd) {
   const out = {};
-  for (const [name, server] of Object.entries(servers)) {
-    out[name] = { hash: computeServerHash(server), shape: serverShape(server) };
+  for (const configPath of repoMcpPaths(cwd)) {
+    const servers = mcpServersIn(configPath, await readJsonSafe(configPath));
+    const config = path.relative(cwd, configPath);
+    for (const [name, server] of Object.entries(servers)) {
+      const key = name in out ? `${name}@${config}` : name;
+      // `config` rides along so the drift report can point the operator at the file that
+      // actually changed — hardcoding `.mcp.json` there would misdirect the one person
+      // reading the output mid-incident.
+      out[key] = { hash: computeServerHash(server), shape: serverShape(server), config };
+    }
   }
   return out;
 }
 
 /**
  * Read-only drift gate behind `rigscore --verify-state` (CVE-2025-54136 /
- * MCPoison). Compares today's `.mcp.json` shapes against the hashes pinned in
- * `.rigscore-state.json`. Pure function of two local files: zero network, and
+ * MCPoison). Compares today's shapes — from every committed repo-level MCP config
+ * (readRepoServers) — against the hashes pinned in `.rigscore-state.json`. Zero network, and
  * — critically — zero writes. A normal scan REWRITES the pin, which would
  * silently erase the drift this gate exists to catch.
  *
  * The pin is read from HEAD (see loadCommittedState) — a working-tree pin a scan
  * minted moments earlier is NOT an approval, so a scan cannot launder this gate.
- * Today's working-tree `.mcp.json` is still what gets compared: that is the config
+ * Today's working-tree configs are still what get compared: those are the configs
  * that would actually run; only the PIN's provenance is in question.
  *
  * verified (0) | drift (1) | unpinned (2) | uncommitted (2) | corrupt (2) |
@@ -182,10 +204,10 @@ export async function verifyState(cwd) {
   }
 
   const result = { ...base };
-  for (const [name, { hash, shape }] of Object.entries(current)) {
+  for (const [name, { hash, shape, config }] of Object.entries(current)) {
     const prev = pinned[name];
-    if (typeof prev !== 'string') result.added.push({ name, currentHash: hash, shape });
-    else if (prev !== hash) result.changed.push({ name, pinnedHash: prev, currentHash: hash, shape });
+    if (typeof prev !== 'string') result.added.push({ name, currentHash: hash, shape, config });
+    else if (prev !== hash) result.changed.push({ name, pinnedHash: prev, currentHash: hash, shape, config });
     else result.matched.push(name);
   }
   for (const name of Object.keys(pinned)) {
@@ -198,8 +220,8 @@ export async function verifyState(cwd) {
 
 const UNVERIFIABLE_REASON = {
   corrupt: `${STATE_FILENAME} is unreadable or not version ${STATE_VERSION} — re-pin with \`rigscore .\` and commit it.`,
-  unpinned: `.mcp.json declares MCP servers but ${STATE_FILENAME} pins none — nothing is being verified. Pin with \`rigscore .\` and commit it.`,
-  uncommitted: `${STATE_FILENAME} exists in the working tree but is not committed at HEAD — an uncommitted pin proves nothing. A scan mints one from whatever .mcp.json is sitting there, so verifying against it would just check the current config against itself. Review .mcp.json, then commit ${STATE_FILENAME}.`,
+  unpinned: `This repo's committed MCP config(s) declare servers but ${STATE_FILENAME} pins none — nothing is being verified. Pin with \`rigscore .\` and commit it.`,
+  uncommitted: `${STATE_FILENAME} exists in the working tree but is not committed at HEAD — an uncommitted pin proves nothing. A scan mints one from whatever MCP config is sitting there, so verifying against it would just check the current config against itself. Review this repo's committed MCP config(s), then commit ${STATE_FILENAME}.`,
   'not-applicable': 'No repo-level MCP servers and no pin — nothing to verify.',
 };
 
@@ -212,16 +234,17 @@ export function formatVerifyStateReport(r, cwd) {
   // Print BOTH hashes and the current shape — "drift" with no diff is not actionable.
   // The pin stores only a hash (state file is committed to git), so the OLD shape is not
   // recoverable from it; point the operator at version control for that half.
-  for (const { name, pinnedHash, currentHash, shape } of r.changed) {
+  for (const { name, pinnedHash, currentHash, shape, config } of r.changed) {
     lines.push(
       `DRIFT         "${name}" changed shape since it was pinned (possible rug-pull, CVE-2025-54136)`,
+      `                declared in: ${config}`,
       `                pinned  sha256:${pinnedHash.slice(0, 16)}   current sha256:${currentHash.slice(0, 16)}`,
       `                current command: ${shape.command}   args: ${JSON.stringify(shape.args)}   envKeys: ${JSON.stringify(shape.envKeys)}`,
-      `                Old shape is not stored (hash only) — diff ${path.join(cwd, '.mcp.json')} against version control.`,
+      `                Old shape is not stored (hash only) — diff ${path.join(cwd, config)} against version control.`,
     );
   }
-  for (const a of r.added) lines.push(`ADDED         "${a.name}" is not pinned — a new server is re-approved by the host, not rug-pulled. Re-pin to cover it.`);
-  for (const x of r.removed) lines.push(`REMOVED       "${x.name}" is pinned but gone from .mcp.json — stale pin; a removed server cannot execute.`);
+  for (const a of r.added) lines.push(`ADDED         "${a.name}" (${a.config}) is not pinned — a new server is re-approved by the host, not rug-pulled. Re-pin to cover it.`);
+  for (const x of r.removed) lines.push(`REMOVED       "${x.name}" is pinned but gone from this repo's MCP configs — stale pin; a removed server cannot execute.`);
   for (const name of r.matched) lines.push(`OK            "${name}" matches its pin.`);
 
   lines.push('');

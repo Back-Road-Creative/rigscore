@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Scans every known MCP (Model Context Protocol) configuration file — `.mcp.json`, `.vscode/mcp.json`, and the per-client variants for Cursor, Cline, Continue, Windsurf, Zed (`~/.config/zed/settings.json`, servers under the `context_servers` key), Amp, Gemini CLI (`.gemini/settings.json`), and opencode (`opencode.json`, servers under the `mcp` key) — and inspects each declared server for supply-chain risk, excessive capability, inline credentials, and config drift across clients. Maps to OWASP Agentic Top 10 `ASI04` (Agentic Supply Chain). A passing check guarantees: no server has broad filesystem access (`/`, `/home`, `/etc`, etc.), no inline credentials in commands, no unpinned `npx` packages, no typosquat matches against the hand-curated known-server list or the live MCP registry (when `--online`), no cross-client drift for the same server name, no `enableAllProjectMcpServers` bypass, no hash changes between scans (rug-pull detection, CVE-2025-54136), and no `ANTHROPIC_BASE_URL` redirect (CVE-2026-21852).
+Scans every known MCP (Model Context Protocol) configuration file — `.mcp.json`, `.vscode/mcp.json` (servers under VS Code's `servers` key; the `mcpServers` alias is read too), and the per-client variants for Cursor, Cline, Continue, Windsurf, Zed (`~/.config/zed/settings.json`, servers under the `context_servers` key), Amp, Gemini CLI (`.gemini/settings.json`), and opencode (`opencode.json`, servers under the `mcp` key) — and inspects each declared server for supply-chain risk, excessive capability, inline credentials, and config drift across clients. Maps to OWASP Agentic Top 10 `ASI04` (Agentic Supply Chain). A passing check guarantees: no server has broad filesystem access (`/`, `/home`, `/etc`, etc.), no inline credentials in commands, no unpinned `npx` packages, no typosquat matches against the hand-curated known-server list or the live MCP registry (when `--online`), no cross-client drift for the same server name, no `enableAllProjectMcpServers` bypass, no hash changes between scans (rug-pull detection, CVE-2025-54136 — see "What the pin covers" below), no unparseable config, and no `ANTHROPIC_BASE_URL` redirect (CVE-2026-21852).
 
 A failure typically means an MCP server was added without reviewing its args, a hosted server was pasted from a blog post without pinning the version, or a settings bypass was committed alongside `.mcp.json` — the CVE-2025-59536 compound case where anyone who clones the repo auto-approves every server on first run.
 
@@ -34,7 +34,8 @@ A failure typically means an MCP server was added without reviewing its args, a 
 | Repo `.mcp.json` + `enableAllProjectMcpServers: true` (CVE-2025-59536 compound) | CRITICAL | `mcp-config/cve-2025-59536-auto-approve-on-clone` | Set `enableAllProjectMcpServers` to false |
 | Same server name has divergent args/env/transport across clients | WARNING | `mcp-config/cross-client-drift` | Align configs across all AI clients |
 | Server only configured in one of multiple detected clients | INFO | `mcp-config/single-client-server` | None — informational |
-| Repo-level MCP server shape hash changed between scans (CVE-2025-54136 rug-pull) | WARNING | `mcp-config/server-hash-drift` | Review diff in `.mcp.json`; to accept, delete the server's entry from `.rigscore-state.json` and re-scan |
+| Repo-level MCP server shape hash changed between scans (CVE-2025-54136 rug-pull) | WARNING | `mcp-config/server-hash-drift` | Review the diff in the config that declares it; to accept, delete the server's entry from `.rigscore-state.json` and re-scan |
+| An MCP config file exists but does not parse as JSON | WARNING | `mcp-config/config-unparseable` | Repair the JSON (or delete the file) — until then its servers are neither scanned nor pinned |
 | Corrupted `.rigscore-state.json` — the runtime tool pins were recovered from the copy committed at HEAD | INFO | `mcp-config/state-file-corrupted` | None — auto-reset, pins intact; commit the rewritten file |
 | Corrupted `.rigscore-state.json` — no committed copy could supply the runtime tool pins, so they are **lost** | WARNING | `mcp-config/state-file-corrupted` | Restore the file from version control, or re-pin: `rigscore mcp-hash \| xargs rigscore mcp-pin <name>`. A scan cannot regenerate runtime tool pins |
 | `--no-state-write` suppressed a pin that was due — the repo's MCP servers are now unpinned or partly pinned | WARNING | `mcp-config/state-write-disabled` | Drop `--no-state-write` and commit `.rigscore-state.json`, or accept losing rug-pull detection |
@@ -140,6 +141,16 @@ The `mcp-config/server-hash-drift` finding above is a WARNING — it cannot fail
 
 It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.json` machinery the check writes — one hash function, one pin. It never rewrites the state file, runs no other checks, and makes no network calls.
 
+### What the pin covers
+
+**Every committed, repo-level MCP config** — the `base: 'cwd'` entries in `src/clients.js`: `.mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`, and `opencode.json`. The scan mints the pin, and the gate verifies it, from the *same* function (`readRepoServers`), so the two can never disagree about scope.
+
+That scope is the threat model: those four files ship in the repo, so a pull request can mutate them, which is exactly how a rug-pull lands. Home-directory client configs (`~/.cursor/mcp.json`, Claude Desktop, Zed, …) are **not** pinned — they are per-user, are not committed, and no PR can reach them.
+
+Until v2.0.1 only `.mcp.json` was pinned. A repo whose servers lived in any of the other three got no pin at all, so the gate compared an empty set against an empty pin and printed `PASS: 0 pinned MCP server(s) verified` (exit 0) — a **vacuous pass** over a rug-pulled server. If your repo uses one of those configs, run a scan once to mint the pin and commit `.rigscore-state.json`; until you do, the gate now says `unpinned` (exit 2) rather than passing.
+
+**Duplicate server names.** The pin is a flat `name → hash` map. If two of those configs declare the same server name, the first (in the order above) is pinned under the bare name and each later one under `<name>@<relpath>` — e.g. `db` and `db@opencode.json`. Both are covered, so a rug-pull in the shadowed copy still fails the gate; a first-wins map would have hidden it.
+
 **The gate reads the pin from `HEAD`, not from the working tree** (`git show HEAD:<path>/.rigscore-state.json`), and that is what makes it safe to run after a scan. A pin is evidence only if a human committed and reviewed it. A scan mints a trust-on-first-use pin from whatever `.mcp.json` is *sitting in the working tree* — and the GitHub Action runs a scan before this gate — so an attacker who rewrites `.mcp.json` **and** deletes (or corrupts) the pin in the same PR would otherwise have that scan re-approve their own config, turning a failing gate green. Reading `HEAD` makes that structurally impossible: a working-tree pin `HEAD` does not carry is `uncommitted` (exit 2), never `verified`. The current *`.mcp.json`* is still the one compared — it is the config that would actually run; only the pin's provenance must come from a commit. Outside a git repo there is no commit provenance to read, so the gate falls back to the working-tree pin. Together with the fact that a normal scan never rewrites a *drifted* pin (see "The one file a scan writes" above), the gate reports the same drift whether or not a scan ran first. CI recipe — add one step to `.github/workflows/ci.yml`:
 
 ```yaml
@@ -151,7 +162,7 @@ It is **read-only** and reuses the same `computeServerHash` / `.rigscore-state.j
 | `0` | `verified` | Every pinned server still hashes to its pin |
 | `0` | `not-applicable` | No repo MCP servers and no pin — nothing to protect |
 | `1` | `drift` | A **pinned** server's `{command, args, envKeys}` changed |
-| `2` | `unpinned` | `.mcp.json` declares servers but nothing is pinned — the gate **cannot** verify |
+| `2` | `unpinned` | A committed MCP config declares servers but nothing is pinned — the gate **cannot** verify |
 | `2` | `uncommitted` | A pin exists in the working tree but not at `HEAD` — nobody reviewed it, so it proves nothing |
 | `2` | `corrupt` | The committed state file is unreadable / wrong-version — the gate **cannot** verify |
 

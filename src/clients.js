@@ -7,7 +7,11 @@ import path from 'node:path';
  * Each record declares only the surfaces the client genuinely has:
  *   governance  — instruction files, resolved against the project root
  *   mcp         — JSON configs holding MCP servers: { path, base: 'cwd'|'home', key? }.
- *                 `key` defaults to 'mcpServers' (opencode nests its servers under 'mcp').
+ *                 `key` defaults to 'mcpServers' (opencode nests its servers under 'mcp') and
+ *                 may be an ARRAY when a client reads more than one key (VS Code documents
+ *                 'servers'; 'mcpServers' is the widely copy-pasted alias). Earlier keys win.
+ *                 `base: 'cwd'` means COMMITTED, in-repo — those are the configs a PR can
+ *                 mutate, so they are exactly the ones the rug-pull pin covers (repoMcpPaths).
  *   credentials — $HOME configs whose MCP servers' env maps can hold plaintext secrets:
  *                 { dir, file, envKey? }. Servers are read through `mcpServersIn()`, so the
  *                 client's own `key` applies (Zed: `context_servers`). `envKey` defaults to
@@ -48,9 +52,14 @@ export const CLIENTS = [
   { id: 'continue', name: 'Continue', governance: ['.continuerules'],
     mcp: [{ path: '.continue/config.json', base: 'home' }],
     credentials: [{ dir: '.continue', file: 'config.json' }] },
+  // VS Code's .vscode/mcp.json declares servers under `servers`, NOT `mcpServers`
+  // (code.visualstudio.com/docs/copilot/customization/mcp-servers). Reading only the
+  // default key made every real VS Code config scan as empty. `mcpServers` stays as a
+  // second key: it is the alias people paste in from other clients, and a server sitting
+  // in a committed file must never be a scanning or pinning blind spot either way.
   { id: 'copilot', name: 'GitHub Copilot',
     governance: ['copilot-instructions.md', '.github/copilot-instructions.md'],
-    mcp: [{ path: '.vscode/mcp.json', base: 'cwd' }] },
+    mcp: [{ path: '.vscode/mcp.json', base: 'cwd', key: ['servers', 'mcpServers'] }] },
   { id: 'codex', name: 'Codex CLI', governance: ['AGENTS.md'],
     sandbox: [{ path: '.codex/config.toml', base: 'home', format: 'toml' },
       { path: '.codex/config.toml', base: 'cwd', format: 'toml' }] },
@@ -91,6 +100,25 @@ export function mcpConfigPaths(cwd, homedir) {
   return mcpEntries().map(m => path.join(m.base === 'cwd' ? cwd : homedir, m.path));
 }
 
+/**
+ * Absolute paths of the COMMITTED, repo-level MCP configs — every `base: 'cwd'` entry.
+ *
+ * The single source of truth for "which configs does the CVE-2025-54136 rug-pull pin
+ * cover?" Both the minting side (checks/mcp-config.js) and the gate (state.js
+ * verifyState) read it, so the two can never disagree about scope — a hardcoded
+ * `.mcp.json` on either side is what let a rug-pull in `.gemini/settings.json` or
+ * `opencode.json` pass with "0 pinned MCP server(s) verified".
+ *
+ * Home-dir configs are deliberately excluded: they are per-user, not committed, and
+ * cannot be mutated by a pull request.
+ *
+ * Order is CLIENTS declaration order and is STABLE — server-name collisions across
+ * configs are resolved by it (see readRepoServers).
+ */
+export function repoMcpPaths(cwd) {
+  return mcpEntries().filter(m => m.base === 'cwd').map(m => path.join(cwd, m.path));
+}
+
 /** Same set — network-exposure historically scanned a subset; it now sees the union. */
 export function networkMcpPaths(cwd, homedir) {
   return mcpConfigPaths(cwd, homedir);
@@ -111,6 +139,15 @@ export function mcpServersIn(configPath, config) {
     const rel = path.normalize(m.path);
     return configPath === rel || configPath.endsWith(path.sep + rel);
   });
-  const servers = config[entry?.key || DEFAULT_MCP_KEY];
-  return servers && typeof servers === 'object' ? servers : {};
+  // A client may read more than one key (VS Code: `servers`, plus the `mcpServers` alias).
+  // Merge them, earliest key winning, so a multi-key client is read the way it runs.
+  const out = {};
+  for (const key of [entry?.key || DEFAULT_MCP_KEY].flat()) {
+    const servers = config[key];
+    if (!servers || typeof servers !== 'object') continue;
+    for (const [name, server] of Object.entries(servers)) {
+      if (!(name in out)) out[name] = server;
+    }
+  }
+  return out;
 }
