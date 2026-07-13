@@ -249,6 +249,40 @@ describe('deep-secrets check', () => {
     }
   });
 
+  // The rigscore GitHub Action checks its OWN source out to a
+  // `.rigscore-action-src/` subdirectory of the caller's scan root (actions/checkout
+  // forces `path:` under $GITHUB_WORKSPACE, so it cannot be a true sibling). With
+  // skipHidden:false the deep walk would descend into it and scan rigscore's own
+  // files AS IF they were the caller's — polluting the caller's SARIF with phantom
+  // findings about files they don't own. The vendored dir must be skipped by name.
+  it('does NOT scan the vendored .rigscore-action-src/ checkout, but DOES find caller secrets', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const key = ['sk', 'ant', 'abcdefghij1234567890'].join('-');
+      // Action's own vendored checkout — a secret-shaped string here must NOT surface.
+      fs.mkdirSync(path.join(tmpDir, '.rigscore-action-src', 'src', 'checks'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpDir, '.rigscore-action-src', 'src', 'checks', 'credential-storage.js'),
+        `const example = "${key}";`,
+      );
+      // The caller's OWN source — a real secret here must still be detected.
+      fs.writeFileSync(path.join(tmpDir, 'config.js'), `const API_KEY = "${key}";`);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+
+      // No finding may cite the vendored checkout.
+      const vendored = result.findings.filter(f => JSON.stringify(f).includes('.rigscore-action-src'));
+      expect(vendored).toEqual([]);
+
+      // The caller's own secret is still caught.
+      const critical = result.findings.find(f => f.severity === 'critical');
+      expect(critical).toBeDefined();
+      expect(critical.title).toContain('config.js');
+      expect(result.score).toBe(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('finding detail uses a stable provider label, never the raw regex source', async () => {
     const tmpDir = makeTmpDir();
     try {
