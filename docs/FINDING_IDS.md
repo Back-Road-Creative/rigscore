@@ -334,17 +334,75 @@ Grouped by check. Each ID is stable within the current major.
 - `agent-output-schemas/missing-schema-block` (warning)
 - `agent-output-schemas/malformed-schema-block` (warning)
 
+### ai-disclosure
+
+- `ai-disclosure/no-ai-policy` (warning) — AI surface present but no AI-use policy (nothing in CONTRIBUTING.md, no AI_POLICY.md, nothing in the governance file).
+- `ai-disclosure/pr-template-no-ai-field` (warning) — a PR template exists but mentions AI nowhere, so an AI-assisted change ships undeclared.
+- `ai-disclosure/no-pr-template` (info) — a repo that runs AI agents has no pull-request template in any location GitHub reads.
+- `ai-disclosure/disclosure-not-enforced` (info) — a disclosure is requested but nothing committed would fail a PR that ignores it.
+
+### ci-agent-caps
+
+- `ci-agent-caps/agent-permission-bypass` (critical) — a workflow removes the agent's permission ceiling (e.g. `--dangerously-skip-permissions`).
+- `ci-agent-caps/agent-job-missing-timeout` (warning) — a CI job runs an AI agent with no `timeout-minutes` (GitHub's default is 360).
+- `ci-agent-caps/agent-job-missing-turn-cap` (warning) — a CI agent invocation declares no per-run turn cap (`max_turns` / `--max-turns`).
+- `ci-agent-caps/agent-job-missing-tool-scoping` (warning) — a CI agent invocation declares no allowed/disallowed tool scoping.
+- `ci-agent-caps/failed-to-parse-workflow` (info) — a workflow's YAML could not be parsed, so it was not analyzed for agent jobs.
+- `ci-agent-caps/reusable-workflow-not-analyzed` (info) — a job delegates to a workflow rigscore cannot read (another repo, or a path not in the checkout).
+
+### loop-governance
+
+- `loop-governance/skip-permissions` (warning) — a script runs an agent with `--dangerously-skip-permissions`.
+- `loop-governance/uncapped-loop` (warning) — an agent loop has no bound (no counter, `--max-turns`, or `timeout`).
+- `loop-governance/no-stop-condition` (warning) — an agent loop has no terminal state (no break/exit/sentinel check).
+- `loop-governance/uncapped-cron` (warning) — a cron job runs an agent with nothing bounding one tick.
+- `loop-governance/uncapped-timer` (warning) — a systemd `.timer` runs an agent with nothing bounding one tick.
+- `loop-governance/file-cap-reached` (warning) — the agent-loop scan hit the file cap, so the repo cannot be certified loop-free.
+
+### memory-hygiene
+
+- `memory-hygiene/bundle-over-budget` (warning) — the auto-loaded memory bundle exceeds its per-turn byte budget.
+- `memory-hygiene/stale-memory-file` (warning/info) — an empty (warning) or stub (info) memory file is loaded every session but teaches nothing.
+- `memory-hygiene/unresolvable-index-entry` (warning/info) — a `MEMORY.md` index entry points at a missing file (warning) or one outside every memory dir (info).
+- `memory-hygiene/duplicate-rule` (info) — a rule stated in both a governance file and a memory file has two homes.
+- `memory-hygiene/governance-file-cap-reached` (info) — the nested-governance walk hit its file cap, so duplicate-rule coverage is incomplete.
+
+### sandbox-posture
+
+- `sandbox-posture/codex-no-sandbox` (critical) — a Codex client has the sandbox disabled (`sandbox_mode = "danger-full-access"`).
+- `sandbox-posture/codex-auto-approve-networked` (critical) — a Codex client auto-approves with network access.
+- `sandbox-posture/codex-auto-approve` (warning) — a Codex client never prompts for approval.
+- `sandbox-posture/claude-no-deny-rules` (warning) — a Claude client declares no `permissions.deny` rules.
+- `sandbox-posture/devcontainer-no-egress-control` (warning) — a devcontainer runs an agent with no egress control.
+- `sandbox-posture/devcontainer-file-cap-reached` (warning) — the devcontainer scan hit its file cap.
+
+### spec-goals
+
+- `spec-goals/constitution-missing` (warning) — `.specify/` is present but there is no constitution file.
+- `spec-goals/constitution-placeholder` (warning) — the constitution is still an unfilled template.
+- `spec-goals/spec-dir-no-tasks` (info) — a spec dir holds a spec but no tasks file (never decomposed into executable work).
+- `spec-goals/spec-dir-no-design` (info) — a spec dir holds requirements but no design file.
+- `spec-goals/requirements-not-ears` (info) — requirements are not written in EARS syntax.
+- `spec-goals/goal-file-stale` (info) — a goal file lags the newest spec by many days.
+- `spec-goals/spec-abandoned` (info) — a spec was left unfinished, far behind the newest spec.
+- `spec-goals/spec-tree-dormant` (info) — the whole spec tree has sat still while the repo kept committing.
+- `spec-goals/change-unarchived` (info) — a change is fully ticked off but was never archived.
+- `spec-goals/domain-spec-incomplete` (info) — a domain spec is missing required parts.
+- `spec-goals/agents-md-hollow` (info) — AGENTS.md names no runnable command.
+
 ### Stable check-level IDs
 
 Every check id in `src/checks/` is stable. These work in `--ignore` and
 `suppress:` as a coarse-grained mute:
 
-`claude-md`, `claude-settings`, `coherence`, `credential-storage`,
-`deep-secrets`, `docker-security`, `documentation`, `env-exposure`,
-`git-hooks`, `infrastructure-security`, `instruction-effectiveness`,
-`mcp-config`, `network-exposure`, `permissions-hygiene`, `site-security`,
-`skill-coherence`, `skill-files`, `unicode-steganography`,
-`windows-security`, `workflow-maturity`, `agent-output-schemas`.
+`agent-output-schemas`, `ai-disclosure`, `ci-agent-caps`, `claude-md`,
+`claude-settings`, `coherence`, `credential-storage`, `deep-secrets`,
+`docker-security`, `documentation`, `env-exposure`, `git-hooks`,
+`infrastructure-security`, `instruction-effectiveness`, `loop-governance`,
+`mcp-config`, `memory-hygiene`, `network-exposure`, `permissions-hygiene`,
+`sandbox-posture`, `site-security`, `skill-coherence`, `skill-files`,
+`spec-goals`, `unicode-steganography`, `windows-security`,
+`workflow-maturity`.
 
 ## How to discover IDs you're seeing right now
 

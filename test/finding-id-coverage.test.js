@@ -3,9 +3,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEVERITY_MAP } from '../src/sarif.js';
+import {
+  extractRuleIds, extractDocumentedRuleIds, verifyCheckDocs, formatVerifyResult,
+} from '../src/lib/verify-docs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CHECKS_DIR = path.resolve(__dirname, '..', 'src', 'checks');
+const ROOT = path.resolve(__dirname, '..');
+const FINDING_IDS = fs.readFileSync(path.join(ROOT, 'docs', 'FINDING_IDS.md'), 'utf8');
+const REGISTERED_CHECK_IDS = fs.readdirSync(CHECKS_DIR)
+  .filter((f) => f.endsWith('.js') && f !== 'index.js')
+  .map((f) => path.basename(f, '.js'))
+  .sort();
 
 /**
  * NOTE — this file and `extractRuleIds()` in src/lib/verify-docs.js look like
@@ -303,5 +312,59 @@ describe('E4: every SARIF-reaching finding emits an explicit findingId', () => {
     // Also sanity-check that at least one ID was found (guards against a
     // future refactor that silently drops all IDs).
     expect(seen.size).toBeGreaterThan(50);
+  });
+});
+
+/**
+ * docs/FINDING_IDS.md calls itself a stability contract — "which IDs the current
+ * release actually guarantees". Consumers pin `--ignore <check>/<slug>`, SARIF→GHAS
+ * and baseline diffs to it, yet nothing gated it, so it silently drifted to
+ * documenting 21 of 27 checks. This block is that gate's TDD spec.
+ *
+ * It CONSUMES the exported extractRuleIds / extractDocumentedRuleIds — it never
+ * reaches into their `<checkId>/` namespace filter (the collision guard above
+ * depends on that filter; loosening it is a settled "won't do").
+ *
+ * Granularity is per-CHECK-NAMESPACE, not per-finding-id, and deliberately so: the
+ * page documents dynamic-fragment ids via `<category>`/`<reason>`/`<patternId>`
+ * shorthands and omits degenerate internal ids (mcp-config/no-config-found, …),
+ * both of which a per-id gate would false-flag on ~15 already-documented checks.
+ * A whole check absent from the contract is the drift that actually happened.
+ */
+describe('FINDING_IDS.md is a complete, gated stability contract', () => {
+  const emitsIds = (id) => {
+    const src = fs.readFileSync(path.join(CHECKS_DIR, `${id}.js`), 'utf8');
+    const { literals, prefixes } = extractRuleIds(src, id);
+    return literals.length > 0 || prefixes.length > 0;
+  };
+  const uncovered = () => REGISTERED_CHECK_IDS.filter(
+    (id) => emitsIds(id) && extractDocumentedRuleIds(FINDING_IDS, id).length === 0,
+  );
+
+  it('documents a finding-id namespace for every check that emits ids', () => {
+    expect(
+      uncovered(),
+      'these checks emit finding ids but FINDING_IDS.md documents NONE of them — a ' +
+        'consumer pinning --ignore/SARIF/baselines to them is flying blind',
+    ).toEqual([]);
+  });
+
+  it('verifyCheckDocs() gates verify:docs on that coverage (not vacuously)', async () => {
+    const result = await verifyCheckDocs({ root: ROOT });
+    // The gate must see exactly the contract spec above: proves it is wired, and
+    // that a bare [] is real coverage, not a gate blind to the whole page.
+    expect((result.findingIdsOffenders || []).map((o) => o.id).sort()).toEqual(uncovered());
+    // A complete contract leaves this axis of the gate green.
+    expect(result.findingIdsOffenders || []).toEqual([]);
+  });
+
+  it('formatVerifyResult prints an actionable line for an uncovered check', () => {
+    const out = formatVerifyResult({
+      offenders: [], orphans: [], ruleIdOffenders: [],
+      findingIdsOffenders: [{ id: 'spec-goals', reason: 'finding-ids-uncovered' }],
+      counts: { checks: 27, docs: 27 },
+    });
+    expect(out).toContain('FINDING-IDS-UNCOVERED spec-goals');
+    expect(out).toContain('### spec-goals');
   });
 });
