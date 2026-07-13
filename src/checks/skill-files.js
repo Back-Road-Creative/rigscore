@@ -37,18 +37,35 @@ const EXFILTRATION_PATTERNS = [
   /\bredirect\s+.*output\s+.*to\b/i,
 ];
 
-const ESCALATION_PATTERNS = [
-  /\bsudo\b/,
-  /\brun\s+as\s+root\b/i,
-  /\brun\s+as\s+admin\b/i,
-  /\belevat(?:e|ed)\s+privileg/i,
-  /\bchmod\s+777\b/,
-  /\bchmod\s+\+x\b/,
-  /\bchmod\s+.*a\+/,
-  /\bdisable\s+.*security\b/i,
-  /\bturn\s+off\s+.*firewall\b/i,
-  /\bdisable\s+.*antivirus\b/i,
+/**
+ * Escalation patterns paired with the stable id used for the allowlist and the
+ * `skill-files/escalation-<id>` finding id. One row = one pattern + its id, so a
+ * pattern CANNOT be declared without an id. The previous shape (a bare regex array
+ * plus a function that recovered the id by substring-matching the regex's source
+ * text, falling back to a generic catch-all id) let a newly-added pattern silently
+ * collapse into that catch-all and collide with every other unmapped pattern under
+ * one meaningless id. Add a pattern here and it brings its id with it.
+ *
+ * Every id below is documented as a ruleId in `docs/checks/skill-files.md`, and
+ * `EXPANDERS['skill-files']` in `src/lib/verify-docs.js` reads this table to gate
+ * that page — keep the rows single-line `{ id: '…', pattern: … }` so it can.
+ */
+export const ESCALATION_RULES = [
+  { id: 'sudo', pattern: /\bsudo\b/ },
+  { id: 'run-as-root', pattern: /\brun\s+as\s+root\b/i },
+  { id: 'run-as-admin', pattern: /\brun\s+as\s+admin\b/i },
+  { id: 'elevated-privilege', pattern: /\belevat(?:e|ed)\s+privileg/i },
+  { id: 'chmod-777', pattern: /\bchmod\s+777\b/ },
+  { id: 'chmod-plus-x', pattern: /\bchmod\s+\+x\b/ },
+  { id: 'chmod-a-plus', pattern: /\bchmod\s+.*a\+/ },
+  { id: 'disable-security', pattern: /\bdisable\s+.*security\b/i },
+  { id: 'disable-firewall', pattern: /\bturn\s+off\s+.*firewall\b/i },
+  { id: 'disable-antivirus', pattern: /\bdisable\s+.*antivirus\b/i },
 ];
+
+// Derived — never a second hand-maintained list, or a pattern could exist with no id.
+const ESCALATION_PATTERNS = ESCALATION_RULES.map((r) => r.pattern);
+const ESCALATION_ID_BY_PATTERN = new Map(ESCALATION_RULES.map((r) => [r.pattern, r.id]));
 
 const PERSISTENCE_PATTERNS = [
   /\bcrontab\b/i,
@@ -191,25 +208,6 @@ function findAllowlistMatch(allowlist, filePath, patternId) {
     }
   }
   return null;
-}
-
-/**
- * Map an escalation-pattern source string to a stable pattern id for the
- * allowlist. Patterns are small and well-known, so a source-snippet switch
- * keeps the mapping obvious without parsing the RegExp.
- */
-function patternIdForEscalation(source) {
-  if (source.includes('sudo')) return 'sudo';
-  if (source.includes('run\\s+as\\s+root') || source.includes('run as root')) return 'run-as-root';
-  if (source.includes('run\\s+as\\s+admin') || source.includes('run as admin')) return 'run-as-admin';
-  if (source.includes('elevat')) return 'elevated-privilege';
-  if (source.includes('chmod\\s+777') || source.includes('chmod 777')) return 'chmod-777';
-  if (source.includes('chmod\\s+\\+x') || source.includes('chmod +x')) return 'chmod-plus-x';
-  if (source.includes('chmod') && source.includes('a\\+')) return 'chmod-a-plus';
-  if (source.includes('disable') && source.includes('security')) return 'disable-security';
-  if (source.includes('firewall')) return 'disable-firewall';
-  if (source.includes('antivirus')) return 'disable-antivirus';
-  return 'escalation';
 }
 
 // Characters from non-Latin scripts that look like Latin — check AFTER NFKC normalization
@@ -493,7 +491,7 @@ export function checkEscalation(file, allowlist) {
   const findings = [];
   const escalationAcc = new Map(); // patternId → { matches, firstLine }
   forEachPatternMatch(file.content, ESCALATION_PATTERNS, isDefensiveContext, (pattern, line) => {
-    const patternId = patternIdForEscalation(pattern.source);
+    const patternId = ESCALATION_ID_BY_PATTERN.get(pattern);
     if (findAllowlistMatch(allowlist, file.path, patternId)) return;
     const existing = escalationAcc.get(patternId);
     if (existing) {

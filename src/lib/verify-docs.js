@@ -195,7 +195,7 @@ export const EXPANDERS = {
     ...grab(region(s, 'const GAPS', '\n];'), /,\s*'([a-z][a-z0-9-]*)',/g),
   ],
   documentation: (s) => grab(region(s, 'function reasonLabel', '\n}'), /case\s+'([^']+)':/g),
-  'skill-files': (s) => grab(region(s, 'function patternIdForEscalation', '\n}'), /return\s+'([^']+)'/g),
+  'skill-files': (s) => grab(region(s, 'const ESCALATION_RULES', '\n];'), /\bid:\s*'([^']+)'/g),
 };
 
 /**

@@ -16,7 +16,7 @@ Findings in a skill file are treated as seriously as findings in CLAUDE.md itsel
 | Injection pattern in non-defensive context (single-line or 2-line window) | CRITICAL | `skill-files/injection` | Rephrase or remove override pattern |
 | Shell execution pattern (`run \``…\`` `, `execute bash`, `curl http`, `wget http`) | WARNING | `skill-files/shell-exec` | Review shell instructions for necessity |
 | Data exfiltration pattern (`send … to https`, `post … to https`, `upload … to`, `curl … -d`, `redirect output to`) | WARNING | `skill-files/exfiltration` | Remove or restrict outbound transfer |
-| Privilege escalation pattern — one finding **per matched pattern**, each with its own ruleId (see the escalation table below) | WARNING (CRITICAL once the file matches ≥3 distinct escalation patterns) | one of the 11 `skill-files/escalation-…` ids below | Remove escalation instructions |
+| Privilege escalation pattern — one finding **per matched pattern**, each with its own ruleId (see the escalation table below) | WARNING (CRITICAL once the file matches ≥3 distinct escalation patterns) | one of the 10 `skill-files/escalation-…` ids below | Remove escalation instructions |
 | Persistence pattern (`crontab`, `systemctl enable`, `startup script`, `modify bashrc`, `npm -g`) | WARNING | `skill-files/persistence` | Remove persistence instructions |
 | Indirect injection pattern (`eval(`, `new Function(`, `fetch and run`, `download and execute`) | CRITICAL | `skill-files/indirect-injection` | Remove dynamic code execution |
 | Trust exploitation pattern (CVE-2025-54136 — "always approve", "skip verification", "trust output from…") | WARNING | `skill-files/trust-exploitation` | Remove blind-trust instructions |
@@ -34,7 +34,7 @@ Findings in a skill file are treated as seriously as findings in CLAUDE.md itsel
 
 ### Escalation ruleIds
 
-The escalation ruleId carries the id of the pattern that matched (`` skill-files/escalation-${patternId} ``), so one file can raise several. These are the exact strings to pass to `--ignore` / `suppress` — a pattern like `skill-files/escalation-*` is not a real id and will match nothing. Conditions below are the regexes in `ESCALATION_PATTERNS`; matches inside a defensive context ("never run `sudo`") are not counted.
+The escalation ruleId carries the id of the pattern that matched (`` skill-files/escalation-${patternId} ``), so one file can raise several. These are the exact strings to pass to `--ignore` / `suppress` — a pattern like `skill-files/escalation-*` is not a real id and will match nothing. Conditions below are the regexes in `ESCALATION_RULES`, the one table that pairs each escalation pattern with its id — a pattern cannot be declared without an id, so there is no catch-all bucket and this list is exhaustive. Matches inside a defensive context ("never run `sudo`") are not counted.
 
 | Matches (case-insensitive unless noted) | SARIF ruleId |
 |---|---|
@@ -48,7 +48,6 @@ The escalation ruleId carries the id of the pattern that matched (`` skill-files
 | `disable` … `security` | `skill-files/escalation-disable-security` |
 | `turn off` … `firewall` (the id says *disable*; the regex matches *turn off*) | `skill-files/escalation-disable-firewall` |
 | `disable` … `antivirus` | `skill-files/escalation-disable-antivirus` |
-| Fallback: an `ESCALATION_PATTERNS` entry that `patternIdForEscalation` does not recognize. No shipped pattern hits it — it appears only if a pattern is added without a matching id branch | `skill-files/escalation-escalation` |
 
 ## Weight rationale
 
