@@ -12,23 +12,25 @@ Probes deployed web endpoints listed in `.rigscorerc.json` under `sites: [...]` 
 |---|---|---|---|
 | `--online` flag not set | SKIPPED | — | Re-run with `--online`. |
 | No sites configured | INFO (N/A) | — | Add a `sites: ["https://example.com"]` array to `.rigscorerc.json`. |
-| Missing CSP / HSTS / X-Frame-Options / X-Content-Type-Options | CRITICAL | `site-security` (level `error`) | Add header at server/CDN. |
+| A `sites` entry `new URL()` cannot parse (that entry is skipped, the rest still run) | INFO | `site-security/invalid-url` | Fix the entry in `.rigscorerc.json`. |
+| A `sites` entry whose scheme is not `http:` / `https:` (e.g. `file:`, `ftp:`) — skipped before any probe | INFO | `site-security/unsupported-scheme` | Point the entry at an `http(s)` URL. |
+| Missing CSP / HSTS / X-Frame-Options / X-Content-Type-Options | CRITICAL | `site-security/missing-security-header` | Add header at server/CDN. |
 | Present critical header | PASS | — | — |
-| Missing Referrer-Policy or Permissions-Policy | WARNING | `site-security` (level `warning`) | Add advisory header. |
-| Unreachable URL during header probe | WARNING | `site-security` (level `warning`) | Verify site is up and resolvable. |
-| `X-Powered-By` disclosed | WARNING | `site-security` (level `warning`) | Suppress `X-Powered-By`. |
-| `Server` header discloses version number | WARNING | `site-security` (level `warning`) | Strip version from `Server`. |
-| Exposed sensitive path returns HTTP 200 | CRITICAL | `site-security` (level `error`) | Block path via server/CDN rules. |
+| Missing Referrer-Policy or Permissions-Policy | WARNING | `site-security/missing-advisory-header` | Add advisory header. |
+| Unreachable URL during header probe | WARNING | `site-security/cannot-reach` | Verify site is up and resolvable. |
+| `X-Powered-By` disclosed | WARNING | `site-security/x-powered-by-disclosed` | Suppress `X-Powered-By`. |
+| `Server` header contains any digit (read as a version) | WARNING | `site-security/server-header-version` | Strip version from `Server`. |
+| Exposed sensitive path returns HTTP 200 (allowlist: `robots.txt`, `sitemap.xml`, `.well-known/security.txt`) | CRITICAL | `site-security/exposed-path-accessible` | Block path via server/CDN rules. |
 | No sensitive paths exposed | PASS | — | — |
-| Emails (non-allowlisted) found in HTML | CRITICAL | `site-security` (level `error`) | Remove PII from public pages. |
-| Phone numbers found in HTML | WARNING | `site-security` (level `warning`) | Review for unintended PII exposure. |
-| Secret-key pattern found in page source | CRITICAL | `site-security` (level `error`) | Rotate the key, remove from client bundle, move to server env. |
-| Internal IP address in HTML | WARNING | `site-security` (level `warning`) | Strip internal IPs from public output. |
-| `<meta name="generator">` discloses build tool | WARNING | `site-security` (level `warning`) | Remove the generator tag. |
-| SSL cert expired | CRITICAL | `site-security` (level `error`) | Renew the certificate. |
-| SSL cert expires in <30 days | WARNING | `site-security` (level `warning`) | Renew before expiry. |
+| Emails (non-allowlisted) found in HTML | CRITICAL | `site-security/pii-email-leak` | Remove PII from public pages. |
+| Phone numbers (US format) found in HTML | WARNING | `site-security/pii-phone-leak` | Review for unintended PII exposure. |
+| Secret-key pattern found in page source | CRITICAL | `site-security/secret-in-page-source` | Rotate the key, remove from client bundle, move to server env. |
+| Internal IP address (RFC1918) in HTML | WARNING | `site-security/internal-ip-disclosed` | Strip internal IPs from public output. |
+| `<meta name="generator">` discloses build tool | WARNING | `site-security/generator-tag-disclosed` | Remove the generator tag. |
+| SSL cert expired | CRITICAL | `site-security/ssl-certificate-expired` | Renew the certificate. |
+| SSL cert expires in <30 days | WARNING | `site-security/ssl-certificate-expiring-soon` | Renew before expiry. |
 | SSL cert valid ≥30 days | PASS | — | — |
-| Cannot reach `<host>:443` for cert probe | WARNING | `site-security` (level `warning`) | Check DNS/firewall for the host. |
+| Cannot reach `<host>:443` for cert probe | WARNING | `site-security/ssl-check-failed` | Check DNS/firewall for the host. |
 
 Analytics-style IDs matching `^G-…`, `^UA-…-…`, `^GTM-…`, `^ca-pub-…`, `^AW-…` are explicitly allowlisted from the secret-pattern trigger. Email allowlist covers `example.com`, `schema.org`, `w3.org`, `sitemaps.org`, `xmlns.com`, `purl.org`, `ogp.me`, `rdfs.org`.
 
@@ -44,8 +46,7 @@ No `fixes` export. `--fix --yes` is a no-op.
 
 ## SARIF
 
-- Tool component: `rigscore`
-- Rule ID emitted: `site-security` (check-level; per-finding discrimination via message text, which includes the scanned URL and the specific trigger).
+- Tool component: `rigscore`; rule IDs are the per-finding `site-security/*` ids in the Triggers table, with `site-security` as the check-level fallback rule.
 - Level mapping: CRITICAL → `error`, WARNING → `warning`, INFO → `note`, PASS/SKIPPED → `none`.
 - Location data: no file path — findings reference URLs, not repo artifacts. The scanned URL is in the message text.
 

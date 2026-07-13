@@ -10,13 +10,13 @@ Detects AI-adjacent services (Ollama, LM Studio, Open WebUI, LiteLLM, vLLM, Fast
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| MCP SSE/HTTP server URL targets non-loopback host | CRITICAL | `network-exposure` (level `error`) | Bind MCP SSE server to `127.0.0.1` in the client config URL. |
-| MCP server URL unparseable | INFO | `network-exposure` (level `note`) | Fix the malformed URL in the referenced MCP config. |
-| Docker compose AI-service port without loopback bind | WARNING | `network-exposure` (level `warning`) | Prefix the port with `127.0.0.1:` (e.g. `127.0.0.1:11434:11434`). |
-| Ollama systemd override sets `OLLAMA_HOST=0.0.0.0` | WARNING | `network-exposure` (level `warning`) | Change `OLLAMA_HOST` to `127.0.0.1` in the systemd drop-in. |
-| Ollama env file sets `OLLAMA_HOST=0.0.0.0` | WARNING | `network-exposure` (level `warning`) | Remove or replace `0.0.0.0` with `127.0.0.1`. |
-| Live AI-service TCP listener on non-loopback address | WARNING | `network-exposure` (level `warning`) | Reconfigure the service to bind loopback; restart. |
-| No AI service network exposure detected | INFO (N/A) | — | — |
+| MCP server's `url` host is outside the safe-host list (`0.0.0.0`, a LAN IP, a public name) | CRITICAL | `network-exposure/mcp-non-loopback-host` | Bind MCP SSE server to `127.0.0.1` in the client config URL. |
+| MCP server declares a `url` that `new URL()` cannot parse (probe skipped for that server) | INFO | `network-exposure/mcp-url-malformed` | Fix the malformed URL in the referenced MCP config. |
+| Compose service publishes an AI-service host port with no bind address, or one that isn't loopback | WARNING | `network-exposure/docker-port-no-loopback-bind` | Prefix the port with `127.0.0.1:` (e.g. `127.0.0.1:11434:11434`). |
+| `OLLAMA_HOST=0.0.0.0` in an `ollama.service.d` systemd drop-in (`override.conf` / `environment.conf`) | WARNING | `network-exposure/ollama-systemd-all-interfaces` | Change `OLLAMA_HOST` to `127.0.0.1` in the systemd drop-in. |
+| `OLLAMA_HOST=0.0.0.0` in `~/.ollama/.env` or `~/.ollama/environment` | WARNING | `network-exposure/ollama-config-all-interfaces` | Remove or replace `0.0.0.0` with `127.0.0.1`. |
+| `ss` / `lsof` shows a live listener on an AI port (or the MCP SSE range) bound to `0.0.0.0`, `*`, `[::]`, or any non-safe address | WARNING | `network-exposure/live-listener-non-loopback` | Reconfigure the service to bind loopback; restart. |
+| No AI service network exposure detected on any of the four surfaces | INFO (N/A) | — | — |
 
 Ports considered AI services (from `AI_SERVICE_PORTS` in `src/constants.js`): `11434` (Ollama), `1234`/`1235` (LM Studio), `8080` (Open WebUI), `3001` (MCP SSE), `4000` (LiteLLM), `5001` (LocalAI), `9090` (vLLM), `8000` (FastChat). Plus the MCP SSE heuristic range `3000–3999` applied only to live-listener detection.
 
@@ -32,8 +32,7 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 
 ## SARIF
 
-- Tool component: `rigscore`
-- Rule ID emitted: `network-exposure` (check-level; discriminate via message text).
+- Tool component: `rigscore`; rule IDs are the per-finding `network-exposure/*` ids in the Triggers table, with `network-exposure` as the check-level fallback rule.
 - Level mapping: CRITICAL → `error`, WARNING → `warning`, INFO → `note`, PASS/SKIPPED → `none`.
 - Location data: Docker findings carry the compose filename in the message; MCP findings carry the config path; Ollama findings carry the systemd/env file path; live-listener findings have no file location (they describe runtime state).
 
