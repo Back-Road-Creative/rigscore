@@ -236,8 +236,21 @@ export function formatTerminal(result, cwd, options = {}) {
   // Denominator is the fixed 100-point axis the scorer scales against
   // (`scale = totalApplicableWeight / 100`), not the sum of resolved weights.
   const totalWeight = Object.values(WEIGHTS).reduce((sum, w) => sum + w, 0);
-  if (applicableResults.length < totalResults) {
-    lines.push(`  ${chalk.dim(`Coverage: ${applicableResults.length} of ${totalResults} checks applicable (weight ${applicableWeight}/${totalWeight})${applicableWeight < 60 ? ' — score scaled down' : ''}`)}`);
+  // Disclose scaling exactly when the scorer scales: `scale = min(1, weight/100)`
+  // shrinks the score for ANY applicable weight below 100. The old `< 60` gate
+  // matched nothing in the scorer, so weights 60..99 were scaled in silence —
+  // a project whose every check scored 100 saw an unexplained 80/100.
+  const scaled = applicableWeight < totalWeight;
+  // Weight can fall short with every check still applicable (`checks.disabled`
+  // zeroes a weight), so print on weight shortfall alone, not only on N/A checks.
+  if (applicableResults.length < totalResults || scaled) {
+    const scaleNote = scaled
+      ? ` — score scaled ×${(applicableWeight / totalWeight).toFixed(2)}`
+      : '';
+    lines.push(`  ${chalk.dim(`Coverage: ${applicableResults.length} of ${totalResults} checks applicable (weight ${applicableWeight}/${totalWeight})${scaleNote}`)}`);
+    if (scaled) {
+      lines.push(`  ${chalk.dim(`→ Only ${applicableWeight} of ${totalWeight} points of check weight could be scored, so even an all-passing scan caps at ${applicableWeight}/100.`)}`);
+    }
     lines.push('');
   }
 
