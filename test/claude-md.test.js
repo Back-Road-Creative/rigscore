@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import check from '../src/checks/claude-md.js';
 import { WEIGHTS } from '../src/constants.js';
@@ -11,6 +12,18 @@ const fixture = (name) => path.join(__dirname, 'fixtures', name);
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-cmd-'));
+}
+
+// Initialize a real git repo so the check's `git check-ignore` call has a
+// working tree to consult. Config is pinned to /dev/null so a developer's
+// global gitignore/attributes can't leak into the fixture.
+function initGitRepo(dir) {
+  const gitOpts = {
+    cwd: dir,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+    stdio: 'ignore',
+  };
+  execFileSync('git', ['init', '-q'], gitOpts);
 }
 
 const defaultConfig = { paths: { claudeMd: [] }, network: {} };
@@ -391,5 +404,86 @@ describe('claude-md check', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
+  });
+
+  // --- governance file hidden in .gitignore via git-honored syntax ---
+  // The exact-string match only caught the bare name (`CLAUDE.md`); an
+  // anchored (`/CLAUDE.md`), globbed (`*.md`), or `**/`-prefixed pattern
+  // genuinely ignores the file but read clean. Ask git itself instead.
+
+  describe('governance-file-gitignored honors git syntax', () => {
+    // Each pattern below genuinely hides CLAUDE.md from git. Bare `CLAUDE.md`
+    // was already caught; the others were the false-PASS misses.
+    for (const pattern of ['CLAUDE.md', '/CLAUDE.md', '*.md', '**/CLAUDE.md']) {
+      it(`CRITICAL when .gitignore ignores CLAUDE.md via '${pattern}'`, async () => {
+        const tmpDir = makeTmpDir();
+        try {
+          initGitRepo(tmpDir);
+          fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nNever delete data.\n');
+          fs.writeFileSync(path.join(tmpDir, '.gitignore'), `${pattern}\n`);
+          const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
+          const critical = result.findings.find(
+            (f) => f.severity === 'critical' && f.findingId === 'claude-md/governance-file-gitignored',
+          );
+          expect(critical).toBeDefined();
+          expect(critical.title).toContain('CLAUDE.md');
+        } finally {
+          fs.rmSync(tmpDir, { recursive: true });
+        }
+      });
+    }
+
+    it('NO false CRITICAL when .gitignore does NOT ignore the governance file', async () => {
+      const tmpDir = makeTmpDir();
+      try {
+        initGitRepo(tmpDir);
+        fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nNever delete data.\n');
+        fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n*.log\ndist/\n');
+        const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
+        const critical = result.findings.find(
+          (f) => f.findingId === 'claude-md/governance-file-gitignored',
+        );
+        expect(critical).toBeUndefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    });
+
+    it('NO CRITICAL when the governance name appears only in a comment', async () => {
+      const tmpDir = makeTmpDir();
+      try {
+        initGitRepo(tmpDir);
+        fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nNever delete data.\n');
+        fs.writeFileSync(path.join(tmpDir, '.gitignore'), '# CLAUDE.md must stay tracked\ndist/\n');
+        const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
+        const critical = result.findings.find(
+          (f) => f.findingId === 'claude-md/governance-file-gitignored',
+        );
+        expect(critical).toBeUndefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    });
+
+    it('falls back to exact-match (no crash, no false positive) when not a git repo', async () => {
+      // No initGitRepo — `git check-ignore` errors (128) → legacy fallback.
+      const tmpDir = makeTmpDir();
+      try {
+        fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nNever delete data.\n');
+        // Bare name: legacy exact-match still catches it (old behavior preserved).
+        fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'CLAUDE.md\n');
+        const bare = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
+        expect(bare.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored')).toBeDefined();
+
+        // Glob: legacy exact-match MISSES it — a degraded matcher must fail
+        // toward the old miss, never a false CRITICAL. This contrast (same
+        // glob CRITICALs above WITH git) proves check-ignore is non-vacuous.
+        fs.writeFileSync(path.join(tmpDir, '.gitignore'), '*.md\n');
+        const glob = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
+        expect(glob.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored')).toBeUndefined();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    });
   });
 });
