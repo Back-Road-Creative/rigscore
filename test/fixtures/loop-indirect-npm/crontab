@@ -1,0 +1,1 @@
+*/15 * * * * cd /srv/repo && npm run agent:fix >> /var/log/agent.log 2>&1
