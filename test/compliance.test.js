@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { formatCompliance } from '../src/compliance.js';
-import { NOT_APPLICABLE_SCORE, WEIGHTS, FRAMEWORKS } from '../src/constants.js';
+import {
+  NOT_APPLICABLE_SCORE, WEIGHTS, FRAMEWORKS,
+  OWASP_MCP_MAP, OWASP_AGENTIC_MAP, NIST_AI_RMF_MAP, EU_AI_ACT_MAP,
+} from '../src/constants.js';
 
 const text = formatCompliance({
   score: 72,
@@ -17,6 +20,15 @@ const text = formatCompliance({
 });
 // The rendered line for a check, e.g. "[WARN    ] docker-security  score  85".
 const lineFor = (id) => text.split('\n').find((l) => l.includes(`] ${id.padEnd(26)}`));
+// The evidence block rendered under one control id, up to the blank line that ends it.
+const blockFor = (id) => {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => l.trimStart().startsWith(`${id} — `));
+  if (start === -1) return '';
+  const body = lines.slice(start + 1);
+  const end = body.findIndex((l) => l.trim() === '');
+  return body.slice(0, end === -1 ? body.length : end).join('\n');
+};
 describe('formatCompliance', () => {
   it('groups evidencing checks under the control they evidence', () => {
     expect(text).toContain('ASI03 — Identity & Privilege Abuse');
@@ -52,6 +64,36 @@ describe('formatCompliance', () => {
   it('carries the corrected MCP03/MCP05 titles that secondary sources get wrong', () => {
     expect(text).toContain('MCP03 — Tool Poisoning');
     expect(text).toContain('MCP05 — Command Injection');
+  });
+
+  it('reports MCP05 as NOT EVIDENCED — containment is not proof of input sanitization', () => {
+    // A sandbox/container bounds the blast radius of an injected command; it never shows
+    // that a tool sanitizes its input. rigscore reads MCP config at rest and never executes
+    // a server, so it produces no MCP05 evidence — and must say so instead of citing
+    // docker-security/infrastructure-security as if it did.
+    expect(blockFor('MCP05')).toContain('NOT EVIDENCED by any rigscore check');
+    expect(Object.values(OWASP_MCP_MAP), 'no check may claim MCP05').not.toContain('MCP05');
+    expect(OWASP_MCP_MAP).not.toHaveProperty('docker-security');
+    expect(OWASP_MCP_MAP).not.toHaveProperty('infrastructure-security');
+  });
+
+  it('un-evidencing MCP05 drops one mapping, not the checks themselves', () => {
+    // The containment checks still evidence every other control they legitimately support.
+    expect(OWASP_AGENTIC_MAP['docker-security']).toBe('ASI05');
+    expect(OWASP_AGENTIC_MAP['infrastructure-security']).toBe('ASI02');
+    expect(NIST_AI_RMF_MAP['docker-security']).toBe('MEASURE 2.7');
+    expect(NIST_AI_RMF_MAP['infrastructure-security']).toBe('MEASURE 2.7');
+    expect(EU_AI_ACT_MAP['docker-security']).toBe('Article 15');
+    expect(EU_AI_ACT_MAP['infrastructure-security']).toBe('Article 15');
+    expect(blockFor('ASI05'), 'still evidences code-execution risk').toContain('docker-security');
+  });
+
+  it('the framework note lists MCP05 among the NOT-EVIDENCED controls, and says why', () => {
+    const note = FRAMEWORKS['owasp-mcp'].note;
+    expect(note).toMatch(/MCP05, MCP06, MCP07, MCP08 and MCP10 are NOT EVIDENCED/);
+    expect(note, 'the retired containment-evidence claim must be gone').not.toMatch(/containment-side/);
+    expect(note, 'must explain WHY: config at rest, never a running server').toMatch(/at rest/);
+    expect(text, 'the note reaches the auditor, not just the constant').toContain(`Note: ${note}`);
   });
 
   it('surfaces honest gaps rather than hiding them', () => {
