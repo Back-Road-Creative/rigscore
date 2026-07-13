@@ -170,6 +170,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config scanned as empty (`mcp-config`, `network-exposure`, `credential-storage`,
   `workflow-maturity`, CycloneDX). Both keys are read now, `servers` winning.
 
+- **baseline: a committed baseline REMOVED at HEAD no longer launders new
+  findings through a silent re-mint.** The git-HEAD provenance gate promised that
+  a deleted/corrupt *working-tree* baseline "cannot launder findings" — but a PR
+  that `git rm`s the baseline AT HEAD (not just the working tree) slipped through:
+  `readCommittedBaseline` returned `status:'absent'` for BOTH a genuine first run
+  (never tracked) and a deletion attack (tracked, then `git rm`'d + committed),
+  because `git show HEAD:<path>` fails identically in both cases. The gate then
+  fell through to the working-tree loader, which — seeing no file — re-minted a
+  fresh baseline that absorbed the PR's new findings and exited `0`. A live AWS
+  key sailed through. The two cases are now split by git history (`git log -1 --
+  <path>`): a path with history but absent at HEAD is `removed` and fails closed
+  (exit `2`, the same provenance-error tier as corrupt), while a never-tracked
+  path stays `absent` and still mints on first run (exit `0`). Exit `2` — not `1`
+  — because it is a provenance/config error CI must not confuse with a real
+  below-baseline regression. This closes the same asymmetry `--verify-state`
+  already covers for MCP pins.
+
 - **skill-files: a truncated skill walk is disclosed instead of being reported as
   "clean".** The walk destructured only `{ files, loopDetected }` from `walkDirSafe`,
   discarding `truncated`/`depthTruncated` — the only one of seven consumers to do so.
@@ -187,6 +204,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   walk now reads the knob, matching sibling `deep-secrets`. Unset behaves exactly as
   before (depth 50, `walkDirSafe`'s own default), so default scan scope is unchanged;
   raising it now actually reaches the governance files past the old cut.
+
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
