@@ -10,6 +10,32 @@ rigscore .                    # watch the score move
 
 `rigscore init --list-packs` lists the packs and the checks each targets. An existing file is never overwritten without `--force`, and every file is reported `written` or `skipped (exists)`.
 
+## `--fix` offers the pack for you
+
+You do not have to know which pack covers which check. `rigscore . --fix` reads the packs' `checks`
+arrays and offers every pack that targets a check you are red on (critical or warning — an `info`
+finding is not worth a baseline install):
+
+```bash
+rigscore . --fix          # dry run: lists the auto-fixes AND the installable packs. Writes nothing.
+rigscore . --fix --yes    # applies the auto-fixes, then installs the packs.
+```
+
+The two remediation sources stay distinct in the output, because they are not the same kind of
+change: an **auto-fixable issue** is a file-level edit (append `.env` to `.gitignore`), while an
+**installable pack** drops in a whole starter baseline.
+
+`--fix` never rewrites governance content. It installs packs *without* `--force`, so a file you
+already wrote is reported `skipped (exists)` and left byte-for-byte alone — `--fix` can only add the
+files you are missing. To overwrite deliberately, run `rigscore init --<pack> --force` yourself.
+
+## Not covered (yet)
+
+- `--fix` installs **every** applicable pack; there is no `--fix --pack <name>` to install just one.
+  Use `rigscore init --<pack>` for that.
+- Pack files land with their `{{PLACEHOLDER}}` vars unresolved apart from `PROJECT_NAME`, and the
+  install warns about each. `--fix --yes` does not prompt for them.
+
 ## Adding a pack
 
 A pack is a directory under `templates/` holding a `pack.json`. Discovery is a `readdir`: drop the
