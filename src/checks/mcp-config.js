@@ -4,7 +4,7 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readJsonSafe, readFileSafe } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
-import { computeServerHash, loadState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
+import { computeServerHash, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
 import { mcpConfigPaths, mcpServersIn } from '../clients.js';
 
@@ -486,6 +486,15 @@ export function checkCrossClientDrift(clientServers) {
 }
 
 /**
+ * The non-empty `servers` map (runtime tool-hash pins written by `rigscore mcp-pin`)
+ * carried by a state object, or null when there is nothing to carry.
+ */
+function runtimePinsIn(state) {
+  const servers = (state && state.servers && typeof state.servers === 'object') ? state.servers : null;
+  return servers && Object.keys(servers).length > 0 ? servers : null;
+}
+
+/**
  * True when the on-disk pin already says exactly what a rewrite would say.
  * Values are hex digests and `servers` is carried over by reference, so the
  * only thing that can differ is the `mcpServers` name→hash map itself.
@@ -508,7 +517,8 @@ function pinIsUpToDate(state, currentHashes) {
  *   - new entries → silently record
  *   - removed entries → silently drop
  *   - missing state file → first scan, no warnings
- *   - corrupt state file → INFO finding + reset
+ *   - corrupt state file → reset, recovering the runtime tool pins from HEAD (INFO) or
+ *     disclosing that they are gone and only a human can re-pin them (WARNING)
  *
  * The state write ESTABLISHES or EXTENDS the pin — it never destroys it. Two
  * cases are therefore never written, and each is a real bug the unconditional
@@ -525,8 +535,9 @@ function pinIsUpToDate(state, currentHashes) {
  *     and CI checkout it runs in.
  *
  * Still written: first scan (trust-on-first-use pin), corrupt-state reset, and
- * added/removed servers. Preserves any existing `state.servers` map (runtime
- * tool-hash pins written by `rigscore mcp-pin`) when rewriting.
+ * added/removed servers. Every rewrite carries the `state.servers` map (runtime
+ * tool-hash pins written by `rigscore mcp-pin`) over — from the working tree, or
+ * from the copy committed at HEAD when the working-tree copy is corrupt.
  *
  * `writeState: false` (CLI `--no-state-write`) suppresses the write outright —
  * and SAYS SO. A scan that has stopped pinning must not look like a scan that is
@@ -542,14 +553,35 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
   if (Object.keys(currentHashes).length === 0) return findings;
 
   const { state, corrupt } = await loadState(cwd);
+
+  // A corrupt state file is UNPARSEABLE, so `state` is null and the rewrite below is about
+  // to drop the `servers` map with it. The two halves of the file are NOT symmetric: the
+  // config-shape pins (`mcpServers`) are re-minted from `.mcp.json` for free, but the runtime
+  // tool pins are not regenerable by any scan — rigscore refuses to execute an MCP server, so
+  // only a human holding its `tools/list` output can recreate them, and losing them turns OFF
+  // CVE-2025-54136 rug-pull detection (`rigscore mcp-verify <name>` then exits 3). The copy
+  // committed at HEAD is the one place they may survive a merge-conflicted working tree, so
+  // try it — and key the finding on the OUTCOME, exactly as `state-write-disabled` below does.
+  let recoveredServers = null;
   if (corrupt) {
-    findings.push({
-      findingId: 'mcp-config/state-file-corrupted',
-      severity: 'info',
-      title: `Corrupted ${STATE_FILENAME} — resetting`,
-      detail: 'Could not parse the rigscore state file. Rewriting with current MCP server hashes.',
-      remediation: 'No action needed. The state file has been regenerated.',
-    });
+    const committed = await loadCommittedState(cwd); // null outside a git repo
+    recoveredServers = runtimePinsIn(committed?.state);
+    findings.push(recoveredServers
+      ? {
+        findingId: 'mcp-config/state-file-corrupted',
+        severity: 'info',
+        title: `Corrupted ${STATE_FILENAME} — reset, runtime tool pins recovered from git`,
+        detail: `Could not parse the rigscore state file (a merge conflict in the pin leaves conflict markers behind). Rewriting with current MCP server hashes; the runtime tool pins were recovered from the copy committed at HEAD, so rug-pull detection stays armed.`,
+        remediation: `No action needed — the file was regenerated and your runtime tool pins were recovered from HEAD. Commit the rewritten ${STATE_FILENAME}.`,
+      }
+      : {
+        findingId: 'mcp-config/state-file-corrupted',
+        severity: 'warning',
+        title: `Corrupted ${STATE_FILENAME} — reset, runtime tool pins LOST`,
+        detail: `Could not parse the rigscore state file, and no copy committed at HEAD could supply its runtime tool pins. The config-shape pins are re-minted by this scan, but runtime tool pins are NOT regenerable by a scan — rigscore never executes an MCP server. Any server that had one is now unpinned at runtime, so CVE-2025-54136 rug-pull detection is OFF for it and \`rigscore mcp-verify <name>\` exits 3. (If this repo never ran \`rigscore mcp-pin\`, nothing was lost — the corrupt file cannot be read to tell.)`,
+        remediation: `Restore ${STATE_FILENAME} from version control if you can. Otherwise re-pin each server from its own tool list: \`npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin <name>\`. Then commit the file — no scan can regenerate these pins for you.`,
+        learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+      });
   }
 
   const previousHashes = (state && state.version === STATE_VERSION && state.mcpServers && typeof state.mcpServers === 'object')
@@ -602,10 +634,9 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
       });
   }
 
-  // Preserve any existing `servers` map (runtime tool-hash pins).
-  const preservedServers = (state && state.servers && typeof state.servers === 'object')
-    ? state.servers
-    : undefined;
+  // Preserve the `servers` map (runtime tool-hash pins) — from the working tree normally,
+  // from HEAD when the working-tree copy was corrupt.
+  const preservedServers = runtimePinsIn(state) || recoveredServers || undefined;
   if (writeState !== false && writeDue) {
     const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
     if (preservedServers) nextState.servers = preservedServers;

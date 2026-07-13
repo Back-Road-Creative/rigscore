@@ -23,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #88, is one instance of this general rule, not a separate one.)
 
 ### Fixed
+- **mcp-config: a corrupt `.rigscore-state.json` no longer silently destroys the
+  runtime tool pins.** The realistic trigger is a merge conflict in the pin (two
+  branches both re-pinned): the file stops parsing, and the next scan rewrote it
+  from scratch — dropping the `servers` map (the `rigscore mcp-pin` runtime tool
+  hashes) while the finding said *"No action needed."* The two halves of the file
+  are not symmetric: config-shape pins are re-minted from `.mcp.json` for free,
+  but runtime tool pins are **not regenerable by a scan** — rigscore refuses to
+  execute an MCP server, so only a human with its `tools/list` output can recreate
+  them. Losing them silently turned OFF CVE-2025-54136 rug-pull detection
+  (`rigscore mcp-verify <name>` exits 3). A corrupt state file now recovers the
+  pins from the copy committed at HEAD, and the finding is keyed on the outcome:
+  INFO when they were recovered, WARNING (naming the re-pin command) when no
+  committed copy could supply them. Same `mcp-config/state-file-corrupted` id in
+  both arms — SARIF ruleIds are a stability contract.
 - deep-secrets: do not stop at first comment-pattern match — escalate to critical when a real secret follows. Fixes a real critical being downgraded to info.
 - `checks/index`: accept fixer registrations that declare `findingIds` without
   a `match` function. Aligns the registration contract with `fixer.js` dispatch,
