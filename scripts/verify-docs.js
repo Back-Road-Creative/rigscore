@@ -77,8 +77,11 @@ async function runVerify(repoRoot) {
   try {
     const result = await verifyCheckDocs({ root: repoRoot });
     const output = formatVerifyResult(result, { scriptName: 'verify:docs' });
+    // Set exitCode rather than process.exit(): the ruleId report can run to
+    // hundreds of lines, and process.exit() truncates an in-flight async write
+    // when stdout is a pipe (i.e. every CI log).
     process.stdout.write(`${output}\n`);
-    process.exit(result.ok ? 0 : 1);
+    process.exitCode = result.ok ? 0 : 1;
   } catch (err) {
     process.stderr.write(`verify-docs: error: ${err && err.message ? err.message : err}\n`);
     process.exit(2);
