@@ -10,10 +10,14 @@ const SKIP_DIRS = new Set([
   'dist', 'build', 'coverage', 'fixtures',
 ]);
 const MAX_FILES = 2000;
-// How many rounds of call-following the index runs. A loop naming a target that
-// names a script that runs the agent is two hops out; three rounds buys that
-// with room to spare, and *bounds* the work — the resolver can never run away.
-const MAX_HOPS = 3;
+// How many hops of call-following the index runs — one hop per round, so this is
+// the depth of chain the check can see: `make agent` → script → script → script →
+// `claude -p` is four bodies between the loop and the agent, and four is what real
+// wrapper chains reach. It is NOT a hedge against misresolution: every hop resolves
+// the same way, a command token to a repo-wide *basename* index (callsIndirectAgent),
+// so hop four is exactly as certain — and exactly as name-collision-prone — as hop
+// one. Raising it trades no precision, only work; what bounds it is the work.
+const MAX_HOPS = 4;
 
 // The binary must sit in command position — line start or after a shell
 // separator — so `.claude/settings.json` or `codexample` cannot match.
@@ -163,6 +167,14 @@ function collectBodies(file, lines, raw, bodies, idx) {
  * the bodies that *call* an already-indexed one — so `make agent` → a script →
  * `claude -p` resolves, which one hop could not see.
  *
+ * A round publishes its names only at the END of the round, so one round is
+ * exactly one hop. Adding to `idx` mid-round instead made the reachable depth an
+ * artifact of *walk order*: a body indexed earlier in a pass was visible to a body
+ * processed later in the same pass, so a chain the filesystem happened to hand over
+ * deepest-first collapsed into a single round while the identical chain handed over
+ * shallowest-first needed one round per link. Two repos with the same topology and
+ * different file names scored differently, and MAX_HOPS bounded neither. It does now.
+ *
  * Termination is structural, not a visited-set: a round only ever ADDS names to
  * a set it never removes from, so a script that calls itself (or a cycle of
  * scripts calling each other) simply contributes nothing new and the loop ends.
@@ -172,11 +184,13 @@ function resolveIndirection(bodies, idx) {
   let pending = bodies;
   for (let hop = 0; hop < MAX_HOPS && pending.length; hop++) {
     const unresolved = [];
+    const resolved = [];
     for (const b of pending) {
-      if (hasAgent(b.text) || callsIndirectAgent(b.text, idx)) idx[b.kind].add(b.name);
+      if (hasAgent(b.text) || callsIndirectAgent(b.text, idx)) resolved.push(b);
       else unresolved.push(b);
     }
-    if (unresolved.length === pending.length) break; // fixed point — nothing grew
+    if (!resolved.length) break; // fixed point — nothing grew
+    for (const b of resolved) idx[b.kind].add(b.name);
     pending = unresolved;
   }
 }
