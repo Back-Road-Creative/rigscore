@@ -27,22 +27,22 @@ Detection is anchored to a git project (`<cwd>/.git`): with no repo there is no 
 |---|---|---|---|
 | `process.platform !== 'linux'` | SKIPPED | — | N/A on macOS/Windows; the skip names the platform |
 | Nothing declared **and** nothing at the default locations | SKIPPED | — | "nothing found at the default locations" — declare `paths.*` to point at a custom location |
-| `paths.hooksDir` configured but directory missing | CRITICAL | `infrastructure-security/global-git-hooks-directory-missing` | Create the directory root-owned with required hooks |
-| `paths.hooksDir` exists but not owned by root (uid 0) | CRITICAL | `infrastructure-security/global-git-hooks-directory-not-root-owned` | `sudo chown root:root <hooksDir>` |
-| Required hook `pre-commit`/`pre-push`/`commit-msg` missing inside `hooksDir` | CRITICAL (declared) / WARNING (detected) | `infrastructure-security/required-git-hook-missing-hook` | Create it as a root-owned executable |
-| Required hook exists but lacks owner-execute bit | WARNING | `infrastructure-security/git-hook-not-executable-hook` | `sudo chmod 755 <path>` |
+| `paths.hooksDir` configured but directory missing | CRITICAL | `infrastructure-security/hooks-dir-missing` | Create the directory root-owned with required hooks |
+| `paths.hooksDir` exists but not owned by root (uid 0) | CRITICAL | `infrastructure-security/hooks-dir-not-root-owned` | `sudo chown root:root <hooksDir>` |
+| Required hook `pre-commit`/`pre-push`/`commit-msg` missing inside `hooksDir` | CRITICAL (declared) / WARNING (detected) | `infrastructure-security/required-hook-missing` | Create it as a root-owned executable |
+| Required hook exists but lacks owner-execute bit | WARNING | `infrastructure-security/hook-not-executable` | `sudo chmod 755 <path>` |
 | Required hook present and executable | PASS | — | — |
-| `paths.gitWrapper` configured but missing | CRITICAL | `infrastructure-security/git-safety-wrapper-missing` | Install a wrapper that strips `--no-verify` and blocks force-push |
+| `paths.gitWrapper` configured but missing | CRITICAL | `infrastructure-security/git-wrapper-missing` | Install a wrapper that strips `--no-verify` and blocks force-push |
 | Git wrapper exists but not root-owned | WARNING | `infrastructure-security/git-wrapper-not-root-owned` | `sudo chown root:root <wrapper>` |
-| Git wrapper content does **not** reference `no-verify` | WARNING | `infrastructure-security/git-wrapper-does-not-strip-no-verify` | Make the wrapper strip `--no-verify` |
+| Git wrapper content does **not** reference `no-verify` | WARNING | `infrastructure-security/git-wrapper-no-verify-bypass` | Make the wrapper strip `--no-verify` |
 | Git wrapper references `no-verify` | PASS | — | — |
 | `paths.safetyGates` configured and present | PASS | — | — |
-| `paths.safetyGates` configured but file missing | INFO | `infrastructure-security/shell-safety-guard-missing` | Create safety guard with wrappers for dangerous ops |
+| `paths.safetyGates` configured but file missing | INFO | `infrastructure-security/safety-gates-missing` | Create safety guard with wrappers for dangerous ops |
 | `paths.immutableDirs` entry has chattr `+i` set | PASS | — | — |
-| `paths.immutableDirs` entry missing `+i` flag | WARNING | `infrastructure-security/immutable-flag-not-set-basename` | `sudo chattr -R +i <dir>` |
-| `paths.immutableDirs` entry unreachable or `lsattr` unavailable | INFO | `infrastructure-security/cannot-check-immutability-basename` | Install e2fsprogs; verify directory exists |
-| No `permissions.deny` list found in any `settings.json` | WARNING | `infrastructure-security/no-deny-list-found-in-settings-json` | Add `permissions.deny` to Claude settings |
-| Deny list missing one or more required patterns (`git push --force`, `git reset --hard`, `rm -rf`, `git push origin main`, `git push origin master`) | WARNING | `infrastructure-security/deny-list-missing-n-required-pattern-s` | Add missing patterns |
+| `paths.immutableDirs` entry missing `+i` flag | WARNING | `infrastructure-security/immutable-flag-not-set` | `sudo chattr -R +i <dir>` |
+| `paths.immutableDirs` entry unreachable or `lsattr` unavailable | INFO | `infrastructure-security/cannot-check-immutability` | Install e2fsprogs; verify directory exists |
+| No `permissions.deny` list found in any `settings.json` | WARNING | `infrastructure-security/no-deny-list` | Add `permissions.deny` to Claude settings |
+| Deny list missing one or more required patterns (`git push --force`, `git reset --hard`, `rm -rf`, `git push origin main`, `git push origin master`) | WARNING | `infrastructure-security/deny-list-missing-patterns` | Add missing patterns |
 | Deny list contains all required patterns | PASS | — | — |
 | `sandbox-gate` registered in `settings.json` hooks | PASS | — | — |
 | `sandbox-gate` not registered | WARNING | `infrastructure-security/sandbox-gate-not-registered` | Register `sandbox-gate.py` as a `PreToolUse` hook |
