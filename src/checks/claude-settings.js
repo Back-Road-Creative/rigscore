@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readJsonSafe } from '../utils.js';
+import { readJsonSafe, walkDirSafe } from '../utils.js';
 
 const DANGEROUS_HOOK_RE = [
   /\bcurl\b/, /\bwget\b/, /\brm\s+-rf\b/, /\beval\b/, /\bbase64\s+-d\b/,
@@ -13,6 +13,11 @@ const SETTINGS_FILES = [
   '.claude/settings.json',
   '.claude/settings.local.json',
 ];
+
+// Plugins ship hooks at <plugin>/hooks/hooks.json and Claude Code executes them
+// exactly like settings hooks; scanning only SETTINGS_FILES left them unscanned.
+const PLUGIN_ROOT = '.claude/plugins';
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 
 // Allow-list entries that grant dangerous broad access
 const DANGEROUS_ALLOW_PATTERNS = [
@@ -26,34 +31,58 @@ const DANGEROUS_ALLOW_PATTERNS = [
 const CLAUDE_LIFECYCLE_HOOKS = ['PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit'];
 
 /**
- * Flatten every shell command configured under one hook event.
+ * Flatten every executable handler configured under one hook event. Returns
+ * `{ command }` for shell handlers and `{ url }` for `type: "http"` handlers —
+ * a handler needs no shell command to be dangerous.
  *
  * The documented schema (https://code.claude.com/docs/en/hooks) nests the
- * command two levels down, behind a matcher:
+ * handler two levels down, behind a matcher:
  *   "PreToolUse": [ { "matcher": "Bash",
  *                     "hooks": [ { "type": "command", "command": "…", "args": [] } ] } ]
- * Hand-written and older configs put the command straight on the entry:
+ * Hand-written and older configs put it straight on the entry:
  *   "PreToolUse": [ { "command": "…" } ]
- * Read BOTH — scanning only the flat shape makes every real-world hook command
- * invisible to the dangerous-pattern scan below. `args` are folded into the
- * command string so `bash -c "<payload>"` cannot hide the payload.
- * Non-command handler types (http, mcp_tool, prompt, agent) carry no shell
- * command and contribute nothing.
+ * Read BOTH — scanning only the flat shape makes every real-world hook
+ * invisible to the scans below. `args` are folded into the command string so
+ * `bash -c "<payload>"` cannot hide the payload.
  */
-function extractHookCommands(hookList) {
-  const commands = [];
+function extractHookHandlers(hookList) {
+  const handlers = [];
   const collect = (entry) => {
-    if (!entry || typeof entry.command !== 'string') return;
-    const args = Array.isArray(entry.args) ? entry.args.filter(a => typeof a === 'string') : [];
-    const cmd = [entry.command, ...args].join(' ').trim();
-    if (cmd) commands.push(cmd);
+    if (!entry || typeof entry !== 'object') return;
+    if (typeof entry.command === 'string') {
+      const args = Array.isArray(entry.args) ? entry.args.filter(a => typeof a === 'string') : [];
+      const cmd = [entry.command, ...args].join(' ').trim();
+      if (cmd) handlers.push({ command: cmd });
+    }
+    if (entry.type === 'http' && typeof entry.url === 'string' && entry.url.trim()) {
+      handlers.push({ url: entry.url.trim() });
+    }
   };
   for (const entry of Array.isArray(hookList) ? hookList : []) {
     if (!entry || typeof entry !== 'object') continue;
     collect(entry);                                                  // flat / legacy shape
     for (const inner of Array.isArray(entry.hooks) ? entry.hooks : []) collect(inner); // real schema
   }
-  return commands;
+  return handlers;
+}
+
+/**
+ * True when an `http` hook url leaves the machine for a host that is neither
+ * loopback nor Anthropic — same exfiltration class as an ANTHROPIC_BASE_URL
+ * redirect, hence the same CRITICAL severity. Compared after `new URL()` parsing,
+ * never by substring: `.includes('anthropic.com')` would wave through
+ * `https://evil.test/?x=api.anthropic.com`. An unparseable url is a broken hook,
+ * not an exfiltration path, so it is not reported.
+ */
+function isExternalHookUrl(url) {
+  let host;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  } catch {
+    return false;
+  }
+  if (LOOPBACK_HOSTS.has(host)) return false;
+  return host !== 'anthropic.com' && !host.endsWith('.anthropic.com');
 }
 
 /**
@@ -76,6 +105,75 @@ function readPermissionKey(settings, key) {
   return perms[key] !== undefined ? perms[key] : settings[key];
 }
 
+/**
+ * Scan one `hooks` object (from a settings file OR a plugin's hooks.json) for
+ * dangerous commands, missing script paths, and exfiltrating http endpoints,
+ * recording every event it configures for the lifecycle-coverage rollup.
+ */
+async function scanHooks(hooksObj, rel, { homedir, findings, configuredHooks }) {
+  if (!hooksObj || typeof hooksObj !== 'object') return;
+  for (const [hookName, hookList] of Object.entries(hooksObj)) {
+    configuredHooks.add(hookName);
+    for (const handler of extractHookHandlers(hookList)) {
+      if (handler.url) {
+        if (isExternalHookUrl(handler.url)) {
+          findings.push({
+            findingId: 'claude-settings/http-hook-external-endpoint',
+            severity: 'critical',
+            title: `Hook posts to an external endpoint in ${rel} (${hookName})`,
+            detail: `An http hook sends every ${hookName} payload to ${handler.url.slice(0, 60)} — a non-loopback, non-Anthropic host. No shell command is needed to exfiltrate the session.`,
+            remediation: 'Remove the http hook, or point its url at a loopback address you control.',
+          });
+        }
+        continue;
+      }
+
+      const cmd = handler.command;
+      // Dangerous pattern check
+      for (const pattern of DANGEROUS_HOOK_RE) {
+        if (pattern.test(cmd)) {
+          findings.push({
+            findingId: 'claude-settings/dangerous-hook-command',
+            severity: 'critical',
+            title: `Dangerous hook in ${rel} (${hookName})`,
+            detail: `Hook runs: ${cmd.slice(0, 80)}`,
+            remediation: 'Remove dangerous hook commands. Repo-level hooks execute on every collaborator.',
+          });
+          break;
+        }
+      }
+
+      // Hook script existence check: if first token is a file path, verify it exists
+      const firstToken = cmd.trim().split(/\s+/)[0];
+      if (firstToken && /^[/~.]/.test(firstToken)) {
+        const resolved = firstToken.replace(/^~/, homedir);
+        const exists = await fs.promises.access(resolved).then(() => true).catch(() => false);
+        if (!exists) {
+          findings.push({
+            findingId: 'claude-settings/hook-script-missing',
+            severity: 'warning',
+            title: `Hook script not found in ${rel} (${hookName})`,
+            detail: `Hook references '${firstToken}' which does not exist on disk. The hook will silently fail.`,
+            remediation: `Create the script at '${firstToken}' or update the hook command path.`,
+          });
+        }
+      }
+    }
+  }
+}
+
+/** Every `<plugin>/hooks/hooks.json` under a plugins root, via the shared
+ *  symlink-loop-safe, depth-capped walker. Never hand-roll a walker here. */
+async function findPluginHookFiles(root) {
+  const { files } = await walkDirSafe(root, {
+    maxDepth: 6,
+    maxFiles: 200,
+    shouldInclude: (full, dirent) =>
+      dirent.name === 'hooks.json' && path.basename(path.dirname(full)) === 'hooks',
+  });
+  return files;
+}
+
 export default {
   id: 'claude-settings',
   enforcementGrade: 'mechanical',
@@ -92,6 +190,8 @@ export default {
     const allAllowListEntries = [];
     let hasBypassPermissions = false;
     let defaultMode = null;
+
+    const ctx = { homedir, findings, configuredHooks: allConfiguredHooks };
 
     const paths = [
       ...SETTINGS_FILES.map(f => ({ p: path.join(cwd, f), rel: f })),
@@ -168,43 +268,8 @@ export default {
         defaultMode = mode;
       }
 
-      // Dangerous hooks
-      if (settings.hooks && typeof settings.hooks === 'object') {
-        for (const [hookName, hookList] of Object.entries(settings.hooks)) {
-          allConfiguredHooks.add(hookName);
-          for (const cmd of extractHookCommands(hookList)) {
-            // Dangerous pattern check
-            for (const pattern of DANGEROUS_HOOK_RE) {
-              if (pattern.test(cmd)) {
-                findings.push({
-                  findingId: 'claude-settings/dangerous-hook-command',
-                  severity: 'critical',
-                  title: `Dangerous hook in ${rel} (${hookName})`,
-                  detail: `Hook runs: ${cmd.slice(0, 80)}`,
-                  remediation: 'Remove dangerous hook commands. Repo-level hooks execute on every collaborator.',
-                });
-                break;
-              }
-            }
-
-            // Hook script existence check: if first token is a file path, verify it exists
-            const firstToken = cmd.trim().split(/\s+/)[0];
-            if (firstToken && /^[/~.]/.test(firstToken)) {
-              const resolved = firstToken.replace(/^~/, homedir);
-              const exists = await fs.promises.access(resolved).then(() => true).catch(() => false);
-              if (!exists) {
-                findings.push({
-                  findingId: 'claude-settings/hook-script-missing',
-                  severity: 'warning',
-                  title: `Hook script not found in ${rel} (${hookName})`,
-                  detail: `Hook references '${firstToken}' which does not exist on disk. The hook will silently fail.`,
-                  remediation: `Create the script at '${firstToken}' or update the hook command path.`,
-                });
-              }
-            }
-          }
-        }
-      }
+      // Hooks — same scan for settings files and plugin hooks.json (see scanHooks).
+      await scanHooks(settings.hooks, rel, ctx);
 
       // allowedTools wildcard
       const allowed = settings.allowedTools || settings.permissions?.allow || [];
@@ -235,6 +300,17 @@ export default {
             }
           }
         }
+      }
+    }
+
+    // Plugin hooks run with no settings file present, so finding one is itself enough
+    // to make the check applicable — else a hook-only plugin scores NOT_APPLICABLE.
+    for (const [root, prefix] of [[cwd, ''], [homedir, '~/']]) {
+      for (const hookFile of await findPluginHookFiles(path.join(root, PLUGIN_ROOT))) {
+        const pluginHooks = await readJsonSafe(hookFile);
+        if (!pluginHooks) continue;
+        foundAny = true;
+        await scanHooks(pluginHooks.hooks || pluginHooks, prefix + path.relative(root, hookFile), ctx);
       }
     }
 
