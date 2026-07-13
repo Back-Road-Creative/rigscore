@@ -178,20 +178,23 @@ compares subsequent scans against it. Suppressions via `--ignore` / the
 but the baseline file itself is a snapshot — if you added a suppression
 after the baseline was written, the suppressed finding is no longer in
 the baseline but also no longer in the current run, so it won't appear as
-"new." If it does, regenerate the baseline:
+"new." If it does, regenerate the baseline with `--baseline-refresh`, then
+commit the result:
 
 ```bash
-rm <baseline-path>
-npx github:Back-Road-Creative/rigscore --baseline <baseline-path>  # writes fresh
+npx github:Back-Road-Creative/rigscore --baseline <baseline-path> --baseline-refresh  # re-mint from current findings
+git add <baseline-path> && git commit -m "refresh rigscore baseline"                  # commit the new authority
 ```
 
-Note: a **corrupt** baseline (the file still exists but is unparseable JSON,
-or has no `findings` array) now **hard-fails with exit `2`** instead of
-silently regenerating — otherwise an attacker who overwrites a committed
-baseline could make the regression gate re-seed their current findings and
-ship green. The documented `rm && re-run` regenerate flow above is unaffected:
-a **missing** baseline is still treated as first-run and minted (exit `0`).
-Fix or regenerate the corrupt file (e.g. `rm` it, then re-run) to recover.
+**Why `--baseline-refresh` and not `rm && re-run`?** In a git repo the gate now
+trusts only the baseline **committed at HEAD** (`git show HEAD:<path>`, like
+`--verify-state`), so an attacker who deletes or corrupts the working-tree copy
+in a PR can't make the gate re-seed their findings and ship green. Consequently
+`rm <baseline>` + a plain re-run no longer regenerates while a baseline is
+committed — the gate reads HEAD and diffs; a corrupt baseline committed at HEAD
+hard-fails (exit `2`). Outside a git repo (or before the baseline is committed)
+the old behavior holds: a missing baseline mints on first run (exit `0`), a
+corrupt working-tree file still exits `2`.
 
 ## See also
 

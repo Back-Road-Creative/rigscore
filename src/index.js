@@ -58,6 +58,7 @@ export function parseArgs(args) {
     noStateWrite: false,
     ignore: null,
     baseline: null,
+    baselineRefresh: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -119,6 +120,7 @@ const FLAG_DEFS = (() => {
     '--watch':                { handler: setTrue('watch') },
     '--verify-state':         { handler: setTrue('verifyState') },
     '--no-state-write':       { handler: setTrue('noStateWrite') },
+    '--baseline-refresh':     { handler: setTrue('baselineRefresh') },
 
     // Aliased booleans
     '--verbose': verbose, '-v': verbose,
@@ -442,7 +444,7 @@ export async function run(args) {
     // extracted from run() for readability. Behavior unchanged.
     if (options.baseline) {
       const { runBaselineMode } = await import('./cli/baseline.js');
-      runBaselineMode(result, options.baseline);
+      await runBaselineMode(result, options.baseline, { refresh: options.baselineRefresh });
     }
 
     if (options.watch) {

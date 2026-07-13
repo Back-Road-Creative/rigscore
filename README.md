@@ -696,7 +696,7 @@ rigscore exits with a stable code so CI can branch cleanly:
 |---|---|
 | `0` | Scan completed. Score is at or above `--fail-under`. In baseline/diff mode: no new findings vs baseline. |
 | `1` | Scan completed. Score is below `--fail-under`, OR (baseline mode) new findings were detected. |
-| `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, an unreadable **or corrupt/malformed** baseline file (an existing baseline with unparseable JSON or no findings array fails closed — it is never re-minted), or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. |
+| `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, an unreadable **or corrupt/malformed** baseline file (unparseable JSON or no findings array fails closed — never silently re-minted), or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. In a git repo the baseline gate reads the copy **committed at HEAD** (`git show HEAD:<path>`, like `--verify-state`), so a deleted/corrupt working-tree baseline can't launder findings; regenerate with `--baseline-refresh` then commit. |
 | `3` | Reserved for subcommand pre-conditions. Currently used by `rigscore mcp-verify <server>` when no runtime tool hash is pinned for that server. The main scan path does not emit `3`. |
 
 A runtime crash inside a check surfaces as exit `2` with `Error: scan failed: ...` on stderr; it does not currently use a distinct code. CI authors should treat non-zero as failure and branch only on `0` vs `1` for score-gating logic.
