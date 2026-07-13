@@ -73,8 +73,12 @@ ids** so the muting is visible in its own output — not only in a config diff:
 
 ## Full enforcement (v2.x)
 
-As of v2.x the stability contract applies to **every** non-pass,
-non-skipped finding emitted by the built-in checks. The SARIF title-slug
+As of v2.x the stability contract applies to **every** finding ID emitted by
+the built-in checks, and `npm run verify:docs` enforces that per **ID** (not
+per check): a literal ID a check emits and this page does not list fails CI.
+That includes the not-applicable / scan-limit states (`skill-files/no-skill-files`,
+`claude-settings/hook-file-cap-reached`, …) — they carry a stable ID too, so
+they are documented rather than carved out. The SARIF title-slug
 fallback in `src/sarif.js::deriveFindingRuleId` is retained only as a
 defensive safety net for plugin-authored checks that skip explicit IDs —
 no built-in check should rely on it.
@@ -106,6 +110,7 @@ Grouped by check. Each ID is stable within the current major.
 - `claude-md/injection-pattern` (critical) — instruction-override pattern found in governance file.
 - `claude-md/governance-file-gitignored` (critical) — governance file listed in .gitignore.
 - `claude-md/governance-file-untracked` (warning) — governance file not tracked in git.
+- `claude-md/no-ai-tooling-detected` (info) — no AI-tooling surface found, so governance depth is not scored.
 
 ### claude-settings
 
@@ -118,6 +123,12 @@ Grouped by check. Each ID is stable within the current major.
 - `claude-settings/dangerous-allow-list-entry` (warning) — allow-list pattern grants sudo-bash / unrestricted docker / raw pip.
 - `claude-settings/lifecycle-hook-missing` (info) — one of PreToolUse/PostToolUse/Stop/UserPromptSubmit is not configured.
 - `claude-settings/no-lifecycle-hooks` (info) — no Claude Code hooks configured at all.
+- `claude-settings/http-hook-external-endpoint` (critical) — a hook sends data to an external HTTP(S) endpoint.
+- `claude-settings/bypass-permissions-mode` (warning) — permission mode is `bypassPermissions`.
+- `claude-settings/settings-unparseable` (warning) — a settings file is not valid JSON, so it was not analyzed.
+- `claude-settings/frontmatter-hooks-unparseable` (warning) — an agent/skill frontmatter `hooks:` block could not be parsed.
+- `claude-settings/hook-file-cap-reached` (warning) — the hook-file scan hit its cap, so hook coverage is incomplete.
+- `claude-settings/no-settings-found` (info) — no Claude settings file found in any location.
 
 ### coherence
 
@@ -139,6 +150,7 @@ Grouped by check. Each ID is stable within the current major.
 
 - `credential-storage/plaintext-credential-in-client-config` (critical)
 - `credential-storage/example-credential-in-client-config` (info)
+- `credential-storage/no-client-configs-found` (info) — no AI-client config files to scan.
 
 ### deep-secrets
 
@@ -207,6 +219,12 @@ Grouped by check. Each ID is stable within the current major.
 
 - `env-exposure/env-not-gitignored` (warning)
 - `env-exposure/env-world-readable` (warning)
+- `env-exposure/hardcoded-api-key` (critical) — a live API key literal in a tracked config file.
+- `env-exposure/gcp-service-account-key` (critical) — a GCP service-account private key on disk.
+- `env-exposure/real-secret-in-template` (warning) — an `.env.example`/template ships a real secret, not a placeholder.
+- `env-exposure/shell-history-secrets` (warning) — secrets recorded in shell history.
+- `env-exposure/api-key-in-comment` (info) — an API-key pattern inside a comment.
+- `env-exposure/api-key-example-placeholder` (info) — an API-key pattern that reads as an example/placeholder.
 
 ### git-hooks
 
@@ -237,6 +255,16 @@ Grouped by check. Each ID is stable within the current major.
 ### instruction-effectiveness
 
 - `instruction-effectiveness/dead-file-reference` (info)
+- `instruction-effectiveness/single-file-over-budget` (warning) — one instruction file alone blows the per-turn budget.
+- `instruction-effectiveness/context-budget-warn` (warning) — the auto-loaded instruction bundle is over budget.
+- `instruction-effectiveness/context-budget-info` (info) — the bundle is approaching its budget.
+- `instruction-effectiveness/file-bloat` (warning) — an instruction file is far larger than the rest.
+- `instruction-effectiveness/file-bloat-info` (info) — advisory-tier bloat on the same condition.
+- `instruction-effectiveness/contradiction` (info) — two instructions conflict.
+- `instruction-effectiveness/vague-instruction` (info) — an instruction is unactionable ("use your judgment").
+- `instruction-effectiveness/vague-instruction-summary` (info) — roll-up when many vague instructions are found.
+- `instruction-effectiveness/redundant-instruction` (info) — an instruction is restated elsewhere.
+- `instruction-effectiveness/redundant-instruction-summary` (info) — roll-up for the redundant set.
 
 ### mcp-config
 
@@ -267,6 +295,7 @@ Grouped by check. Each ID is stable within the current major.
 - `mcp-config/server-hash-drift` (warning)
 - `mcp-config/runtime-tool-pin-recorded` (info)
 - `mcp-config/runtime-tool-pin-missing` (info)
+- `mcp-config/state-write-disabled` (warning/info) — `--no-state-write` suppressed config-shape pinning: a pin write was due, so rug-pull drift detection is lost (warning), or the pin was already current so nothing was lost (info).
 
 ### network-exposure
 
@@ -276,12 +305,14 @@ Grouped by check. Each ID is stable within the current major.
 - `network-exposure/ollama-systemd-all-interfaces` (warning)
 - `network-exposure/ollama-config-all-interfaces` (warning)
 - `network-exposure/live-listener-non-loopback` (warning)
+- `network-exposure/no-exposure-detected` (info) — nothing listens off-loopback.
 
 ### permissions-hygiene
 
 - `permissions-hygiene/ssh-dir-permissions` (warning)
 - `permissions-hygiene/ssh-key-permissions` (warning)
 - `permissions-hygiene/sensitive-file-world-readable` (warning)
+- `permissions-hygiene/governance-mixed-ownership` (warning) — governance files are owned by more than one uid.
 
 ### site-security
 
@@ -299,6 +330,9 @@ Grouped by check. Each ID is stable within the current major.
 - `site-security/ssl-check-failed` (warning)
 - `site-security/ssl-certificate-expired` (critical)
 - `site-security/ssl-certificate-expiring-soon` (warning)
+- `site-security/invalid-url` (info) — a configured site URL does not parse.
+- `site-security/unsupported-scheme` (info) — a configured site URL is not http(s).
+- `site-security/no-sites-configured` (info) — no `sites` array in `.rigscorerc.json`, so the check is not applicable.
 
 ### skill-coherence
 
@@ -317,6 +351,14 @@ Grouped by check. Each ID is stable within the current major.
 - `skill-files/indirect-injection` (critical)
 - `skill-files/trust-exploitation` (warning)
 - `skill-files/world-writable` (warning)
+- `skill-files/bidi-override` (critical) — a bidirectional-override character hides text in a skill file.
+- `skill-files/zero-width` (warning) — zero-width characters in a skill file.
+- `skill-files/homoglyph` (warning) — look-alike Unicode characters in a skill file.
+- `skill-files/non-tls-urls` (warning) — plain-HTTP URLs in a skill file.
+- `skill-files/possible-base64` (warning) — base64-looking encoded content in a skill file.
+- `skill-files/https-urls` (info) — HTTPS URLs in a skill file (inventory only).
+- `skill-files/symlink-loop-skipped` (info) — a symlink cycle was skipped during traversal.
+- `skill-files/no-skill-files` (info) — no skill/instruction files to scan.
 
 ### unicode-steganography
 
@@ -324,6 +366,7 @@ Grouped by check. Each ID is stable within the current major.
 - `unicode-steganography/zero-width` (warning)
 - `unicode-steganography/homoglyph` (warning)
 - `unicode-steganography/tag-chars` (warning)
+- `unicode-steganography/no-files-scanned` (info) — no governance or config files to scan.
 
 ### windows-security
 
