@@ -10,12 +10,14 @@ Inspects the MCP env maps inside AI-client config files in `~/` — Claude Deskt
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| A declared env value (`mcpServers[<server>].env[<key>]`, or the client's own keys — Zed `context_servers[].env`, opencode `mcp[].environment`) matches a `KEY_PATTERNS` regex, does not start with `op://`, is not `${VAR}`, and does not match the example/placeholder word list | CRITICAL | `credential-storage/plaintext-credential` | Replace with `op://<vault>/<item>/<field>`, `${VAR}`, or an OS-keychain reference |
-| Same as above, but the value contains `example` / `placeholder` / `demo` / `sample` / `template` / `your_key` / `xxx` / `changeme` / `replace_me` | INFO | `credential-storage/example-credential` | Replace the example value before using the config |
+| A declared env value (`mcpServers[<server>].env[<key>]`, or the client's own keys — Zed `context_servers[].env`, opencode `mcp[].environment`) matches a `KEY_PATTERNS` regex, does not start with `op://`, is not `${VAR}`, and does not match the example/placeholder word list | CRITICAL | `credential-storage/plaintext-credential-in-client-config` | Replace with `op://<vault>/<item>/<field>`, `${VAR}`, or an OS-keychain reference |
+| Same as above, but the value contains `example` / `placeholder` / `demo` / `sample` / `template` / `your_key` / `xxx` / `changeme` / `replace_me` | INFO | `credential-storage/example-credential-in-client-config` | Replace the example value before using the config |
 | No client config files found in `~/` | N/A | — | Check returns `NOT_APPLICABLE` — no score impact |
 | Config files present with no plaintext credentials | PASS | — | — |
 
 The trigger list is deliberately short: the check is a pattern scan against `KEY_PATTERNS` (the same ~40 provider regexes used by `env-exposure` and `deep-secrets`), and each regex hit becomes exactly one of the two severity rows above depending on the example-word check.
+
+Both ids are emitted from a **single `findings.push`** whose `findingId` is a ternary on the example-word test (`findingId: isExample ? '…/example-credential-in-client-config' : '…/plaintext-credential-in-client-config'`). A tool that extracts ruleIds by matching a quoted string straight after `findingId:` will find **none** here — it must read every string literal in the `findingId` expression, both branches included.
 
 ## Weight rationale
 
@@ -72,6 +74,6 @@ The table is generated from the client registry (`src/clients.js`) — add a cli
 Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat & Ship audit.
 
 - **`op://` references with a path that pattern-matches a plaintext shape** — the check correctly excludes values starting with `op://`, but if an operator writes `"GITHUB_TOKEN": "see op://secrets/github/token"` (with free-form prefix) the regex may match the provider pattern against the suffix. Workaround: keep the value strictly `op://...`; don't embed it in prose.
-- **Example-file-passthrough** — users who copy `.env.example` into a real MCP client config verbatim keep `xxx`/`changeme` placeholders; these correctly downgrade to INFO (`credential-storage/example-credential`). If you're seeing many example-credential INFOs, the config was never filled in — remove or replace the server entry.
+- **Example-file-passthrough** — users who copy `.env.example` into a real MCP client config verbatim keep `xxx`/`changeme` placeholders; these correctly downgrade to INFO (`credential-storage/example-credential-in-client-config`). If you're seeing many example-credential INFOs, the config was never filled in — remove or replace the server entry.
 - **N/A on headless / CI workspaces** — when `~/.cursor/mcp.json` etc. don't exist (fresh container, CI runner), the check returns N/A and contributes nothing to score. Expected, but can surprise users who assume "no findings" = "passed".
 - **Path-mapping lookup requires the docs table** — SARIF `physicalLocation` does NOT resolve the per-client config path automatically (finding titles name the client, not the file). Until `src/sarif.js` gains an explicit `locations[]` emit from this check, SARIF consumers must cross-reference the client→path table above manually. Tracked as backlog 3.4.

@@ -12,12 +12,12 @@ Catches the single most common credential-leak vector in AI dev repos: `.env` fi
 |---|---|---|---|
 | `.env` or `.env.*` (non-`.example`) file present but not listed in `.gitignore` | CRITICAL | `env-exposure/env-not-gitignored` | Add `.env` to `.gitignore` (auto-fixable) |
 | Line in an AI config file (`CLAUDE.md`, `.cursorrules`, `.mcp.json`, `config.json`, `settings.py`, etc.) matches a `KEY_PATTERNS` regex outside a comment and not a placeholder | CRITICAL | `env-exposure/hardcoded-api-key` | Move the secret to `.env`; rotate the credential |
-| GCP dual-field (`"type": "service_account"` + `"private_key"`) found in any scanned AI config file | CRITICAL | `env-exposure/gcp-service-account` | Delete the key file; use workload identity |
+| GCP dual-field (`"type": "service_account"` + `"private_key"`) found in any scanned AI config file | CRITICAL | `env-exposure/gcp-service-account-key` | Delete the key file; use workload identity |
 | `.env` file is world-readable (mode bit `0o004` set) — POSIX only | WARNING | `env-exposure/env-world-readable` | `chmod 600 <file>` (auto-fixable) |
 | `.env.example` / `.env.sample` / `.env.template` contains a real CRITICAL-severity secret match | WARNING | `env-exposure/real-secret-in-template` | Replace the real value with `your_key_here` |
-| Recent shell history (`~/.bash_history` or `~/.zsh_history`, last 500 lines) contains CRITICAL-severity secret matches | WARNING | `env-exposure/secret-in-shell-history` | Edit the history file or `history -c`; rotate the leaked credential |
+| Recent shell history (`~/.bash_history` or `~/.zsh_history`, last 500 lines) contains CRITICAL-severity secret matches | WARNING | `env-exposure/shell-history-secrets` | Edit the history file or `history -c`; rotate the leaked credential |
 | Secret-pattern hit in a comment line in an AI config file | INFO | `env-exposure/api-key-in-comment` | Verify the commented value is not a real key |
-| Secret-pattern hit that looks like a placeholder (`example`, `your_key`, `xxx`, `changeme`, …) | INFO | `env-exposure/placeholder-api-key` | Confirm the value is a placeholder, not a real key |
+| Secret-pattern hit that looks like a placeholder (`example`, `your_key`, `xxx`, `changeme`, …) | INFO | `env-exposure/api-key-example-placeholder` | Confirm the value is a placeholder, not a real key |
 | `.env` permission check skipped (Windows) | SKIPPED | — | Verify permissions manually with `icacls` |
 | `.sops.yaml` present — secrets managed by SOPS | PASS | — | — |
 | No `.env`, no hardcoded keys, no SOPS config | PASS | — | — |
