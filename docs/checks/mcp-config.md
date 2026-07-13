@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Scans every known MCP (Model Context Protocol) configuration file — `.mcp.json`, `.vscode/mcp.json`, and the per-client variants for Cursor, Cline, Continue, Windsurf, Zed, Amp, Gemini CLI (`.gemini/settings.json`), and opencode (`opencode.json`, servers under the `mcp` key) — and inspects each declared server for supply-chain risk, excessive capability, inline credentials, and config drift across clients. Maps to OWASP Agentic Top 10 `ASI04` (Agentic Supply Chain). A passing check guarantees: no server has broad filesystem access (`/`, `/home`, `/etc`, etc.), no inline credentials in commands, no unpinned `npx` packages, no typosquat matches against the hand-curated known-server list or the live MCP registry (when `--online`), no cross-client drift for the same server name, no `enableAllProjectMcpServers` bypass, no hash changes between scans (rug-pull detection, CVE-2025-54136), and no `ANTHROPIC_BASE_URL` redirect (CVE-2026-21852).
+Scans every known MCP (Model Context Protocol) configuration file — `.mcp.json`, `.vscode/mcp.json`, and the per-client variants for Cursor, Cline, Continue, Windsurf, Zed (`~/.config/zed/settings.json`, servers under the `context_servers` key), Amp, Gemini CLI (`.gemini/settings.json`), and opencode (`opencode.json`, servers under the `mcp` key) — and inspects each declared server for supply-chain risk, excessive capability, inline credentials, and config drift across clients. Maps to OWASP Agentic Top 10 `ASI04` (Agentic Supply Chain). A passing check guarantees: no server has broad filesystem access (`/`, `/home`, `/etc`, etc.), no inline credentials in commands, no unpinned `npx` packages, no typosquat matches against the hand-curated known-server list or the live MCP registry (when `--online`), no cross-client drift for the same server name, no `enableAllProjectMcpServers` bypass, no hash changes between scans (rug-pull detection, CVE-2025-54136), and no `ANTHROPIC_BASE_URL` redirect (CVE-2026-21852).
 
 A failure typically means an MCP server was added without reviewing its args, a hosted server was pasted from a blog post without pinning the version, or a settings bypass was committed alongside `.mcp.json` — the CVE-2025-59536 compound case where anyone who clones the repo auto-approves every server on first run.
 
@@ -23,7 +23,7 @@ A failure typically means an MCP server was added without reviewing its args, a 
 | `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirected in server env (CVE-2026-21852) | CRITICAL | `mcp-config/anthropic-base-url-redirect` | Remove or set to `https://api.anthropic.com` |
 | Server arg uses unstable version tag (`@latest`, `@next`, `@dev`, `@canary`, etc.) | WARNING | `mcp-config/unpinned-tag` | Pin to specific version |
 | `npx` command with no version pin on package-position arg | WARNING | `mcp-config/npx-unpinned` | `npx package@1.0.0` |
-| Inline API key / token detected in command or args | CRITICAL | `mcp-config/inline-credentials` | Move credentials to env vars |
+| Inline API key / token detected in command, args, or a remote server's `headers` | CRITICAL | `mcp-config/inline-credentials` | Move credentials to env vars |
 | Package name is Levenshtein distance 1-2 from known MCP server (curated list) | WARNING | `mcp-config/typosquat-curated` | Verify package name |
 | Package name typosquats live MCP registry entry (requires `--online`) | CRITICAL | `mcp-config/typosquat-registry` | Verify package name against `registry.modelcontextprotocol.io` |
 | Package not found on npm (requires `--online`) | CRITICAL | `mcp-config/npm-missing` | Verify package name and source |
@@ -116,6 +116,7 @@ The report prints the pinned hash, the current hash, and the **current** shape. 
 - Rug-pull detection requires at least one prior scan to have written `.rigscore-state.json`. First scan records hashes silently.
 - Runtime tool pin status is opt-out via `.rigscorerc.json` key `mcpConfig.surfaceRuntimeHashStatus: false`.
 - Additional config paths can be registered via `.rigscorerc.json` key `paths.mcpConfig`.
+- **Zed server key — verified 2026-07-12.** Zed stores MCP servers under `context_servers` (not `mcpServers`) in `~/.config/zed/settings.json`, which is the path on **both** Linux and macOS. Local servers use the same `command` / `args` / `env` shape every other client uses; remote servers use `url` + optional `headers`. Zed's project-level `.zed/settings.json` is documented as editor/language options only, so it holds no servers and is not scanned. Sources: <https://github.com/zed-industries/zed/blob/main/docs/src/ai/mcp.md> (rendered at <https://zed.dev/docs/ai/mcp>) and `docs/src/configuring-zed.md`. Windows (`%APPDATA%\Zed\settings.json`) is not yet scanned.
 
 ## Known noise modes
 
