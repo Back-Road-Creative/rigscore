@@ -1,14 +1,22 @@
 #!/usr/bin/env sh
-# rigscore pre-commit — secret scanning + smoke test
+# rigscore pre-commit — OPTIONAL local secret pre-check.
 #
-# Runs gitleaks on staged diff to block committed secrets before they land.
-# Falls back to a stub warning if gitleaks isn't installed locally so
-# contributors know to add it (CI enforces via the GitHub action).
+# The enforced gate is CI: the `secret-scan` job in .github/workflows/ci.yml
+# scans every push and pull request with gitleaks, and needs no local setup.
+#
+# This hook is only a convenience: if you happen to have gitleaks installed it
+# catches a staged secret in seconds instead of after a red CI run. If gitleaks
+# is NOT installed it no-ops and the commit proceeds — deliberately, so that
+# contributors are never forced to install a tool. A skipped run means the
+# commit was NOT scanned locally; it does not mean the commit is clean.
+#
+# Installing gitleaks is optional: https://github.com/gitleaks/gitleaks#installing
+# Hook and CI share one ruleset: .gitleaks.toml
 set -e
 
 if command -v gitleaks >/dev/null 2>&1; then
-  gitleaks protect --staged --redact --no-banner
+  gitleaks protect --staged --redact --no-banner --config .gitleaks.toml
 else
-  echo "warn: gitleaks not installed — skipping local secret scan."
-  echo "      install with 'brew install gitleaks' (or equivalent) to enable."
+  echo "note: gitleaks not installed — local pre-check skipped (nothing was scanned)."
+  echo "      CI runs the enforced secret scan on push/PR regardless."
 fi
