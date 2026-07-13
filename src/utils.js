@@ -221,6 +221,14 @@ export async function execSafe(cmd, args, options = {}) {
  *     of the old per-checker walkers so findings are unchanged.
  *   - `opts.maxFiles` caps file count to preserve scan perf budgets.
  *
+ * Determinism: entries are sorted by name before iterating. readdir order is
+ * filesystem-defined, and the walk truncates mid-iteration at `maxFiles` — so
+ * without the sort, WHICH files survive the cap is the filesystem's choice, and
+ * one repo scores differently on two machines. `truncated` is true when the walk
+ * hit `maxFiles` and stopped early, so a caller can disclose it: sorting alone
+ * would only make a false PASS *reproducible*, and a scan that gave up must
+ * never be indistinguishable from a clean one.
+ *
  * Silent on loops — caller surfaces a single INFO finding if `loopDetected`.
  */
 export async function walkDirSafe(rootDir, opts = {}) {
@@ -233,6 +241,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
   const visited = new Set();
   const files = [];
   let loopDetected = false;
+  let truncated = false;
 
   async function keyForPath(p) {
     try {
@@ -254,7 +263,10 @@ export async function walkDirSafe(rootDir, opts = {}) {
    */
   async function walk(current, depth, { skipRootInode = false } = {}) {
     if (depth > maxDepth) return;
-    if (files.length >= maxFiles) return;
+    if (files.length >= maxFiles) {
+      truncated = true;
+      return;
+    }
 
     if (!skipRootInode) {
       const key = await keyForPath(current);
@@ -272,9 +284,14 @@ export async function walkDirSafe(rootDir, opts = {}) {
     } catch {
       return;
     }
+    // Deterministic iteration: see the `truncated` note in the doc comment.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
     for (const entry of entries) {
-      if (files.length >= maxFiles) return;
+      if (files.length >= maxFiles) {
+        truncated = true;
+        return;
+      }
       const full = path.join(current, entry.name);
 
       // lstat so we can distinguish symlinks from their targets.
@@ -328,7 +345,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
   }
 
   await walk(rootDir, 1);
-  return { files, loopDetected };
+  return { files, loopDetected, truncated };
 }
 
 const COMMENT_PREFIXES = ['#', '//', '<!--', '--', '/*', '*'];

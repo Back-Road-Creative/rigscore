@@ -98,7 +98,7 @@ export default {
     const extraSkip = config?.deepScan?.excludeDirs || [];
     const skipDirs = extraSkip.length ? new Set([...SKIP_DIRS, ...extraSkip]) : SKIP_DIRS;
 
-    const { files, loopDetected } = await walkDirSafe(cwd, {
+    const { files, loopDetected, truncated } = await walkDirSafe(cwd, {
       maxFiles,
       maxDepth,
       skipDirs,
@@ -127,12 +127,16 @@ export default {
       return { score: NOT_APPLICABLE_SCORE, findings };
     }
 
-    if (files.length >= maxFiles) {
+    // WARNING, not info: files past the cap were never read, so a secret in any of
+    // them is invisible. At `info` this did not dent the score, and a tree holding a
+    // live key scored 98 — "I stopped looking" rendered as "clean".
+    if (truncated) {
       findings.push({
         findingId: 'deep-secrets/file-cap-reached',
-        severity: 'info',
+        severity: 'warning',
         title: `Deep scan capped at ${maxFiles} files`,
-        detail: `Reached file limit. Configure deepScan.maxFiles in .rigscorerc.json to increase.`,
+        detail: `Reached the file limit and stopped walking — files beyond the cap were NOT scanned, so this result cannot be read as "no secrets". Configure deepScan.maxFiles in .rigscorerc.json to increase.`,
+        remediation: 'Raise `deepScan.maxFiles` in `.rigscorerc.json`, or narrow the scan root via `deepScan.excludeDirs` so the whole tree fits under the cap.',
       });
     }
 
@@ -237,7 +241,10 @@ export default {
       });
     }
 
-    if (secretCount === 0) {
+    // Only a scan that actually reached every candidate file may call itself
+    // clean. A truncated walk already carries the warning above; adding "clean"
+    // next to it would be the exact contradiction this fix exists to remove.
+    if (secretCount === 0 && !truncated) {
       findings.push({
         severity: 'pass',
         title: `Deep scan clean — ${files.length} files checked`,
