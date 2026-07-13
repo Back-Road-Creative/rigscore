@@ -10,6 +10,8 @@ One paragraph. What this check is for, what threat it maps to (include OWASP Age
 
 Table of finding conditions and severities. One row per distinct finding the check can emit. `ruleId` is the SARIF identifier emitted in `--sarif` output; keep in sync with `src/sarif.js`.
 
+`npm run verify:docs` enforces this column against the source: every backticked `<check-id>/<slug>` here must be a `findingId` the module can actually emit, and every literal `findingId` in the module must appear here. Ids built by interpolation (`` `<check-id>/${rule.id}` ``) are matched on their constant prefix, so they need not be listed exhaustively.
+
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
 | Example: `.env` tracked by git | CRITICAL | `env-exposure/env-tracked` | Add to `.gitignore` and `git rm --cached` |
