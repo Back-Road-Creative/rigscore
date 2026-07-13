@@ -170,6 +170,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config scanned as empty (`mcp-config`, `network-exposure`, `credential-storage`,
   `workflow-maturity`, CycloneDX). Both keys are read now, `servers` winning.
 
+- **A present-but-malformed MCP config is disclosed instead of being reported as absent**
+  (`mcp-config/config-unparseable`, WARNING). `readJsonSafe` returns `null` for *both* "file
+  absent" and "file present but unparseable JSON", and the scan skipped on that alone — so a
+  broken `.mcp.json` sitting in the tree produced the INFO finding `No MCP configuration
+  found` and a `not-applicable` score, a false statement about a repo whose file is right
+  there and whose servers are consequently scanned by nothing and hash-pinned by nothing. An
+  absent config still reports `no-config-found` / N/A, exactly as before. Mirrors the existing
+  `claude-settings/settings-unparseable` disclosure.
+
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
   `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
