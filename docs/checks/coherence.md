@@ -12,19 +12,19 @@ A typical failure: CLAUDE.md says "no external network access" but `.mcp.json` h
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Governance claims network restrictions + MCP uses network transport | WARNING | `coherence/network-contradiction` | Switch to stdio or update governance |
-| Governance claims path restrictions + MCP has broad filesystem access | WARNING | `coherence/path-contradiction` | Scope MCP filesystem to project |
-| Governance claims forbidden actions + Docker is privileged | WARNING | `coherence/docker-contradiction` | Remove `privileged: true` |
-| MCP drift detected across 2+ clients + governance silent on multi-client | WARNING | `coherence/multi-client-silent` | Document multi-client rules or align configs |
-| Governance claims shell restrictions + skill files contain shell execution patterns | WARNING | `coherence/shell-contradiction` | Remove shell patterns or update governance |
-| Governance claims anti-injection + skill files contain injection patterns | CRITICAL | `coherence/injection-contradiction` | Remove injection patterns from skills |
-| Skill exfiltration patterns AND MCP broad filesystem access (compound) | CRITICAL | `coherence/exfil-plus-filesystem` | Remove exfil patterns and scope filesystem |
-| Governance file in `.gitignore` (surfaced from `claude-md`) | INFO | `coherence/gitignored-governance` | Scored by `claude-md`; informational only |
-| Governance file not tracked in git (surfaced from `claude-md`) | INFO | `coherence/untracked-governance` | Scored by `claude-md`; informational only |
-| MCP server configured but not mentioned in any governance document | WARNING | `coherence/undeclared-server` | Add server declaration to CLAUDE.md |
-| Broad-capability server (filesystem/browser/shell/database/code/exec/terminal) + no approved-tools section | INFO | `coherence/no-approved-tools-section` | Add "Approved Tools" section to governance |
-| `bypassPermissions` + approval-gates claim + no `PreToolUse` hook | WARNING | `coherence/approval-no-hook` | Add `PreToolUse` hook or change `defaultMode` |
-| Allow-list entry matches repo-specific forbidden pattern (`config.coherence.allowGovernanceContradictions`) | WARNING | `coherence/custom-pairing` | Remove entry or update governance |
+| Governance claims network restrictions + MCP uses network transport | WARNING | `coherence/network-claim-vs-mcp-transport` | Switch to stdio or update governance |
+| Governance claims path restrictions + MCP has broad filesystem access | WARNING | `coherence/path-claim-vs-broad-filesystem` | Scope MCP filesystem to project |
+| Governance claims forbidden actions + Docker is privileged | WARNING | `coherence/forbidden-claim-vs-privileged-docker` | Remove `privileged: true` |
+| MCP drift detected across 2+ clients + governance silent on multi-client | WARNING | `coherence/multi-client-drift-no-governance` | Document multi-client rules or align configs |
+| Governance claims shell restrictions + skill files contain shell execution patterns | WARNING | `coherence/shell-claim-vs-skill-shell-exec` | Remove shell patterns or update governance |
+| Governance claims anti-injection + skill files contain injection patterns | CRITICAL | `coherence/anti-injection-claim-vs-skill-injection` | Remove injection patterns from skills |
+| Skill exfiltration patterns AND MCP broad filesystem access (compound) | CRITICAL | `coherence/exfiltration-plus-broad-filesystem` | Remove exfil patterns and scope filesystem |
+| Governance file in `.gitignore` (surfaced from `claude-md`) | INFO | `coherence/governance-gitignored-echo` | Scored by `claude-md`; informational only |
+| Governance file not tracked in git (surfaced from `claude-md`) | INFO | `coherence/governance-untracked-echo` | Scored by `claude-md`; informational only |
+| MCP server configured but not mentioned in any governance document | WARNING | `coherence/undeclared-mcp-server` | Add server declaration to CLAUDE.md |
+| Broad-capability server (filesystem/browser/shell/database/code/exec/terminal) + no approved-tools section | INFO | `coherence/no-approved-tools-declaration` | Add "Approved Tools" section to governance |
+| `bypassPermissions` + approval-gates claim + no `PreToolUse` hook | WARNING | `coherence/approval-claim-vs-bypass-no-hook` | Add `PreToolUse` hook or change `defaultMode` |
+| Allow-list entry matches repo-specific forbidden pattern (`config.coherence.allowGovernanceContradictions`) | WARNING | `coherence/allow-list-contradicts-governance` (default; a pairing may override via its own `findingId`) | Remove entry or update governance |
 | Insufficient data (no governance, or no config/skill data) | SKIPPED (score = N/A) | — | Ensure claude-md and at least one config check ran |
 | All checks coherent | PASS | — | — |
 
@@ -36,9 +36,9 @@ Weight 14 — tied with `mcp-config` as the highest-weight check, and the ONLY c
 
 No auto-fix. The `coherence.js` module does not export a `fixes` array. Every finding is a contradiction between two files — resolving it means choosing which side is the source of truth, and that choice is never safe to automate:
 
-- A `network-contradiction` fix could tighten governance OR loosen governance; only a human knows which reflects intent.
-- An `injection-contradiction` may be a genuine typo in a skill file OR a deliberately phrased defensive rule that slipped past the defensive-phrase detector.
-- `undeclared-server` findings need a human to write the declaration prose — auto-appending a server name to CLAUDE.md would satisfy the check without satisfying the intent.
+- A `coherence/network-claim-vs-mcp-transport` fix could tighten governance OR loosen governance; only a human knows which reflects intent.
+- A `coherence/anti-injection-claim-vs-skill-injection` finding may be a genuine typo in a skill file OR a deliberately phrased defensive rule that slipped past the defensive-phrase detector.
+- `coherence/undeclared-mcp-server` findings need a human to write the declaration prose — auto-appending a server name to CLAUDE.md would satisfy the check without satisfying the intent.
 - `.gitignore` / untracked governance findings are pass-through INFO records from `claude-md`; `coherence` intentionally does not re-score them.
 
 ## SARIF
@@ -75,7 +75,7 @@ No auto-fix. The `coherence.js` module does not export a `fixes` array. Every fi
 
 Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat & Ship audit.
 
-- **`coherence/undeclared-server` on every utility server** — fires for any MCP server not mentioned by name in governance prose. On mature configs with 5+ servers this creates one WARNING per server, most of which the author considered "obvious" and didn't document. Add an "Approved Tools" section to `CLAUDE.md` with each server name; fastest win.
-- **`coherence/no-approved-tools-section` INFO** — fires whenever any broad-capability server (filesystem / browser / shell / database) exists without a dedicated approved-tools block. Pairs with `undeclared-server` — solving the latter usually silences this too.
-- **`coherence/network-contradiction` on governance using `"no external network"` loosely** — phrase matching is regex-driven (`matchedPatterns` from `claude-md`). Governance that says "no external network except MCP transports" still trips because the regex only matches the first half. Reword governance to explicitly allowlist MCP transports, or add a `coherence.allowGovernanceContradictions` entry.
+- **`coherence/undeclared-mcp-server` on every utility server** — fires for any MCP server not mentioned by name in governance prose. On mature configs with 5+ servers this creates one WARNING per server, most of which the author considered "obvious" and didn't document. Add an "Approved Tools" section to `CLAUDE.md` with each server name; fastest win.
+- **`coherence/no-approved-tools-declaration` INFO** — fires whenever any broad-capability server (filesystem / browser / shell / database) exists without a dedicated approved-tools block. Pairs with `coherence/undeclared-mcp-server` — solving the latter usually silences this too.
+- **`coherence/network-claim-vs-mcp-transport` on governance using `"no external network"` loosely** — phrase matching is regex-driven (`matchedPatterns` from `claude-md`). Governance that says "no external network except MCP transports" still trips because the regex only matches the first half. Reword governance to explicitly allowlist MCP transports, or add a `coherence.allowGovernanceContradictions` entry.
 - **Inapplicable on single-check scans** — `--check=coherence` alone returns N/A because the check consumes `priorResults` from other checks. Not a bug; document via `rigscore --help`.
