@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import check from '../src/checks/mcp-config.js';
-import { computeServerHash, loadState, saveState, STATE_FILENAME } from '../src/state.js';
+import { computeServerHash, loadState, saveState, verifyState, STATE_FILENAME } from '../src/state.js';
 import { withTmpDir } from './helpers.js';
 
 const defaultConfig = { paths: { mcpConfig: [] }, network: { safeHosts: ['127.0.0.1', 'localhost', '::1'] } };
@@ -218,6 +219,85 @@ describe('MCP tool hash pinning (state file)', () => {
       expect(raw).toMatch(/^\{\n {2}"version": 1/);
       const parsed = JSON.parse(raw);
       expect(parsed.version).toBe(1);
+    });
+  });
+});
+
+// A scan is a *read-only* security scan everywhere else. The one file it writes
+// is the TOFU pin — and that write must only ever ESTABLISH or EXTEND the pin,
+// never destroy it. Two ways the old unconditional rewrite destroyed it:
+//   1. drift → the same scan that reported the rug-pull re-pinned the attacker's
+//      hash, so the WARNING fired exactly once and `--verify-state` went green.
+//   2. no-op → an identical-content rewrite reformatted / touched a committed
+//      pin, dirtying every checkout the scan ran in.
+describe('a scan never overwrites an existing pin', () => {
+  const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+
+  it('drift keeps the ORIGINAL pin on disk and keeps re-reporting', async () => {
+    await withTmpDir(async (tmpDir) => {
+      writeMcp(tmpDir, { 'my-server': { command: 'npx', args: [], env: {} } });
+      await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      const originalPin = readState(tmpDir).mcpServers['my-server'];
+
+      // Rug-pull: same server name, new command.
+      writeMcp(tmpDir, { 'my-server': { command: 'node', args: [], env: {} } });
+      const second = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      expect(second.findings.find((f) => f.findingId === 'mcp-config/server-hash-drift')).toBeDefined();
+      expect(readState(tmpDir).mcpServers['my-server']).toBe(originalPin);
+
+      // The evidence survives: a third scan still reports it, and the CI gate still fails.
+      const third = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      expect(third.findings.find((f) => f.findingId === 'mcp-config/server-hash-drift')).toBeDefined();
+      expect((await verifyState(tmpDir)).status).toBe('drift');
+    });
+  });
+
+  it('an unchanged scan leaves a committed pin byte-for-byte identical', async () => {
+    await withTmpDir(async (tmpDir) => {
+      const server = { command: 'node', args: [], env: {} };
+      writeMcp(tmpDir, { 'my-server': server });
+      // Compact, hand-committed pin — the shape the verify-state fixtures ship.
+      const committed = JSON.stringify({ version: 1, mcpServers: { 'my-server': computeServerHash(server) } });
+      fs.writeFileSync(path.join(tmpDir, STATE_FILENAME), committed);
+
+      await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      expect(fs.readFileSync(path.join(tmpDir, STATE_FILENAME), 'utf-8')).toBe(committed);
+    });
+  });
+
+  it.each(['verify-state-clean', 'verify-state-drift'])(
+    'scanning a copy of the tracked %s fixture does not mutate its pin',
+    async (name) => {
+      await withTmpDir(async (tmpDir) => {
+        const src = path.join(FIXTURES, name);
+        for (const f of ['.mcp.json', STATE_FILENAME]) {
+          fs.copyFileSync(path.join(src, f), path.join(tmpDir, f));
+        }
+        const before = fs.readFileSync(path.join(tmpDir, STATE_FILENAME), 'utf-8');
+        const gateBefore = (await verifyState(tmpDir)).status;
+
+        await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+
+        expect(fs.readFileSync(path.join(tmpDir, STATE_FILENAME), 'utf-8')).toBe(before);
+        expect((await verifyState(tmpDir)).status).toBe(gateBefore);
+      });
+    },
+  );
+
+  it('accepting drift: drop the entry from mcpServers, re-scan, and it re-pins', async () => {
+    await withTmpDir(async (tmpDir) => {
+      writeMcp(tmpDir, { 'my-server': { command: 'npx', args: [], env: {} } });
+      await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      await saveState(tmpDir, { version: 1, mcpServers: {}, servers: { 'my-server': { runtimeToolHash: 'abc' } } });
+
+      writeMcp(tmpDir, { 'my-server': { command: 'node', args: [], env: {} } });
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
+      expect(result.findings.find((f) => f.findingId === 'mcp-config/server-hash-drift')).toBeUndefined();
+
+      const state = readState(tmpDir);
+      expect(state.mcpServers['my-server']).toBe(computeServerHash({ command: 'node', args: [], env: {} }));
+      // The runtime tool-hash pins written by `rigscore mcp-pin` survive the re-pin.
+      expect(state.servers['my-server'].runtimeToolHash).toBe('abc');
     });
   });
 });
