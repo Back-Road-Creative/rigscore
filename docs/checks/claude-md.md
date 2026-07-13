@@ -25,7 +25,15 @@ Failure to detect a governance file is CRITICAL and short-circuits the check —
 | Quality pattern MISSING — `test-driven development` | WARNING | `claude-md/missing-test-driven-development` | Declare test-first workflow |
 | Quality pattern MISSING — `definition of done` | WARNING | `claude-md/missing-definition-of-done` | Declare what "done" means |
 | Quality pattern MISSING — `git workflow rules` | WARNING | `claude-md/missing-git-workflow-rules` | Declare branch / PR workflow |
-| Quality pattern present BUT NEGATED (e.g. "never require approval") | CRITICAL | `claude-md/actively-negates-<pattern>` | Remove negated statement; replace with genuine enforcement |
+| Quality pattern present but every match is NEGATED (a negation word precedes it in the same sentence, e.g. "never require approval") — `forbidden actions` | CRITICAL | `claude-md/actively-negates-forbidden-actions` | Remove the negated statement; write a genuine forbidden-action rule |
+| Quality pattern present but NEGATED — `approval gates` | CRITICAL | `claude-md/actively-negates-approval-gates` | Replace with a genuine approval / human-in-the-loop rule |
+| Quality pattern present but NEGATED — `path restrictions` | CRITICAL | `claude-md/actively-negates-path-restrictions` | Replace with genuine allowed-directory rules |
+| Quality pattern present but NEGATED — `network restrictions` | CRITICAL | `claude-md/actively-negates-network-restrictions` | Replace with a genuine external-network policy |
+| Quality pattern present but NEGATED — `anti-injection` | CRITICAL | `claude-md/actively-negates-anti-injection` | Replace with genuine prompt-injection defense rules |
+| Quality pattern present but NEGATED — `shell restrictions` | CRITICAL | `claude-md/actively-negates-shell-restrictions` | Replace with a genuine bash/shell policy |
+| Quality pattern present but NEGATED — `test-driven development` | CRITICAL | `claude-md/actively-negates-test-driven-development` | Replace with a genuine test-first workflow rule |
+| Quality pattern present but NEGATED — `definition of done` | CRITICAL | `claude-md/actively-negates-definition-of-done` | Replace with a genuine definition of "done" |
+| Quality pattern present but NEGATED — `git workflow rules` | CRITICAL | `claude-md/actively-negates-git-workflow-rules` | Replace with a genuine branch / PR workflow rule |
 | Injection pattern ("ignore previous instructions", "you are now", "from now on you…") in governance, non-defensive | CRITICAL | `claude-md/injection-pattern` | Remove override pattern or rephrase as defensive |
 | Governance file listed in `.gitignore` | CRITICAL | `claude-md/governance-file-gitignored` | Remove from `.gitignore` and commit |
 | Governance file exists but `git ls-files` shows untracked | WARNING | `claude-md/governance-file-untracked` | `git add <file>` |
