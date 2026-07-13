@@ -44,6 +44,27 @@ const MISSING_ARTIFACT = {
   },
 };
 
+// EARS (Easy Approach to Requirements Syntax). Every form — ubiquitous, event-driven
+// (WHEN), state-driven (WHILE), optional-feature (WHERE) and unwanted-behaviour (IF/THEN) —
+// bottoms out in the same clause: `THE <system> SHALL <response>`. Matching that clause
+// recognises all five, and staying lenient about clause *order* keeps this finding about
+// prose masquerading as requirements, not about EARS pedantry.
+const EARS_RE = /\bthe\b[^.!?]*\bshall\b/i;
+// Only lines carrying a normative verb are judged. A user story ("As a user, I want …") or
+// a background paragraph is not a requirement, so it is never held to the grammar.
+const NORMATIVE_RE = /\b(?:shall|must)\b/i;
+
+// OpenSpec's living spec (`openspec/specs/<domain>/spec.md`) is the domain's current truth,
+// and its documented skeleton is `## Purpose` → `## Requirements` → `### Requirement:` →
+// `#### Scenario:`. Its own authoring guide makes the scenario the testable half: "Every
+// requirement has at least one scenario that actually exercises it."
+const PURPOSE_RE = /^##\s+Purpose\b/im;
+const REQUIREMENT_SPLIT_RE = /^###\s+Requirement:[ \t]*/m;
+const SCENARIO_RE = /^####\s+Scenario:/m;
+// A requirement block runs until the next h2 — `##` followed by a space, which neither
+// `### Requirement:` nor `#### Scenario:` can match.
+const NEXT_H2_RE = /^##\s/m;
+
 // Verbatim tokens from github/spec-kit's templates/constitution-template.md. Two or more
 // survivors means the template was never filled in.
 const PLACEHOLDER_TOKENS = [
@@ -149,6 +170,46 @@ function abandonedSpecs(dated, newest, windowDays) {
   return out;
 }
 
+/**
+ * Kiro requirement files whose requirements are not written in EARS. Kiro is the layout that
+ * mandates the grammar, so it is the only one held to it. Two shapes fail: a file with no
+ * EARS requirement at all (freeform prose, which used to pass by merely existing), and one
+ * that mixes EARS with normative lines that fall outside it. Line-based by design: Kiro
+ * writes one acceptance criterion per bullet.
+ */
+async function nonEarsRequirements(cwd, specs) {
+  const out = [];
+  for (const s of specs) {
+    if (s.framework !== 'kiro') continue;
+    const text = await readFileSafe(path.join(cwd, s.entryRel));
+    if (text === null) continue;
+    const normative = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => NORMATIVE_RE.test(l));
+    const earsCount = normative.filter((l) => EARS_RE.test(l)).length;
+    const nonEars = normative.filter((l) => !EARS_RE.test(l));
+    if (earsCount > 0 && nonEars.length === 0) continue;
+    out.push({ ...s, earsCount, nonEars: nonEars.slice(0, 2) });
+  }
+  return out;
+}
+
+/** What a living OpenSpec domain spec is missing against its documented skeleton; [] when whole. */
+function domainSpecGaps(text) {
+  const missing = [];
+  if (!PURPOSE_RE.test(text)) missing.push('a `## Purpose` section');
+  const blocks = text.split(REQUIREMENT_SPLIT_RE).slice(1);
+  if (blocks.length === 0) {
+    missing.push('at least one `### Requirement:`');
+    return missing;
+  }
+  for (const block of blocks) {
+    const body = block.split(NEXT_H2_RE)[0];
+    if (!SCENARIO_RE.test(body)) {
+      missing.push(`a \`#### Scenario:\` under "${block.split(/\r?\n/, 1)[0].trim()}"`);
+    }
+  }
+  return missing;
+}
+
 /** Complete OpenSpec changes whose tasks are all ticked — shipped work never swept into archive/. */
 async function unarchivedChanges(cwd, specs) {
   const out = [];
@@ -228,6 +289,18 @@ export default {
       }
     }
 
+    for (const s of await nonEarsRequirements(cwd, specDirs)) {
+      findings.push({
+        findingId: 'spec-goals/requirements-not-ears', severity: 'info',
+        title: `Requirements in \`${s.specDir}\` are not written in EARS`,
+        detail: s.earsCount === 0
+          ? `\`${s.entryRel}\` states no requirement in a recognisable EARS form (\`WHEN <trigger> THE <system> SHALL <response>\`, or the ubiquitous \`THE <system> SHALL …\`) — it is prose, so it names no trigger and no testable response, and an agent has nothing to satisfy.`
+          : `\`${s.entryRel}\` mixes ${s.earsCount} EARS requirement(s) with ${s.nonEars.length} line(s) outside the grammar (e.g. "${s.nonEars[0]}") — the strays name no system or no response, so what "done" means is left to the agent.`,
+        remediation: `Rewrite the acceptance criteria in \`${s.entryRel}\` as EARS: \`WHEN <trigger> THE <system> SHALL <response>\` (or \`IF <condition> THEN …\`, \`WHILE <state> …\`, \`WHERE <feature> …\`).`,
+        context: { specDir: s.specDir, file: s.entryRel, framework: s.framework, earsCount: s.earsCount, nonEars: s.nonEars },
+      });
+    }
+
     // The goal file is Spec Kit's constitution when it exists, else AGENTS.md.
     const goalRel = isSpecKit && (await fileExists(path.join(cwd, CONSTITUTION_REL)))
       ? CONSTITUTION_REL
@@ -268,6 +341,21 @@ export default {
         detail: `Every task in \`${s.specDir}/${TASKS}\` is checked and none is open, but the change still sits in \`openspec/changes/\` — OpenSpec parks shipped work under \`changes/archive/\`, so the active tree overstates what is actually in flight.`,
         remediation: `Sweep \`${s.specDir}\` into \`openspec/changes/archive/\` (\`openspec archive <name>\`), or reopen the tasks that are not really done.`,
         context: { specDir: s.specDir, framework: s.framework },
+      });
+    }
+
+    // OpenSpec's living specs: dated for drift above, audited for completeness here.
+    for (const s of openspecSpecs) {
+      const text = await readFileSafe(path.join(cwd, s.entryRel));
+      if (text === null) continue;
+      const missing = domainSpecGaps(text);
+      if (missing.length === 0) continue;
+      findings.push({
+        findingId: 'spec-goals/domain-spec-incomplete', severity: 'info',
+        title: `Domain spec \`${s.specDir}\` is missing ${missing.length} required part(s)`,
+        detail: `\`${s.entryRel}\` is missing ${missing.join(', ')} — OpenSpec's living spec is what agents read as the domain's current truth, so a hollow one sends them to the changes tree, or to guesswork, for behaviour that is supposed to be settled.`,
+        remediation: `Fill \`${s.entryRel}\` out to OpenSpec's shape: a \`## Purpose\`, then \`### Requirement:\` blocks each carrying at least one \`#### Scenario:\` — a requirement with no scenario states no way to tell whether it holds.`,
+        context: { specDir: s.specDir, file: s.entryRel, framework: s.framework, missing },
       });
     }
 

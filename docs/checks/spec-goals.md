@@ -20,6 +20,11 @@ Liveness is answered by **local git committer date** (`git log -1 --format=%cI -
 
 Archive hygiene is answered without git: an OpenSpec change whose `tasks.md` boxes are **all ticked with none left open** has shipped by the tool's own convention, and belongs under `changes/archive/`.
 
+Two artifacts are read for **content**, not merely counted by existing:
+
+- a **Kiro requirements file** is parsed for [EARS](https://alistairmavin.com/ears/) — the grammar Kiro mandates. Every EARS form (ubiquitous, event-driven `WHEN`, state-driven `WHILE`, optional-feature `WHERE`, unwanted-behaviour `IF … THEN`) bottoms out in the same clause, `THE <system> SHALL <response>`, so that clause is what is matched; clause *order* is not policed. Only lines carrying a normative verb (`shall`, `must`) are judged — a user story or a background paragraph is not a requirement and is never held to the grammar.
+- an **OpenSpec living spec** (`openspec/specs/<domain>/spec.md`) is audited against its documented skeleton: `## Purpose`, then `### Requirement:` blocks each carrying at least one `#### Scenario:`. OpenSpec's own authoring guide makes the scenario the testable half — "Every requirement has at least one scenario that actually exercises it" ([writing-specs](https://raw.githubusercontent.com/Fission-AI/OpenSpec/main/docs/writing-specs.md), skeleton in [concepts](https://raw.githubusercontent.com/Fission-AI/OpenSpec/main/docs/concepts.md)).
+
 ## Configuration
 
 | Key | Default | Meaning |
@@ -34,8 +39,6 @@ Set in `.rigscorerc.json` (project beats home). One planning quarter is the defa
 
 ## Not covered (yet)
 
-- **Requirement grammar is not read.** A Kiro `requirements.md` counts by existing; its EARS-style `WHEN … THE SYSTEM SHALL …` sentences are never parsed, so a file of freeform prose passes.
-- **OpenSpec's living specs are dated, not audited.** `openspec/specs/<domain>/spec.md` feeds the drift comparison but is never completeness-checked — an empty or missing domain spec raises nothing.
 - **A spec tree abandoned *wholesale* still reads as fine.** Staleness is measured against the newest spec, which is what makes it rebase-proof — but it also means that when *every* spec is equally ancient, no spec trails any other and nothing fires. Catching a wholly dormant tree needs a second, absolute yardstick (repo HEAD or wall clock) whose false-positive behaviour on vendored and archived repos has not been characterised.
 
 ## Triggers
@@ -49,11 +52,13 @@ Set in `.rigscorerc.json` (project beats home). One planning quarter is the defa
 | The goal file's last commit trails the newest spec's by ≥ the drift window | INFO | `spec-goals/goal-file-stale` | Re-read the goal file against the newest specs and update what no longer holds |
 | An **unfinished** spec's last commit trails the newest spec's by ≥ the drift window | INFO | `spec-goals/spec-abandoned` | Finish the spec or archive it |
 | An OpenSpec change has every task ticked, none open, and still sits outside `changes/archive/` | INFO | `spec-goals/change-unarchived` | Sweep it into `changes/archive/`, or reopen the tasks that are not really done |
+| A Kiro requirements file states no EARS requirement at all, or mixes EARS with normative lines outside the grammar | INFO | `spec-goals/requirements-not-ears` | Rewrite the acceptance criteria as `WHEN <trigger> THE <system> SHALL <response>` |
+| An OpenSpec `specs/<domain>/spec.md` lacks `## Purpose`, holds no `### Requirement:`, or has a requirement with no `#### Scenario:` | INFO | `spec-goals/domain-spec-incomplete` | Fill the domain spec out to OpenSpec's skeleton |
 | `AGENTS.md` names no runnable setup/test/build command | INFO | `spec-goals/agents-md-hollow` | Add the concrete commands an agent must run |
 | Spec artifacts present and complete | PASS | — | — |
 | No spec layout at all (`.specify/` and `AGENTS.md` both absent) | N/A | — | — |
 
-**Severity rationale.** The two WARNINGs are the zero-false-positive cases: a missing file is mechanical, and a constitution still containing `[PROJECT_NAME]` is *provably* the untouched template — no honest repo emits that string on purpose. The rest are INFO because a legitimate repo can explain them: a spec with no `tasks.md` or `design.md` may simply be mid-flight, an `AGENTS.md` may deliberately delegate its commands to `CONTRIBUTING.md` or a `Makefile`, and a goal file can be both current and untouched — dates proxy attention rather than measure it, and a false "your goal file is stale" is worse than a miss. `spec-abandoned` inherits that caveat (a spec can be parked on purpose), and `change-unarchived` stays INFO because a team may batch its archive sweeps or tick tasks ahead of the merge. Incompleteness is reported, never punished.
+**Severity rationale.** The two WARNINGs are the zero-false-positive cases: a missing file is mechanical, and a constitution still containing `[PROJECT_NAME]` is *provably* the untouched template — no honest repo emits that string on purpose. The rest are INFO because a legitimate repo can explain them: a spec with no `tasks.md` or `design.md` may simply be mid-flight, an `AGENTS.md` may deliberately delegate its commands to `CONTRIBUTING.md` or a `Makefile`, and a goal file can be both current and untouched — dates proxy attention rather than measure it, and a false "your goal file is stale" is worse than a miss. `spec-abandoned` inherits that caveat (a spec can be parked on purpose), and `change-unarchived` stays INFO because a team may batch its archive sweeps or tick tasks ahead of the merge. The two content findings are INFO for the same reason: EARS is a house style a team may have deliberately declined, and a domain spec can be thin because the domain is thin. Incompleteness is reported, never punished.
 
 ## Weight rationale
 
@@ -68,10 +73,11 @@ No auto-fix. The module exports no `fixes` array, so `--fix --yes` is a no-op fo
 - `spec-goals/agents-md-hollow` → not auto-fixed: rigscore cannot know the project's real build and test commands.
 - `spec-goals/goal-file-stale` and `-spec-abandoned` → not auto-fixed: the repair is re-reading (or finishing) the spec, and a no-op commit that resets the clock would defeat the check.
 - `spec-goals/change-unarchived` → not auto-fixed: moving a change dir is a `git mv` rigscore *could* run, but "all boxes ticked" is the tool's convention, not proof the work shipped — only the team knows, and a wrong sweep hides in-flight work.
+- `spec-goals/requirements-not-ears` and `-domain-spec-incomplete` → not auto-fixed: rewriting prose into a trigger-and-response, or authoring the scenario that makes a requirement testable, is the requirements work itself. A generated `#### Scenario:` would silence the finding while leaving the requirement exactly as unverifiable as it was.
 
 ## SARIF
 
-- Tool component: `rigscore`. Rule IDs emitted: the eight `spec-goals/*` findingIds in the Triggers table, verbatim.
+- Tool component: `rigscore`. Rule IDs emitted: the ten `spec-goals/*` findingIds in the Triggers table, verbatim.
 - Level mapping: WARNING→`warning`, INFO→`note`. The check emits no CRITICAL.
 - Location data: project root. Findings carry the offending path in `properties.context` (`file` or `specDir`) rather than a line number — each is about a file's existence or whole-file content, not a specific line. `goal-file-stale` and `spec-abandoned` also carry `gapDays` and `thresholdDays` (plus `newestSpec` / `missing`) so a reader can audit the comparison without re-running git.
 
@@ -96,4 +102,6 @@ No auto-fix. The module exports no `fixes` array, so `--fix --yes` is a no-op fo
 - **Hollow-AGENTS.md detection is content-based, not heading-based**, because agents.md states outright that headings are not normative ("use any headings you like"). The check looks for a runnable command token (`npm`, `pytest`, `make`, `cargo`, `docker`, …) anywhere in the file. A repo whose commands genuinely live elsewhere will be flagged — suppress `spec-goals/agents-md-hollow` in `.rigscorerc.json`.
 - **The drift window is one knob, not two.** `specGoals.driftWindowDays` sets the threshold for `goal-file-stale` *and* `spec-abandoned` together — they are the same question asked of two files, and splitting them would be a setting per finding with no evidence anyone wants a different number for each.
 - **Archive hygiene trusts the checkboxes.** `change-unarchived` reads `tasks.md` markdown, not git or a tracker: a change whose boxes were ticked optimistically before the work landed is flagged early, and one that shipped without anyone ticking a box is missed entirely. It is OpenSpec-only — Spec Kit and Kiro define no archive convention to sweep into.
+- **EARS parsing is line-based, and Kiro-only.** Kiro writes one acceptance criterion per bullet, so a line is the unit; a requirement hard-wrapped across two source lines reads as a stray. Spec Kit and OpenSpec mandate no requirement grammar, so their specs are never held to one. The match is deliberately lenient — any `THE … SHALL …` clause counts, whatever the clause order — because a false "your requirements are prose" is worse than missing a malformed one.
+- **The domain-spec skeleton is OpenSpec's documented shape, not a validator's schema.** `## Purpose` appears in OpenSpec's own spec example and the requirement→scenario rule is stated outright in its authoring guide, but neither is published as a hard error code, so a team that keeps its living specs deliberately lean will be flagged — suppress `spec-goals/domain-spec-incomplete` in `.rigscorerc.json`.
 - **OpenSpec `project.md` is not a real path.** It appears in secondhand write-ups but in no primary source — OpenSpec's own repo and docs use `openspec/config.yaml`. Noted so the Kiro/OpenSpec follow-up does not encode it by mistake.
