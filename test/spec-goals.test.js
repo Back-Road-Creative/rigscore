@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +16,12 @@ const find = (r, id) => r.findings.find((f) => f.findingId === id);
 const DAY_MS = 86_400_000;
 const daysAgo = (n) => new Date(Date.now() - n * DAY_MS).toISOString();
 
+// Absolute, pinned dates for the dormant-tree cases. Never derived from `Date.now()`:
+// the gap they assert is frozen the moment the commit is made, so these tests cannot
+// start failing (or start passing) because the calendar moved.
+const ANCIENT = '2023-01-05T00:00:00Z'; // the whole spec tree lands here, all at once
+const ACTIVE = '2025-02-01T00:00:00Z'; // …and then code, not specs, keeps committing
+
 /**
  * Materialise a complete spec-kit tree in `root`. When `goalDate` is given,
  * back it with real git history: the goal file lands on `goalDate`, the specs
@@ -24,8 +30,11 @@ const daysAgo = (n) => new Date(Date.now() - n * DAY_MS).toISOString();
  * `stale` additionally commits two specs at that older date — one unfinished
  * (no `tasks.md`) and one finished — so a test can prove staleness flags the
  * abandoned spec while leaving the equally-old *finished* one alone.
+ *
+ * `activity` commits a non-spec source file at that date afterwards: the repo's
+ * own pulse moving on while the spec tree stands still.
  */
-function specKitRepo(root, { goalDate, specDate, stale } = {}) {
+function specKitRepo(root, { goalDate, specDate, stale, activity } = {}) {
   const w = (rel, body) => {
     const p = path.join(root, rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -56,6 +65,11 @@ function specKitRepo(root, { goalDate, specDate, stale } = {}) {
   }
   g(['add', '-A'], specDate);
   g(['commit', '-q', '-m', 'specs'], specDate);
+  if (activity) {
+    w('src/app.js', 'export const go = 1;\n');
+    g(['add', 'src/app.js'], activity);
+    g(['commit', '-q', '-m', 'code moves on'], activity);
+  }
 }
 
 /** Write an OpenSpec change dir with the given tasks.md body. */
@@ -224,6 +238,54 @@ describe('spec-goals check', () => {
       expect(unarchived.map((f) => f.context.specDir)).toEqual(['openspec/changes/add-auth']);
       expect(unarchived[0].severity).toBe('info');
     });
+  });
+
+  it('flags a spec tree abandoned wholesale, which no spec-relative gap can see', async () => {
+    await withTmpDir(async (tmp) => {
+      // Every spec commits on the same ancient date; only code moves after it.
+      specKitRepo(tmp, { goalDate: ANCIENT, specDate: ANCIENT, stale: ANCIENT, activity: ACTIVE });
+      const r = await check.run(at(tmp));
+
+      // No spec trails any other and the goal file is exactly as old as the specs, so
+      // every *relative* finding is silent by construction — the wholesale case.
+      expect(r.findings.filter((f) => f.findingId === 'spec-goals/spec-abandoned')).toEqual([]);
+      expect(find(r, 'spec-goals/goal-file-stale')).toBeUndefined();
+
+      const dormant = find(r, 'spec-goals/spec-tree-dormant');
+      expect(dormant?.severity).toBe('info');
+      expect(dormant.context.gapDays).toBeGreaterThanOrEqual(90);
+      expect(dormant.context.thresholdDays).toBe(90);
+      expect(dormant.context.unfinished).toEqual(['specs/002-abandoned']);
+    });
+  });
+
+  it('stays silent on a repo archived wholesale: the yardstick is the repo, not the clock', async () => {
+    await withTmpDir(async (tmp) => {
+      // Specs and code both stopped in 2023. Years of wall clock have passed since, and a
+      // clock-relative window would scream — the repo's own pulse says it simply ended.
+      specKitRepo(tmp, { goalDate: ANCIENT, specDate: ANCIENT, stale: ANCIENT });
+      expect(find(await check.run(at(tmp)), 'spec-goals/spec-tree-dormant')).toBeUndefined();
+    });
+  });
+
+  it('is immune to the passage of time: a far-future clock moves no verdict', async () => {
+    const ids = async (c) => (await check.run(c)).findings.map((f) => f.findingId ?? f.severity).sort();
+    await withTmpDir(async (tmp) => {
+      specKitRepo(tmp, { goalDate: ANCIENT, specDate: ANCIENT, stale: ANCIENT, activity: ACTIVE });
+      const now = [await ids(at(tmp)), await ids(ctx('spec-goals-complete')), await ids(ctx('spec-goals-kiro'))];
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2099-12-31T00:00:00Z'));
+        const later = [await ids(at(tmp)), await ids(ctx('spec-goals-complete')), await ids(ctx('spec-goals-kiro'))];
+        expect(later).toEqual(now);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+    // Belt and braces: the module never reads the clock at all, so no fixture committed
+    // today can start firing a finding in a year purely because a year passed.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'checks', 'spec-goals.js'), 'utf8');
+    expect(src).not.toMatch(/Date\.now\(|new Date\(/);
   });
 
   it('skips drift — never guesses — with no git history, and in a shallow clone', async () => {
