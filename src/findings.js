@@ -1,6 +1,24 @@
 import { calculateCheckScore } from './scoring.js';
-import { WEIGHTS } from './constants.js';
+import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { slugify } from './utils.js';
+
+/**
+ * Recalculate a check's score after findings were removed from it — unless the
+ * check is NOT-APPLICABLE, which stays N/A no matter what is removed.
+ *
+ * N/A is a property of the *project* ("this repo has no MCP config"), not of
+ * the finding list. Several weight-bearing checks report N/A **and** attach a
+ * cosmetic "nothing here" INFO. Recalculating such a check hits
+ * `calculateCheckScore([]) === 100`, flipping it -1 → 100 and handing its full
+ * weight to `calculateOverallScore`'s applicable-coverage set — coverage the
+ * project never earned. That inverts the stated invariant in scoring.js:
+ * "ignoring N/A checks entirely rewards under-configured projects for being
+ * invisible to the scanner."
+ */
+function rescoreAfterRemoval(result) {
+  if (result.score === NOT_APPLICABLE_SCORE) return;
+  result.score = calculateCheckScore(result.findings);
+}
 
 // Re-export slugify so legacy paths can pull it from findings.js if needed.
 export { slugify };
@@ -86,8 +104,11 @@ export function deduplicateFindings(results) {
       results[ri].findings.splice(fi, 1);
     }
     // Recalculate this result's score so stale pre-dedup scores don't stick
-    // (matches the behavior of suppressFindings).
-    results[ri].score = calculateCheckScore(results[ri].findings);
+    // (matches the behavior of suppressFindings) — but never promote an N/A
+    // check into coverage. Defensive here: dedup skips info/pass findings and
+    // no current check returns N/A alongside a warning/critical, so there is
+    // no known live trigger. The guard keeps the two removal paths consistent.
+    rescoreAfterRemoval(results[ri]);
   }
 }
 
@@ -176,8 +197,10 @@ export function compileSuppressPattern(raw) {
  *  - Substring form — plain string matched as exact findingId or
  *                     case-insensitive title substring.
  *
- * Matching is case-insensitive (regex defaults to /i). Recalculates
- * each affected check's score after removal.
+ * Matching is case-insensitive (regex defaults to /i). Recalculates each
+ * affected check's score after removal — EXCEPT a NOT-APPLICABLE check, which
+ * stays N/A (see rescoreAfterRemoval). Muting a finding can clean up a check's
+ * score; it can never make an inapplicable check count as coverage.
  *
  * Returns a `{ count, ids }` summary of what was muted so callers can surface
  * it (human report / SARIF / JSON) — suppression stays a delete-from-scoring,
@@ -209,7 +232,7 @@ export function suppressFindings(results, patterns) {
     }
     r.findings = kept;
     if (r.findings.length !== before) {
-      r.score = calculateCheckScore(r.findings);
+      rescoreAfterRemoval(r);
     }
   }
 
