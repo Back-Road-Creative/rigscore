@@ -243,7 +243,10 @@ export function formatSarifMulti(projects) {
   }
 
   const runs = projects.map((project) => {
-    const single = formatSarif({ results: project.results });
+    // Carry that project's own mute summary through, so `suppressedCount` /
+    // `suppressedIds` are disclosed per run. Dropping it here is what hid a
+    // monorepo's `suppress:` entries from every SARIF consumer.
+    const single = formatSarif({ results: project.results, suppressed: project.suppressed });
     const run = single.runs[0];
     // Tag the run with the project path
     run.automationDetails = { id: project.path };

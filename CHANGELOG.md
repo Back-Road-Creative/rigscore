@@ -170,6 +170,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config scanned as empty (`mcp-config`, `network-exposure`, `credential-storage`,
   `workflow-maturity`, CycloneDX). Both keys are read now, `servers` winning.
 
+- **`suppress:` is honored (and rescored) in `--recursive` / `--profile monorepo` mode.**
+  The recursive path applied only `--ignore`, never a project's own `.rigscorerc.json`
+  `suppress:`, and never recomputed scores — so the escape hatch was inert exactly where
+  monorepos run, and the report printed findings the exit code had already forgiven. Now
+  applied and rescored per project; per-project `suppressedCount`/`suppressedIds` in SARIF.
+
+- **`--check <id>` where the check is N/A for the repo now reports `n/a` and exits 0**, not a
+  fabricated `0/100` Grade F with exit 1 (which red-failed every service in a
+  one-check-per-service CI matrix that has no Dockerfile). JSON carries
+  `notApplicable: true` / `score: null`; the badge renders grey `n/a`. A typo'd id stays red.
+
+- **An invalid target directory exits 2 (configuration error), not 1** — matching README's
+  exit-code table, so a typo'd path is no longer indistinguishable from a real low score.
+
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
   `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
