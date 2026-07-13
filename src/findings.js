@@ -178,17 +178,40 @@ export function compileSuppressPattern(raw) {
  *
  * Matching is case-insensitive (regex defaults to /i). Recalculates
  * each affected check's score after removal.
+ *
+ * Returns a `{ count, ids }` summary of what was muted so callers can surface
+ * it (human report / SARIF / JSON) — suppression stays a delete-from-scoring,
+ * but a muted finding is now visible in rigscore's own output, not only in a
+ * `.rigscorerc.json` diff. `count` is every finding removed; `ids` is the
+ * deduped list of their finding ids (title fallback for id-less findings).
  */
 export function suppressFindings(results, patterns) {
-  if (!patterns || patterns.length === 0) return;
+  const summary = { count: 0, ids: [] };
+  if (!patterns || patterns.length === 0) return summary;
 
   const predicates = patterns.map(compileSuppressPattern);
+  const seenIds = new Set();
 
   for (const r of results) {
     const before = r.findings.length;
-    r.findings = r.findings.filter((f) => !predicates.some((pred) => pred(f)));
+    const kept = [];
+    for (const f of r.findings) {
+      if (predicates.some((pred) => pred(f))) {
+        summary.count++;
+        const id = f.findingId || f.title;
+        if (id && !seenIds.has(id)) {
+          seenIds.add(id);
+          summary.ids.push(id);
+        }
+      } else {
+        kept.push(f);
+      }
+    }
+    r.findings = kept;
     if (r.findings.length !== before) {
       r.score = calculateCheckScore(r.findings);
     }
   }
+
+  return summary;
 }

@@ -138,6 +138,28 @@ function box(lines, width = 38) {
   return [top, ...boxed, bottom].join('\n');
 }
 
+// How many suppressed ids to spell out before collapsing the tail into a
+// "+N more" count — keeps the line readable when a config mutes many findings.
+const SUPPRESS_ID_PREVIEW = 8;
+
+/**
+ * One-line summary of config/--ignore suppression for the human report.
+ * Transparency only: the findings are still removed from scoring; this makes
+ * the muting visible in the report (and thus the CI log). Returns null when
+ * nothing was suppressed so callers can skip the line entirely.
+ */
+export function formatSuppressedSummary(suppressed) {
+  if (!suppressed || !suppressed.count) return null;
+  const { count, ids } = suppressed;
+  const noun = count === 1 ? 'finding' : 'findings';
+  const shown = ids.slice(0, SUPPRESS_ID_PREVIEW);
+  const tail = ids.length > SUPPRESS_ID_PREVIEW
+    ? `, … (+${ids.length - SUPPRESS_ID_PREVIEW} more)`
+    : '';
+  const idList = ids.length > 0 ? `: ${shown.join(', ')}${tail}` : '';
+  return `Suppressed ${count} ${noun} via config/--ignore${idList}`;
+}
+
 export function formatTerminal(result, cwd, options = {}) {
   const { score, results, config } = result;
   const grade = getGrade(score);
@@ -305,6 +327,15 @@ export function formatTerminal(result, cwd, options = {}) {
     lines.push('');
   }
 
+  // Suppression transparency: if config/--ignore muted any findings, say how
+  // many and which — the mute is visible in the report and the CI log, not
+  // only in a .rigscorerc.json diff.
+  const suppressedLine = formatSuppressedSummary(result.suppressed);
+  if (suppressedLine) {
+    lines.push(`  ${chalk.yellow(`⚠ ${suppressedLine}`)}`);
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -395,6 +426,14 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
     lines.push('');
     lines.push('  Want a full audit with hardened configurations deployed?');
     lines.push(`  ${chalk.cyan('\u2192')} https://backroadcreative.com/ai-agent-security-audit`);
+    lines.push('');
+  }
+
+  // Suppression transparency (aggregated across projects) — same rationale as
+  // the single-project report.
+  const suppressedLine = formatSuppressedSummary(result.suppressed);
+  if (suppressedLine) {
+    lines.push(`  ${chalk.yellow(`⚠ ${suppressedLine}`)}`);
     lines.push('');
   }
 

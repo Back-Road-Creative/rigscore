@@ -683,6 +683,7 @@ npx github:Back-Road-Creative/rigscore --fix --yes --install-packs # Also instal
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
 npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-not-gitignored,skill-files/shell-exec" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). See docs/FINDING_IDS.md for the stable ID list. Title-substring still works as a legacy fallback.
+# Suppression is never silent: whether it comes from --ignore or a .rigscorerc.json `suppress:` entry, rigscore reports how many findings were muted and their ids — in the human report (so it shows up in a CI log), in JSON (`suppressed: { count, ids }`), and in SARIF (`runs[0].properties.suppressedCount` / `suppressedIds`). The findings are still removed from scoring; the muting is just visible, not only in a config diff.
 npx github:Back-Road-Creative/rigscore --verbose                 # Show pass/skipped findings in terminal output
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help

@@ -43,6 +43,20 @@ Alongside `ruleId`, each SARIF result carries the fix text the check computed:
 A finding with no `remediation` emits no `remediation` key at all — no `null`,
 no empty string. Same for `learnMore` / `helpUri`.
 
+## Suppression is reported, not silent
+
+Findings muted by `--ignore` or a `.rigscorerc.json` `suppress:` entry are
+still removed from scoring, but rigscore now surfaces **how many** and **which
+ids** so the muting is visible in its own output — not only in a config diff:
+
+- **Human report** — a `Suppressed N finding(s) via config/--ignore: <ids>` line
+  (so it lands in any CI log).
+- **JSON** — a top-level `suppressed: { count, ids }` field.
+- **SARIF** — `runs[0].properties.suppressedCount` and
+  `runs[0].properties.suppressedIds`. The muted findings are **not** re-added to
+  `runs[0].results` (that would be a SARIF `suppressions[]` change); this is a
+  count/note only.
+
 ## Stability contract
 
 - **No renames within a major version.** Once a finding ID ships in a
