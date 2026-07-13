@@ -186,7 +186,7 @@ npx github:Back-Road-Creative/rigscore --init-hook
 
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
 - **Docker image (GHCR).** The Docker Publish workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/back-road-creative/rigscore:<tag>` automatically on `v*.*.*` tag pushes. It is also callable via `workflow_dispatch` for manual and dry-run builds. Pull a published tag as `ghcr.io/back-road-creative/rigscore:<tag>`.
-- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v1`.
+- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.0.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published.
 - **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node 18/20. WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
 
 ## What it checks
@@ -684,7 +684,7 @@ npx github:Back-Road-Creative/rigscore --watch                   # Watch for cha
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
 npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-not-gitignored,skill-files/shell-exec" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). See docs/FINDING_IDS.md for the stable ID list. Title-substring still works as a legacy fallback.
 # Suppression is never silent: whether it comes from --ignore or a .rigscorerc.json `suppress:` entry, rigscore reports how many findings were muted and their ids — in the human report (so it shows up in a CI log), in JSON (`suppressed: { count, ids }`), and in SARIF (`runs[0].properties.suppressedCount` / `suppressedIds`). The findings are still removed from scoring; the muting is just visible, not only in a config diff.
-npx github:Back-Road-Creative/rigscore --verbose                 # Show pass/skipped findings in terminal output
+npx github:Back-Road-Creative/rigscore --verbose                 # Also show passing checks (info/skipped findings already print by default)
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help
 ```
@@ -825,7 +825,7 @@ Plugins must export `id`, `name`, `category` (strings), and `run` (async functio
 Use the rigscore GitHub Action:
 
 ```yaml
-- uses: Back-Road-Creative/rigscore@v1
+- uses: Back-Road-Creative/rigscore@v2.0.0
   with:
     fail-under: 70
     upload-sarif: true

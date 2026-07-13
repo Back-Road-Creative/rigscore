@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.rigscorerc.json` raises a `ConfigParseError` and exits 2 rather than silently
   falling back to defaults. (The previously-documented `profile`-key precedence,
   #88, is one instance of this general rule, not a separate one.)
+- **The README's GitHub Action recipe is pinned to an exact released tag.** It
+  showed `uses: Back-Road-Creative/rigscore@v2.0.0` as `@v1` — a tag that does
+  not exist (the published tags are `v0.1.0 … v1.0.0`, `v2.0.0`, `v2.1.0-rc1`;
+  no moving major tag is cut). Worse, `action.yml` deliberately rejects any ref
+  that is not an exact `vX.Y.Z`, so even a moving `@v1` would have hard-errored
+  at the guard — whose own message already says "Pin to a tag like @v1.0.0". A
+  user copying the canonical recipe out of the README got an action that could
+  not resolve. The docs now match the guard, and `test/action-yml.test.js`
+  extracts the guard's regex from `action.yml` itself and asserts every action
+  ref shown in `README.md` / `docs/**` satisfies it, so the two cannot drift
+  apart again.
+- **`--verbose` is described accurately in `--help` and the README.** Both said
+  it surfaces info-level (and, in the README, skipped) findings. It does not:
+  `src/reporter.js` gates only `pass` findings behind the flag, and `info` and
+  `skipped` print on every default scan. The flag adds passing checks and
+  nothing else.
 
 ### Changed
 - **`docs/FINDING_IDS.md` coverage is now enforced per finding ID, not per
@@ -105,6 +121,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   causes. Finding
   ids are unchanged (SARIF ruleId stability); `truncated` keeps meaning "hit
   maxFiles" so the file-cap detail never misreports the cause.
+- **claude-md: a governance file hidden by a *parent* `.gitignore` no longer
+  slips through, and the untracked warning now works in nested packages.** Both
+  arms of the check's git block re-implemented git off the filesystem at `cwd`,
+  so both went blind in a monorepo sub-project — the exact shape `--recursive`
+  and the `monorepo` profile exist to scan. (1) The `git check-ignore` query sat
+  behind `if (gitignoreContent)`, a test for a `.gitignore` **file at cwd**; when
+  the ignore rule lived in the repo-root `.gitignore` (or `.git/info/exclude`,
+  which appears in no diff at all, or `core.excludesFile`) the check never asked
+  git, and the `governance-file-gitignored` **CRITICAL vanished** — with
+  `--fail-under 70` the CI gate flipped from FAIL to PASS purely because the
+  sub-project had no `.gitignore` of its own. (2) `hasGit` was
+  `fs.access(cwd/.git)`, so in a nested package — where `.git` sits at the repo
+  root — the gate blocked a `git ls-files` call that resolves the repo fine from
+  any subdirectory, and `governance-file-untracked` never fired. The check now
+  asks git both questions (`git check-ignore` unconditionally, as sibling
+  `env-exposure` already did, and `git rev-parse --is-inside-work-tree`), keeping
+  the legacy exact-string match only as a fallback for when git cannot answer.
+  No finding ids change.
+
+- **Suppressing a finding can no longer promote a NOT-APPLICABLE check into
+  scoring coverage.** Muting a check's cosmetic "nothing here" INFO (e.g.
+  `mcp-config/no-config-found`) recalculated that check's score from an empty
+  finding list, and `calculateCheckScore([])` is `100` — so the check flipped
+  `-1` (N/A) to `100` and handed its full weight to the applicable-coverage set.
+  A repo could mute one INFO and watch its score climb; muting the cosmetic INFO
+  on all seven such checks moved a test repo from 16 to 68, turning a failing
+  `--fail-under` gate green. N/A is a property of the project, not of the finding
+  list, so an N/A check now stays N/A no matter what is removed from it.
+  Suppressing findings on an *applicable* check still rescores exactly as before.
+
 - **MCP rug-pull detection (CVE-2025-54136) now covers every committed repo-level MCP
   config, not just `.mcp.json`.** rigscore scans four `base: 'cwd'` configs — `.mcp.json`,
   `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json` — but pinned only the first.
@@ -118,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each later one as `<name>@<relpath>`, so a rug-pull in the shadowed copy still fails.
   **Behavior change:** such a repo now reports `unpinned` (exit 2) until it commits a
   `.rigscore-state.json` — previously a vacuous pass.
+
 - **VS Code MCP configs are read with VS Code's own key.** `.vscode/mcp.json` declares
   servers under `servers`, but rigscore looked only for `mcpServers` — so every real VS Code
   config scanned as empty (`mcp-config`, `network-exposure`, `credential-storage`,

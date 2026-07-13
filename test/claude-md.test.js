@@ -486,4 +486,104 @@ describe('claude-md check', () => {
       }
     });
   });
+
+  // --- monorepo sub-project: git state the filesystem at cwd cannot see ---
+  // Both arms below used to re-implement git off the filesystem at `cwd`: the
+  // ignore arm only ran when a `.gitignore` FILE sat at cwd, and the tracking
+  // arm only ran when a `.git` ENTRY sat at cwd. In a nested package the ignore
+  // rule lives in the repo-root `.gitignore` (or `.git/info/exclude`, which
+  // appears in no diff at all) and `.git` lives at the repo root — so the check
+  // went blind exactly where `--recursive` / the `monorepo` profile point it.
+  // Git answers both questions correctly from any subdirectory.
+
+  describe('monorepo sub-project (git state lives above cwd)', () => {
+    function makeMonorepo() {
+      const root = makeTmpDir();
+      const app = path.join(root, 'app');
+      fs.mkdirSync(app);
+      initGitRepo(root);
+      fs.writeFileSync(path.join(app, 'CLAUDE.md'), '# Rules\nNever delete data.\n');
+      return { root, app };
+    }
+
+    it('CRITICAL when the repo-root .gitignore hides the sub-project CLAUDE.md', async () => {
+      const { root, app } = makeMonorepo();
+      try {
+        fs.writeFileSync(path.join(root, '.gitignore'), 'app/CLAUDE.md\n');
+        // The sub-project has no .gitignore of its own — that is the whole point.
+        expect(fs.existsSync(path.join(app, '.gitignore'))).toBe(false);
+        const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
+        const critical = result.findings.find(
+          (f) => f.severity === 'critical' && f.findingId === 'claude-md/governance-file-gitignored',
+        );
+        expect(critical).toBeDefined();
+        expect(critical.title).toContain('CLAUDE.md');
+      } finally {
+        fs.rmSync(root, { recursive: true });
+      }
+    });
+
+    it('CRITICAL when .git/info/exclude hides it (a rule no .gitignore ever shows)', async () => {
+      const { root, app } = makeMonorepo();
+      try {
+        const infoDir = path.join(root, '.git', 'info');
+        fs.mkdirSync(infoDir, { recursive: true });
+        fs.writeFileSync(path.join(infoDir, 'exclude'), 'app/CLAUDE.md\n');
+        const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
+        expect(
+          result.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored'),
+        ).toBeDefined();
+      } finally {
+        fs.rmSync(root, { recursive: true });
+      }
+    });
+
+    it('NO false CRITICAL when the repo-root .gitignore does not hide it', async () => {
+      const { root, app } = makeMonorepo();
+      try {
+        fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n*.log\ndist/\n');
+        const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
+        expect(
+          result.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored'),
+        ).toBeUndefined();
+      } finally {
+        fs.rmSync(root, { recursive: true });
+      }
+    });
+
+    it('governance-file-untracked fires from a nested package (.git is at the repo root)', async () => {
+      const { root, app } = makeMonorepo();
+      try {
+        // No `.git` entry at cwd, yet `git ls-files` answers fine from here.
+        expect(fs.existsSync(path.join(app, '.git'))).toBe(false);
+        const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
+        const untracked = result.findings.find(
+          (f) => f.findingId === 'claude-md/governance-file-untracked',
+        );
+        expect(untracked).toBeDefined();
+        expect(untracked.severity).toBe('warning');
+      } finally {
+        fs.rmSync(root, { recursive: true });
+      }
+    });
+
+    it('NO untracked warning once the nested governance file is committed', async () => {
+      const { root, app } = makeMonorepo();
+      try {
+        const gitOpts = {
+          cwd: root,
+          env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+          stdio: 'ignore',
+        };
+        execFileSync('git', ['-c', 'user.email=t@t.t', '-c', 'user.name=t', 'add', 'app/CLAUDE.md'], gitOpts);
+        execFileSync('git', ['-c', 'user.email=t@t.t', '-c', 'user.name=t', 'commit', '-qm', 'init'], gitOpts);
+        const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
+        expect(
+          result.findings.find((f) => f.findingId === 'claude-md/governance-file-untracked'),
+        ).toBeUndefined();
+      } finally {
+        fs.rmSync(root, { recursive: true });
+      }
+    });
+  });
 });
