@@ -1,6 +1,6 @@
 # loop-governance
 
-**Enforcement grade:** `pattern` — regex/structural detection over shell scripts. It reads what is written, not what runs; indirection evades it.
+**Enforcement grade:** `pattern` — regex/structural detection over shell scripts. It reads what is written, not what runs; it resolves **one level** of call and no further.
 
 ## Purpose
 
@@ -15,6 +15,7 @@ Scores how safely a repo runs **agent loops** — anywhere the project drives an
 | Agent invoked inside a loop with no bound — no counter tested against a limit, no `--max-turns`, no `timeout`, no run budget | WARNING | `loop-governance/uncapped-loop` | Add an iteration cap, a `--max-turns` budget, or wrap in `timeout` |
 | Agent loop with an unconditional header whose body evaluates nothing to decide it is done — stoppable only by killing it | WARNING | `loop-governance/no-stop-condition` | Give the loop a terminal state to test for — break on success, or check a stop sentinel each pass |
 | Agent on a cron line with nothing bounding one unattended tick | WARNING | `loop-governance/uncapped-cron` | Wrap the scheduled invocation in `timeout`, or give it a `--max-turns` budget |
+| Agent in the `ExecStart` of a service a systemd timer schedules, with nothing bounding one tick | WARNING | `loop-governance/uncapped-timer` | Add `RuntimeMaxSec=` to the service unit, or give the agent a `--max-turns` budget |
 | `--dangerously-skip-permissions` in any scanned script, loop or not | WARNING | `loop-governance/skip-permissions` | Drop the flag; allow-list the tools the run needs |
 | An agent-loop surface exists and every loop and cron job is bounded | PASS | — | — |
 | No agent invocation and no `--dangerously-skip-permissions` anywhere | N/A | — | — |
@@ -23,7 +24,9 @@ Scores how safely a repo runs **agent loops** — anywhere the project drives an
 
 **Agents detected:** `claude -p` / `claude --print`, `codex`, `gemini`, `opencode run`, `aider` — each required in *command position* (line start or after a shell separator), so `.claude/settings.json` or a word like `codexample` cannot match.
 
-**Files scanned:** `*.sh` / `*.bash` anywhere, including `scripts/**`, plus cron files (`crontab`, `*.cron`, `*.crontab`). Whole-line comments are blanked first, so a commented-out loop or cron line never counts. Hidden directories are skipped, `.github` among them. **Cap signals** (any one clears a loop or a cron line): `--max-turns` / `--max-iterations` / `--max-steps` / `--max-cost`, a `timeout` command, a `-lt`/`-le`/`-gt`/`-ge` test, a `(( i < MAX ))` test, or a `for x in <finite list>` header (bounded by construction). **Stop signals** (any one clears `no-stop-condition`): `break`, `exit`, `return`, an `if`, a `[ -f … ]` / `test -f` sentinel, or `grep -q`. **Unconditional headers:** `while true`, `until false`, `for ((;;))`. **Cron lines:** five schedule fields, or an `@`-shorthand (`@reboot`, `@daily`, …), followed by a command.
+**Indirection — one level of call is resolved.** A loop that runs `make agent` drives an agent just as surely as one that types `claude -p`; the binary is simply a file away. A first pass records every **make target**, **npm script**, and **Python module** whose body reaches an agent; the loop, cron, and timer surfaces then treat a call to one of those as an agent invocation. So `while true; do make agent; done`, a cron line running `npm run agent:fix`, and `python3 agent_runner.py` (a `subprocess` / `os.system` call carrying an agent binary) all read as agent loops. Resolution is **one hop only** — `make a` → `make b` → agent is not followed.
+
+**Files scanned:** `*.sh` / `*.bash` anywhere, including `scripts/**`, plus cron files (`crontab`, `*.cron`, `*.crontab`), the indirection surfaces (`Makefile` / `*.mk`, `package.json`, `*.py`), and systemd units (`*.timer`, `*.service`). Loops are read in shell, Makefile recipes, and cron; `package.json`, `*.py`, and `*.service` are resolved, not parsed. Whole-line comments are blanked first — and make's `@`/`-`/`+` recipe prefixes stripped, so `@claude -p` reads as a command — meaning a commented-out loop or cron line never counts. Hidden directories are skipped, `.github` among them. **Cap signals** (any one clears a loop or a cron line): `--max-turns` / `--max-iterations` / `--max-steps` / `--max-cost`, a `timeout` command, a `-lt`/`-le`/`-gt`/`-ge` test, a `(( i < MAX ))` test, or a `for x in <finite list>` header (bounded by construction); on a systemd service, also `RuntimeMaxSec` / `TimeoutStartSec` / `TimeoutSec` (an `infinity` value is not a bound). **Stop signals** (any one clears `no-stop-condition`): `break`, `exit`, `return`, an `if`, a `[ -f … ]` / `test -f` sentinel, or `grep -q`. **Unconditional headers:** `while true`, `until false`, `for ((;;))`. **Cron lines:** five schedule fields, or an `@`-shorthand (`@reboot`, `@daily`, …), followed by a command. **Timers:** a `*.timer` is paired to its service by an explicit `Unit=`, else by same-basename; the agent is read from that service's `ExecStart`, whose absolute path is stripped so `/usr/bin/claude` reads as a command.
 
 ## Weight rationale
 
@@ -38,12 +41,13 @@ No `fixes` export. `--fix --yes` is a no-op — both findings need a human decis
 - `uncapped-loop` → the right bound (10 iterations? 30 minutes? 5 turns?) is a judgment about the task; a scanner that guesses wrong either breaks a working loop or installs a cap that does nothing.
 - `no-stop-condition` → *what* counts as done is the task itself. Only the author knows the terminal state.
 - `uncapped-cron` → same judgment as `uncapped-loop`, against a schedule the scanner cannot see.
+- `uncapped-timer` → same judgment as `uncapped-cron`, and the bound belongs in a unit file whose other consumers the scanner cannot see.
 - `skip-permissions` → deleting the flag changes what the script does and can break a deliberate (if unwise) unattended run.
 
 ## SARIF
 
-- Tool component: `rigscore`. Rule IDs: `loop-governance/uncapped-loop`, `loop-governance/no-stop-condition`, `loop-governance/uncapped-cron`, `loop-governance/skip-permissions`. Level mapping: WARNING → `warning`; PASS / N/A emit no results.
-- Location: relative path of the offending script or cron file (`context.file`). Evidence: the offending loop header or cron line, trimmed to 120 chars (the file path for skip-permissions findings).
+- Tool component: `rigscore`. Rule IDs: `loop-governance/uncapped-loop`, `loop-governance/no-stop-condition`, `loop-governance/uncapped-cron`, `loop-governance/uncapped-timer`, `loop-governance/skip-permissions`. Level mapping: WARNING → `warning`; PASS / N/A emit no results.
+- Location: relative path of the offending script, cron file, or `*.timer` unit (`context.file`) — for an indirect agent this is the file holding the **loop**, which is where the bound goes, not the file holding the agent. Evidence: the offending loop header, cron line, or service `ExecStart`, trimmed to 120 chars (the file path for skip-permissions findings).
 
 ## Example
 
@@ -57,8 +61,8 @@ No `fixes` export. `--fix --yes` is a no-op — both findings need a human decis
 
 Each item below is a small, ordinary PR against this file — the omissions are scope, not oversight.
 
-- **Agents behind indirection** — a `Makefile` target, an `npm` script, a Python `subprocess`. Reaching these means resolving one level of call: a different, and much less certain, analysis than reading a shell loop.
-- **Systemd timers** — the same unattended-schedule shape as cron, in a different file format. Cheap to add once the cron surface has run on real repos.
+- **The second hop** — one level of call is resolved, not two. A `make agent` whose recipe runs `./scripts/agent.sh`, or an npm script that shells to another npm script, still hides the agent. Each hop added is another chance to resolve the wrong thing, so the next one wants the same evidence the first got.
+- **Loops written inside the indirection target** — a `while True:` in a Python module, or a JS runner's `for(;;)`. Their *calls* are resolved, so a shell or cron loop around them is seen; a loop written in the module itself is not. Reading it means parsing that language's control flow, not shell's.
 
 CI agent jobs (`.github/workflows/**`) are **not** on this list — permanently out of scope here, owned by `ci-agent-caps`.
 
@@ -68,6 +72,7 @@ Tuned so that a **false "your loop is uncapped" is worse than a miss** — every
 
 - **Any one cap signal clears a loop.** A `timeout` or `-lt` anywhere in the body marks it capped even if unrelated to the agent. Proving a counter actually bounds *this* loop needs dataflow analysis a regex scanner does not have.
 - **`no-stop-condition` is the most heuristic finding here, and is tuned to miss.** It fires only on the three written unconditional headers (`while true`, `until false`, `for ((;;))`) — `while :`, `while [ 1 ]`, or a `$RUNNING` flag variable are infinite loops it will not see. And any one stop signal buys silence: a single `if` anywhere in the body clears the loop, even an `if` that only logs. Both biases are the same bet — a loop that *does* terminate being called unstoppable is a worse outcome than a quiet miss, because it teaches the operator to ignore the check.
+- **Indirection resolves by name, not by scope.** A make target / npm script / python module is indexed repo-wide, so a loop running `make agent` matches a target named `agent` in *any* Makefile in the tree, not necessarily the one that `make` would actually pick from that working directory. Modelling make's directory resolution is a build-system emulator, not a regex — and a name that reaches an agent somewhere in the repo is worth a warning wherever it is looped on.
 - **Cron detection reads the line, not the schedule.** `@reboot` and a five-field line are treated alike: neither the frequency nor the runtime is modeled, so a once-a-year job and a `* * * * *` job are the same finding. Cap signals must sit **on the cron line itself** — a bound expressed elsewhere (an `ulimit` inside the script it calls, a systemd `RuntimeMaxSec`, a lock file that makes overlapping ticks a no-op) reads as uncapped. Conversely a five-field regex is a shape, not a parse: an unrelated file merely *named* `*.cron` whose lines happen to hold five tokens and an agent word would match.
 - **A crontab is scanned only where it is committed.** The real one lives in `crontab -e` / `/etc/cron.d`, off the repo — a filesystem-only scanner cannot see it, and the check makes no claim about what is actually scheduled on the machine.
 - **Loop bodies are matched textually, not parsed.** A `done` inside a heredoc or a quoted string can close a block early. Nested loops report once per file.
