@@ -225,9 +225,12 @@ export async function execSafe(cmd, args, options = {}) {
  * filesystem-defined, and the walk truncates mid-iteration at `maxFiles` — so
  * without the sort, WHICH files survive the cap is the filesystem's choice, and
  * one repo scores differently on two machines. `truncated` is true when the walk
- * hit `maxFiles` and stopped early, so a caller can disclose it: sorting alone
- * would only make a false PASS *reproducible*, and a scan that gave up must
- * never be indistinguishable from a clean one.
+ * hit `maxFiles` and stopped early, and `depthTruncated` is its sibling — true when
+ * the `maxDepth` cap cut the walk before it reached a deeper directory. A caller
+ * discloses EITHER: sorting alone would only make a false PASS *reproducible*, and
+ * a scan that gave up — for whichever reason — must never be indistinguishable from
+ * a clean one. (The depth cap once returned silently; a hook file nested past the
+ * cap then read as "no hook sources here".)
  *
  * Silent on loops — caller surfaces a single INFO finding if `loopDetected`.
  */
@@ -242,6 +245,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
   const files = [];
   let loopDetected = false;
   let truncated = false;
+  let depthTruncated = false;
 
   async function keyForPath(p) {
     try {
@@ -262,7 +266,10 @@ export async function walkDirSafe(rootDir, opts = {}) {
    * been invisible.
    */
   async function walk(current, depth, { skipRootInode = false } = {}) {
-    if (depth > maxDepth) return;
+    if (depth > maxDepth) {
+      depthTruncated = true;
+      return;
+    }
     if (files.length >= maxFiles) {
       truncated = true;
       return;
@@ -345,7 +352,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
   }
 
   await walk(rootDir, 1);
-  return { files, loopDetected, truncated };
+  return { files, loopDetected, truncated, depthTruncated };
 }
 
 const COMMENT_PREFIXES = ['#', '//', '<!--', '--', '/*', '*'];

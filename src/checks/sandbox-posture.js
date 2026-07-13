@@ -27,12 +27,12 @@ const DEVCONTAINER_MAX_FILES = 200;
 
 /**
  * The devcontainer egress surface: a `.devcontainer/` (or the single-file `.devcontainer.json`)
- * that installs an agent CLI. Returns `{ devcontainer, truncated }`; `devcontainer` is null when
+ * that installs an agent CLI. Returns `{ devcontainer, truncated, depthTruncated }`; `devcontainer` is null when
  * there is no devcontainer, or when the one here runs no agent — that is not this check's
  * business, so it is no surface, not a passing one.
  *
- * `truncated` is `walkDirSafe`'s signal that the walk hit the file cap and stopped early. It is
- * reported EVEN when `devcontainer` is null, because the most dangerous truncation is exactly
+ * `truncated`/`depthTruncated` are `walkDirSafe`'s signals that the walk stopped early — at the file
+ * cap or the depth cap. They are reported EVEN when `devcontainer` is null, because the most dangerous truncation is exactly
  * that case: the file naming the agent install can fall past the cap, so `AGENT_INSTALL` never
  * matches and a container with no egress boundary reads as "no surface here". The caller must
  * disclose it rather than certify absence — see the N/A gate below.
@@ -40,19 +40,20 @@ const DEVCONTAINER_MAX_FILES = 200;
  * Presence-only BY CONSTRUCTION, which is a ceiling and not a bug — see the docs page.
  */
 async function scanDevcontainer(cwd) {
-  const { files, truncated } = await walkDirSafe(path.join(cwd, '.devcontainer'), {
+  const { files, truncated, depthTruncated } = await walkDirSafe(path.join(cwd, '.devcontainer'), {
     maxFiles: DEVCONTAINER_MAX_FILES, skipHidden: false,
   });
   const single = path.join(cwd, '.devcontainer.json'); // the documented single-file form
   let text = '';
   for (const file of [...files, single]) text += (await readFileSafe(file)) ?? '';
-  if (!AGENT_INSTALL.test(text)) return { devcontainer: null, truncated };
+  if (!AGENT_INSTALL.test(text)) return { devcontainer: null, truncated, depthTruncated };
   return {
     devcontainer: {
       where: files.length ? '.devcontainer/' : '.devcontainer.json',
       controls: EGRESS_CONTROLS.filter(([, re]) => re.test(text)).map(([id]) => id),
     },
     truncated,
+    depthTruncated,
   };
 }
 
@@ -233,7 +234,7 @@ export default {
     // The devcontainer arm deliberately writes NO entry into `postures`: a posture is a claim
     // about what the agent can reach, and presence evidence cannot support one in either
     // direction. Silence on a hit, a finding on none — never a grade.
-    const { devcontainer, truncated: devcontainerTruncated } = await scanDevcontainer(cwd);
+    const { devcontainer, truncated: devcontainerTruncated, depthTruncated: devcontainerDepthTruncated } = await scanDevcontainer(cwd);
     if (devcontainer) {
       surfacesScanned++;
       if (devcontainer.controls.length === 0) findings.push({
@@ -255,14 +256,14 @@ export default {
     // the agent install WAS seen — the egress-control scan then ran over an incomplete file
     // set too, and an unread firewall would have silenced the finding above. Making the
     // surface count non-zero is what keeps the N/A gate below from firing.
-    if (devcontainerTruncated) {
+    if (devcontainerTruncated || devcontainerDepthTruncated) {
       surfacesScanned++;
       findings.push({
         findingId: 'sandbox-posture/devcontainer-file-cap-reached',
         severity: 'warning',
-        title: `Devcontainer scan capped at ${DEVCONTAINER_MAX_FILES} files`,
-        detail: `The .devcontainer walk hit the ${DEVCONTAINER_MAX_FILES}-file limit and stopped, so files past the cap were never read. The file that installs the agent CLI — or an egress control that would bound it — can sit past the cap, so this result cannot be read as "no agent, no surface".`,
-        remediation: `Move generated or vendored trees out of .devcontainer/ so the whole surface fits under the ${DEVCONTAINER_MAX_FILES}-file cap.`,
+        title: 'Devcontainer scan stopped early (cap reached)',
+        detail: `The .devcontainer walk stopped early (${DEVCONTAINER_MAX_FILES}-file limit and/or directory-depth limit), so files past the cap were never read. The file that installs the agent CLI — or an egress control that would bound it — can sit past the cap, so this result cannot be read as "no agent, no surface".`,
+        remediation: `Move generated or vendored trees out of .devcontainer/, or reduce nesting, so the whole surface fits under the caps.`,
         learnMore: DEVCONTAINER_DOCS,
       });
     }

@@ -17,7 +17,7 @@ Scores how safely a repo runs **agent loops** — anywhere the project drives an
 | Agent on a cron line with nothing bounding one unattended tick | WARNING | `loop-governance/uncapped-cron` | Wrap the scheduled invocation in `timeout`, or give it a `--max-turns` budget |
 | Agent in the `ExecStart` of a service a systemd timer schedules, with nothing bounding one tick | WARNING | `loop-governance/uncapped-timer` | Add `RuntimeMaxSec=` to the service unit, or give the agent a `--max-turns` budget |
 | `--dangerously-skip-permissions` in any scanned script, loop or not | WARNING | `loop-governance/skip-permissions` | Drop the flag; allow-list the tools the run needs |
-| The file walker hit the 2000-file cap and stopped early — loops past the cap were never read, so the repo cannot be certified loop-free. **Suppresses N/A**: a truncated walk never returns `NOT_APPLICABLE` | WARNING | `loop-governance/file-cap-reached` | Narrow the scan so the whole agent-loop surface fits under the cap |
+| The file walker hit the 2000-file cap or the directory-depth cap and stopped early — loops past it were never read, so the repo cannot be certified loop-free. **Suppresses N/A**: a truncated walk never returns `NOT_APPLICABLE` | WARNING | `loop-governance/file-cap-reached` | Narrow the scan or reduce nesting so the whole agent-loop surface fits under the caps |
 | An agent-loop surface exists and every loop and cron job is bounded | PASS | — | — |
 | No agent invocation and no `--dangerously-skip-permissions` anywhere, **and the walk completed** | N/A | — | — |
 

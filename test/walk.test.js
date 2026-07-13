@@ -69,6 +69,33 @@ describe('walkDirSafe — unified walk parity', () => {
     });
   });
 
+  // The depth cap must disclose like the file cap: a walk that stopped at
+  // maxDepth is a "gave up", never a clean pass. `depthTruncated` is that signal.
+  it('depthTruncated:true when a file sits below maxDepth, and the deep file is omitted', async () => {
+    await withTmpDir(async (tmp) => {
+      // tmp/a/b/c/deep.txt — 'b' and below fall past a maxDepth:2 cap.
+      const deepDir = path.join(tmp, 'a', 'b', 'c');
+      fs.mkdirSync(deepDir, { recursive: true });
+      fs.writeFileSync(path.join(deepDir, 'deep.txt'), 'x');
+      fs.writeFileSync(path.join(tmp, 'shallow.txt'), 'y');
+      const { files, depthTruncated } = await walkDirSafe(tmp, { maxDepth: 2 });
+      const names = files.map((f) => path.basename(f));
+      expect(names).toContain('shallow.txt');
+      expect(names).not.toContain('deep.txt');
+      expect(depthTruncated).toBe(true);
+    });
+  });
+
+  it('depthTruncated:false for a tree that fits within maxDepth', async () => {
+    await withTmpDir(async (tmp) => {
+      fs.mkdirSync(path.join(tmp, 'a'));
+      fs.writeFileSync(path.join(tmp, 'a', 'f.txt'), 'x');
+      const { files, depthTruncated } = await walkDirSafe(tmp, { maxDepth: 50 });
+      expect(files.map((f) => path.basename(f))).toContain('f.txt');
+      expect(depthTruncated).toBe(false);
+    });
+  });
+
   it.skipIf(!CAN_SYMLINK)('symlink-to-dir is traversed once (skipRootInode path)', async () => {
     await withTmpDir(async (tmp) => {
       // real/ contains one file; link/ is a symlink to real/.
