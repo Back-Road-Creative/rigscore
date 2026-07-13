@@ -14,6 +14,7 @@ Severities follow comparable risks here: `docker-security` grades `privileged: t
 | Agent job with no `timeout-minutes` (job- or step-level) | WARNING | `ci-agent-caps/agent-job-missing-timeout` | Add `timeout-minutes:` to the job |
 | Agent invocation with no turn cap (`--max-turns` / `max_turns`) | WARNING | `ci-agent-caps/agent-job-missing-turn-cap` | Pass `--max-turns` via `claude_args` or the CLI |
 | Agent invocation with unrestricted tools | WARNING | `ci-agent-caps/agent-job-missing-tool-scoping` | Pass `--allowedTools`/`--disallowedTools`, or a sandbox + approval policy |
+| Job delegates to a reusable workflow this scan cannot read — another repo's `owner/repo/…@ref`, or a local path missing from the checkout | INFO | `ci-agent-caps/reusable-workflow-not-analyzed` | Review that workflow's caps by hand, or vendor it into `.github/workflows/` |
 | Workflow file is not valid YAML | INFO | `ci-agent-caps/failed-to-parse-workflow` | Fix the YAML so the job can be analyzed |
 | No workflow invokes an agent (the common case) | N/A | — | — |
 
@@ -117,9 +118,39 @@ turn-cap column of the CLI table, so no turn-cap finding is emitted for either. 
   collides with `apt-get -y`/`npm -y` and the bypass scan is workflow-wide, so a false CRITICAL would fire
   on ordinary setup steps. `--yolo` and `--approval-mode yolo` are matched instead. Pinned by test.
 
+**Reusable-workflow calls (`jobs.<id>.uses:`) are followed — locally.** GitHub requires a same-repo
+reusable workflow to live in `.github/workflows/`, so a callee's *steps* were always scanned: it is a file
+in this check's own directory. What a callee alone cannot tell you is what its **caller** passes it, and
+that is where the caps live. A reusable agent workflow takes them as `inputs`, so standalone it reads
+`max_turns: ${{ inputs.max_turns }}` — a non-empty string that scans as a *declared* cap even when every
+caller passes nothing (the check would certify an uncapped agent at 100/100), and `run: ${{ inputs.cmd }}` —
+an agent invocation that matches no pattern at all (the repo reports N/A: "runs no agent in CI"). Both are
+pinned by test. So each callee is analyzed **once per call site**, with `${{ inputs.* }}` resolved from that
+caller's `with:` overlaid on the callee's declared defaults; an input nobody passes resolves to `''`, which
+is what the runner does. Pass-through chains resolve too, up to `MAX_REUSABLE_HOPS` = 4 — GitHub's own
+nesting limit, so that is the whole reachable graph. One hop per round, published at the *end* of the round,
+so a cycle (`a → b → a`) terminates and no verdict depends on directory order — both pinned by test.
+
+The finding names the **callee** (file + job): that is where the invocation is, and where a default would
+close the gap. It cites the caller too — `agent.yml job "agent" (called by ci.yml job "triage")` — because
+passing the cap at the call site is the operator's other fix.
+
+**Remote calls (`owner/repo/.github/workflows/x.yml@ref`) are NOT followed** — rigscore is an offline static
+scanner and cannot read another repo. They are not ignored either: the job raises an INFO,
+`reusable-workflow-not-analyzed`, meaning "this job delegates to a workflow we cannot see." INFO, not
+WARNING or CRITICAL, because nothing was *observed* — a CRITICAL would zero the check on every repo that
+shares an org-wide build workflow, and a false CRITICAL is this module's most expensive failure.
+
 ## Not covered (yet)
 
 Genuine gaps — unbuilt, not decided against. (Everything above under "Scope and limitations" is a settled
 decision with its evidence attached; do not re-litigate those without new upstream facts.)
 
-- Reusable-workflow calls (`jobs.<id>.uses:`) are not followed.
+- A repo whose **only** agent sits behind a *remote* reusable-workflow call still reports N/A. The INFO
+  above rides along with the check's existing N/A rule ("no agent job found" ⇒ not applicable), so it is
+  visible on repos that run an agent we CAN see, and dropped on repos where nothing else fired. Fixing this
+  means deciding that an unreadable `uses:` is itself enough to make the check applicable — which would put
+  an unactionable note on the large number of repos that merely share a build workflow. Unbuilt, and the
+  trade is the reason.
+- Local *composite actions* (`steps.<id>.uses: ./.github/actions/foo`) are not followed: an agent inside a
+  composite action's `action.yml` is invisible. Same shape as the gap above, one surface over.
