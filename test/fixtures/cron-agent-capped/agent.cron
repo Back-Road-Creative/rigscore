@@ -1,0 +1,2 @@
+@daily timeout 900 claude -p "nightly triage" --max-turns 5
+0 6 * * 1 /usr/local/bin/backup.sh

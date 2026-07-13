@@ -1,0 +1,1 @@
+*/15 * * * * claude -p "check the queue" --max-turns 2

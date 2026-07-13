@@ -1,0 +1,4 @@
+# An unattended agent on a schedule, with nothing bounding one tick.
+PATH=/usr/local/bin:/usr/bin:/bin
+0 3 * * * cd /srv/app && claude -p "triage the overnight failures"
+# 30 4 * * * claude -p "commented out — must never count"
