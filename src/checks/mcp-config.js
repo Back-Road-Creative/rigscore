@@ -525,9 +525,17 @@ function pinIsUpToDate(state, currentHashes) {
  *     and CI checkout it runs in.
  *
  * Still written: first scan (trust-on-first-use pin), corrupt-state reset, and
- * added/removed servers. `writeState: false` (tests) suppresses all writes.
- * Preserves any existing `state.servers` map (runtime tool-hash pins written by
- * `rigscore mcp-pin`) when rewriting.
+ * added/removed servers. Preserves any existing `state.servers` map (runtime
+ * tool-hash pins written by `rigscore mcp-pin`) when rewriting.
+ *
+ * `writeState: false` (CLI `--no-state-write`) suppresses the write outright —
+ * and SAYS SO. A scan that has stopped pinning must not look like a scan that is
+ * pinning, so the opt-out always emits `mcp-config/state-write-disabled`. Its
+ * severity is keyed on the same predicate as the write itself: WARNING when the
+ * flag actually suppressed a pin (drift detection is now off, or off for the
+ * servers that would have been added), INFO when the pin was already current and
+ * the write would have been a no-op regardless — a warning there would be crying
+ * wolf about a run that lost nothing.
  */
 export async function checkHashPinning(cwd, currentHashes, writeState) {
   const findings = [];
@@ -567,11 +575,38 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
     }
   }
 
+  // The pin write and the opt-out disclosure share ONE predicate: a write is due
+  // iff the pin is neither drifted nor already current. Deriving both from it is
+  // what keeps the disclosure honest — it can never claim a loss the run did not
+  // take, nor stay quiet about one it did.
+  const writeDue = !drifted && !pinIsUpToDate(state, currentHashes);
+
+  if (writeState === false) {
+    const names = Object.keys(currentHashes).join(', ');
+    findings.push(writeDue
+      ? {
+        findingId: 'mcp-config/state-write-disabled',
+        severity: 'warning',
+        title: `MCP config-shape pinning is DISABLED for this scan (--no-state-write)`,
+        detail: `No pin was established or extended in ${STATE_FILENAME}, so rug-pull drift (CVE-2025-54136) on ${names} cannot be detected on the next scan, and \`rigscore --verify-state\` has nothing to verify. This scan checked less than a default scan does.`,
+        remediation: `Drop --no-state-write and commit ${STATE_FILENAME} — it stores hashes only (never env values), so it is safe to commit and it is what makes drift detection work in CI. Keep the flag only if you accept losing rug-pull detection.`,
+        learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+        context: { serverNames: Object.keys(currentHashes) },
+      }
+      : {
+        findingId: 'mcp-config/state-write-disabled',
+        severity: 'info',
+        title: 'MCP config-shape pinning suppressed (--no-state-write) — pin already current',
+        detail: `Every repo-level MCP server is already pinned in ${STATE_FILENAME} (or a pinned server has drifted, which also blocks re-pinning), so this scan would not have written the file anyway. Drift detection is intact.`,
+        context: { serverNames: Object.keys(currentHashes) },
+      });
+  }
+
   // Preserve any existing `servers` map (runtime tool-hash pins).
   const preservedServers = (state && state.servers && typeof state.servers === 'object')
     ? state.servers
     : undefined;
-  if (writeState !== false && !drifted && !pinIsUpToDate(state, currentHashes)) {
+  if (writeState !== false && writeDue) {
     const nextState = { version: STATE_VERSION, mcpServers: currentHashes };
     if (preservedServers) nextState.servers = preservedServers;
     await saveState(cwd, nextState);
@@ -935,7 +970,8 @@ export default {
     // see helpers. Each preserves the prior contract: drift flag rolled
     // up into `data`; hash-pinning only ever establishes or extends the pin
     // (it never overwrites a drifted or already-current one) and is gated on
-    // `context.writeState !== false` so tests can suppress the write outright;
+    // `context.writeState !== false` (CLI `--no-state-write`), which suppresses
+    // the write and discloses the resulting loss of coverage as a finding;
     // runtime pin surface controlled by config.mcpConfig.surfaceRuntimeHashStatus.
     const driftResult = checkCrossClientDrift(clientServers);
     findings.push(...driftResult.findings);

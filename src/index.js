@@ -55,6 +55,7 @@ export function parseArgs(args) {
     initHook: false,
     watch: false,
     verifyState: false,
+    noStateWrite: false,
     ignore: null,
     baseline: null,
   };
@@ -117,6 +118,7 @@ const FLAG_DEFS = (() => {
     '--init-hook':            { handler: setTrue('initHook') },
     '--watch':                { handler: setTrue('watch') },
     '--verify-state':         { handler: setTrue('verifyState') },
+    '--no-state-write':       { handler: setTrue('noStateWrite') },
 
     // Aliased booleans
     '--verbose': verbose, '-v': verbose,
@@ -256,6 +258,12 @@ export async function run(args) {
     refreshMcpRegistry: options.refreshMcpRegistry,
     includeHomeSkills: options.includeHomeSkills,
     profile: options.profile,
+    // --no-state-write: skip the ONE file a scan writes (.rigscore-state.json,
+    // the MCP config-shape pin) — for read-only checkouts, CI workspaces you
+    // don't want dirtied, or scanning someone else's repo. It is not free: the
+    // pin is the rug-pull detection substrate, so mcp-config emits
+    // `mcp-config/state-write-disabled` on every run that passes this flag.
+    writeState: !options.noStateWrite,
   };
 
   // Surface scan failures as a friendly one-liner + exit 2, rather than a
