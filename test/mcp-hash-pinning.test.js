@@ -194,15 +194,17 @@ describe('MCP tool hash pinning (state file)', () => {
     });
   });
 
-  it('corrupted state file produces INFO and resets', async () => {
+  // Severity is keyed on the OUTCOME — WARNING here because this tmpdir is not a git repo,
+  // so the runtime tool pins the corrupt file may have held cannot be recovered from HEAD.
+  // The INFO (recovered) arm lives in test/mcp-corrupt-state-pins.test.js.
+  it('corrupted state file produces a finding and resets', async () => {
     await withTmpDir(async (tmpDir) => {
       writeMcp(tmpDir, { 'x': { command: 'node', args: [], env: {} } });
       fs.writeFileSync(path.join(tmpDir, STATE_FILENAME), '{ not valid json ::: ');
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      const info = result.findings.find(
-        (f) => f.severity === 'info' && /state/i.test(f.title || '')
-      );
-      expect(info).toBeDefined();
+      const corrupt = result.findings.find((f) => f.findingId === 'mcp-config/state-file-corrupted');
+      expect(corrupt).toBeDefined();
+      expect(corrupt.severity).toBe('warning');
       // State file should now be valid
       const state = readState(tmpDir);
       expect(state.version).toBe(1);

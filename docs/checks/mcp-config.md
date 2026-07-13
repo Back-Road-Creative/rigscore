@@ -35,7 +35,8 @@ A failure typically means an MCP server was added without reviewing its args, a 
 | Same server name has divergent args/env/transport across clients | WARNING | `mcp-config/cross-client-drift` | Align configs across all AI clients |
 | Server only configured in one of multiple detected clients | INFO | `mcp-config/single-client-server` | None — informational |
 | Repo-level MCP server shape hash changed between scans (CVE-2025-54136 rug-pull) | WARNING | `mcp-config/server-hash-drift` | Review diff in `.mcp.json`; to accept, delete the server's entry from `.rigscore-state.json` and re-scan |
-| Corrupted `.rigscore-state.json` | INFO | `mcp-config/state-file-corrupted` | Auto-reset; no action needed |
+| Corrupted `.rigscore-state.json` — the runtime tool pins were recovered from the copy committed at HEAD | INFO | `mcp-config/state-file-corrupted` | None — auto-reset, pins intact; commit the rewritten file |
+| Corrupted `.rigscore-state.json` — no committed copy could supply the runtime tool pins, so they are **lost** | WARNING | `mcp-config/state-file-corrupted` | Restore the file from version control, or re-pin: `rigscore mcp-hash \| xargs rigscore mcp-pin <name>`. A scan cannot regenerate runtime tool pins |
 | `--no-state-write` suppressed a pin that was due — the repo's MCP servers are now unpinned or partly pinned | WARNING | `mcp-config/state-write-disabled` | Drop `--no-state-write` and commit `.rigscore-state.json`, or accept losing rug-pull detection |
 | `--no-state-write` passed but the pin was already current (the write would have been a no-op) | INFO | `mcp-config/state-write-disabled` | None — drift detection is intact |
 | Runtime tool pin recorded for server | INFO | `mcp-config/runtime-tool-pin-recorded` | Verify with `rigscore mcp-verify <name>` |
