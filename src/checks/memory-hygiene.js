@@ -18,6 +18,16 @@ const MIN_RULE_CHARS = 40;
 const MAX_DUPLICATE_FINDINGS = 10;
 const MAX_GOVERNANCE_BYTES = 1_048_576;
 
+// The index file, and the entries it can carry. Only a markdown link to a `.md`
+// target counts as an index entry. A `[[wikilink]]` deliberately does NOT: agent
+// memory prose forward-references a memory that has no file yet, and calling that
+// a dead entry is a false positive on a convention the ecosystem allows — a miss
+// is cheaper. Non-`.md` targets and external URLs are references, not topic files.
+const INDEX_BASENAME = 'MEMORY.md';
+const MD_LINK_RE = /\[[^\]]*\]\(([^)\s]+)\)/g;
+const URI_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+const MAX_INDEX_FINDINGS = 10;
+
 // Governance lives outside the root set too: a monorepo states package-local
 // rules in `packages/<pkg>/CLAUDE.md`, and a user states machine-wide ones in
 // `~/.claude/CLAUDE.md`. Both are loaded alongside memory, so both can be a
@@ -57,7 +67,7 @@ async function discoverMemory(cwd, homedir, includeHomeSkills) {
     const stat = await statSafe(full);
     if (!stat || !stat.isFile()) return;
     const content = stat.size === 0 ? '' : (await readFileSafe(full)) ?? '';
-    files.set(full, { rel: path.relative(cwd, full) || full, content, bytes: stat.size });
+    files.set(full, { full, rel: path.relative(cwd, full) || full, content, bytes: stat.size });
   };
   for (const root of roots) {
     for (const e of await readdirSafe(root)) {
@@ -66,7 +76,33 @@ async function discoverMemory(cwd, homedir, includeHomeSkills) {
   }
   await add(path.join(cwd, 'MEMORY.md'));
   await add(path.join(cwd, '.claude', 'MEMORY.md'));
-  return [...files.values()];
+  return { files: [...files.values()], roots };
+}
+
+/**
+ * The topic files a `MEMORY.md` index points at: markdown links to `.md` targets,
+ * outside fenced code (a fenced example is a sample, not an entry). External URLs
+ * are dropped, and an `#anchor` is trimmed before the path is resolved.
+ */
+function indexEntries(content) {
+  const targets = [];
+  let inFence = false;
+  for (const raw of content.split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(raw.trim())) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    for (const [, href] of raw.matchAll(MD_LINK_RE)) {
+      const target = href.trim().replace(/#.*$/, '');
+      if (!target || URI_SCHEME_RE.test(target)) continue;
+      if (target.toLowerCase().endsWith('.md')) targets.push(target);
+    }
+  }
+  return targets;
+}
+
+/** True when `full` resolves at or beneath `parent` — no `../` escape, no other volume. */
+function within(parent, full) {
+  const rel = path.relative(parent, full);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 /**
@@ -186,11 +222,11 @@ export default {
     const findings = [];
     const configured = config?.memoryHygiene?.budgetBytes;
     const budgetBytes = Number.isInteger(configured) && configured > 0 ? configured : BUDGET_BYTES;
-    const memFiles = await discoverMemory(cwd, homedir, includeHomeSkills);
+    const { files: memFiles, roots } = await discoverMemory(cwd, homedir, includeHomeSkills);
     const totalBytes = memFiles.reduce((sum, f) => sum + f.bytes, 0);
     const data = {
       memoryFiles: memFiles.length, totalBytes, budgetBytes,
-      emptyFiles: 0, stubFiles: 0, duplicateRules: 0,
+      emptyFiles: 0, stubFiles: 0, duplicateRules: 0, unresolvableIndexEntries: 0,
       homeScanned: Boolean(includeHomeSkills),
     };
 
@@ -251,6 +287,39 @@ export default {
             remediation: `Keep the rule in ${homes} and let ${file.rel} carry only what governance can't — the incident, the evidence, the why.`,
           });
         }
+      }
+    }
+
+    // 4. Every index entry resolves to a memory file the scan can see. Topic files are
+    // discovered by DIRECTORY, so an entry pointing outside every memory root — or at
+    // nothing at all — is never reconciled against anything: the memory it names is
+    // silently never loaded. The index's own directory counts as in-scope, so a root
+    // `MEMORY.md` may index the topic files sitting beside it.
+    for (const file of memFiles) {
+      if (path.basename(file.full) !== INDEX_BASENAME) continue;
+      const indexDir = path.dirname(file.full);
+      const scopes = [indexDir, ...roots];
+      for (const target of indexEntries(file.content)) {
+        const full = path.resolve(indexDir, target);
+        const stat = await statSafe(full);
+        const missing = !stat || !stat.isFile();
+        if (!missing && scopes.some((scope) => within(scope, full))) continue;
+        data.unresolvableIndexEntries++;
+        if (data.unresolvableIndexEntries > MAX_INDEX_FINDINGS) continue;
+        findings.push({
+          findingId: 'memory-hygiene/unresolvable-index-entry',
+          severity: missing ? 'warning' : 'info',
+          title: missing
+            ? `Dead index entry: ${file.rel} links ${target}, which does not exist`
+            : `Index entry outside the memory directory: ${file.rel} links ${target}`,
+          detail: missing
+            ? `${file.rel} indexes ${target}, but no file resolves there. The index promises a memory that can never load — a silent capability loss, not an error anyone sees.`
+            : `${file.rel} indexes ${target}, which resolves outside every scanned memory directory. Topic files are loaded by directory, so this one is never bundled with memory and never counted against the budget.`,
+          evidence: `${file.rel} → ${target}`,
+          remediation: missing
+            ? `Write ${target}, or drop its entry from ${file.rel}.`
+            : `Move the file into the memory directory the index lives in, or drop its entry from ${file.rel}.`,
+        });
       }
     }
 
