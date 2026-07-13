@@ -105,6 +105,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   causes. Finding
   ids are unchanged (SARIF ruleId stability); `truncated` keeps meaning "hit
   maxFiles" so the file-cap detail never misreports the cause.
+- **claude-md: a governance file hidden by a *parent* `.gitignore` no longer
+  slips through, and the untracked warning now works in nested packages.** Both
+  arms of the check's git block re-implemented git off the filesystem at `cwd`,
+  so both went blind in a monorepo sub-project — the exact shape `--recursive`
+  and the `monorepo` profile exist to scan. (1) The `git check-ignore` query sat
+  behind `if (gitignoreContent)`, a test for a `.gitignore` **file at cwd**; when
+  the ignore rule lived in the repo-root `.gitignore` (or `.git/info/exclude`,
+  which appears in no diff at all, or `core.excludesFile`) the check never asked
+  git, and the `governance-file-gitignored` **CRITICAL vanished** — with
+  `--fail-under 70` the CI gate flipped from FAIL to PASS purely because the
+  sub-project had no `.gitignore` of its own. (2) `hasGit` was
+  `fs.access(cwd/.git)`, so in a nested package — where `.git` sits at the repo
+  root — the gate blocked a `git ls-files` call that resolves the repo fine from
+  any subdirectory, and `governance-file-untracked` never fired. The check now
+  asks git both questions (`git check-ignore` unconditionally, as sibling
+  `env-exposure` already did, and `git rev-parse --is-inside-work-tree`), keeping
+  the legacy exact-string match only as a fallback for when git cannot answer.
+  No finding ids change.
 
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an

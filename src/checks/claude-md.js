@@ -373,39 +373,43 @@ export default {
     }
 
     // Check governance file git tracking status
-    const gitDir = path.join(cwd, '.git');
     const gitignorePath = path.join(cwd, '.gitignore');
     const gitignoreContent = await readFileSafe(gitignorePath);
 
-    // Check if governance file is in .gitignore. Query git's own matcher so
-    // anchored (`/CLAUDE.md`), glob (`*.md`), and `**/`-prefixed rules are
-    // caught, not just the bare name; fall back to the legacy exact-string
-    // match only when git can't answer (missing / not a git repo).
-    if (gitignoreContent) {
-      const gitignoreLines = gitignoreContent.split('\n').map(l => l.trim());
-      for (const govFile of GOVERNANCE_FILES) {
-        const govPath = path.join(cwd, govFile);
-        const govContent = await readFileSafe(govPath);
-        if (!govContent) continue;
+    // Check if governance file is in .gitignore. Ask git's own matcher
+    // UNCONDITIONALLY — a local `.gitignore` file at `cwd` is not the only way
+    // a governance file gets hidden. The rule may live in a parent/repo-root
+    // `.gitignore` (the monorepo sub-project shape `--recursive` exists to
+    // scan), in `.git/info/exclude`, or in `core.excludesFile`. Gating the
+    // query on a local file made the check blind in exactly those cases and
+    // the CRITICAL vanished. The legacy exact-string match stays only as a
+    // fallback for when git can't answer at all (not a working tree).
+    const gitignoreLines = (gitignoreContent ?? '').split('\n').map(l => l.trim());
+    for (const govFile of GOVERNANCE_FILES) {
+      const govPath = path.join(cwd, govFile);
+      const govContent = await readFileSafe(govPath);
+      if (!govContent) continue;
 
-        const verdict = await gitCheckIgnore(cwd, govFile);
-        const gitignored = verdict === 'ignored'
-          || (verdict === 'unknown' && gitignoreLines.includes(govFile));
+      const verdict = await gitCheckIgnore(cwd, govFile);
+      const gitignored = verdict === 'ignored'
+        || (verdict === 'unknown' && gitignoreLines.includes(govFile));
 
-        if (gitignored) {
-          findings.push({
-            findingId: 'claude-md/governance-file-gitignored',
-            severity: 'critical',
-            title: `Governance file ${govFile} is in .gitignore`,
-            detail: 'Gitignored governance files are ephemeral — they leave no audit trail and can be silently modified.',
-            remediation: `Remove ${govFile} from .gitignore and commit it to version control.`,
-          });
-        }
+      if (gitignored) {
+        findings.push({
+          findingId: 'claude-md/governance-file-gitignored',
+          severity: 'critical',
+          title: `Governance file ${govFile} is in .gitignore`,
+          detail: 'Gitignored governance files are ephemeral — they leave no audit trail and can be silently modified.',
+          remediation: `Remove ${govFile} from .gitignore and commit it to version control.`,
+        });
       }
     }
 
-    // Check if governance files are tracked by git
-    const hasGit = await import('node:fs').then(fs => fs.promises.access(gitDir).then(() => true).catch(() => false));
+    // Check if governance files are tracked by git. Ask git whether we're in a
+    // working tree rather than testing for a literal `.git` entry at `cwd` —
+    // in a nested package `.git` lives at the repo root, and the `git ls-files`
+    // call this gate guards resolves the repo perfectly well from any subdir.
+    const hasGit = (await execSafe('git', ['rev-parse', '--is-inside-work-tree'], { cwd }))?.trim() === 'true';
     if (hasGit) {
       for (const govFile of GOVERNANCE_FILES) {
         const govPath = path.join(cwd, govFile);
