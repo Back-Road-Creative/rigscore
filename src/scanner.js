@@ -41,6 +41,12 @@ export async function scan(options = {}) {
     online: options.online || false,
     refreshMcpRegistry: options.refreshMcpRegistry || false,
     includeHomeSkills: options.includeHomeSkills || false,
+    // Absolute host paths the windows-security WSL-guest arm reads (`/etc/wsl.conf`,
+    // `/proc/sys/kernel/osrelease`). Injectable — like `homedir` — so a scan is never
+    // at the mercy of whether the machine running it happens to be a WSL guest; the
+    // check supplies the production defaults when these are undefined.
+    wslConfPath: options.wslConfPath,
+    wslOsReleasePath: options.wslOsReleasePath,
     // The one write a scan makes (the mcp-config TOFU pin). Default ON: the pin
     // IS the rug-pull detection substrate, so opting out has to be deliberate
     // (`--no-state-write`), and mcp-config discloses the run that opted out.
