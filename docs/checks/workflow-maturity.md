@@ -10,12 +10,12 @@ Measures how well a project's AI-dev artifacts (skills, MCP servers, memory, pip
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Skill has no `evals/<name>/` directory and no `tests/test_<name>*` file (hyphens tolerated as `_`) | INFO | `workflow-maturity` (level `note`) | Add at least one eval or test before graduating the skill. |
-| Skill has ≥8 distinct trigger keywords (frontmatter `triggers:` array or `## Triggers` section) | INFO | `workflow-maturity` (level `note`) | Split the skill into focused concerns. |
-| MCP server name appears in ≤1 discoverable SKILL.md | WARNING | `workflow-maturity` (level `warning`) | Add consumers or remove the MCP server. |
-| Memory `.md` file not linked from its directory's `MEMORY.md` (or `MEMORY.md` missing) | WARNING | `workflow-maturity` (level `warning`) | Add a link in the MEMORY.md index. |
-| Pipeline file matches `^(pipeline\|orchestrator).*\.py$` or `*_stage.py` and contains ≥10 stage markers | INFO | `workflow-maturity` (level `note`) | Decompose into sub-pipeline modules. |
-| Directory named `stages` or `phases` (overridable) contains ≥10 non-underscore-prefixed `.py` files | INFO | `workflow-maturity` (level `note`) | Group related stages into sub-pipeline packages. |
+| Skill has no `evals/<name>/` directory and no `tests/test_<name>*` file (hyphens tolerated as `_`) | INFO | `workflow-maturity/skill-no-eval` | Add at least one eval or test before graduating the skill. |
+| Skill has ≥8 distinct trigger keywords (frontmatter `triggers:` array or `## Triggers` section) | INFO | `workflow-maturity/skill-compound-responsibility` | Split the skill into focused concerns. |
+| MCP server name appears in ≤1 discoverable SKILL.md | WARNING | `workflow-maturity/mcp-single-consumer` | Add consumers or remove the MCP server. |
+| Memory `.md` file not linked from its directory's `MEMORY.md` (or `MEMORY.md` missing) | WARNING | `workflow-maturity/memory-orphan` | Add a link in the MEMORY.md index. |
+| Pipeline file matches `^(pipeline\|orchestrator).*\.py$` or `*_stage.py` and contains ≥10 stage markers | INFO | `workflow-maturity/pipeline-step-overload` | Decompose into sub-pipeline modules. |
+| Directory named `stages` or `phases` (overridable) contains ≥10 non-underscore-prefixed `.py` files | INFO | `workflow-maturity/stage-dir-overload` | Group related stages into sub-pipeline packages. |
 | Nothing scannable (no skills, no MCP servers, no pipeline files, no memory dirs) | N/A | — | — |
 | All clean | PASS | — | — |
 
@@ -42,8 +42,7 @@ No `fixes` export. `--fix --yes` is a no-op.
 
 ## SARIF
 
-- Tool component: `rigscore`
-- Rule ID emitted: `workflow-maturity` (check-level; per-finding discrimination via message text, which names the skill, MCP server, memory file, or pipeline path).
+- Tool component: `rigscore`; rule IDs are the per-finding `workflow-maturity/*` ids in the Triggers table, with `workflow-maturity` as the check-level fallback rule.
 - Level mapping: WARNING → `warning`, INFO → `note`, PASS/SKIPPED → `none`.
 - Location data: pipeline findings carry the relative path of the offending `.py` file; stage-dir findings carry the directory relative path; memory findings carry the absolute memory path in the message; skill/MCP findings reference names rather than file paths.
 
