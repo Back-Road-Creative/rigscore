@@ -41,6 +41,10 @@ export async function scan(options = {}) {
     online: options.online || false,
     refreshMcpRegistry: options.refreshMcpRegistry || false,
     includeHomeSkills: options.includeHomeSkills || false,
+    // The one write a scan makes (the mcp-config TOFU pin). Default ON: the pin
+    // IS the rug-pull detection substrate, so opting out has to be deliberate
+    // (`--no-state-write`), and mcp-config discloses the run that opted out.
+    writeState: options.writeState !== false,
   };
 
   // Split checks into pass 1 (default) and pass 2 (receive priorResults)

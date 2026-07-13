@@ -608,10 +608,13 @@ on first scan — all are local, none phone home.
 
 Recommendations:
 
-- **Commit `.rigscore-state.json`.** Supply-chain drift becomes visible in
-  review, and cross-collaborator divergence resolves via git. See the
-  [State file](#state-file) section for the diff rules.
-- **Or `.gitignore` it** for local-only rug-pull detection on your machine.
+- **Commit `.rigscore-state.json` — do not `.gitignore` it.** It is the
+  detection substrate: a pin that isn't in git cannot survive a fresh CI
+  checkout, so gitignoring it silently turns rug-pull detection off where it
+  matters most. It stores hashes only — never env *values* — so it is safe to
+  commit. See [State file](#state-file).
+- **To skip the write entirely, pass `--no-state-write`** — and read what it
+  costs you in [State file](#state-file) first.
 - **Nothing else is persisted.** No telemetry, no accounts, no outbound
   traffic unless you pass `--online`.
 
@@ -851,7 +854,21 @@ For details on what rigscore writes to disk on first scan and how to purge it, s
 
 When your project has a repo-level `.mcp.json`, rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
 
-**Recommendation: commit `.rigscore-state.json`.** Supply-chain changes become visible in code review, and drift across collaborators resolves naturally via git. Diff rules: new servers are recorded silently, removed servers are silently dropped, a corrupted state file produces one INFO finding and resets. If you prefer local-only, add `.rigscore-state.json` to `.gitignore` — you'll still get rug-pull detection, just scoped to your machine.
+**This is the one file a scan writes.** Every other check is read-only.
+
+**Commit `.rigscore-state.json`. Do not `.gitignore` it.** The instinct on seeing a new generated file is to ignore it — here that silently disables the protection. The pin *is* the detection substrate: `mcp-config/server-hash-drift` and the `rigscore --verify-state` CI gate both work by comparing today's `.mcp.json` against it, so a pin that doesn't survive a fresh CI checkout detects nothing. It is safe to commit by construction — env **values** are deliberately excluded from the hash, so it cannot leak a secret. Supply-chain changes then show up in code review, and cross-collaborator drift resolves via git.
+
+The write only ever *establishes* or *extends* the pin — it is skipped on drift (re-pinning would re-approve the rug-pull the scan just reported) and skipped when the pin is already current (so a scan never dirties your tree). Full write/skip table and the "accept this drift" procedure: [`docs/checks/mcp-config.md`](docs/checks/mcp-config.md#the-one-file-a-scan-writes-rigscore-statejson).
+
+### Opting out: `--no-state-write`
+
+```bash
+rigscore --no-state-write .   # scan a read-only checkout / a repo you don't own
+```
+
+**What it costs you:** the pin is not created or extended, so rug-pull detection (CVE-2025-54136) has nothing to compare against on the next scan and `rigscore --verify-state` exits 2 (`unpinned` — it refuses to report success on a repo it cannot verify). rigscore says so out loud rather than quietly doing less: any scan carrying the flag reports `mcp-config/state-write-disabled` — a **WARNING** (which lowers the `mcp-config` score) when the flag actually suppressed a pin that was due, downgraded to INFO when the pin was already current and nothing was lost.
+
+If what you need is a zero-write check in CI, use `rigscore --verify-state` instead: it is read-only by design, writes nothing, and keeps full drift protection.
 
 ## Runtime tool pinning
 
