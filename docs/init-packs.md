@@ -17,21 +17,29 @@ arrays and offers every pack that targets a check you are red on (critical or wa
 finding is not worth a baseline install):
 
 ```bash
-rigscore . --fix          # dry run: lists the auto-fixes AND the installable packs. Writes nothing.
-rigscore . --fix --yes    # applies the auto-fixes, then installs the packs.
+rigscore . --fix                      # dry run: lists the auto-fixes AND the installable packs. Writes nothing.
+rigscore . --fix --yes                # applies the auto-fixes. Packs are offered, NOT installed.
+rigscore . --fix --yes --install-packs  # applies the auto-fixes, then installs the packs.
 ```
 
 The two remediation sources stay distinct in the output, because they are not the same kind of
-change: an **auto-fixable issue** is a file-level edit (append `.env` to `.gitignore`), while an
-**installable pack** drops in a whole starter baseline.
+change — nor the same consent. An **auto-fixable issue** is a file-level edit to a file you already
+have (append `.env` to `.gitignore`), while an **installable pack** *scaffolds* a whole starter
+baseline you never had. `--yes` means "don't prompt me", so it unlocks only the first; scaffolding
+takes its own opt-in, `--install-packs`. Without it, `--fix --yes` still names the packs that would
+fix your red checks — listing costs nothing — and writes none of them.
+
+`--install-packs` only widens what `--yes` may write; it never writes on its own, so
+`rigscore . --fix --install-packs` (no `--yes`) is still a dry run.
 
 `--fix` never rewrites governance content. It installs packs *without* `--force`, so a file you
-already wrote is reported `skipped (exists)` and left byte-for-byte alone — `--fix` can only add the
-files you are missing. To overwrite deliberately, run `rigscore init --<pack> --force` yourself.
+already wrote is reported `skipped (exists)` and left byte-for-byte alone — `--fix --install-packs`
+can only add the files you are missing. To overwrite deliberately, run `rigscore init --<pack>
+--force` yourself.
 
 ## Not covered (yet)
 
-- `--fix` installs **every** applicable pack; there is no `--fix --pack <name>` to install just one.
+- `--fix --install-packs` installs **every** applicable pack; there is no `--fix --pack <name>` to install just one.
   Use `rigscore init --<pack>` for that.
 - Pack files land with their `{{PLACEHOLDER}}` vars unresolved apart from `PROJECT_NAME`, and the
   install warns about each. `--fix --yes` does not prompt for them.
