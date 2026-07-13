@@ -2,7 +2,7 @@ import path from 'node:path';
 import https from 'node:https';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
-import { readJsonSafe, readFileSafe } from '../utils.js';
+import { readJsonSafe, readFileSafe, fileExists } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { readRepoServers, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
@@ -897,7 +897,26 @@ export default {
 
     for (const configPath of configPaths) {
       const mcpConfig = await readJsonSafe(configPath);
-      if (!mcpConfig) continue;
+      if (!mcpConfig) {
+        // readJsonSafe returns null for BOTH "absent" and "present but unparseable".
+        // Skipping on that alone let a config that IS on disk — and whose servers can
+        // therefore be neither scanned nor hash-pinned — be reported as "No MCP
+        // configuration found", a false statement about the repo. An ABSENT file stays a
+        // clean skip (→ N/A); a present-but-unparseable one is disclosed and keeps the
+        // check applicable. Mirrors claude-settings/settings-unparseable.
+        if (await fileExists(configPath)) {
+          const relPath = path.relative(cwd, configPath) || configPath;
+          findings.push({
+            findingId: 'mcp-config/config-unparseable',
+            severity: 'warning',
+            title: `Unparseable MCP configuration in ${relPath}`,
+            detail: `${relPath} exists but does not parse as JSON, so the MCP servers it declares cannot be inspected — and, for a committed repo-level config, cannot be hash-pinned either, leaving rug-pull detection (CVE-2025-54136) off for them.`,
+            remediation: 'Fix the JSON syntax — rigscore already tolerates comments and trailing commas, so this file is genuinely broken (unresolved merge-conflict markers, an unterminated string, a truncated write). Repair it or remove it; leaving it in place means its servers are never scanned or pinned.',
+          });
+          foundAny = true;
+        }
+        continue;
+      }
 
       // Read raw text to detect wildcard env passthrough (e.g. ...process.env)
       const rawText = await readFileSafe(configPath);

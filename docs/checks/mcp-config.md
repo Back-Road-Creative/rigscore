@@ -42,6 +42,7 @@ A failure typically means an MCP server was added without reviewing its args, a 
 | Runtime tool pin recorded for server | INFO | `mcp-config/runtime-tool-pin-recorded` | Verify with `rigscore mcp-verify <name>` |
 | Runtime tool pin missing for server | INFO | `mcp-config/runtime-tool-pin-missing` | Pin via `rigscore mcp-hash \| rigscore mcp-pin <name>` |
 | No MCP config files found | INFO (score = N/A) | `mcp-config/no-config-found` | None — check inapplicable |
+| An MCP config file exists but does not parse as JSON — **keeps the check applicable** (an absent file stays a clean N/A) | WARNING | `mcp-config/config-unparseable` | Repair the JSON (or delete the file) — until then its servers are neither scanned nor pinned |
 | All servers clean | PASS | — | — |
 
 ## Weight rationale
