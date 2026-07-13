@@ -1,4 +1,6 @@
 import { getRegisteredFixes } from './checks/index.js';
+import { listPacks, loadPack, installPack, formatInstallReport, TEMPLATES_DIR } from './cli/packs.js';
+import { SEVERITY } from './constants.js';
 
 /**
  * Safe auto-remediation for rigscore findings.
@@ -16,7 +18,14 @@ import { getRegisteredFixes } from './checks/index.js';
  *      check's finding title silently orphans the fix, so a deprecation warn
  *      is emitted the first time a legacy matcher is used in a process.
  *
- * Never modifies governance content.
+ * There are two remediation sources, and callers must keep them distinct in
+ * their output: a file-level auto-fix (findApplicableFixes / applyFixes, above)
+ * edits one file in place, while a pack install (findApplicablePacks /
+ * installPacks, below) drops a whole starter baseline in.
+ *
+ * Never modifies governance content: an auto-fix is append-only, and a pack
+ * install writes NEW files only — installPack is never called with `force`, so
+ * an existing file is reported `skipped (exists)` and left byte-for-byte alone.
  */
 
 const warnedLegacyMatchers = new Set();
@@ -105,4 +114,64 @@ export async function applyFixes(fixes, cwd, homedir) {
   }
 
   return { applied, skipped };
+}
+
+/** A finding is RED — worth remediating — only at critical or warning. */
+const RED = new Set([SEVERITY.CRITICAL, SEVERITY.WARNING]);
+
+/**
+ * Analyze scan results and return the packs that remediate a red finding.
+ *
+ * A pack claims the check ids it turns green in `pack.json.checks`; a check
+ * with at least one critical/warning finding is red. The intersection is the
+ * offer. Pure — writes nothing, which is exactly what `--fix`'s dry run needs.
+ *
+ * Each entry: { name, description, checks, targets } where `targets` are the
+ * red check ids this pack claims (a subset of `checks`).
+ */
+export function findApplicablePacks(results, templatesDir = TEMPLATES_DIR) {
+  const redCheckIds = new Set(
+    (results || [])
+      .filter((r) => (r.findings || []).some((f) => RED.has(f && f.severity)))
+      .map((r) => r.id),
+  );
+  if (redCheckIds.size === 0) return [];
+
+  const packs = [];
+  for (const name of listPacks(templatesDir)) {
+    let pack;
+    try {
+      pack = loadPack(name, templatesDir);
+    } catch {
+      continue; // A malformed manifest must not break --fix; `init` reports it loudly.
+    }
+    const targets = pack.checks.filter((id) => redCheckIds.has(id));
+    if (targets.length > 0) {
+      packs.push({ name, description: pack.description, checks: pack.checks, targets });
+    }
+  }
+  return packs;
+}
+
+/**
+ * Install the given packs into `cwd`. Only ever called behind `--yes`.
+ *
+ * Deliberately does NOT pass `force`: installPack skips a dest that already
+ * exists, so this adds missing governance files and never rewrites one the
+ * operator wrote. Returns { installed: string[], skipped: string[] } — the
+ * installed entries are formatted per-pack reports naming every file as
+ * `written` or `skipped (exists)`.
+ */
+export function installPacks(packs, cwd, templatesDir = TEMPLATES_DIR) {
+  const installed = [];
+  const skipped = [];
+  for (const p of packs) {
+    try {
+      const report = installPack(p.name, cwd, { templatesDir }); // no force — never clobber
+      installed.push(formatInstallReport(report, cwd).trimEnd());
+    } catch (err) {
+      skipped.push(`${p.name} (error: ${err.message})`);
+    }
+  }
+  return { installed, skipped };
 }

@@ -7,7 +7,7 @@ import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { formatCycloneDx } from './cyclonedx.js';
-import { findApplicableFixes, applyFixes } from './fixer.js';
+import { findApplicableFixes, applyFixes, findApplicablePacks, installPacks } from './fixer.js';
 import { PROFILE_HINTS } from './config.js';
 import { ConfigParseError } from './utils.js';
 
@@ -353,16 +353,28 @@ export async function run(args) {
       process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }
 
-    // --fix mode: find and apply safe auto-remediations
+    // --fix mode: find and apply safe auto-remediations. Two distinct sources \u2014
+    // a file-level auto-fix edits one file in place; a pack install drops in a
+    // whole starter baseline (new files only, never clobbering an existing one).
     if (options.fix) {
       const fixes = findApplicableFixes(result.results);
-      if (fixes.length === 0) {
+      const packs = findApplicablePacks(result.results);
+      if (fixes.length === 0 && packs.length === 0) {
         process.stderr.write('No auto-fixable issues found.\n');
       } else if (!options.yes) {
-        // Dry-run: show what would be fixed
-        process.stderr.write('\nAuto-fixable issues (dry run):\n');
-        for (const fix of fixes) {
-          process.stderr.write(`  - ${fix.description}\n`);
+        // Dry-run: show what would be fixed / installed
+        if (fixes.length > 0) {
+          process.stderr.write('\nAuto-fixable issues (dry run):\n');
+          for (const fix of fixes) {
+            process.stderr.write(`  - ${fix.description}\n`);
+          }
+        }
+        if (packs.length > 0) {
+          process.stderr.write('\nInstallable packs (dry run):\n');
+          for (const pack of packs) {
+            process.stderr.write(`  - ${pack.name} \u2014 ${pack.description}\n`);
+            process.stderr.write(`      targets: ${pack.targets.join(', ')}\n`);
+          }
         }
         process.stderr.write('\nRun with --fix --yes to apply.\n');
       } else {
@@ -378,6 +390,19 @@ export async function run(args) {
           process.stderr.write('\nSkipped:\n');
           for (const s of skipped) {
             process.stderr.write(`  - ${s}\n`);
+          }
+        }
+        // Install packs \u2014 existing files are reported `skipped (exists)`, never rewritten.
+        if (packs.length > 0) {
+          const { installed, skipped: packErrors } = installPacks(packs, cwd);
+          if (installed.length > 0) {
+            process.stderr.write('\nInstalled packs:\n');
+            for (const report of installed) {
+              process.stderr.write(`${report}\n`);
+            }
+          }
+          for (const e of packErrors) {
+            process.stderr.write(`  - pack ${e}\n`);
           }
         }
       }
