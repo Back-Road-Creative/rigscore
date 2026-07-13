@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import * as YAML from 'yaml';
+
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
 
 // Resolve action.yml relative to this test file (repo root / action.yml)
 const __filename = fileURLToPath(import.meta.url);
@@ -105,6 +109,58 @@ describe('action.yml — GitHub composite action distribution', () => {
           /github\.action_ref|github\.sha|github\.ref/.test(String(ref)) || /^[A-Za-z0-9._\-\/]+$/.test(String(ref))
         ).toBe(true);
       }
+    });
+  });
+
+  describe('T1.3: documented action refs satisfy the action.yml semver guard', () => {
+    // The guard in action.yml rejects any github.action_ref that is not an exact
+    // vX.Y.Z tag (no moving @v1 / @v2 major tag is published, and a floating ref
+    // is re-pointable — the exact supply-chain drift the guard exists to stop).
+    // Extract that regex from action.yml itself rather than restating it, so the
+    // docs are checked against the live guard and cannot drift from it.
+    const guardMatch = rawAction.match(/grep\s+-Eq\s+'(\^v\[0-9\][^']*)'/);
+
+    it('action.yml still contains an extractable semver guard', () => {
+      expect(
+        guardMatch,
+        'could not find the ACTION_REF semver guard in action.yml — update this test if the guard moved',
+      ).not.toBeNull();
+    });
+
+    it('every rigscore action ref shown in the docs is an exact semver tag', () => {
+      const semverRe = new RegExp(guardMatch[1]);
+
+      const docFiles = ['README.md'];
+      const docsDir = path.resolve(__dirname, '..', 'docs');
+      const walk = (dir) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) walk(full);
+          else if (entry.name.endsWith('.md')) docFiles.push(path.relative(path.resolve(__dirname, '..'), full));
+        }
+      };
+      walk(docsDir);
+
+      const offenders = [];
+      for (const rel of docFiles) {
+        const body = readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
+        const lines = body.split('\n');
+        lines.forEach((line, i) => {
+          for (const m of line.matchAll(/Back-Road-Creative\/rigscore@([^\s`'"),]+)/g)) {
+            const ref = m[1].replace(/[.,;:)]+$/, '');
+            // Skip templated refs (e.g. `@v${version}` in a code sample) — those
+            // are resolved at run time, not a literal ref a user would copy.
+            if (ref.includes('$') || ref.includes('{')) continue;
+            if (!semverRe.test(ref)) offenders.push(`${rel}:${i + 1}: @${ref}`);
+          }
+        });
+      }
+
+      expect(
+        offenders,
+        `These documented action refs would be rejected by the action.yml semver guard.\n` +
+          `Pin the docs to an exact released tag (e.g. @v${pkg.version}):\n  ${offenders.join('\n  ')}`,
+      ).toEqual([]);
     });
   });
 
