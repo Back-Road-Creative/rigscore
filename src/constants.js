@@ -209,8 +209,10 @@ export const SEVERITY_DEDUCTIONS = {
 // INFO-only findings cannot push a check below this floor
 export const INFO_ONLY_FLOOR = 50;
 
-// Coverage penalty threshold — if total applicable weight is below this,
-// the overall score is scaled down proportionally
+// Legacy coverage-penalty threshold. Coverage scaling is now continuous
+// (scale = min(1, totalApplicableWeight / 100), applied unconditionally in
+// src/scoring.js) — there is no threshold and no visible step. Retained as
+// an export for backwards compatibility only; nothing in src/ reads it.
 export const COVERAGE_PENALTY_THRESHOLD = 50;
 
 // All known AI client governance/instruction files — derived from the client
