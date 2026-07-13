@@ -2,25 +2,34 @@
 
 ## Purpose
 
-Agent memory — the files an agent auto-loads every session — is both a context-budget surface and a correctness surface. Every byte is re-injected on every turn, so bloat is billed per request, and a memory file that says nothing still costs that toll. **No incumbent convention exists for memory layout; this check defines one.** Two signals ship in this first slice: **budget** (the auto-loaded bundle exceeds a stated byte budget) and **stale content** (a memory file that is empty, or a bare stub with frontmatter and no body). Both are mechanical — byte counts and body-length math, no heuristics, no false positives. Maps loosely to OWASP Agentic **ASI01 — Agent Goal Hijack**: memory is injected ahead of the live instruction, so junk in it competes with governance for the model's attention. A pass means memory is small and every file carries a rule.
+Agent memory — the files an agent auto-loads every session — is both a context-budget surface and a correctness surface. Every byte is re-injected on every turn, so bloat is billed per request, and a memory file that says nothing still costs that toll. **No incumbent convention exists for memory layout; this check defines one.** Three signals ship today: **budget** (the auto-loaded bundle exceeds a byte budget, now configurable), **stale content** (a memory file that is empty, or a bare stub with frontmatter and no body), and **single home per rule** (the same rule written into both a governance file and a memory file, so editing one copy silently fails to take effect). Budget and stale content are pure arithmetic — byte counts and body-length math. Single-home is exact-match line comparison after normalization: deterministic, but a proxy for "same rule", so it is tuned to miss rather than to over-call. Maps loosely to OWASP Agentic **ASI01 — Agent Goal Hijack**: memory is injected ahead of the live instruction, so junk in it competes with governance for the model's attention. A pass means memory is small, every file carries a rule, and every rule has exactly one home.
 
 ## Triggers
 
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
-| Memory bundle over 40,000 bytes | WARNING | `memory-hygiene/bundle-over-budget` | Consolidate files; delete resolved incidents |
+| Memory bundle over the byte budget (default 40,000) | WARNING | `memory-hygiene/bundle-over-budget` | Consolidate files; delete resolved incidents |
 | Memory file is empty | WARNING | `memory-hygiene/stale-memory-file` | Write it out, or delete the file + index entry |
 | Memory file has frontmatter/heading but no body | INFO | `memory-hygiene/stale-memory-file` | Fill it in or delete it |
+| A rule line appears verbatim in both a governance file and a memory file | INFO | `memory-hygiene/duplicate-rule` | Keep the rule in governance; leave the memory file the why/incident/evidence |
 | No memory files found (most repos) | N/A | — | — |
+
+## Configuration
+
+```json
+{ "memoryHygiene": { "budgetBytes": 80000 } }
+```
+
+`memoryHygiene.budgetBytes` (default `40000`) sets the byte budget for the auto-loaded bundle. Project `.rigscorerc.json` beats `~/.rigscorerc.json`; a non-integer or non-positive value is ignored and the default stands. Raise it for a repo that deliberately carries a large always-on memory set; lower it to hold a tighter line.
 
 ## Not covered (yet)
 
-Stated omissions, not oversights. The check module exists on `main` after this PR, so each is an ordinary follow-up PR.
+Stated omissions, not oversights — each is an ordinary follow-up PR.
 
 - **Unindexed / orphan memory files — owned by another check, deliberately not duplicated.** `workflow-maturity/memory-orphan` already flags `.md` files in a memory dir that no `MEMORY.md` links, including the no-index-at-all case. Emitting it here too would double-count one defect. A regression test (`test/memory-hygiene.test.js`) pins that this check stays silent on it.
-- **Single home per rule** (the same rule stated in both `CLAUDE.md` and a memory file, so an edit to one silently fails to take effect). Deferred on purpose: matching near-identical normalized lines is a heuristic, and a false "these are duplicates" is worse than a miss. It needs its own PR to get the precision right — and `instruction-effectiveness/redundant-instruction` already gives a weaker INFO-level signal on lines repeated across instruction files.
-- **A configurable budget.** `src/config.js` merges user config key-by-key, so a `memoryHygiene` key in `.rigscorerc.json` is dropped today. Wiring it is a one-line change there.
 - **Index-linked files outside a memory dir.** Topic files are discovered by directory; a `MEMORY.md` link pointing outside `.claude/memory/` is not followed.
+- **Governance files outside the project root.** `duplicate-rule` reads the root governance set only (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, …). A rule duplicated between `~/.claude/CLAUDE.md` and a project memory file is not seen, even under `--include-home-skills`.
+- **A rule split across two lines, or reworded.** Comparison is line-by-line and near-exact; a rule wrapped over two lines in one file and one line in the other does not match. Widening this trades misses for false positives — see Scope and limitations.
 
 ## Weight rationale
 
@@ -28,14 +37,14 @@ Stated omissions, not oversights. The check module exists on `main` after this P
 
 ## Fix semantics
 
-No auto-fix; `--fix --yes` does nothing for this check. Both findings need a human decision: consolidating memory means judging which file owns a rule, and deleting a stub means knowing whether the note was abandoned or merely unfinished. A scanner that guessed wrong would delete authored governance.
+No auto-fix; `--fix --yes` does nothing for this check. Every finding needs a human decision: consolidating memory means judging which file owns a rule, deleting a stub means knowing whether the note was abandoned or merely unfinished, and de-duplicating a rule means choosing which of the two homes keeps it. A scanner that guessed wrong would delete authored governance.
 
 ## SARIF
 
 - Tool component: `rigscore`; rule IDs are the per-finding `memory-hygiene/*` ids in the Triggers table, with `memory-hygiene` as the check-level fallback rule.
 - Level mapping: WARNING→`warning`, INFO→`note`.
 - Location data: project root; findings name the offending file in the message.
-- Evidence: both findings emit `properties.evidence` — the file + byte count, or the bundle total.
+- Evidence: every finding emits `properties.evidence` — the file + byte count, the bundle total, or the `memory file ↔ governance file` pair.
 
 ## Example
 
@@ -45,11 +54,20 @@ No auto-fix; `--fix --yes` does nothing for this check. Both findings need a hum
     .claude/memory/empty.md is empty. It teaches the agent nothing but is
     still loaded every session.
   INFO    Stub memory file: .claude/memory/stub.md
+  INFO    Rule has two homes: .claude/memory/merge.md restates CLAUDE.md
+    "Never merge a pull request yourself — emit the merge command for the
+    operator." is stated in CLAUDE.md and again in .claude/memory/merge.md.
 ```
 
 ## Scope and limitations
 
 - **Locations scanned:** `{cwd}/.claude/memory/*.md`, plus `{cwd}/MEMORY.md` and `{cwd}/.claude/MEMORY.md`. The whole memory directory counts toward the budget — harnesses differ on eager vs lazy topic loading, so the conservative assumption is that anything in it can be pulled in.
 - **Home directory is opt-in.** `~/.claude/memory/` and `~/.claude/projects/*/memory/` are scanned only under `--include-home-skills` — the same gate `instruction-effectiveness` and `skill-files` use. An unasked-for home scan is a surprise, and home memory is not the project's to fix.
-- **Budget is 40,000 bytes:** ~10k tokens at ~4 chars/token, about 5% of the 200k-token reference window `instruction-effectiveness` scores against. Memory is one slice of always-on context (governance + skills + memory), so it gets a minority share of it. A repo that blows this budget is paying for it on every single turn, not once.
+- **Budget defaults to 40,000 bytes:** ~10k tokens at ~4 chars/token, about 5% of the 200k-token reference window `instruction-effectiveness` scores against. Memory is one slice of always-on context (governance + skills + memory), so it gets a minority share of it. A repo that blows this budget is paying for it on every single turn, not once. Override it with `memoryHygiene.budgetBytes` (see Configuration).
 - **Stub detection strips YAML frontmatter and markdown headings**, then requires ≥20 non-whitespace body characters. A file whose entire content is a heading and a `status:` field is a stub by that rule.
+- **`duplicate-rule` is a proxy, and it is tuned to miss.** A false "these are the same rule" costs an author real trust, so the bar is deliberately high: a line matches only on **exact equality after normalization** (lowercase; list marker, markdown emphasis, backticks, and all punctuation stripped; whitespace collapsed), and only when it carries **≥40 normalized characters**. Headings, fenced code, table rows, and link-only lines never match. The honest costs of that bar:
+  - **It misses far more than it catches.** A reworded rule, a rule split across two lines, or a rule stated as a sentence in one file and a bullet fragment in the other all slip through. The check finds copy-paste, not semantic duplication.
+  - **A short rule is invisible.** "Never merge PRs yourself." normalizes to 26 characters and cannot fire — accepted, because a 20-character floor would let ordinary boilerplate ("run the tests first") collide across unrelated files.
+  - **Punctuation-blind normalization can flatten a real distinction.** Two lines differing only in punctuation ("do not run X" vs "do not run X?") normalize identically. Prose rules rarely turn on punctuation, so this is a live but rare false-positive path.
+  - **Cross-file, at most 10 findings.** A memory file that mirrors a whole governance section reports its first ten duplicated lines; `data.duplicateRules` carries the true count.
+- **Not `instruction-effectiveness/redundant-instruction`.** That check flags a line repeated across *instruction* files (governance ↔ governance, skill ↔ skill). This one fires only on the **governance ↔ memory** pair, where the failure mode is different: memory outranks nothing, but it is loaded first, so the stale copy is the one the model reads.
