@@ -206,4 +206,52 @@ describe('runBaselineMode — committed baseline is the authority', () => {
     expect(res.status).toBe(0);
     expect(Array.isArray(JSON.parse(fs.readFileSync(path.join(dir, BASE), 'utf8')).findings)).toBe(true);
   });
+
+  // The fourth door: a PR that `git rm`s the baseline AT HEAD (not just the
+  // working tree) must NOT let the gate silently re-mint a fresh baseline that
+  // absorbs the new findings and exits 0. A removed committed baseline is a
+  // provenance error → fail closed (exit 2), same tier as a corrupt one.
+  it('attacker DELETES the committed baseline at HEAD + adds a finding → exit 2 (never re-mints)', () => {
+    inject();
+    git('rm', '-q', BASE);
+    git('commit', '-qm', 'drop baseline', '--no-verify');
+    const res = runBin(['--baseline', BASE, '.'], { cwd: dir });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/absent at HEAD|removed/i);
+    // No re-minted working-tree baseline that would launder the finding.
+    expect(fs.existsSync(path.join(dir, BASE))).toBe(false);
+  });
+});
+
+// The removed-vs-never-tracked discriminator must let the legitimate first run
+// through — otherwise the fail-closed fix above would break minting entirely.
+describe('runBaselineMode — a genuine first run still mints (never "removed")', () => {
+  const BASE = 'rigscore-baseline.json';
+  const mkrepo = (withCommit) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-firstrun-'));
+    fs.writeFileSync(path.join(d, 'CLAUDE.md'), '# Project\nNormal governance notes.\n');
+    spawnSync('git', ['-C', d, 'init', '-q']);
+    spawnSync('git', ['-C', d, 'config', 'user.email', 't@x']);
+    spawnSync('git', ['-C', d, 'config', 'user.name', 't']);
+    if (withCommit) {
+      spawnSync('git', ['-C', d, 'add', '-A']);
+      spawnSync('git', ['-C', d, 'commit', '-qm', 'i', '--no-verify']);
+    }
+    return d;
+  };
+
+  it('never-tracked baseline in a repo with commits → mints + exit 0', () => {
+    const d = mkrepo(true);
+    const res = runBin(['--baseline', BASE, '.'], { cwd: d });
+    expect(res.status).toBe(0);
+    expect(fs.existsSync(path.join(d, BASE))).toBe(true);
+    fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  it('repo with NO commits at all reads as first run (git log errors) → mints + exit 0', () => {
+    const d = mkrepo(false);
+    const res = runBin(['--baseline', BASE, '.'], { cwd: d });
+    expect(res.status).toBe(0);
+    fs.rmSync(d, { recursive: true, force: true });
+  });
 });
