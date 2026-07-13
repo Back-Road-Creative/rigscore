@@ -167,19 +167,20 @@ function ruleLines(content) {
  * Every governance file whose rules could be a memory file's other home:
  * the root set, every nested governance file in the project tree (monorepo
  * package rules), and — only under --include-home-skills, the same gate the
- * memory scan uses — the user's home governance. Returns `{ paths, truncated }`,
- * where `paths` is full path → display label.
+ * memory scan uses — the user's home governance. Returns `{ paths, truncated,
+ * depthTruncated }`, where `paths` is full path → display label.
  *
- * `truncated` is `walkDirSafe`'s signal that the nested walk hit
- * MAX_GOVERNANCE_FILES and stopped early, so `paths` is an INCOMPLETE picture of
- * where the project states its rules. Note the cap counts *matched* governance
- * files, not files walked — `walkDirSafe` gates on the post-`shouldInclude` list.
+ * `truncated`/`depthTruncated` are `walkDirSafe`'s signals that the nested walk gave
+ * up early — at MAX_GOVERNANCE_FILES or at the directory-depth cap — so `paths` is an
+ * INCOMPLETE picture of where the project states its rules. Note the file cap counts
+ * *matched* governance files, not files walked — `walkDirSafe` gates on the
+ * post-`shouldInclude` list.
  */
 async function governancePaths(cwd, homedir, includeHomeSkills) {
   const paths = new Map();
   for (const rel of GOVERNANCE_FILES) paths.set(path.join(cwd, rel), rel);
 
-  const { files, truncated } = await walkDirSafe(cwd, {
+  const { files, truncated, depthTruncated } = await walkDirSafe(cwd, {
     skipDirs: SKIP_DIRS,
     maxFiles: MAX_GOVERNANCE_FILES,
     shouldInclude: (full) => GOVERNANCE_BASENAMES.has(path.basename(full)),
@@ -192,14 +193,15 @@ async function governancePaths(cwd, homedir, includeHomeSkills) {
     paths.set(path.join(homedir, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md');
     paths.set(path.join(homedir, 'CLAUDE.md'), '~/CLAUDE.md');
   }
-  return { paths, truncated };
+  return { paths, truncated, depthTruncated };
 }
 
-/** `{ byRule, truncated }` — normalized rule → set of governance files stating it,
- *  plus whether the walk that found them gave up early (see `governancePaths`). */
+/** `{ byRule, truncated, depthTruncated }` — normalized rule → set of governance files
+ *  stating it, plus whether the walk that found them gave up early — at the file cap or
+ *  the depth cap (see `governancePaths`). */
 async function collectGovernanceRules(cwd, homedir, includeHomeSkills) {
   const byRule = new Map();
-  const { paths, truncated } = await governancePaths(cwd, homedir, includeHomeSkills);
+  const { paths, truncated, depthTruncated } = await governancePaths(cwd, homedir, includeHomeSkills);
   for (const [full, label] of paths) {
     const stat = await statSafe(full);
     if (!stat || !stat.isFile() || stat.size > MAX_GOVERNANCE_BYTES) continue;
@@ -209,7 +211,7 @@ async function collectGovernanceRules(cwd, homedir, includeHomeSkills) {
       byRule.get(norm).add(label);
     }
   }
-  return { byRule, truncated };
+  return { byRule, truncated, depthTruncated };
 }
 
 /** 'empty' (no content), 'stub' (frontmatter/heading, no body), or null. */
@@ -276,7 +278,7 @@ export default {
     // 3. Single home per rule — a rule stated in both a governance file and a
     // memory file has two homes, so editing one silently fails to take effect.
     // Governance is the root set + nested project files + (opt-in) home.
-    const { byRule: govRules, truncated: govTruncated } = await collectGovernanceRules(cwd, homedir, includeHomeSkills);
+    const { byRule: govRules, truncated: govTruncated, depthTruncated: govDepthTruncated } = await collectGovernanceRules(cwd, homedir, includeHomeSkills);
     if (govRules.size > 0) {
       for (const file of memFiles) {
         for (const [norm, raw] of ruleLines(file.content)) {
@@ -314,14 +316,14 @@ export default {
     // the suppressed PASS below is, because any finding at all makes `findings.length`
     // non-zero. Truncation cannot make this check N/A: that gate is `memFiles.length`,
     // decided by `discoverMemory` before this walk ever runs.
-    if (govTruncated) {
+    if (govTruncated || govDepthTruncated) {
       findings.push({
         findingId: 'memory-hygiene/governance-file-cap-reached',
         severity: 'info',
-        title: `Governance scan capped at ${MAX_GOVERNANCE_FILES} files`,
-        detail: `The nested-governance walk hit the ${MAX_GOVERNANCE_FILES}-file limit and stopped, so governance files past the cap were never read. A memory rule whose other home sits in one of them cannot be reported — this result is not a clean bill of health for duplicate rules.`,
-        evidence: `${MAX_GOVERNANCE_FILES}-governance-file cap reached; the tree holds more`,
-        remediation: `Move vendored or generated trees out of the scan so the whole governance surface fits under the ${MAX_GOVERNANCE_FILES}-file cap.`,
+        title: 'Governance scan stopped early (cap reached)',
+        detail: `The nested-governance walk stopped early (${MAX_GOVERNANCE_FILES}-file limit and/or directory-depth limit), so governance files past the cap were never read. A memory rule whose other home sits in one of them cannot be reported — this result is not a clean bill of health for duplicate rules.`,
+        evidence: `governance walk truncated; the tree holds more than was read`,
+        remediation: `Move vendored or generated trees out of the scan, or reduce nesting / raise \`limits.maxWalkDepth\`, so the whole governance surface fits under the caps.`,
       });
     }
 
