@@ -47,8 +47,13 @@ export async function scan(options = {}) {
   const pass1Checks = checks.filter(c => !c.pass || c.pass === 1);
   const pass2Checks = checks.filter(c => c.pass === 2);
 
+  // Resolve weights ONCE, up front — the runner stamps `result.weight` from
+  // this map so a check disabled in `.rigscorerc.json` (weight 0) renders as
+  // 0, not its full static weight. Both passes get it; scoring reuses it.
+  const weights = resolveWeights(config);
+
   // Pass 1: Run all regular checks
-  const results = await runChecks(pass1Checks, context, options);
+  const results = await runChecks(pass1Checks, context, { ...options, resolvedWeights: weights });
 
   // Pass 2: Run checks that consume prior results (coherence, network-exposure, etc.)
   if (pass2Checks.length > 0) {
@@ -57,7 +62,7 @@ export async function scan(options = {}) {
       : pass2Checks;
     if (pass2Filtered.length > 0) {
       const pass2Context = { ...context, priorResults: structuredClone(results) };
-      const pass2Results = await runChecks(pass2Filtered, pass2Context, {});
+      const pass2Results = await runChecks(pass2Filtered, pass2Context, { resolvedWeights: weights });
       results.push(...pass2Results);
     }
   }
@@ -78,7 +83,6 @@ export async function scan(options = {}) {
       : 0;
     overallScore = Math.round(avg);
   } else {
-    const weights = resolveWeights(config);
     overallScore = calculateOverallScore(results, weights);
   }
 
