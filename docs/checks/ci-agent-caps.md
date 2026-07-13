@@ -81,11 +81,45 @@ specifically for a turn/iteration cap flag and a tool-scoping/permission flag. N
   `--auto` collides head-on with `gh pr merge --auto`, and the bypass scan is workflow-wide by design. A
   false CRITICAL zeroes a check; a miss costs one warning. Both are pinned by test.
 
+**codex and gemini carry no turn-cap finding — settled by design, not a TODO.** Both sit at `null` in the
+turn-cap column of the CLI table, so no turn-cap finding is emitted for either. Their tool scoping
+(`--sandbox` + `--ask-for-approval` for codex, `--approval-mode`/`--allowed-tools` for gemini) and their
+`timeout-minutes` are still required and still graded. Verified **2026-07-13** against codex
+`rust-v0.144.3` and gemini `v0.50.0`:
+
+- **codex — no turn cap exists anywhere, and upstream explicitly declined to add one.** No `--max-turns`
+  flag, no `max_turns`/`max-turns`/`max_iterations` config key, nothing equivalent in the source. The flag
+  was requested and refused: [openai/codex#12336, "Add `--max-turns` CLI
+  option"](https://github.com/openai/codex/issues/12336) is CLOSED as **NOT_PLANNED** (2026-02-21). The
+  `max`/`limit` keys in the [config
+  reference](https://github.com/openai/codex/blob/main/docs/config.md) are all unrelated —
+  `agents.max_depth`, `agents.max_threads`, `agents.job_max_runtime_seconds`, `model_context_window`,
+  `history.max_bytes`, `tool_output_token_limit` are token budgets, concurrency limits and timeouts, not
+  turn caps. That is what makes this `null` durable: evidence of absence, not absence of evidence. It
+  stands until upstream ships a cap.
+- **gemini — a turn cap DOES exist and DOES matter, but it is out of this check's scan reach.**
+  `model.maxSessionTurns` is real, defaults to `-1` (**unlimited**), and is genuinely enforced on the
+  non-interactive CI path — [settings.md](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/settings.md)
+  ("Maximum number of user/model/tool turns to keep in a session. -1 means unlimited"), raised as "Maximum
+  session turns exceeded" in
+  [nonInteractiveCli.ts](https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/src/nonInteractiveCli.ts).
+  But it is sourced from settings **only** (`packages/cli/src/config/config.ts` reads
+  `settings.model?.maxSessionTurns`); there is no corresponding yargs CLI option, so a `run: gemini -p …`
+  line in a workflow can never carry it. The cap lives in `.gemini/settings.json` — a file this
+  workflow-only check never reads. There is no in-workflow token that could be matched, so a WARNING here
+  would point at a file where the operator physically cannot fix it.
+- **The condition that would justify a gemini turn-cap arm** (neither is implemented — this is the trigger
+  to revisit, not a plan): the check grows a repo-config surface and reads `.gemini/settings.json`, where a
+  CI `gemini -p` run with `maxSessionTurns` absent or `-1` becomes a real, fixable finding; **or** it
+  learns the [`google-github-actions/run-gemini-cli`](https://github.com/google-github-actions/run-gemini-cli)
+  action — today the `ACTION` regex matches Anthropic actions only.
+- **Gemini's `-y` is not treated as a bypass**, on the same reasoning that spares aider's `--yes` above: it
+  collides with `apt-get -y`/`npm -y` and the bypass scan is workflow-wide, so a false CRITICAL would fire
+  on ordinary setup steps. `--yolo` and `--approval-mode yolo` are matched instead. Pinned by test.
+
 ## Not covered (yet)
 
-- **No turn-cap finding for codex or gemini** — neither documents a turn/iteration cap CLI flag (gemini's
-  `maxSessionTurns` is a settings key, not a flag). Their tool scoping (`--sandbox` + `--ask-for-approval`,
-  `--approval-mode`/`--allowed-tools`) and `timeout-minutes` are still required.
-- **Gemini's `-y` is not treated as a bypass** — it collides with `apt-get`/`npm`, and a false CRITICAL is
-  worse than a miss. `--yolo` and `--approval-mode yolo` are matched.
+Genuine gaps — unbuilt, not decided against. (Everything above under "Scope and limitations" is a settled
+decision with its evidence attached; do not re-litigate those without new upstream facts.)
+
 - Reusable-workflow calls (`jobs.<id>.uses:`) are not followed.
