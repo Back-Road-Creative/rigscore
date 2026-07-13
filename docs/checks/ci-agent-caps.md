@@ -53,18 +53,36 @@ A repo whose CI runs no agent (most of them, including rigscore itself) reports 
 Scans `.github/workflows/*.yml|yaml` only — CI workflow agent jobs are this check's surface alone
 (`loop-governance` owns shell scripts and crontabs, so the two never double-deduct the same job).
 Surfaces detected: an `anthropics/claude-code-action` / `claude-code-base-action` step, and `run:` steps
-shelling out to `claude -p|--print`, `codex exec`, or `gemini -p|--prompt`. Every flag/input name comes
-from primary vendor docs — a name that could not be confirmed is omitted, never invented:
+shelling out to `claude -p|--print`, `codex exec`, `gemini -p|--prompt`, `aider -m|--msg|--message[-file]`,
+or `opencode run`. Every flag/input name comes from primary vendor docs — a name that could not be
+confirmed is omitted, never invented:
 
 - Action inputs `claude_args`, `max_turns`, `allowed_tools`, `disallowed_tools`, `settings`, and the v0→v1 move of `timeout_minutes` to job-level `timeout-minutes` — [configuration.md](https://github.com/anthropics/claude-code-action/blob/main/docs/configuration.md), [migration-guide.md](https://github.com/anthropics/claude-code-action/blob/main/docs/migration-guide.md)
 - Claude CLI `--max-turns`, `--allowedTools`/`--allowed-tools`, `--disallowedTools`/`--disallowed-tools`, `--tools`, `--permission-mode`, `--dangerously-skip-permissions` — [cli-reference](https://code.claude.com/docs/en/cli-reference)
 - Codex CLI `exec`, `--sandbox`/`-s`, `--ask-for-approval`/`-a`, `--dangerously-bypass-approvals-and-sandbox` (`--yolo`) — [codex reference](https://developers.openai.com/codex/cli/reference)
 - Gemini CLI `--prompt`/`-p`, `--approval-mode`, `--allowed-tools`, `--yolo` — [gemini reference](https://geminicli.com/docs/cli/cli-reference/)
+- Aider CLI `--message`/`--msg`/`-m`, `--message-file` — [options](https://aider.chat/docs/config/options.html), [scripting](https://aider.chat/docs/scripting.html)
+- OpenCode CLI `run` — [cli reference](https://opencode.ai/docs/cli/), [permissions](https://opencode.ai/docs/permissions/)
+
+**aider and opencode are graded on `timeout-minutes` alone** (detected, but no turn-cap and no
+tool-scoping finding). Re-checked against the four vendor pages linked above on **2026-07-12**, looking
+specifically for a turn/iteration cap flag and a tool-scoping/permission flag. Neither exists:
+
+- **No turn cap.** Aider's options page documents no `--max-turns`/iteration flag of any kind; opencode's
+  `run` flags are session/model/output only. Emitting a turn-cap WARNING would demand a flag the operator
+  cannot pass.
+- **No tool-scoping flag.** Aider has no tool allow-list (`--auto-lint`/`--auto-test`/`--auto-commits`
+  toggle aider's own behavior, they do not scope a toolset). OpenCode scopes tools through the
+  `permission` key in `opencode.json` — a config file, not a CLI flag, and out of this check's
+  workflow-only scan. A WARNING here would be unfixable inside the workflow it points at.
+- **Their auto-approve flags are NOT treated as bypasses**, on the same reasoning that spares gemini's
+  `-y`. Aider's `--yes` ("always say yes to every confirmation") is the form aider's *own* scripting page
+  prescribes for non-interactive runs — a CRITICAL would fire on every by-the-book aider CI job. OpenCode's
+  `--auto` collides head-on with `gh pr merge --auto`, and the bypass scan is workflow-wide by design. A
+  false CRITICAL zeroes a check; a miss costs one warning. Both are pinned by test.
 
 ## Not covered (yet)
 
-- **`aider` and `opencode run` are not detected at all.** Neither documents a turn cap or a tool-scoping
-  flag, so the check could grade them on `timeout-minutes` only. Adding them is an ordinary follow-up PR.
 - **No turn-cap finding for codex or gemini** — neither documents a turn/iteration cap CLI flag (gemini's
   `maxSessionTurns` is a settings key, not a flag). Their tool scoping (`--sandbox` + `--ask-for-approval`,
   `--approval-mode`/`--allowed-tools`) and `timeout-minutes` are still required.

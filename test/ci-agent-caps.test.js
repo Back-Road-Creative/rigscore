@@ -35,6 +35,17 @@ describe('ci-agent-caps', () => {
     expect(bypass.severity).toBe('critical');
     expect(r.score).toBe(0);
   });
+  // Neither vendor documents a turn cap or a tool-scoping flag (docs page cites the pages checked),
+  // so both are graded on timeout-minutes alone — inventing the other two findings would be unfixable
+  // noise. aider's `--yes` is its own docs' prescribed scripted form and gh's `--auto` collides with
+  // `gh pr merge --auto`: neither is a bypass, exactly as gemini's `-y` is not.
+  it('grades aider and opencode run on timeout-minutes alone, with no invented findings', async () => {
+    const r = await run(fixture('ci-agent-aider-opencode'));
+    expect(r.data.agentJobs).toBe(2);
+    expect(ids(r)).toEqual(['ci-agent-caps/agent-job-missing-timeout']);
+    expect(r.findings[0].title).toContain('job "aider"');
+    expect(r.score).toBe(85); // one WARNING: the capped opencode job contributes nothing
+  });
   it('returns N/A with no agent job, and with no workflows at all', async () => {
     const noAgent = await run(fixture('ci-no-agent'));
     expect(noAgent).toEqual({ score: NOT_APPLICABLE_SCORE, findings: [], data: { agentJobs: 0 } });
