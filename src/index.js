@@ -18,8 +18,8 @@ import { ConfigParseError } from './utils.js';
  * --sarif, --cyclonedx, --badge, --ci (implies --sarif/--no-color/--no-cta), --check
  * <id>, --recursive/-r, --depth <N> (implies --recursive), --deep,
  * --online, --refresh-mcp-registry (implies --online), --fail-under <N>
- * (clamped 0-100), --profile <name>, --fix, --yes/-y, --init-hook,
- * --watch, --ignore <comma-list>, --baseline <path>.
+ * (clamped 0-100), --profile <name>, --fix, --yes/-y, --install-packs,
+ * --init-hook, --watch, --ignore <comma-list>, --baseline <path>.
  *
  * A bare positional argument is treated as the target directory; only
  * the last positional wins. Unknown flags are ignored (subcommands like
@@ -37,6 +37,7 @@ export function parseArgs(args) {
     cyclonedx: false,
     fix: false,
     yes: false,
+    installPacks: false,
     noColor: false,
     noCta: true,
     verbose: false,
@@ -112,6 +113,7 @@ const FLAG_DEFS = (() => {
     '--online':               { handler: setTrue('online') },
     '--include-home-skills':  { handler: setTrue('includeHomeSkills') },
     '--fix':                  { handler: setTrue('fix') },
+    '--install-packs':        { handler: setTrue('installPacks') },
     '--init-hook':            { handler: setTrue('initHook') },
     '--watch':                { handler: setTrue('watch') },
     '--verify-state':         { handler: setTrue('verifyState') },
@@ -143,6 +145,18 @@ const FLAG_DEFS = (() => {
     } },
   };
 })();
+
+/**
+ * List the packs that would remediate a red check, one line each. Pure output —
+ * the caller decides whether an install follows (it only does under
+ * `--yes --install-packs`).
+ */
+function writePackOffer(packs) {
+  for (const pack of packs) {
+    process.stderr.write(`  - ${pack.name} — ${pack.description}\n`);
+    process.stderr.write(`      targets: ${pack.targets.join(', ')}\n`);
+  }
+}
 
 /**
  * Top-level CLI entrypoint. Parses args, validates the target directory,
@@ -354,8 +368,11 @@ export async function run(args) {
     }
 
     // --fix mode: find and apply safe auto-remediations. Two distinct sources \u2014
-    // a file-level auto-fix edits one file in place; a pack install drops in a
-    // whole starter baseline (new files only, never clobbering an existing one).
+    // and two distinct consents. A file-level auto-fix repairs a red check in a
+    // file that already exists; a pack install SCAFFOLDS a whole starter baseline
+    // of governance files the repo never had. `--yes` means "don't prompt me", so
+    // it only ever unlocks the first. Scaffolding is opt-in via --install-packs;
+    // without it the packs are still *offered* (naming the flag), never written.
     if (options.fix) {
       const fixes = findApplicableFixes(result.results);
       const packs = findApplicablePacks(result.results);
@@ -371,12 +388,12 @@ export async function run(args) {
         }
         if (packs.length > 0) {
           process.stderr.write('\nInstallable packs (dry run):\n');
-          for (const pack of packs) {
-            process.stderr.write(`  - ${pack.name} \u2014 ${pack.description}\n`);
-            process.stderr.write(`      targets: ${pack.targets.join(', ')}\n`);
-          }
+          writePackOffer(packs);
         }
-        process.stderr.write('\nRun with --fix --yes to apply.\n');
+        process.stderr.write('\nRun with --fix --yes to apply the auto-fixes.\n');
+        if (packs.length > 0) {
+          process.stderr.write('Add --install-packs to also install the packs above.\n');
+        }
       } else {
         // Apply fixes
         const { applied, skipped } = await applyFixes(fixes, cwd, os.homedir());
@@ -392,8 +409,13 @@ export async function run(args) {
             process.stderr.write(`  - ${s}\n`);
           }
         }
-        // Install packs \u2014 existing files are reported `skipped (exists)`, never rewritten.
-        if (packs.length > 0) {
+        if (packs.length > 0 && !options.installPacks) {
+          // Offer, don't scaffold: --yes consented to fixing what is broken, not
+          // to new governance files landing in the repo unasked.
+          process.stderr.write('\nInstallable packs (NOT installed \u2014 pass --install-packs):\n');
+          writePackOffer(packs);
+        } else if (packs.length > 0) {
+          // Install packs \u2014 existing files are reported `skipped (exists)`, never rewritten.
           const { installed, skipped: packErrors } = installPacks(packs, cwd);
           if (installed.length > 0) {
             process.stderr.write('\nInstalled packs:\n');
