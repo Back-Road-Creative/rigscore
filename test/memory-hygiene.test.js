@@ -266,3 +266,114 @@ describe('memory-hygiene: single home per rule', () => {
     }
   });
 });
+
+describe('memory-hygiene: unresolvable index entries', () => {
+  // Writes MEMORY.md into `.claude/memory/`, plus any extra files given as
+  // { relative/path.md: content } against the project root.
+  function tmpIndexed(index, extra = {}) {
+    const dir = tmpMemoryDir();
+    fs.writeFileSync(path.join(dir, '.claude/memory/MEMORY.md'), index);
+    for (const [rel, body] of Object.entries(extra)) {
+      const full = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, body);
+    }
+    return dir;
+  }
+
+  const NOTE = '# Deploy\n\nStaging rolls out before production; roll back with the previous tag.\n';
+  const bad = (r) => r.findings.filter((f) => f.findingId === 'memory-hygiene/unresolvable-index-entry');
+
+  it('flags an index entry whose target escapes the memory directory', async () => {
+    const dir = tmpIndexed('# Index\n- [Deploy](../../notes/deploy.md) — rollout order.\n', {
+      'notes/deploy.md': NOTE,
+    });
+    try {
+      const found = bad(await run(dir));
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe('info'); // the file exists, it is just never bundled
+      expect(found[0].evidence).toContain('../../notes/deploy.md');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('flags an absolute-path index entry as outside the memory directory', async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-out-'));
+    const abs = path.join(outside, 'deploy.md');
+    fs.writeFileSync(abs, NOTE);
+    const dir = tmpIndexed(`# Index\n- [Deploy](${abs})\n`);
+    try {
+      expect(bad(await run(dir))).toHaveLength(1);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('flags a dead index entry — the memory it names does not exist', async () => {
+    const dir = tmpIndexed('# Index\n- [Rollback](rollback.md) — the incident.\n');
+    try {
+      const found = bad(await run(dir));
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe('warning'); // nothing to load at all
+      expect(found[0].detail).toContain('rollback.md');
+      expect(found[0].title).not.toContain('outside');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays silent on a live in-dir link, an anchored link, and an external URL', async () => {
+    const dir = tmpIndexed(
+      [
+        '# Index',
+        '- [Deploy](deploy.md) — rollout order.',
+        '- [Section](deploy.md#rollback) — anchored into the same file.',
+        '- [Upstream docs](https://example.com/memory.md) — an external reference.',
+        '- [Runbook](../../ops/run.sh) — not a markdown topic file.',
+        '',
+        '```markdown',
+        '- [Template](TEMPLATE.md) — an example inside a fence, not an entry.',
+        '```',
+        '',
+      ].join('\n'),
+      { '.claude/memory/deploy.md': NOTE },
+    );
+    try {
+      expect(bad(await run(dir))).toHaveLength(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays silent on a [[wikilink]] forward-reference to a memory not yet written', async () => {
+    // Agent-memory prose legitimately forward-references a memory that has no file
+    // yet ([[feedback_x]] in CLAUDE.md/MEMORY.md). Calling that a dead entry is a
+    // false positive on a convention the ecosystem allows, so wikilinks are not
+    // index entries at all — only markdown links are.
+    const dir = tmpIndexed('# Index\n- [Deploy](deploy.md)\n- See also [[not_written_yet]].\n', {
+      '.claude/memory/deploy.md': NOTE,
+    });
+    try {
+      expect(bad(await run(dir))).toHaveLength(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a root MEMORY.md that indexes files beside it or in the memory dir', async () => {
+    const dir = tmpMemoryDir();
+    fs.writeFileSync(path.join(dir, '.claude/memory/deploy.md'), NOTE);
+    fs.writeFileSync(path.join(dir, 'rollback.md'), NOTE);
+    fs.writeFileSync(
+      path.join(dir, 'MEMORY.md'),
+      '# Index\n- [Deploy](.claude/memory/deploy.md)\n- [Rollback](rollback.md)\n',
+    );
+    try {
+      expect(bad(await run(dir))).toHaveLength(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
