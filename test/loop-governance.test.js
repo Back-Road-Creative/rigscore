@@ -92,6 +92,56 @@ describe('loop-governance check', () => {
     });
   });
 
+  // One level of call resolution: the loop is in the shell, the agent is not.
+  describe('indirection', () => {
+    it('resolves a Makefile target that shells out to an agent', async () => {
+      const result = await run('loop-indirect-make');
+      const finding = byId(result, 'loop-governance/uncapped-loop');
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe('warning');
+      // The loop lives in the shell script — that is where the fix goes.
+      expect(finding.context.file).toMatch(/run-loop\.sh$/);
+      // The Makefile is now a scanned script, so its flag is seen too.
+      expect(ids(result)).toContain('loop-governance/skip-permissions');
+      expect(result.score).toBeLessThan(100);
+    });
+
+    it('resolves an npm script named on a cron line', async () => {
+      const result = await run('loop-indirect-npm');
+      const finding = byId(result, 'loop-governance/uncapped-cron');
+      expect(finding).toBeDefined();
+      expect(finding.context.file).toBe('crontab');
+      expect(result.data.cronJobs).toBe(1);
+    });
+
+    it('resolves a python subprocess wrapper driven by a shell loop', async () => {
+      const result = await run('loop-indirect-python');
+      expect(ids(result)).toContain('loop-governance/uncapped-loop');
+      expect(byId(result, 'loop-governance/uncapped-loop').context.file).toMatch(/drive\.sh$/);
+    });
+
+    it('stays silent when the loop around the indirect agent is bounded', async () => {
+      const result = await run('loop-indirect-capped');
+      expect(result.findings.every((f) => f.severity === 'pass')).toBe(true);
+      expect(result.score).toBe(100);
+      expect(result.data.agentLoops).toBe(1);
+    });
+  });
+
+  // A timer is cron in a different file format: the schedule is one unit, the
+  // agent another. Reaching it means pairing the .timer to its .service.
+  it('flags a systemd timer whose service runs an unbounded agent, and clears the bounded one', async () => {
+    const result = await run('loop-systemd');
+    const hits = result.findings.filter((f) => f.findingId === 'loop-governance/uncapped-timer');
+    // Both timers drive an agent; only agent.timer's service is unbounded.
+    // review.service carries RuntimeMaxSec=900 — a systemd-native bound.
+    expect(hits).toHaveLength(1);
+    expect(hits[0].severity).toBe('warning');
+    expect(hits[0].context.file).toBe('agent.timer');
+    expect(hits[0].evidence).toContain('claude -p');
+    expect(result.data.timerJobs).toBe(2);
+  });
+
   describe('cron', () => {
     it('flags an agent on a cron line with nothing bounding the tick', async () => {
       const result = await run('cron-agent-uncapped');

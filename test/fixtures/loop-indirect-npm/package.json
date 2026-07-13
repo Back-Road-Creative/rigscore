@@ -1,0 +1,6 @@
+{
+  "name": "indirect-npm",
+  "scripts": {
+    "agent:fix": "claude -p \"fix the build\""
+  }
+}

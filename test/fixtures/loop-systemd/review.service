@@ -1,0 +1,3 @@
+[Service]
+RuntimeMaxSec=900
+ExecStart=/usr/bin/claude -p "review the open PRs"
