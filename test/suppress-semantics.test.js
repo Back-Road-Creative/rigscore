@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { suppressFindings } from '../src/scanner.js';
+import { suppressFindings, deduplicateFindings } from '../src/scanner.js';
+import { calculateOverallScore } from '../src/scoring.js';
+import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 
 /**
  * Suppress pattern semantics (Moat & Ship).
@@ -147,5 +149,96 @@ describe('suppress semantics', () => {
     suppressFindings(results, ['skill-files/a']);
     // One warning remaining → calculateCheckScore = 100 - 15 = 85
     expect(results[0].score).toBe(85);
+  });
+});
+
+/**
+ * Suppression MUST NOT promote a NOT-APPLICABLE check into coverage.
+ *
+ * Several weight-bearing checks report N/A (score === -1) *and* attach a
+ * cosmetic "nothing here" INFO finding (e.g. mcp-config/no-config-found).
+ * Muting that INFO — an ordinary, documented use of `--ignore` / the
+ * `suppress:` rc key — must not recalculate the check to 100 and hand the
+ * project weight it never earned. N/A is a property of the project, not of
+ * the finding list.
+ */
+describe('suppression must not promote an N/A check into coverage', () => {
+  // Two weight-bearing checks: one genuinely applicable, one N/A-with-INFO.
+  function makeNaResults() {
+    return [
+      {
+        id: 'claude-md',
+        score: 60,
+        findings: [
+          { severity: 'warning', title: 'Missing section', findingId: 'claude-md/missing-section' },
+        ],
+      },
+      {
+        id: 'mcp-config',
+        score: NOT_APPLICABLE_SCORE,
+        findings: [
+          { severity: 'info', title: 'No MCP configuration found', findingId: 'mcp-config/no-config-found' },
+        ],
+      },
+    ];
+  }
+
+  it('leaves an N/A check at NOT_APPLICABLE after its sole INFO is suppressed', () => {
+    const results = makeNaResults();
+    suppressFindings(results, ['mcp-config/no-config-found']);
+
+    expect(results[1].findings).toEqual([]);
+    expect(results[1].score).toBe(NOT_APPLICABLE_SCORE);
+  });
+
+  it('leaves the overall score unchanged when an N/A check\'s INFO is suppressed', () => {
+    const before = calculateOverallScore(makeNaResults());
+
+    const results = makeNaResults();
+    suppressFindings(results, ['mcp-config/no-config-found']);
+    const after = calculateOverallScore(results);
+
+    // The N/A check's weight must stay out of coverage — muting a cosmetic
+    // INFO cannot move the score, and so cannot flip a --fail-under gate.
+    expect(after).toBe(before);
+  });
+
+  it('still recalculates an applicable check whose findings are wholly suppressed', () => {
+    // Positive control: legitimate suppression must keep working. An
+    // applicable check that is fully muted still rises to 100.
+    const results = makeNaResults();
+    suppressFindings(results, ['claude-md/missing-section']);
+
+    expect(results[0].findings).toEqual([]);
+    expect(results[0].score).toBe(100);
+  });
+
+  it('deduplicateFindings does not promote an N/A check either', () => {
+    // Defensive sibling guard: the same unguarded recalc lives in dedup.
+    // No live check currently emits an N/A result carrying a dedupable
+    // (warning/critical) finding, so this pins the invariant rather than
+    // fixing an observed failure.
+    const results = [
+      {
+        id: 'claude-md',
+        score: 85,
+        findings: [
+          { severity: 'warning', title: 'Duplicate concern', findingId: 'claude-md/duplicate-concern' },
+        ],
+      },
+      {
+        id: 'git-hooks',
+        score: NOT_APPLICABLE_SCORE,
+        findings: [
+          { severity: 'warning', title: 'Duplicate concern', findingId: 'git-hooks/duplicate-concern' },
+        ],
+      },
+    ];
+    deduplicateFindings(results);
+
+    // Lower-weighted git-hooks loses the duplicate and empties out...
+    expect(results[1].findings).toEqual([]);
+    // ...but stays N/A rather than being recalculated to 100.
+    expect(results[1].score).toBe(NOT_APPLICABLE_SCORE);
   });
 });

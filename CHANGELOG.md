@@ -106,6 +106,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ids are unchanged (SARIF ruleId stability); `truncated` keeps meaning "hit
   maxFiles" so the file-cap detail never misreports the cause.
 
+- **Suppressing a finding can no longer promote a NOT-APPLICABLE check into
+  scoring coverage.** Muting a check's cosmetic "nothing here" INFO (e.g.
+  `mcp-config/no-config-found`) recalculated that check's score from an empty
+  finding list, and `calculateCheckScore([])` is `100` — so the check flipped
+  `-1` (N/A) to `100` and handed its full weight to the applicable-coverage set.
+  A repo could mute one INFO and watch its score climb; muting the cosmetic INFO
+  on all seven such checks moved a test repo from 16 to 68, turning a failing
+  `--fail-under` gate green. N/A is a property of the project, not of the finding
+  list, so an N/A check now stays N/A no matter what is removed from it.
+  Suppressing findings on an *applicable* check still rescores exactly as before.
+
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
   `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
