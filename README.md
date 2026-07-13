@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 13 scored checks plus 7 advisory checks. A hygiene score out of 100. Know where you stand before something breaks.
+One command. 27 checks — 13 scored plus 14 advisory. A hygiene score out of 100. Know where you stand before something breaks.
 
 > **Scope.** rigscore measures **configuration hygiene**, not runtime security. It inspects the files on disk — governance docs, MCP configs, Docker settings, skill files, permissions — and scores what those files *say*. It does not observe the running agent, intercept tool calls, or hash live MCP tool descriptions. It complements [Snyk Agent Scan](https://github.com/snyk/agent-scan) and [Semgrep](https://semgrep.dev); it does not replace them. See [known limits](#known-limits) for what rigscore does not catch.
 
@@ -63,7 +63,7 @@ Most AI-agent security scanning today is either finding-stream static analysis (
 
 It's the thing you run before you care about tool pinning, before you stand up a SARIF pipeline, before you adopt an enterprise scanner. If your CLAUDE.md says "never access `/etc`" and your MCP config mounts `/`, rigscore tells you.
 
-**What rigscore checks:** MCP scope and supply chain, cross-config coherence, skill-file injection vectors, governance quality, Claude settings bypass combos, secret exposure in config files, container and devcontainer isolation, Unicode steganography, git hooks, file permissions, credential storage, and (advisory) instruction effectiveness, skill↔governance coherence, workflow maturity, Windows/WSL boundary, site security, and network exposure.
+**What rigscore checks:** MCP scope and supply chain, cross-config coherence, skill-file injection vectors, governance quality, Claude settings bypass combos, secret exposure in config files, container and devcontainer isolation, Unicode steganography, git hooks, file permissions, credential storage, and (advisory) instruction effectiveness, skill↔governance coherence, workflow maturity, Windows/WSL boundary, site security, network exposure, agent output schemas, documentation coverage, loop governance, spec goals, CI agent caps, agent memory hygiene, AI-use disclosure, and sandbox posture.
 
 Run it. See the score. Fix what's broken.
 
@@ -95,9 +95,22 @@ rigscore isn't the only AI-agent config scanner. The April-2026 landscape has re
 
 Every check in rigscore's output carries an enforcement-grade label so you can see *how* each point was earned, not just how many. The label is display-only — it does not affect scoring.
 
-- **`[mechanical]`** — deterministic config inspection. Parses JSON/YAML/file state and compares to known-bad constants, file modes, or structural invariants. Cannot be gamed by wording. 12 of 20 checks.
-- **`[pattern]`** — regex or structural scan against file content. Secret signatures, Unicode codepoint classes, markdown structural patterns. Resistant to simple wording tricks but evadable by novel obfuscation. 4 of 20 checks.
-- **`[keyword]`** — presence of words or phrases in governance prose. These checks pass if the right words appear, which means a CLAUDE.md can keyword-stuff its way to green while substantively reversing intent. 4 of 20 checks — see [`THREAT-MODEL.md`](THREAT-MODEL.md) for the gameability gap and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for concrete bypasses.
+- **`[mechanical]`** — deterministic config inspection. Parses JSON/YAML/file state and compares to known-bad constants, file modes, or structural invariants. Cannot be gamed by wording. 15 of 27 checks.
+- **`[pattern]`** — regex or structural scan against file content. Secret signatures, Unicode codepoint classes, markdown structural patterns. Resistant to simple wording tricks but evadable by novel obfuscation. 6 of 27 checks.
+- **`[keyword]`** — presence of words or phrases in governance prose. These checks pass if the right words appear, which means a CLAUDE.md can keyword-stuff its way to green while substantively reversing intent. 6 of 27 checks — see [`THREAT-MODEL.md`](THREAT-MODEL.md) for the gameability gap and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for concrete bypasses.
+
+Reproduce the grade breakdown (grades are static per check, so this is config-independent):
+
+```bash
+node bin/rigscore.js --json . | jq -r '.results|group_by(.enforcementGrade)[]|"\(.[0].enforcementGrade): \(length)"'
+```
+
+The 13-scored / 14-advisory split comes from the default weights in `src/constants.js`. Scan a directory with no `.rigscorerc.json` to see it un-skewed — rigscore's own rc file disables four checks, which zeroes their weight in a self-scan:
+
+```bash
+node bin/rigscore.js --json "$(mktemp -d)" \
+  | jq '{total:(.results|length), scored:([.results[]|select(.weight>0)]|length), advisory:([.results[]|select(.weight==0)]|length)}'
+```
 
 ## Install and run
 
@@ -437,6 +450,62 @@ Enforces the docs-first gate: every module in `src/checks/` must have a matching
 - Doc H1 titles that do not match the check id
 - Orphan doc pages with no corresponding check module
 
+### 22. Loop governance (advisory, 0 points) {#loop-governance}
+
+Scores how safely a repo runs **agent loops** — anywhere the project drives an agent CLI repeatedly with no human in the loop. An agent loop must be **bounded** (iteration cap, turn budget, or timeout) and must be able to **stop**. Most repos have no agent-loop surface and return N/A. First check of the **Practice** pillar. See [`docs/checks/loop-governance.md`](docs/checks/loop-governance.md).
+
+**What rigscore looks for:**
+- Agent invoked inside a loop with no bound — no iteration counter, no `--max-turns`, no `timeout`
+- Loops with no terminal state to test for — stoppable only by killing them
+- Agents on a cron line with nothing bounding one unattended tick
+- `--dangerously-skip-permissions` in any scanned script
+
+**Scope note:** agent jobs in `.github/workflows/**` belong to `ci-agent-caps` and are deliberately ignored here, so one uncapped CI job is not double-counted.
+
+### 23. Spec goals (advisory, 0 points) {#spec-goals}
+
+Scores whether a repo drives its agents from written goals and specs. Maps to ASI01 — an agent with no stated goal has nothing to be hijacked *away from*. Recognises four layouts (GitHub Spec Kit, AGENTS.md, Kiro, OpenSpec), each gated on its marker dir rather than a bare `specs/` dir. See [`docs/checks/spec-goals.md`](docs/checks/spec-goals.md).
+
+**What rigscore looks for:**
+- A governing goal file that is still an unfilled boilerplate template
+- Specs that were never decomposed into executable tasks
+- Goal-file staleness: a 90-day gap against the newest spec, by local git committer date (offline, read-only)
+
+### 24. CI agent caps (advisory, 0 points) {#ci-agent-caps}
+
+An agent running unattended in CI — repo write credentials, no human at the keyboard — is the highest-blast-radius agent surface most teams have. Every CI job invoking an agent should declare a turn cap, a job timeout, and tool scoping. See [`docs/checks/ci-agent-caps.md`](docs/checks/ci-agent-caps.md).
+
+**What rigscore looks for:**
+- Bypass flags in a workflow (`--dangerously-skip-permissions`, `--yolo`, `--sandbox danger-full-access`, etc.) — CRITICAL
+- Agent jobs with no `timeout-minutes` (silently inheriting GitHub's 360-minute default)
+- Agent invocations with no turn cap (`--max-turns`) or with unrestricted tools
+
+### 25. Agent memory hygiene (advisory, 0 points) {#memory-hygiene}
+
+Agent memory is re-injected every turn, so bloat is billed per request and junk competes with governance for the model's attention. No incumbent convention exists for memory layout — this check defines one. Budget default is configurable via `.rigscorerc.json` (`memoryHygiene.budgetBytes`). See [`docs/checks/memory-hygiene.md`](docs/checks/memory-hygiene.md).
+
+**What rigscore looks for:**
+- The auto-loaded memory bundle exceeding a byte budget (default 40,000)
+- Memory files that are empty, or a bare stub with frontmatter and no body
+- Single home per rule: the same rule line written verbatim into both a governance file and a memory file, so editing one copy silently fails to take effect
+
+### 26. AI-use disclosure (advisory, 0 points) {#ai-disclosure}
+
+Projects that accept AI-assisted contributions are increasingly expected to say so. Applicable **only when the repo shows an AI surface** (a governance file, a `.claude/` dir, an MCP config, or an agent CI job); a repo with no AI surface owes no disclosure and returns N/A. Advisory because the conventions are still forming. See [`docs/checks/ai-disclosure.md`](docs/checks/ai-disclosure.md).
+
+**What rigscore looks for:**
+- An AI surface with no AI-use policy anywhere (`AI_POLICY.md`, or a generative-AI section in `CONTRIBUTING.md`)
+- A PR template that carries no generative-AI declaration
+- No PR template in any location GitHub reads (INFO — the weakest of the three signals)
+
+### 27. Sandbox posture (advisory, 0 points) {#sandbox-posture}
+
+Every agent CLI expresses "how much can this agent do without asking me" differently. This check reduces an agent's sandbox config to a single posture — `restricted` / `partial` / `unrestricted` — and flags the dangerous combinations, principally an agent that is both free of approval prompts and able to reach the network. The client registry (`src/clients.js`) is the surface list, so a new client is picked up with no change to this check's logic. See [`docs/checks/sandbox-posture.md`](docs/checks/sandbox-posture.md).
+
+**What rigscore looks for:**
+- Codex CLI (`.codex/config.toml`): `approval_policy`, `sandbox_mode`, `[sandbox_workspace_write] network_access`
+- Claude Code (`.claude/settings.json` + `settings.local.json`): whether any `permissions.deny` rules exist at all, plus `defaultMode`. Which *allow* entries are dangerous is `claude-settings`' job; this check never re-grades them.
+
 ## Scoring
 
 | Score | Grade | Meaning |
@@ -559,13 +628,13 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 - **Config-shape pinning only (not runtime tool descriptions).** rigscore hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). It does **not** hash the tool descriptions that a running MCP server advertises; doing so would require actually invoking servers (out of scope for offline mode). Snyk Agent Scan's Tool Pinning covers runtime description drift; rigscore covers the config-file rug-pull. See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use gitleaks or trufflehog.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
-- **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 21 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 39/100 in CI for this reason — only 9 of its own 21 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
+- **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 27 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 39/100 in CI for this reason — only 11 of its own 27 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
 
 ## Dogfooding
 
 rigscore runs on rigscore in CI. Transparency about what that score means:
 
-- **Self-score: 39/100 (Grade F).** This is the real score, not a vanity baseline. rigscore is an npm package, so only **9 of its 21 checks are applicable (weight 48/100)** — the rest legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. Reproduce the CI number locally with a neutralised `$HOME` (what a runner sees):
+- **Self-score: 39/100 (Grade F).** This is the real score, not a vanity baseline. rigscore is an npm package, so only **11 of its 27 checks are applicable (weight 48/100)** — the rest legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. Reproduce the CI number locally with a neutralised `$HOME` (what a runner sees):
 
   ```bash
   HOME=$(mktemp -d) node bin/rigscore.js --no-cta --profile default .
