@@ -33,9 +33,27 @@ function shouldIncludeByName(filename) {
   return false;
 }
 
-// Per-file size cap (A5) — skip reading pathological huge files to keep
-// deep-scan bounded. Override via config.limits.maxFileBytes.
+// Per-file size cap (A5) — files ABOVE this are read via bounded-memory chunk
+// streaming (scanFileStreaming) instead of a single `readFile`, so a secret in
+// a large file is still detected. Override via config.limits.maxFileBytes.
 const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
+
+// Streaming scan for over-cap files: read the file in fixed-size windows and
+// carry an OVERLAP tail between them so a secret straddling a window boundary
+// is still fully present in one window. Memory is bounded by CHUNK + OVERLAP
+// REGARDLESS of line structure — a minified single-line bundle (which a
+// readline-based scan would buffer whole, i.e. memory == file size) no longer
+// scales memory with file size.
+const STREAM_CHUNK_BYTES = 256 * 1024;
+// OVERLAP must exceed the longest single credential a KEY_PATTERN (src/constants.js)
+// can match, so a match straddling a chunk boundary reappears intact at the head
+// of the next window. The longest FIXED-shape patterns there are the AGE key
+// (`AGE-SECRET-KEY-1` + 58 = 74 chars) and DigitalOcean (`dop_v1_` + 64 = 71);
+// the only unbounded shapes are URL/JWT credentials (`mongodb+srv://…`, `op://…`,
+// Supabase JWT), which in practice are well under 4 KB. 4 KB clears every
+// realistic single token by orders of magnitude while keeping each window
+// (256 KB + 4 KB) firmly bounded.
+const STREAM_OVERLAP_BYTES = 4 * 1024;
 
 // Stable provider labels keyed by a leading-literal substring of each
 // KEY_PATTERN regex source. Echoing raw regex source into a finding body
@@ -71,6 +89,116 @@ export function labelForPattern(pattern) {
     if (src.includes(needle)) return label;
   }
   return 'credential';
+}
+
+// Bounded-memory scan of a file whose size exceeds the per-file cap. Reuses the
+// exact per-line matching (scanLineForSecrets / labelForPattern), only chunked.
+// Returns the single best finding (critical > info) or null; GCP dual-field
+// detection is folded in and keeps its precedence, matching the small-file path.
+async function scanFileStreaming(filePath, relPath) {
+  const isJson = filePath.endsWith('.json');
+  let sawType = false;
+  let sawServiceAccount = false;
+  let sawPrivateKey = false;
+  let criticalFinding = null;
+  let bestInfo = null;
+
+  let carry = '';
+  let baseOffset = 0; // absolute char offset where `carry` begins
+  let baseLines = 0; // newline count strictly before baseOffset
+  // Dedupe: the overlap region is deliberately re-read to complete a
+  // boundary-straddling match, so a line whose start offset is at or below this
+  // high-water mark was already scanned in a prior window and is skipped.
+  let scannedUpTo = 0;
+
+  const stream = fs.createReadStream(filePath, {
+    encoding: 'utf-8',
+    highWaterMark: STREAM_CHUNK_BYTES,
+  });
+
+  try {
+    for await (const chunk of stream) {
+      const buf = carry + chunk;
+
+      if (isJson) {
+        if (!sawType && buf.includes('"type"')) sawType = true;
+        if (!sawServiceAccount && buf.includes('service_account')) sawServiceAccount = true;
+        if (!sawPrivateKey && buf.includes('"private_key"')) sawPrivateKey = true;
+      }
+
+      // Split on newlines. A minified single-line file yields ONE part the size
+      // of the window (<= CHUNK + OVERLAP) — still bounded, never the file.
+      const parts = buf.split('\n');
+      let pos = 0;
+      for (let k = 0; k < parts.length; k++) {
+        const line = parts[k];
+        const lineOffset = baseOffset + pos;
+        pos += line.length + 1; // + the '\n' that split consumed
+        if (lineOffset < scannedUpTo) continue; // already scanned in a prior window
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const result = scanLineForSecrets(line, trimmed);
+        if (!result.matched) continue;
+
+        const lineNo = baseLines + k + 1;
+        const providerLabel = labelForPattern(result.pattern);
+        if (result.severity === 'critical') {
+          if (!criticalFinding) {
+            criticalFinding = {
+              findingId: 'deep-secrets/hardcoded-secret',
+              severity: 'critical',
+              title: `Hardcoded secret in ${relPath}:${lineNo}`,
+              detail: `Detected provider: ${providerLabel}`,
+              remediation: 'Move secrets to environment variables or a secrets manager.',
+            };
+          }
+          break; // stop scanning this window; keep the first critical
+        }
+        if (!bestInfo) {
+          bestInfo = {
+            findingId: 'deep-secrets/possible-secret-comment',
+            severity: 'info',
+            title: `Possible secret (comment/example) in ${relPath}:${lineNo}`,
+            detail: `Detected provider: ${providerLabel}`,
+            remediation: 'Move secrets to environment variables or a secrets manager.',
+          };
+        }
+      }
+
+      if (isJson && sawType && sawServiceAccount && sawPrivateKey) {
+        stream.destroy();
+        return {
+          findingId: 'deep-secrets/gcp-service-account-key',
+          severity: 'critical',
+          title: `GCP service account key in ${relPath}`,
+          detail: 'File contains both "type": "service_account" and "private_key".',
+          remediation: 'Remove the service account key file. Use workload identity or environment-based auth.',
+        };
+      }
+      // Non-JSON early-exits on the first critical; JSON reads on for GCP.
+      if (criticalFinding && !isJson) {
+        stream.destroy();
+        break;
+      }
+
+      // Advance: keep only the OVERLAP tail; everything before it is fully read.
+      const keep = Math.min(STREAM_OVERLAP_BYTES, buf.length);
+      const consumedLen = buf.length - keep;
+      // Everything up to the last complete line in the consumed prefix is done;
+      // the trailing partial line is re-scanned next window (via the overlap).
+      scannedUpTo = baseOffset + pos - (parts[parts.length - 1].length + 1);
+      for (let i = 0; i < consumedLen; i++) {
+        if (buf.charCodeAt(i) === 10) baseLines++;
+      }
+      baseOffset += consumedLen;
+      carry = buf.slice(consumedLen);
+    }
+  } catch {
+    return criticalFinding || bestInfo;
+  }
+
+  return criticalFinding || bestInfo;
 }
 
 export default {
@@ -144,7 +272,8 @@ export default {
     let oversizeCount = 0;
 
     for (const filePath of files) {
-      // A5: skip pathologically large files up front.
+      // A5: files over the per-file cap are read via bounded-memory streaming
+      // (see scanFileStreaming) instead of being skipped unread.
       let stat;
       try {
         stat = await fs.promises.stat(filePath);
@@ -153,6 +282,11 @@ export default {
       }
       if (stat.size > maxFileBytes) {
         oversizeCount++;
+        const streamFinding = await scanFileStreaming(filePath, path.relative(cwd, filePath));
+        if (streamFinding) {
+          secretCount++;
+          findings.push(streamFinding);
+        }
         continue;
       }
 
@@ -233,11 +367,14 @@ export default {
     }
 
     if (oversizeCount > 0) {
+      // Honest disclosure, not a "stopped looking" warning: these files WERE
+      // read (in bounded-memory chunks), so `info` is correct — nothing went
+      // unscanned. Id retained for SARIF contract stability (see docs).
       findings.push({
         findingId: 'deep-secrets/oversize-skipped',
         severity: 'info',
-        title: `Deep scan skipped ${oversizeCount} file(s) over ${maxFileBytes} bytes`,
-        detail: 'Large files were skipped for performance. Override via config.limits.maxFileBytes.',
+        title: `Deep scan stream-scanned ${oversizeCount} large file(s) over ${maxFileBytes} bytes`,
+        detail: 'Files larger than the per-file cap were read in bounded-memory chunks (not skipped), so secrets in them are still detected. Override the cap via config.limits.maxFileBytes.',
       });
     }
 
