@@ -151,6 +151,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list, so an N/A check now stays N/A no matter what is removed from it.
   Suppressing findings on an *applicable* check still rescores exactly as before.
 
+- **MCP rug-pull detection (CVE-2025-54136) now covers every committed repo-level MCP
+  config, not just `.mcp.json`.** rigscore scans four `base: 'cwd'` configs — `.mcp.json`,
+  `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json` — but pinned only the first.
+  A repo whose servers lived in any of the other three got **no pin at all**, so
+  `--verify-state` compared an empty set against an empty pin and printed `PASS: 0 pinned
+  MCP server(s) verified` (exit 0) over a rug-pulled server, while `mcp-config` scored the
+  repo clean. The scan and the gate now mint and verify through the same `repoMcpPaths()` /
+  `readRepoServers()` helpers, so they cannot disagree about scope. Home-dir configs stay
+  unpinned (per-user, not committed, unreachable from a PR). Pin format is unchanged
+  (`STATE_VERSION` 1, name → hash); a name declared in two configs pins the first bare and
+  each later one as `<name>@<relpath>`, so a rug-pull in the shadowed copy still fails.
+  **Behavior change:** such a repo now reports `unpinned` (exit 2) until it commits a
+  `.rigscore-state.json` — previously a vacuous pass.
+
+- **VS Code MCP configs are read with VS Code's own key.** `.vscode/mcp.json` declares
+  servers under `servers`, but rigscore looked only for `mcpServers` — so every real VS Code
+  config scanned as empty (`mcp-config`, `network-exposure`, `credential-storage`,
+  `workflow-maturity`, CycloneDX). Both keys are read now, `servers` winning.
+
 ### Added
 - **Enforcement-grade labels per check.** Every check now carries an
   `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
