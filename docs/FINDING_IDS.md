@@ -161,6 +161,7 @@ Grouped by check. Each ID is stable within the current major.
 - `deep-secrets/no-source-files` (info)
 - `deep-secrets/file-cap-reached` (info)
 - `deep-secrets/oversize-skipped` (info) — id retained for contract stability; large files are now stream-scanned in bounded memory, not skipped.
+- `deep-secrets/unreadable-skipped` (warning) — a file/dir could not be read (e.g. chmod 000) and was not scanned; disclosed so an unreadable path never reads as a clean scan.
 
 ### docker-security (compose)
 

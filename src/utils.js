@@ -230,7 +230,9 @@ export async function execSafe(cmd, args, options = {}) {
  * discloses EITHER: sorting alone would only make a false PASS *reproducible*, and
  * a scan that gave up — for whichever reason — must never be indistinguishable from
  * a clean one. (The depth cap once returned silently; a hook file nested past the
- * cap then read as "no hook sources here".)
+ * cap then read as "no hook sources here".) `readError` is the same guarantee for
+ * an unreadable directory or entry (chmod 000): its subtree vanishes from the walk,
+ * so the caller must disclose it rather than report a clean scan.
  *
  * Silent on loops — caller surfaces a single INFO finding if `loopDetected`.
  */
@@ -246,6 +248,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
   let loopDetected = false;
   let truncated = false;
   let depthTruncated = false;
+  let readError = false;
 
   async function keyForPath(p) {
     try {
@@ -289,6 +292,10 @@ export async function walkDirSafe(rootDir, opts = {}) {
     try {
       entries = await fs.promises.readdir(current, { withFileTypes: true });
     } catch {
+      // Unreadable directory (e.g. chmod 000): its subtree vanishes from the
+      // walk. Surface it like truncated/depthTruncated so a caller can never
+      // read the result as a clean scan.
+      readError = true;
       return;
     }
     // Deterministic iteration: see the `truncated` note in the doc comment.
@@ -306,6 +313,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
       try {
         lst = await fs.promises.lstat(full);
       } catch {
+        readError = true; // entry we couldn't inspect — not a clean skip
         continue;
       }
 
@@ -352,7 +360,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
   }
 
   await walk(rootDir, 1);
-  return { files, loopDetected, truncated, depthTruncated };
+  return { files, loopDetected, truncated, depthTruncated, readError };
 }
 
 const COMMENT_PREFIXES = ['#', '//', '<!--', '--', '/*', '*'];

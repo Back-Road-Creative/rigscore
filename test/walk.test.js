@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { walkDirSafe } from '../src/utils.js';
-import { withTmpDir } from './helpers.js';
+import { withTmpDir, enforcesFilePerms } from './helpers.js';
+
+const PERMS_ENFORCED = enforcesFilePerms();
 
 // Wave 9 parity suite: walkUnder() was merged into walk() via the
 // `skipRootInode` parameter. These tests pin the documented behaviors
@@ -93,6 +95,40 @@ describe('walkDirSafe — unified walk parity', () => {
       const { files, depthTruncated } = await walkDirSafe(tmp, { maxDepth: 50 });
       expect(files.map((f) => path.basename(f))).toContain('f.txt');
       expect(depthTruncated).toBe(false);
+    });
+  });
+
+  // A directory the walk cannot read is a "gave up", never a clean pass. Without
+  // a signal, an unreadable subtree is indistinguishable from an empty one — a
+  // secret under a chmod-000 dir would read as "clean". `readError` is that signal.
+  it.skipIf(!PERMS_ENFORCED)(
+    'readError:true when a subdirectory is unreadable, and its files are omitted',
+    async () => {
+      await withTmpDir(async (tmp) => {
+        const locked = path.join(tmp, 'locked');
+        fs.mkdirSync(locked);
+        fs.writeFileSync(path.join(locked, 'hidden.txt'), 'x');
+        fs.writeFileSync(path.join(tmp, 'visible.txt'), 'y');
+        fs.chmodSync(locked, 0o000);
+        try {
+          const { files, readError } = await walkDirSafe(tmp);
+          const names = files.map((f) => path.basename(f));
+          expect(names).toContain('visible.txt');
+          expect(names).not.toContain('hidden.txt');
+          expect(readError).toBe(true);
+        } finally {
+          fs.chmodSync(locked, 0o755); // let withTmpDir clean up
+        }
+      });
+    },
+  );
+
+  it('readError:false for a fully readable tree', async () => {
+    await withTmpDir(async (tmp) => {
+      fs.mkdirSync(path.join(tmp, 'a'));
+      fs.writeFileSync(path.join(tmp, 'a', 'f.txt'), 'x');
+      const { readError } = await walkDirSafe(tmp);
+      expect(readError).toBe(false);
     });
   });
 

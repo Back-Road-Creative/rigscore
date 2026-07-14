@@ -4,6 +4,9 @@ import path from 'node:path';
 import os from 'node:os';
 import check, { labelForPattern } from '../src/checks/deep-secrets.js';
 import { KEY_PATTERNS, WEIGHTS } from '../src/constants.js';
+import { enforcesFilePerms } from './helpers.js';
+
+const PERMS_ENFORCED = enforcesFilePerms();
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-deep-'));
@@ -101,6 +104,49 @@ describe('deep-secrets check', () => {
       expect(critical).toBeDefined();
       expect(critical.title).toContain('src/utils/api.js');
     } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  // Fail-open regression: a chmod-000 file/dir silently vanished from the scan
+  // and the result still read "Deep scan clean" — a live key under an unreadable
+  // path scored 100. A scan that couldn't read a candidate must disclose it, not
+  // pass. Both the file-read failure and the dir-walk failure are covered.
+  it.skipIf(!PERMS_ENFORCED)('unreadable FILE is disclosed, never a clean pass', async () => {
+    const tmpDir = makeTmpDir();
+    const secret = path.join(tmpDir, 'config.js');
+    try {
+      const key = ['sk', 'ant', 'abcdefghij1234567890'].join('-');
+      fs.writeFileSync(path.join(tmpDir, 'app.js'), 'const x = 1;');
+      fs.writeFileSync(secret, `const API_KEY = "${key}";`);
+      fs.chmodSync(secret, 0o000);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      expect(result.score).not.toBe(100);
+      expect(result.findings.find(f => f.severity === 'pass')).toBeUndefined();
+      const disclosed = result.findings.find(f => f.findingId === 'deep-secrets/unreadable-skipped');
+      expect(disclosed).toBeDefined();
+      expect(disclosed.severity).toBe('warning');
+    } finally {
+      fs.chmodSync(secret, 0o644);
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it.skipIf(!PERMS_ENFORCED)('unreadable DIR subtree is disclosed, never a clean pass', async () => {
+    const tmpDir = makeTmpDir();
+    const locked = path.join(tmpDir, 'private');
+    try {
+      const key = ['sk', 'ant', 'abcdefghij1234567890'].join('-');
+      fs.writeFileSync(path.join(tmpDir, 'app.js'), 'const x = 1;');
+      fs.mkdirSync(locked);
+      fs.writeFileSync(path.join(locked, 'creds.js'), `const API_KEY = "${key}";`);
+      fs.chmodSync(locked, 0o000);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      expect(result.score).not.toBe(100);
+      expect(result.findings.find(f => f.severity === 'pass')).toBeUndefined();
+      expect(result.findings.find(f => f.findingId === 'deep-secrets/unreadable-skipped')).toBeDefined();
+    } finally {
+      fs.chmodSync(locked, 0o755);
       fs.rmSync(tmpDir, { recursive: true });
     }
   });
