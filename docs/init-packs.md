@@ -10,6 +10,8 @@ rigscore .                    # watch the score move
 
 `rigscore init --list-packs` lists the packs and the checks each targets. An existing file is never overwritten without `--force`, and every file is reported `written` or `skipped (exists)`.
 
+Packs are **not Claude-only**: alongside the Claude Code baselines there are least-privilege hardened baselines for other assistants (a narrow terminal/MCP allowlist with no auto-run wildcard, an ask/deny permission block, a prompt-on-every-tool approval mode). Each installs the client's own committed config file and turns its `sandbox-posture` grade off `unrestricted`. The installed configs name no organization or person — they are generic least-privilege, not a copy of anyone's private setup. `--list-packs` is the current roster; it never goes stale because discovery is a `readdir`.
+
 ## `--fix` offers the pack for you
 
 You do not have to know which pack covers which check. `rigscore . --fix` reads the packs' `checks`
