@@ -169,3 +169,72 @@ describe('CycloneDX 1.6 AI-BOM export', () => {
     expect(parseArgs(['--cyclonedx']).cyclonedx).toBe(true);
   });
 });
+
+// The grant surface is the thing cdxgen cannot model: which tools each MCP server is
+// permitted to run, and the skills/rules that steer the agent. Grounded in the SAME
+// parsers the checks use — auto-approve via checkClaudeSettings, allow/deny via the
+// claude-settings permission shape, rules via collectGovernanceDirFiles.
+describe('grant surface — permission scopes, skills, rules', () => {
+  function grantFixture(tmp) {
+    const github = { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github@1.2.3'],
+      env: { GITHUB_TOKEN: 'ghp_supersecretvalue' } };
+    fs.writeFileSync(path.join(tmp, '.mcp.json'), JSON.stringify({ mcpServers: { github } }));
+    fs.mkdirSync(path.join(tmp, '.claude', 'skills', 'deployer'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'), JSON.stringify({
+      enableAllProjectMcpServers: true,
+      permissions: {
+        allow: ['mcp__github__create_issue', 'mcp__other__x', 'Bash(ls)'],
+        deny: ['mcp__github__delete_repo'],
+      },
+    }));
+    fs.writeFileSync(path.join(tmp, '.claude', 'skills', 'deployer', 'SKILL.md'), '# Deployer\n');
+    fs.mkdirSync(path.join(tmp, '.cursor', 'rules'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.cursor', 'rules', 'security.mdc'), '# Security rule\n');
+  }
+
+  it('emits per-server grant scopes: auto-approve + the settings allow/deny that name the server', async () => {
+    await withTmpDir(async (tmp) => {
+      grantFixture(tmp);
+      const bom = await formatCycloneDx({ score: 80 }, { cwd: tmp });
+      const vals = (c, n) => c.properties.filter((p) => p.name === n).map((p) => p.value);
+      const github = bom.components.find((c) => c['bom-ref'] === 'mcp-server:github');
+      expect(vals(github, 'rigscore:grant:auto-approve')).toEqual(['enableAllProjectMcpServers']);
+      // ONLY the entries that scope THIS server — never another server's, never a Bash rule.
+      expect(vals(github, 'rigscore:grant:allow')).toEqual(['mcp__github__create_issue']);
+      expect(vals(github, 'rigscore:grant:deny')).toEqual(['mcp__github__delete_repo']);
+      // Secret env values still never leak, even alongside the grant surface.
+      expect(JSON.stringify(bom)).not.toContain('ghp_supersecretvalue');
+      await expect(schemaErrors(bom)).resolves.toBeNull();
+    });
+  });
+
+  it('inventories skills and directory-form rules as hashed file components', async () => {
+    await withTmpDir(async (tmp) => {
+      grantFixture(tmp);
+      const bom = await formatCycloneDx({ score: 80 }, { cwd: tmp });
+      const skill = bom.components.find((c) => c['bom-ref'] === 'file:.claude/skills/deployer/SKILL.md');
+      expect(skill.type).toBe('file');
+      expect(skill.hashes[0].alg).toBe('SHA-256');
+      expect(skill.hashes[0].content).toMatch(/^[a-f0-9]{64}$/);
+      expect(skill.properties).toContainEqual({ name: 'rigscore:file:role', value: 'skill' });
+      const rule = bom.components.find((c) => c['bom-ref'] === 'file:.cursor/rules/security.mdc');
+      expect(rule.properties).toContainEqual({ name: 'rigscore:file:role', value: 'rule' });
+      expect(rule.hashes[0].content).toMatch(/^[a-f0-9]{64}$/);
+      // They land in the flat dependency graph like every other component.
+      expect(bom.dependencies).toContainEqual({ ref: 'file:.claude/skills/deployer/SKILL.md', dependsOn: [] });
+      await expect(schemaErrors(bom)).resolves.toBeNull();
+    });
+  });
+
+  it('adds no grant props / skill / rule components when none are present', async () => {
+    await withTmpDir(async (tmp) => {
+      fs.writeFileSync(path.join(tmp, '.mcp.json'),
+        JSON.stringify({ mcpServers: { plain: { command: 'npx', args: ['-y', 'p@1.0.0'] } } }));
+      const bom = await formatCycloneDx({ score: 70 }, { cwd: tmp });
+      const plain = bom.components.find((c) => c['bom-ref'] === 'mcp-server:plain');
+      expect(plain.properties.some((p) => p.name.startsWith('rigscore:grant:'))).toBe(false);
+      expect(bom.components.some((c) => c.properties?.some(
+        (p) => p.name === 'rigscore:file:role' && ['skill', 'rule'].includes(p.value)))).toBe(false);
+    });
+  });
+});
