@@ -358,6 +358,82 @@ describe('env-exposure check', () => {
     });
   }
 
+  it('CRITICAL when a secret sits in a .vscode/mcp.json server env map (servers key, default scan)', async () => {
+    const tmpDir = makeTmpDir();
+    const prefix = 'sk-ant-';
+    const suffix = 'api03-abcdefghij1234567890';
+    // VS Code declares servers under `servers`, NOT `mcpServers` — the exact
+    // sibling-door env-exposure missed while `.mcp.json` was a double-CRITICAL.
+    const cfg = { servers: { db: { command: 'node', env: { ANTHROPIC_API_KEY: `${prefix}${suffix}` } } } };
+    fs.mkdirSync(path.join(tmpDir, '.vscode'));
+    fs.writeFileSync(path.join(tmpDir, '.vscode', 'mcp.json'), JSON.stringify(cfg));
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('.vscode/mcp.json'),
+      );
+      expect(critical).toBeDefined();
+      expect(result.score).toBe(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL when a secret sits in a .gemini/settings.json MCP server env (default scan)', async () => {
+    const tmpDir = makeTmpDir();
+    const prefix = 'sk-ant-';
+    const suffix = 'api03-abcdefghij1234567890';
+    const cfg = { mcpServers: { g: { command: 'node', env: { KEY: `${prefix}${suffix}` } } } };
+    fs.mkdirSync(path.join(tmpDir, '.gemini'));
+    fs.writeFileSync(path.join(tmpDir, '.gemini', 'settings.json'), JSON.stringify(cfg));
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('.gemini/settings.json'),
+      );
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL when a secret sits in an opencode.json MCP server environment map (mcp key, default scan)', async () => {
+    const tmpDir = makeTmpDir();
+    const prefix = 'sk-ant-';
+    const suffix = 'api03-abcdefghij1234567890';
+    // opencode nests servers under `mcp` and env under `environment` — mcpServersIn
+    // resolves the server key from the registry, so neither is a blind spot.
+    const cfg = { mcp: { oc: { command: 'node', environment: { KEY: `${prefix}${suffix}` } } } };
+    fs.writeFileSync(path.join(tmpDir, 'opencode.json'), JSON.stringify(cfg));
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find(
+        (f) => f.severity === 'critical' && f.title.includes('opencode.json'),
+      );
+      expect(critical).toBeDefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('no false positive for a clean .vscode/mcp.json with no secret in its env map', async () => {
+    const tmpDir = makeTmpDir();
+    const cfg = { servers: { db: { command: 'node', env: { LOG_LEVEL: 'debug', PORT: '8080' } } } };
+    fs.mkdirSync(path.join(tmpDir, '.vscode'));
+    fs.writeFileSync(path.join(tmpDir, '.vscode', 'mcp.json'), JSON.stringify(cfg));
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.env\n');
+    try {
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp' });
+      const critical = result.findings.find((f) => f.severity === 'critical');
+      expect(critical).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('finding title names the specific unignored env file when multiple exist', async () => {
     // Initialize a git repo so isInGitignore via `git check-ignore` works
     // against a real .gitignore (matches how the check actually queries).

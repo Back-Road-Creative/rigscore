@@ -12,6 +12,7 @@ Catches the single most common credential-leak vector in AI dev repos: `.env` fi
 |---|---|---|---|
 | `.env` or `.env.*` (non-`.example`) file present but not listed in `.gitignore` | CRITICAL | `env-exposure/env-not-gitignored` | Add `.env` to `.gitignore` (auto-fixable) |
 | Line in an AI config file (`CLAUDE.md`, `.cursorrules`, `.mcp.json`, `config.json`, `settings.py`, etc.) matches a `KEY_PATTERNS` regex outside a comment and not a placeholder | CRITICAL | `env-exposure/hardcoded-api-key` | Move the secret to `.env`; rotate the credential |
+| A secret in the `env` map of an MCP server in **any** committed repo-level MCP config (`.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json`, … — the full set from the client registry) matches a `KEY_PATTERNS` regex | CRITICAL | `env-exposure/hardcoded-api-key` | Move the secret to `.env`; rotate the credential |
 | GCP dual-field (`"type": "service_account"` + `"private_key"`) found in any scanned AI config file | CRITICAL | `env-exposure/gcp-service-account-key` | Delete the key file; use workload identity |
 | `.env` file is world-readable (mode bit `0o004` set) — POSIX only | WARNING | `env-exposure/env-world-readable` | `chmod 600 <file>` (auto-fixable) |
 | `.env.example` / `.env.sample` / `.env.template` contains a real CRITICAL-severity secret match | WARNING | `env-exposure/real-secret-in-template` | Replace the real value with `your_key_here` |
@@ -65,7 +66,8 @@ Out of scope for `--fix --yes`: removing hardcoded keys from config files, redac
 ## Scope and limitations
 
 - Scans project root only for `.env` / `.env.*` files (no recursion) — deeper trees are covered by `deep-secrets` under `--deep`.
-- Config-file list is `AI_CONFIG_FILES` (governance files + `.claude/settings.json`, `.mcp.json`, `config.{js,ts,json}`, `secrets.{yaml,json}`, `credentials.json`, `application.yml`, `settings.{py,js}`).
+- Config-file list is `AI_CONFIG_FILES` (governance files + `.claude/settings.json`, `.mcp.json`, `config.{js,ts,json}`, `secrets.{yaml,json}`, `credentials.json`, `application.yml`, `settings.{py,js}`), scanned line-by-line for hardcoded keys.
+- On top of that raw scan, the `env` maps of **every** committed repo-level MCP config are scanned for secrets — the scanned set is driven from the client registry (`repoMcpRelPaths()` in `src/clients.js`, via `repoMcpEnvValues()`), the same SSOT the CycloneDX AI-BOM and the rug-pull pin read. This covers `.vscode/mcp.json` (servers under `servers`), `.gemini/settings.json`, and `opencode.json` (servers under `mcp`, env under `environment`) on the default (non-`--deep`) path, and a client added to the registry is covered for free. Configs already in `AI_CONFIG_FILES` (`.mcp.json`) are skipped here to avoid double-reporting.
 - Per-file "worst finding wins" — a single config file contributes at most one finding, with CRITICAL outranking INFO so a trailing hardcoded key is not shadowed by an earlier commented match.
 - Gitignore detection uses `git check-ignore --no-index` and recognizes dangerous negation (`!.env`) and un-ignore-safe negation (`!.env.example|sample|template`). When git is unavailable the check falls back to an exact-string match against a small set of `.env` patterns and may miss path-prefixed entries (`apps/backend/.env`).
 - Shell-history scan caps at 3 hits and reads only the last 500 lines; full history forensics is out of scope.

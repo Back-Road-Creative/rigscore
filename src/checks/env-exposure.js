@@ -4,7 +4,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { calculateCheckScore } from '../scoring.js';
 import { KEY_PATTERNS, AI_CONFIG_FILES } from '../constants.js';
-import { readFileSafe, fileExists, statSafe, scanLineForSecrets } from '../utils.js';
+import { readFileSafe, readJsonSafe, fileExists, statSafe, scanLineForSecrets } from '../utils.js';
+import { repoMcpEnvValues } from '../clients.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -333,6 +334,51 @@ export default {
       if (worstFinding) {
         findings.push(worstFinding);
       }
+    }
+
+    // Scan the env maps of EVERY committed repo-level MCP config, not a hardcoded
+    // subset. The scanned set is the client registry (repoMcpEnvValues, backed by
+    // repoMcpRelPaths in src/clients.js) — the same SSOT the CycloneDX AI-BOM (#284)
+    // and the rug-pull pin read — so a client added there is covered here for free,
+    // with no second list to drift. VS Code's committed config (servers under
+    // `servers`) was invisible because it is not in AI_CONFIG_FILES; the Gemini and
+    // opencode committed configs were recoverable only under --deep. The registry
+    // reader lives in clients.js (which has no child_process) so this file never
+    // handles raw server objects; it only pattern-scans the returned env strings.
+    // Configs already in AI_CONFIG_FILES are covered by the raw scan above and passed
+    // as the skip set so they are not double-reported.
+    for (const { relPath, values } of await repoMcpEnvValues(cwd, readJsonSafe, AI_CONFIG_FILES)) {
+      let worstFinding = null;
+      let worstRank = 0;
+      for (const value of values) {
+        for (const pattern of KEY_PATTERNS) {
+          pattern.lastIndex = 0;
+          if (!pattern.test(value)) continue;
+          hardcodedFound = true;
+          const isExample = /\b(example|placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me)\b/i.test(value);
+          const severity = isExample ? 'info' : 'critical';
+          const rank = SEVERITY_RANK[severity] || 0;
+          if (rank > worstRank) {
+            worstRank = rank;
+            worstFinding = {
+              findingId: isExample
+                ? 'env-exposure/api-key-example-placeholder'
+                : 'env-exposure/hardcoded-api-key',
+              severity,
+              title: isExample
+                ? `Example/placeholder API key in ${relPath}`
+                : `Hardcoded API key found in ${relPath}`,
+              detail: isExample
+                ? `An env value in ${relPath} resembles a placeholder. Verify it is not a real key.`
+                : `An env value in ${relPath} matches a known secret pattern.`,
+              remediation: 'Move secrets to .env and reference via environment variables.',
+              context: { file: relPath },
+            };
+          }
+          break;
+        }
+      }
+      if (worstFinding) findings.push(worstFinding);
     }
 
     // Scan shell history for leaked secrets
