@@ -27,7 +27,9 @@ const INCLUDE_EXTENSIONS = new Set([
   '.yaml', '.yml', '.json', '.toml', '.sh',
 ]);
 
-// .env.* files are included (e.g. .env.production, .env.local)
+// The bare `.env` and the `.env.*` family (e.g. .env.production, .env.local) are
+// included — a bare `.env` has no extension and env-exposure only reads the root,
+// so a nested one would otherwise be scanned by nobody.
 // Skip test/spec files — they legitimately contain example secrets for pattern testing
 const TEST_FILE_RE = /\.(test|spec)\./;
 
@@ -35,7 +37,7 @@ function shouldIncludeByName(filename) {
   if (TEST_FILE_RE.test(filename)) return false;
   const ext = path.extname(filename);
   if (INCLUDE_EXTENSIONS.has(ext)) return true;
-  if (filename.startsWith('.env.')) return true;
+  if (filename === '.env' || filename.startsWith('.env.')) return true;
   return false;
 }
 

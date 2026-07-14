@@ -186,6 +186,43 @@ describe('deep-secrets check', () => {
     }
   });
 
+  // A bare `.env` is the most common env filename and the most common secret
+  // leak. env-exposure only reads the ROOT dir, so a nested `apps/api/.env`
+  // falls to deep-secrets — which used to skip it because the name has no
+  // extension and does not start with `.env.` (that needs the trailing dot).
+  // Its dot-suffixed sibling in the same folder was already caught.
+  it('includes a nested bare `.env`, like its `.env.production` sibling', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.mkdirSync(path.join(tmpDir, 'apps', 'api'), { recursive: true });
+      const key = ['sk', 'ant', 'barenvsecret000000000'].join('-');
+      fs.writeFileSync(path.join(tmpDir, 'apps', 'api', '.env'), `ANTHROPIC_API_KEY=${key}\n`);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      expect(result.score).toBe(0);
+      const critical = result.findings.find(f => f.severity === 'critical');
+      expect(critical).toBeDefined();
+      expect(critical.title).toContain('apps/api/.env');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  // Guard the boundary: `.environment.js` / `.envrc` must NOT be swept in as
+  // env files just because the name begins with ".env" — only bare `.env` and
+  // the `.env.<suffix>` family. (`.js` is covered by extension anyway; `.envrc`
+  // has no scanned extension and is not an env file, so it stays excluded.)
+  it('does not treat `.envrc` as an env file to scan', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const key = ['sk', 'ant', 'envrcshouldnotmatch00'].join('-');
+      fs.writeFileSync(path.join(tmpDir, '.envrc'), `export API_KEY=${key}\n`);
+      const result = await check.run({ cwd: tmpDir, deep: true, config: defaultConfig });
+      expect(result.score).toBe(-1); // nothing scannable → N/A, not a hit
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   // C5: blanket `entry.name.startsWith('.')` dir skip was removed. The
   // walker must recurse into `config/` and find `config/.env.production`
   // even though `.env.production` is dotfile-named.
