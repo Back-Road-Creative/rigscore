@@ -2,6 +2,12 @@ name: 'rigscore'
 description: 'AI dev environment hygiene checker — scan and score your configuration security'
 author: 'Joe Petrucelli'
 
+# GitHub Marketplace listing metadata. `icon` is a Feather icon from GitHub's
+# allowed set; `color` is one of GitHub's eight documented brand colors.
+branding:
+  icon: 'shield'
+  color: 'green'
+
 inputs:
   fail-under:
     description: 'Minimum score threshold (exit 1 if below)'
