@@ -8,7 +8,36 @@ rigscore init --<pack> [dir]  # install a starter pack
 rigscore .                    # watch the score move
 ```
 
-`rigscore init --list-packs` lists the packs and the checks each targets. An existing file is never overwritten without `--force`, and every file is reported `written` or `skipped (exists)`.
+`rigscore init --list-packs` lists the packs and the checks each targets. An existing file is never overwritten without `--force`, and every file is reported `written`, `merged`, or `skipped (exists)`.
+
+## Harden an existing config in place (`--merge` / `--harden`)
+
+`--force` clobbers and skip-if-exists leaves you stuck: a repo that *already* has a
+`.claude/settings.json` (or `.cursor/permissions.json`, a `.gemini/settings.json`, …) can install
+no hardening without losing its own content. `--merge` (alias `--harden`) is the in-place path — it
+**merges the pack's keys into the existing file additively**:
+
+```bash
+rigscore init --guards --merge          # add missing hardening keys to an existing .claude/settings.json
+```
+
+- **Additive, never destructive.** A key you already set to a different value is **kept** and named
+  in the report (`kept your existing <key>`); only keys you are missing are added, and arrays are
+  unioned (your entries are never dropped or reordered). The merge can never delete or overwrite a
+  value you chose — the worst case is that it adds nothing.
+- **Mergeable formats only.** JSON and YAML dests merge (YAML comments and key order survive the
+  round-trip). A non-mergeable dest (a shell hook, a `.conf`, or a TOML file) is left alone —
+  reported `skipped (exists)`, byte-for-byte unchanged.
+- **Corrupt-safe.** If the existing file can't be parsed, the merge **falls back to a skip** rather
+  than writing anything — a broken config is never clobbered or half-rewritten.
+- **Idempotent.** Running `--merge` twice reports `merged (no change)` the second time and rewrites
+  nothing.
+- **No existing file?** `--merge` just writes the file, exactly like a normal install of a missing one.
+- `--merge` and `--force` are **mutually exclusive**; if you pass both, `--merge` wins (it can never
+  destroy content).
+
+The three write modes, in one line each: **skip** (default) never touches an existing file;
+**`--force`** overwrites it wholesale; **`--merge`** adds only the keys it's missing.
 
 Packs are **not Claude-only**: alongside the Claude Code baselines there are least-privilege hardened baselines for other assistants (a narrow terminal/MCP allowlist with no auto-run wildcard, an ask/deny permission block, a prompt-on-every-tool approval mode). Each installs the client's own committed config file and turns its `sandbox-posture` grade off `unrestricted`. The installed configs name no organization or person — they are generic least-privilege, not a copy of anyone's private setup. `--list-packs` is the current roster; it never goes stale because discovery is a `readdir`.
 
@@ -34,10 +63,12 @@ fix your red checks — listing costs nothing — and writes none of them.
 `--install-packs` only widens what `--yes` may write; it never writes on its own, so
 `rigscore . --fix --install-packs` (no `--yes`) is still a dry run.
 
-`--fix` never rewrites governance content. It installs packs *without* `--force`, so a file you
-already wrote is reported `skipped (exists)` and left byte-for-byte alone — `--fix --install-packs`
-can only add the files you are missing. To overwrite deliberately, run `rigscore init --<pack>
---force` yourself.
+`--fix` never rewrites governance content. It installs packs *without* `--force` **and without
+`--merge`**, so a file you already wrote is reported `skipped (exists)` and left byte-for-byte alone
+— `--fix --install-packs` can only add the files you are missing. To harden a file you already have,
+run `rigscore init --<pack> --merge` yourself (additive; see above); to overwrite it wholesale, run
+`rigscore init --<pack> --force`. (Wiring `--merge` into the `--fix --install-packs` path is a
+deliberate follow-up — this release scopes in-place hardening to `rigscore init`.)
 
 ## Not covered (yet)
 

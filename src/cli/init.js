@@ -15,10 +15,16 @@ import { listPacks, loadPack, installPack, formatInstallReport } from './packs.j
  *   rigscore init --example            → scaffold demo project (+ starter)
  *   rigscore init --force              → overwrite pre-existing files
  *   rigscore init --<pack> [dir]       → install a pack (see --list-packs)
+ *   rigscore init --<pack> --merge     → harden an EXISTING config in place:
+ *                                        merge the pack's keys into a json/yaml
+ *                                        dest additively (never overwrites your
+ *                                        values). Alias: --harden. Mutually
+ *                                        exclusive with --force (merge wins).
  */
 export async function runInitSubcommand(args) {
   let profile = null;
   let force = false;
+  let merge = false;
   let example = false;
   let listing = false;
   const packs = [];
@@ -29,6 +35,8 @@ export async function runInitSubcommand(args) {
       profile = args[++i];
     } else if (args[i] === '--force' || args[i] === '-f') {
       force = true;
+    } else if (args[i] === '--merge' || args[i] === '--harden') {
+      merge = true;
     } else if (args[i] === '--example') {
       example = true;
     } else if (args[i] === '--list-packs') {
@@ -48,7 +56,7 @@ export async function runInitSubcommand(args) {
   }
 
   if (listing) return printPackList(available);
-  if (packs.length > 0) return installPacks(packs, positional[0] || process.cwd(), force);
+  if (packs.length > 0) return installPacks(packs, positional[0] || process.cwd(), { force, merge });
 
   if (example) {
     return scaffoldExample(process.cwd(), { force, profile });
@@ -88,11 +96,11 @@ function printPackList(available) {
   return 0;
 }
 
-/** Install packs into `target`, reporting every file written or skipped. */
-function installPacks(names, target, force) {
+/** Install packs into `target`, reporting every file written, merged, or skipped. */
+function installPacks(names, target, { force = false, merge = false } = {}) {
   for (const name of names) {
     try {
-      process.stdout.write(formatInstallReport(installPack(name, target, { force }), target));
+      process.stdout.write(formatInstallReport(installPack(name, target, { force, merge }), target));
     } catch (err) {
       process.stderr.write(`rigscore: ${err.message}\n`);
       return 2;
