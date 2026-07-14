@@ -1,0 +1,21 @@
+{
+  "terminalAllowlist": [
+    "git status",
+    "git diff",
+    "git log",
+    "git branch",
+    "npm test",
+    "npm run build"
+  ],
+  "mcpAllowlist": [
+    "*:search",
+    "*:list_*",
+    "*:get_*"
+  ],
+  "autoRun": {
+    "block_instructions": [
+      "Never auto-run a terminal command or MCP tool that is not covered by the allowlists above.",
+      "Never auto-run anything that deletes files, changes permissions, installs packages, or pushes to a remote — ask first."
+    ]
+  }
+}

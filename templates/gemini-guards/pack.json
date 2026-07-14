@@ -1,0 +1,8 @@
+{
+  "name": "gemini-guards",
+  "description": "Least-privilege Gemini CLI baseline: defaultApprovalMode 'default' so every tool call prompts instead of auto-approving edits or shell",
+  "checks": ["sandbox-posture"],
+  "files": [
+    { "src": "settings.json", "dest": ".gemini/settings.json" }
+  ]
+}
