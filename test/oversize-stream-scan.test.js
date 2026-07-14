@@ -1,8 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import deepSecrets from '../src/checks/deep-secrets.js';
 import { withTmpDir } from './helpers.js';
+
+const PROBE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mem-probe.mjs');
+
+// Run one read strategy over the fixture in a FRESH process and return its peak
+// RSS growth. Both arms are measured by the same instrument in the same way, so
+// the comparison between them is meaningful even though RSS on its own is not.
+function probe(mode, dir) {
+  return JSON.parse(
+    execFileSync(process.execPath, [PROBE, mode, dir], { encoding: 'utf-8' }),
+  );
+}
 
 // The historical bug: a file over `limits.maxFileBytes` was never opened, yet
 // deep-secrets still emitted the PASS "Deep scan clean" finding — a tree
@@ -47,7 +60,25 @@ describe('deep-secrets: oversize files are stream-scanned, not skipped', () => {
     });
   });
 
-  it('scans a large single-line (minified) file with memory bounded well below file size', async () => {
+  // The INVARIANT here is unchanged and still enforced: deep-secrets must
+  // CHUNK-STREAM a huge file, never readline it / buffer it whole (a readline
+  // regression OOM'd, which is why this test exists). Only the INSTRUMENT changed.
+  //
+  // The old instrument sampled process-wide RSS and compared the peak growth to a
+  // fixed `0.5 * fileMb` constant. RSS carries allocator slack and GC timing noise:
+  // roughly 26 of the ~32 MB it "measured" was noise, not the scan's working set.
+  // It therefore sat a hair under its own bound and flaked in CI at 32.34 MB vs a
+  // 31.97 MB threshold — on a PR that touched neither deep-secrets.js nor utils.js,
+  // and which passed on re-run. Widening that multiplier was rejected: it erodes the
+  // very guard the OOM bought and only relocates the flake.
+  //
+  // The instrument is now RELATIVE. Both read strategies run over the SAME fixture,
+  // measured the SAME way, each in its own fresh process, and the assertion is on the
+  // RATIO. readline's peak scales with FILE SIZE; chunk-streaming's does not — that
+  // is the actual invariant. Allocator and GC noise now lands in BOTH arms and
+  // cancels, instead of accumulating against a fixed bound, so the assertion is
+  // self-calibrating across platforms, Node versions and GC modes.
+  it('scans a large single-line (minified) file in memory that does not scale with file size', { timeout: 60_000 }, async () => {
     await withTmpDir(async (tmp) => {
       const SIZE_MB = 64;
       const awsKey = 'AKIA' + 'QRSTUVWXYZ012345';
@@ -58,31 +89,23 @@ describe('deep-secrets: oversize files are stream-scanned, not skipped', () => {
       // Secret near the END so the scan must stream the whole file to find it.
       fs.writeSync(fd, 'x'.repeat(1000) + `const KEY="${awsKey}";` + 'x'.repeat(1000));
       fs.closeSync(fd);
-      const fileMb = fs.statSync(file).size / (1024 * 1024);
 
-      if (global.gc) global.gc();
-      const base = process.memoryUsage().rss;
-      let peak = 0;
-      const timer = setInterval(() => {
-        const d = process.memoryUsage().rss - base;
-        if (d > peak) peak = d;
-      }, 5);
+      const subject = probe('chunk', tmp); // the real check
+      const control = probe('readline', tmp); // the rejected strategy, same fixture
 
-      const result = await deepSecrets.run({ cwd: tmp, deep: true, config: {} });
+      // The minified secret must still be detected (streamed, not skipped).
+      expect(subject.detail).toBe(1);
+      // Sanity-check the control is a real control: readline did buffer the whole
+      // ~64 MB single line, so it is genuinely the memory profile we must stay under.
+      expect(control.detail).toBeGreaterThan(SIZE_MB * 1024 * 1024 * 0.9);
+      // Control arm cost, so CI stays sane: one short-lived process, ~0.25s, ~105 MB
+      // peak RSS — it is cheaper than the subject arm it calibrates.
 
-      clearInterval(timer);
-      const dEnd = process.memoryUsage().rss - base;
-      if (dEnd > peak) peak = dEnd;
-
-      // The minified secret must be detected (streamed, not skipped).
-      const critical = result.findings.find((f) => f.severity === 'critical');
-      expect(critical).toBeTruthy();
-
-      // Memory must NOT scale to file size. readline buffered the whole single
-      // line (measured ~83 MB for this 64 MB file); chunk streaming stays far
-      // below. Guard against anyone reintroducing readline: peak growth must be
-      // under half the file size (in practice it is a few MB).
-      expect(peak / (1024 * 1024)).toBeLessThan(fileMb * 0.5);
+      // Measured locally: chunk ~26 MB vs readline ~106 MB on a 64 MB file => ~0.25.
+      // Reintroducing readline makes the two arms the SAME strategy, driving the
+      // ratio to ~1.0, so 0.5 is a 2x margin — not the 1.01x the old bound had.
+      const ratio = subject.peakRssBytes / control.peakRssBytes;
+      expect(ratio).toBeLessThan(0.5);
     });
   });
 });
