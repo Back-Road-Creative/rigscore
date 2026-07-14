@@ -16,6 +16,11 @@ auditor. So the report *prints*, rather than hides: **`NOT EVIDENCED`** (a contr
 supports), **`UNMAPPED`** (a check with no honest home in that framework), and each framework's
 upstream **`status`** — a *beta* list never renders as settled.
 
+The report also **discloses suppression**: when a repo's `.rigscorerc.json` `suppress:` list (or
+`--ignore`) mutes findings, the compliance output names how many were suppressed and their ids —
+the same `⚠ Suppressed N findings via config/--ignore: …` summary the terminal, JSON and SARIF
+surfaces carry — so a muted CRITICAL can never read to an auditor as clean-with-nothing-muted.
+
 rigscore evidences technical controls in a repository; it is not a management system, so it
 cannot evidence your risk-management process, log retention, or end-user disclosures. Adding a
 framework? Confirm every ID against its **primary source**, record that URL and status in

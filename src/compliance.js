@@ -1,4 +1,5 @@
 import { FRAMEWORKS, NOT_APPLICABLE_SCORE, SEVERITY } from './constants.js';
+import { formatSuppressedSummary } from './reporter.js';
 
 /**
  * Compliance report — findings regrouped by framework control. Answers the auditor's
@@ -20,7 +21,7 @@ function verdict(r) {
   return 'PASS';
 }
 
-/** @param {{results: Array, score: number}} scanResult @returns {string} plain-text report */
+/** @param {{results: Array, score: number, suppressed?: {count: number, ids: string[]}}} scanResult @returns {string} plain-text report */
 export function formatCompliance(scanResult) {
   const results = scanResult.results || [];
   const byId = new Map(results.map((r) => [r.id, r]));
@@ -31,6 +32,11 @@ export function formatCompliance(scanResult) {
     'A check is listed under a control ONLY where it genuinely evidences it;',
     'NOT EVIDENCED marks an honest gap, not an oversight.',
   ];
+  // Suppression transparency — the compliance report is an auditor artifact, so a
+  // config/--ignore mute must leave a trace HERE too (like terminal/JSON/SARIF),
+  // never read as clean-with-nothing-muted. Same summary the other surfaces use.
+  const suppressedLine = formatSuppressedSummary(scanResult.suppressed);
+  if (suppressedLine) out.push('', `⚠ ${suppressedLine}`);
   for (const fw of Object.values(FRAMEWORKS)) {
     const evidence = new Map(); // control -> evidencing check results
     for (const [checkId, control] of Object.entries(fw.map)) {
