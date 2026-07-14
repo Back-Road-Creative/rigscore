@@ -239,7 +239,7 @@ export default {
         title: 'No governance file found',
         detail: 'No CLAUDE.md, .cursorrules, .windsurfrules, .continuerules, AGENTS.md, or other AI governance file found. AI agents operate without explicit boundaries.',
         remediation: 'Create a governance file (CLAUDE.md, .cursorrules, etc.) with execution boundaries, forbidden actions, and approval gates.',
-        learnMore: 'https://headlessmode.com/tools/rigscore/#why-claude-md-matters',
+        learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/claude-md.md',
       });
       return { score: calculateCheckScore(findings), findings };
     }
@@ -311,7 +311,7 @@ export default {
             title: `Governance file actively negates: ${check.name}`,
             detail: `Governance contains ${check.name} keywords in a negated context — actively contradicts best practices.`,
             remediation: `Remove negated ${check.name} statements and replace with genuine enforcement rules.`,
-            learnMore: 'https://headlessmode.com/tools/rigscore/#claude-md-hardening',
+            learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/claude-md.md',
           });
         } else {
           findings.push({
@@ -320,7 +320,7 @@ export default {
             title: `Governance file missing: ${check.name}`,
             detail: `No ${check.name} rules detected in your governance file(s).`,
             remediation: `Add ${check.name} instructions to your governance file.`,
-            learnMore: 'https://headlessmode.com/tools/rigscore/#claude-md-hardening',
+            learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/claude-md.md',
           });
         }
       }

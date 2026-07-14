@@ -132,7 +132,7 @@ jobs:
             echo "skip=true" >> "$GITHUB_ENV"
           fi
 
-      - name: Generate headlessmode release post + tool page sync
+      - name: Generate headlessmode release post + docs page sync
         if: env.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
@@ -153,26 +153,27 @@ jobs:
           # Write git log to temp file — avoids multiline shell argument issues
           printf '%s\n' "${RIGSCORE_CHANGELOG}" > /tmp/rigscore-git-log.txt
 
-          # Generate journal post — exits non-zero if no conventional commits found
+          # Generate release post (content/releases/) — exits non-zero if no
+          # conventional commits found
           node scripts/generate-rigscore-post.js \
             --version "${VERSION}" \
             --prev-version "${PREV_VERSION}" \
             --git-log-file "/tmp/rigscore-git-log.txt"
 
-          # Patch tool page version string and date
+          # Patch docs page (content/docs.md) version string and date
           node scripts/patch-rigscore-toolpage.js --version "${VERSION}"
 
           BRANCH="rigscore-release/v${VERSION}"
           git config user.name "rigscore-bot"
           git config user.email "rigscore-bot@headlessmode.com"
           git checkout -b "${BRANCH}"
-          git add content/journal/ content/tools/rigscore.md
-          git commit -m "release: rigscore v${VERSION} — journal post + tool page sync"
+          git add content/releases/ content/docs.md
+          git commit -m "release: rigscore v${VERSION} — release post + docs page sync"
           git push origin "${BRANCH}"
 
           gh pr create \
             --repo Back-Road-Creative/headlessmode \
             --title "release: rigscore v${VERSION}" \
-            --body "Auto-generated release post for rigscore v${VERSION}. Includes journal post and tool page version bump. Created by rigscore release workflow." \
+            --body "Auto-generated release post for rigscore v${VERSION}. Includes release post and docs page version bump. Created by rigscore release workflow." \
             --head "${BRANCH}" \
             --base master
