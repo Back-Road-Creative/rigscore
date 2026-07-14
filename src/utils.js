@@ -3,6 +3,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { KEY_PATTERNS } from './constants.js';
+import { governanceDirDefaults, isGovernanceDirRuleFile } from './clients.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -361,6 +362,31 @@ export async function walkDirSafe(rootDir, opts = {}) {
 
   await walk(rootDir, 1);
   return { files, loopDetected, truncated, depthTruncated, readError };
+}
+
+/**
+ * Discover directory-form governance rule files under `dirs` (relative to `cwd`),
+ * reusing the shared symlink-safe walkDirSafe. Only vendor-correct rule files pass
+ * (isGovernanceDirRuleFile: `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`,
+ * any non-dotfile in `.windsurf/rules`/`.clinerules`). Returns deduped [{ full, rel }] so
+ * the three governance-scanning checks (claude-md, unicode-steganography,
+ * instruction-effectiveness) agree on what a directory-form rule set contains. `dirs`
+ * defaults to the built-in governanceDirDefaults(); a missing dir yields nothing.
+ */
+export async function collectGovernanceDirFiles(cwd, dirs = governanceDirDefaults()) {
+  const out = [];
+  const seen = new Set();
+  for (const dir of dirs) {
+    const { files } = await walkDirSafe(path.join(cwd, dir), {
+      shouldInclude: (full) => isGovernanceDirRuleFile(dir, path.basename(full)),
+    });
+    for (const full of files) {
+      if (seen.has(full)) continue;
+      seen.add(full);
+      out.push({ full, rel: path.relative(cwd, full) });
+    }
+  }
+  return out;
 }
 
 const COMMENT_PREFIXES = ['#', '//', '<!--', '--', '/*', '*'];

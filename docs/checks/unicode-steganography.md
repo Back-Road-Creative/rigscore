@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Scans governance files (`CLAUDE.md`, agent/skill markdown under `_governance/` — the set is defined by `GOVERNANCE_FILES` in `src/constants.js`) and MCP/Claude config files (`.mcp.json`, `.vscode/mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`) for hidden Unicode characters that render identically to legitimate text but instruct the agent differently. Maps to **OWASP Agentic ASI01 — Agent Goal Hijack**: homoglyphs, zero-width characters, bidirectional overrides, and language-tag characters are the core primitives behind the ToxicSkills and Rules File Backdoor injection classes — they smuggle instructions past human review because the rendered glyphs look like ordinary English. A pass guarantees none of the scanned files contain characters from the flagged ranges. A failure means at least one governance or config file contains text that reads one way to a human reviewer and potentially another way to the model.
+Scans governance files (`CLAUDE.md`, agent/skill markdown under `_governance/` — the set is defined by `GOVERNANCE_FILES` in `src/constants.js`), the directory-form rule sets scanned by default (`.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` dir, `.github/instructions/*.instructions.md`), and MCP/Claude config files (`.mcp.json`, `.vscode/mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`) for hidden Unicode characters that render identically to legitimate text but instruct the agent differently. Maps to **OWASP Agentic ASI01 — Agent Goal Hijack**: homoglyphs, zero-width characters, bidirectional overrides, and language-tag characters are the core primitives behind the ToxicSkills and Rules File Backdoor injection classes — they smuggle instructions past human review because the rendered glyphs look like ordinary English. A pass guarantees none of the scanned files contain characters from the flagged ranges. A failure means at least one governance or config file contains text that reads one way to a human reviewer and potentially another way to the model.
 
 ## Triggers
 
@@ -59,8 +59,8 @@ unicode-steganography ............... 70/100  (weight 4)
 
 ## Scope and limitations
 
-- Scanned files: `GOVERNANCE_FILES` (constants.js) ∪ `.mcp.json`, `.vscode/mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`.
-- No directory recursion — files not in the enumerated set are never scanned.
+- Scanned files: `GOVERNANCE_FILES` (constants.js) ∪ the default directory-form rule sets (`.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` dir, `.github/instructions/*.instructions.md`) ∪ `.mcp.json`, `.vscode/mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`.
+- Recursion is limited to the built-in directory-form rule sets (matched by their vendor extensions); any other file not in the enumerated set is never scanned.
 - Classic homoglyph ranges are checked **after** NFKC normalization; modern ranges (Mathematical Alphanumeric, Fullwidth Latin) NFKC-normalize to ASCII and are therefore checked on the raw text.
 - Non-malicious uses of the flagged ranges (scientific notation using U+1D4…, CJK fullwidth) will trigger warnings — by design, since governance text should be plain ASCII.
 - No platform gate; runs on all OSes.
