@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe } from '../utils.js';
+import { readFileSafe, collectGovernanceDirFiles } from '../utils.js';
 
 // Classic homoglyph ranges (detected AFTER NFKC normalization):
 // Greek, Cyrillic, Armenian, Georgian, Cherokee (U+13A0-13FF has Latin A/D/E/G/H lookalikes)
@@ -41,8 +41,12 @@ export default {
     let filesScanned = 0;
     let filesWithIssues = 0;
 
+    // Directory-form rule sets (.cursor/rules/*.mdc, .windsurf/rules, .clinerules
+    // dir, .github/instructions/*.instructions.md) are scanned by default too.
+    const dirFiles = await collectGovernanceDirFiles(cwd);
     const filePaths = [
       ...GOVERNANCE_FILES.map(f => ({ rel: f, full: path.join(cwd, f) })),
+      ...dirFiles,
       ...CONFIG_FILES.map(f => ({ rel: f, full: path.join(cwd, f) })),
     ];
 
