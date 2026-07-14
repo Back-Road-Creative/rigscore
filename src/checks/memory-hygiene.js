@@ -175,14 +175,20 @@ function ruleLines(content) {
  * INCOMPLETE picture of where the project states its rules. Note the file cap counts
  * *matched* governance files, not files walked — `walkDirSafe` gates on the
  * post-`shouldInclude` list.
+ *
+ * `config.limits.maxWalkDepth` is honored — the same knob sibling deep-secrets reads.
+ * The depth-cap disclosure below tells the operator to raise it; the walk took no
+ * config at all, so that advice was false and the knob inert. `|| 50` is `walkDirSafe`'s
+ * own default, so an unset knob walks exactly as deep as it always has.
  */
-async function governancePaths(cwd, homedir, includeHomeSkills) {
+async function governancePaths(cwd, homedir, includeHomeSkills, config) {
   const paths = new Map();
   for (const rel of GOVERNANCE_FILES) paths.set(path.join(cwd, rel), rel);
 
   const { files, truncated, depthTruncated } = await walkDirSafe(cwd, {
     skipDirs: SKIP_DIRS,
     maxFiles: MAX_GOVERNANCE_FILES,
+    maxDepth: config?.limits?.maxWalkDepth || 50,
     shouldInclude: (full) => GOVERNANCE_BASENAMES.has(path.basename(full)),
   });
   for (const full of files) {
@@ -199,9 +205,9 @@ async function governancePaths(cwd, homedir, includeHomeSkills) {
 /** `{ byRule, truncated, depthTruncated }` — normalized rule → set of governance files
  *  stating it, plus whether the walk that found them gave up early — at the file cap or
  *  the depth cap (see `governancePaths`). */
-async function collectGovernanceRules(cwd, homedir, includeHomeSkills) {
+async function collectGovernanceRules(cwd, homedir, includeHomeSkills, config) {
   const byRule = new Map();
-  const { paths, truncated, depthTruncated } = await governancePaths(cwd, homedir, includeHomeSkills);
+  const { paths, truncated, depthTruncated } = await governancePaths(cwd, homedir, includeHomeSkills, config);
   for (const [full, label] of paths) {
     const stat = await statSafe(full);
     if (!stat || !stat.isFile() || stat.size > MAX_GOVERNANCE_BYTES) continue;
@@ -278,7 +284,7 @@ export default {
     // 3. Single home per rule — a rule stated in both a governance file and a
     // memory file has two homes, so editing one silently fails to take effect.
     // Governance is the root set + nested project files + (opt-in) home.
-    const { byRule: govRules, truncated: govTruncated, depthTruncated: govDepthTruncated } = await collectGovernanceRules(cwd, homedir, includeHomeSkills);
+    const { byRule: govRules, truncated: govTruncated, depthTruncated: govDepthTruncated } = await collectGovernanceRules(cwd, homedir, includeHomeSkills, config);
     if (govRules.size > 0) {
       for (const file of memFiles) {
         for (const [norm, raw] of ruleLines(file.content)) {

@@ -215,6 +215,39 @@ describe('memory-hygiene: single home per rule', () => {
     }
   });
 
+  // The cap-reached remediation tells the operator to "raise `limits.maxWalkDepth`",
+  // but the governance walk took no config at all — the knob was inert, so the advice
+  // was false. Sibling deep-secrets reads the same knob and its advice works. The
+  // default (knob unset) must keep behaving exactly as it does today: depth 50.
+  it('honors limits.maxWalkDepth, so the cap-reached remediation is true advice', async () => {
+    const rule = 'Every pull request stays under three hundred changed lines, insertions plus deletions.';
+    const dir = tmpMemoryDir();
+    fs.writeFileSync(
+      path.join(dir, '.claude/memory/notes.md'),
+      `# Diff cap\n\nThe 2026-04 revert: a 900-line PR shipped a regression nobody could bisect.\n\n${rule}\n`,
+    );
+    let deep = dir;
+    for (let i = 0; i < 55; i++) deep = path.join(deep, `lvl${i}`);
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, 'CLAUDE.md'), `# Deep gov\n\n- ${rule}\n`);
+    const capped = (r) => r.findings.find((f) => f.findingId === 'memory-hygiene/governance-file-cap-reached');
+    try {
+      // Knob unset — unchanged from today: default depth 50, the deep file is unread.
+      const before = await run(dir);
+      expect(capped(before), 'the default depth cap must still truncate at 50').toBeDefined();
+      expect(dupes(before)).toHaveLength(0);
+
+      // Raising the knob — exactly what the remediation instructs — must actually work.
+      const after = await run(dir, { config: { limits: { maxWalkDepth: 80 } } });
+      expect(capped(after), 'raising limits.maxWalkDepth must clear the truncation it names').toBeUndefined();
+      const found = dupes(after);
+      expect(found, 'the governance file past the default cap must now be read').toHaveLength(1);
+      expect(found[0].detail).toContain('CLAUDE.md');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('sees a rule duplicated in home governance only when home is opted in', async () => {
     const rule = 'Never merge a pull request yourself — emit the merge command for the operator.';
     const home = tmpMemoryDir();

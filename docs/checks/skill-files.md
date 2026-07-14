@@ -29,6 +29,7 @@ Findings in a skill file are treated as seriously as findings in CLAUDE.md itsel
 | Possible base64 blob (≥50 chars, whitespace-bounded) | WARNING | `skill-files/possible-base64` | Decode and review |
 | Skill file is world-writable (mode `& 0o002`, POSIX only) | WARNING | `skill-files/world-writable` | `chmod 644 <file>` |
 | The walker detected a symlink cycle and skipped it | INFO | `skill-files/symlink-loop-skipped` | Informational — traversal continued safely |
+| The skill-directory walk stopped early — it hit the depth cap (`limits.maxWalkDepth`, default 50) or the file cap, so skill files past it were never read and an injection/exfiltration instruction in one of them is invisible. **Suppresses the PASS**: the check no longer certifies "clean" over a walk that stopped early | WARNING | `skill-files/walk-cap-reached` | Raise `limits.maxWalkDepth` in `.rigscorerc.json`, or reduce nesting under the skill directories |
 | No skill files found | INFO (score = N/A) | `skill-files/no-skill-files` | None — check inapplicable |
 | All skill files clean | PASS | — | — |
 

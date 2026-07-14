@@ -579,17 +579,19 @@ export default {
     // symlinks and recurses forever on `ln -s . self`).
     const maxDepth = config?.limits?.maxWalkDepth || 50;
     let skillLoopDetected = false;
+    let skillWalkTruncated = false;
     for (const root of searchRoots) {
       for (const dir of SKILL_DIRS) {
         const dirPath = path.join(root, dir);
         const exists = await statSafe(dirPath);
         if (!exists || !exists.isDirectory()) continue;
-        const { files, loopDetected } = await walkDirSafe(dirPath, {
+        const { files, loopDetected, truncated, depthTruncated } = await walkDirSafe(dirPath, {
           maxDepth,
           skipHidden: true,
           shouldInclude: (_full, dirent) => !dirent.name.startsWith('.'),
         });
         if (loopDetected) skillLoopDetected = true;
+        if (truncated || depthTruncated) skillWalkTruncated = true;
         for (const fullPath of files) {
           const entryRel = path.relative(dirPath, fullPath);
           const content = await readFileSafe(fullPath);
@@ -608,6 +610,24 @@ export default {
         severity: 'info',
         title: 'Symlink loop detected in skill directory — safely skipped',
         detail: 'A symlink cycle was encountered during skill-file traversal and skipped.',
+      });
+    }
+
+    // WARNING, and pushed BEFORE the no-skill-files early return: a skill file below the
+    // depth cut is never read, so an injection or exfiltration instruction sitting in it
+    // is invisible — yet the check went on to certify "All skill files appear clean" (any
+    // finding at all now suppresses that PASS, because it gates on findings.length). This
+    // is the check that hunts prompt injection; "clean" over a walk that stopped early is
+    // a security claim it did not earn. Six sibling walkDirSafe consumers already disclose
+    // their truncation; this was the last one dropping the signals on the floor.
+    if (skillWalkTruncated) {
+      findings.push({
+        findingId: 'skill-files/walk-cap-reached',
+        severity: 'warning',
+        title: 'Skill-file scan stopped early (cap reached)',
+        detail: `The skill-directory walk stopped early (directory-depth limit ${maxDepth} and/or file limit) — skill files beyond the cap were NOT read, so this result cannot be read as "no injection / no exfiltration".`,
+        evidence: 'skill-directory walk truncated; the tree holds more skill files than were scanned',
+        remediation: 'Raise `limits.maxWalkDepth` in `.rigscorerc.json`, or reduce nesting under the skill directories, so every skill file is actually scanned.',
       });
     }
 
