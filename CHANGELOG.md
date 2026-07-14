@@ -196,6 +196,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   absent config still reports `no-config-found` / N/A, exactly as before. Mirrors the existing
   `claude-settings/settings-unparseable` disclosure.
 
+- **skill-files: a truncated skill walk is disclosed instead of being reported as
+  "clean".** The walk destructured only `{ files, loopDetected }` from `walkDirSafe`,
+  discarding `truncated`/`depthTruncated` — the only one of seven consumers to do so.
+  A skill file below the depth cut was therefore never read, and the check still
+  emitted `pass: All skill files appear clean`. This is the check that hunts prompt
+  injection and exfiltration, so that PASS was a security claim it had not earned. The
+  truncation now surfaces as `skill-files/walk-cap-reached` (WARNING), which also
+  suppresses the PASS. It fires only when the walk is actually cut short — i.e. under a
+  committed `limits.maxWalkDepth` — so default scans are unaffected.
+
+- **memory-hygiene: `limits.maxWalkDepth` is honored, so the remediation it prints is
+  true.** `governance-file-cap-reached` told the operator to "raise
+  `limits.maxWalkDepth`", but `governancePaths()` took no `config` at all and called
+  `walkDirSafe` with no `maxDepth` — the knob was inert and the advice was false. The
+  walk now reads the knob, matching sibling `deep-secrets`. Unset behaves exactly as
+  before (depth 50, `walkDirSafe`'s own default), so default scan scope is unchanged;
+  raising it now actually reaches the governance files past the old cut.
+
 - **`suppress:` is honored (and rescored) in `--recursive` / `--profile monorepo` mode.**
   The recursive path applied only `--ignore`, never a project's own `.rigscorerc.json`
   `suppress:`, and never recomputed scores — so the escape hatch was inert exactly where
@@ -209,6 +227,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **An invalid target directory exits 2 (configuration error), not 1** — matching README's
   exit-code table, so a typo'd path is no longer indistinguishable from a real low score.
+
 
 
 
