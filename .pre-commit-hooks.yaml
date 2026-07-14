@@ -1,0 +1,22 @@
+# pre-commit.com framework hook definition.
+# Consumers reference this repo in their .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/Back-Road-Creative/rigscore
+#       rev: v2.0.0
+#       hooks:
+#         - id: rigscore
+#           # args: [--fail-under=80, --ci]   # tune the gate to taste
+#
+# language: node — pre-commit runs `npm install .` on the cloned repo and puts
+# the `rigscore` bin (package.json `bin`) on PATH, so no npm-registry publish is
+# needed (GitHub-only distribution stays intact). This is the framework-managed
+# alternative to `rigscore --init-hook`, which writes a native
+# .git/hooks/pre-commit line instead.
+- id: rigscore
+  name: rigscore
+  description: Configuration hygiene checker for AI dev environments — scans the repo locally, no external calls.
+  entry: rigscore
+  language: node
+  pass_filenames: false
+  args: []
