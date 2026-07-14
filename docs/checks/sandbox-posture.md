@@ -23,6 +23,16 @@ so a **new client is picked up with no change to this check's logic**. Two forma
   **`permissions.defaultMode` first**, falling back to a top-level `defaultMode` for legacy configs — the
   nested key is where Claude Code actually writes it, and reading only the top level let a real
   `bypassPermissions` config score as though nothing bypassed the prompt.
+- `gemini` — **Gemini CLI**, `.gemini/settings.json`, key `general.defaultApprovalMode`
+  (`default` / `auto_edit` / `plan` / `yolo`), per the
+  [Gemini CLI settings reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/settings.md).
+  `yolo` is normally set via the `--yolo` CLI flag, but a committed `yolo` value declares the intent and is graded.
+- `opencode` — **opencode**, `opencode.json`, the `permission` block (`allow` / `ask` / `deny` per tool or
+  the `*` catch-all), per the [opencode permissions docs](https://opencode.ai/docs/permissions/). The coarse
+  verdict of the highest-risk tool — `bash` — is read, falling back to `*`.
+- `cursor` — **Cursor**, the committed `.cursor/permissions.json` (`terminalAllowlist` / `mcpAllowlist`), per
+  the [Cursor permissions reference](https://cursor.com/docs/reference/permissions). It is an allowlist with
+  no sandbox knob, so a bare `*` (terminal) or `*:*` (MCP) wildcard is the dangerous, auto-run-everything state.
 
 One surface is **not** registry-driven: the project's `.devcontainer/` (or single-file
 `.devcontainer.json`). It belongs to no client — it is the box every client runs *inside* — so it is
@@ -37,11 +47,15 @@ this check's business, and reads as no surface at all rather than as a passing o
 | `approval_policy = "never"` **and** network reachable (`workspace-write` + `network_access = true`) | CRITICAL | `sandbox-posture/codex-auto-approve-networked` | `network_access = false`, or raise `approval_policy` |
 | `approval_policy = "never"` with write capability, no network | WARNING | `sandbox-posture/codex-auto-approve` | Set `approval_policy = "on-request"` |
 | A Claude Code settings file **exists** but declares **zero** `permissions.deny` entries (detail also names `defaultMode = "bypassPermissions"` when set — nothing denied *and* nothing prompted) | WARNING | `sandbox-posture/claude-no-deny-rules` | Add `permissions.deny` entries (e.g. `"Bash(curl:*)"`, `"Read(./.env)"`) to `.claude/settings.json` |
+| Gemini CLI `general.defaultApprovalMode = "yolo"` — auto-approves every tool call, including shell | WARNING | `sandbox-posture/gemini-yolo-approval` | Set `general.defaultApprovalMode = "default"` / `"plan"` in `.gemini/settings.json` |
+| Gemini CLI `general.defaultApprovalMode = "auto_edit"` — auto-approves file edits without prompting | WARNING | `sandbox-posture/gemini-auto-edit` | Set `general.defaultApprovalMode = "default"` in `.gemini/settings.json` |
+| opencode `permission.bash` (or the `*` catch-all) is `"allow"` — shell runs unprompted | WARNING | `sandbox-posture/opencode-auto-run-shell` | Set `"permission": { "bash": "ask" }` (or `"deny"`) in `opencode.json` |
+| Cursor `.cursor/permissions.json` has a `"*"` `terminalAllowlist` (or `"*:*"` `mcpAllowlist`) wildcard — auto-runs everything | WARNING | `sandbox-posture/cursor-wildcard-autorun` | Replace the wildcard with specific prefixes in `.cursor/permissions.json` |
 | A `.devcontainer/` (or `.devcontainer.json`) **installs an agent CLI** and contains **no** firewall, proxy, default-deny network rule or capability drop — no attempt at egress control is visible anywhere in it | WARNING | `sandbox-posture/devcontainer-no-egress-control` | Internal-only network + deny-by-default proxy, `--cap-drop=ALL`, `--security-opt=no-new-privileges` (`templates/container` is a worked example) |
 | The `.devcontainer/` walk hit the 200-file cap or the depth cap — files past it (possibly the agent-install line, or an egress control that would silence the finding above) were never read. **Keeps the check applicable**, so a truncated walk can never report "no sandbox surface anywhere" | WARNING | `sandbox-posture/devcontainer-file-cap-reached` | Move generated or vendored trees out of `.devcontainer/`, or reduce nesting, so the surface fits under the caps |
 | Surface present, nothing above matches → PASS. No sandbox surface anywhere → N/A (`-1`), never 0 | PASS / N/A | — | — |
 
-The first four ruleIds are **not literals in the source**: each is the `id` of an entry in the ordered rule tables (`CODEX_RULES`, `DENY_RULES`), interpolated at emit time as `` sandbox-posture/${rule.id} ``. Add a rule-table entry and its id becomes a ruleId with no other change — so a ruleId extractor must read the rule tables, not just scan for quoted `findingId:` values. Only `sandbox-posture/devcontainer-no-egress-control` and `sandbox-posture/devcontainer-file-cap-reached` are written literally.
+Every client ruleId above is **not a literal in the source**: each is the `id` of an entry in one of the ordered rule tables (`CODEX_RULES`, `DENY_RULES`, `GEMINI_RULES`, `OPENCODE_RULES`, `CURSOR_RULES`), interpolated at emit time as `` sandbox-posture/${rule.id} ``. Add a rule-table entry and its id becomes a ruleId with no other change — so a ruleId extractor must read the rule tables, not just scan for quoted `findingId:` values (the `EXPANDERS['sandbox-posture']` entry in `src/lib/verify-docs.js` enumerates every table). Only `sandbox-posture/devcontainer-no-egress-control` and `sandbox-posture/devcontainer-file-cap-reached` are written literally.
 
 A **missing** settings file is not a posture finding — absence is `claude-settings`' report, not this one.
 Deny rules are counted as the **union** across a client's files: one file with rules covers the pair.
@@ -50,12 +64,13 @@ Posture levels (`data.postures`, keyed by client id):
 
 | Level | Rule |
 |---|---|
-| `restricted` | `sandbox_mode = "read-only"` — the sandbox binds whatever the approval setting says |
-| `unrestricted` | `danger-full-access`; `approval_policy = "never"` while writes are still possible; or zero deny rules **and** `bypassPermissions` (nothing refused, nothing asked) |
-| `partial` | Everything else — e.g. `workspace-write` with approvals left on, or a deny list that binds *something* |
+| `restricted` | Codex `sandbox_mode = "read-only"`; Gemini `defaultApprovalMode = "plan"` (read-only); opencode `bash` (or `*`) `= "deny"` — a real read-only / deny boundary binds |
+| `unrestricted` | `danger-full-access`; `approval_policy = "never"` while writes are still possible; zero deny rules **and** `bypassPermissions`; Gemini `"yolo"`; opencode `bash`/`*` `= "allow"`; Cursor a `"*"` / `"*:*"` wildcard allowlist (nothing refused, nothing asked) |
+| `partial` | Everything else — e.g. `workspace-write` with approvals left on, a deny list that binds *something*, Gemini `"default"`/`"auto_edit"`, opencode `bash = "ask"`, or a bounded Cursor allowlist |
 
-Claude Code never reaches `restricted`: it ships no sandbox to read, so the deny list plus the approval
-mode are its whole boundary — an honest ceiling of `partial`, not a claim of containment.
+Claude Code and Cursor never reach `restricted`: neither ships a sandbox this check can read (Claude has
+only its deny list + approval mode; Cursor's `.cursor/permissions.json` is allowlist-only), so their honest
+ceiling is `partial`, not a claim of containment. Gemini (`plan`) and opencode (`deny`) can reach `restricted`.
 
 **The devcontainer surface gets no posture row at all** — deliberately. A posture is a claim about what
 the agent can reach, and the devcontainer arm's evidence cannot support one in either direction (below).

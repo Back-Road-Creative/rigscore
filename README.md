@@ -508,6 +508,11 @@ Every agent CLI expresses "how much can this agent do without asking me" differe
 **What rigscore looks for:**
 - Codex CLI (`.codex/config.toml`): `approval_policy`, `sandbox_mode`, `[sandbox_workspace_write] network_access`
 - Claude Code (`.claude/settings.json` + `settings.local.json`): whether any `permissions.deny` rules exist at all, plus `defaultMode`. Which *allow* entries are dangerous is `claude-settings`' job; this check never re-grades them.
+- Gemini CLI (`.gemini/settings.json`): `general.defaultApprovalMode` (`default` / `auto_edit` / `plan` / `yolo`)
+- opencode (`opencode.json`): the `permission` block — whether `bash` (or the `*` catch-all) auto-runs (`allow`) vs prompts (`ask`) / blocks (`deny`)
+- Cursor (committed `.cursor/permissions.json`): a `"*"` / `"*:*"` wildcard in `terminalAllowlist` / `mcpAllowlist` that auto-runs everything
+
+Windsurf is deliberately **not** graded: its Turbo-mode auto-execute level and allow/deny lists live only in the Windsurf Settings UI / global config, with no committed in-repo file rigscore can read at cwd.
 
 ## Scoring
 

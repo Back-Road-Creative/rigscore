@@ -433,6 +433,10 @@ Grouped by check. Each ID is stable within the current major.
 - `sandbox-posture/codex-auto-approve-networked` (critical) — a Codex client auto-approves with network access.
 - `sandbox-posture/codex-auto-approve` (warning) — a Codex client never prompts for approval.
 - `sandbox-posture/claude-no-deny-rules` (warning) — a Claude client declares no `permissions.deny` rules.
+- `sandbox-posture/gemini-yolo-approval` (warning) — a Gemini CLI client sets `general.defaultApprovalMode = "yolo"` (auto-approves every tool call).
+- `sandbox-posture/gemini-auto-edit` (warning) — a Gemini CLI client sets `general.defaultApprovalMode = "auto_edit"` (auto-approves file edits).
+- `sandbox-posture/opencode-auto-run-shell` (warning) — an opencode client sets `permission.bash` (or `*`) to `"allow"` (shell runs unprompted).
+- `sandbox-posture/cursor-wildcard-autorun` (warning) — a Cursor client's `.cursor/permissions.json` allowlist contains a `"*"` / `"*:*"` wildcard.
 - `sandbox-posture/devcontainer-no-egress-control` (warning) — a devcontainer runs an agent with no egress control.
 - `sandbox-posture/devcontainer-file-cap-reached` (warning) — the devcontainer scan hit its file cap.
 
