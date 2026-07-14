@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Validation } from '@cyclonedx/cyclonedx-library';
 import { formatCycloneDx } from '../src/cyclonedx.js';
+import { repoMcpRelPaths } from '../src/clients.js';
 import { parseArgs } from '../src/index.js';
 import { withTmpDir } from './helpers.js';
 
@@ -112,6 +113,51 @@ describe('CycloneDX 1.6 AI-BOM export', () => {
       const file = bom.components.find((c) => c['bom-ref'] === 'file:opencode.json');
       expect(file.properties).toContainEqual({ name: 'rigscore:file:role', value: 'ai-client-config' });
       // BOM-wide validity is asserted by the schema/contract tests above, not re-litigated here.
+    });
+  });
+
+  // A BOM that silently drops a repo-level MCP config under-reports the attack surface to
+  // whoever is reviewing it. The set of "repo-level MCP config" is `repoMcpRelPaths()` — the
+  // same SSOT the rug-pull pin reads — never a list this module keeps for itself.
+  describe('inventories every repo-level MCP config, not a hardcoded subset', () => {
+    it('emits a server declared only in .gemini/settings.json', async () => {
+      await withTmpDir(async (tmp) => {
+        fs.mkdirSync(path.join(tmp, '.gemini'), { recursive: true });
+        fs.writeFileSync(path.join(tmp, '.gemini', 'settings.json'),
+          JSON.stringify({ mcpServers: { gemini_only: { command: 'npx', args: ['-y', 'some-gemini-mcp@2.3.4'] } } }));
+
+        const bom = await formatCycloneDx({ score: 90 }, { cwd: tmp });
+        const server = bom.components.find((c) => c['bom-ref'] === 'mcp-server:gemini_only');
+        expect(server, '.gemini/settings.json MCP server missing from the BOM').toBeDefined();
+        expect(server.externalReferences).toContainEqual(
+          { type: 'configuration', url: '.gemini/settings.json', comment: 'MCP server declaration' });
+        // ...and the config file itself is inventoried, so the BOM shows where it came from.
+        expect(bom.components.find((c) => c['bom-ref'] === 'file:.gemini/settings.json')).toBeDefined();
+        await expect(schemaErrors(bom)).resolves.toBeNull();
+      });
+    });
+
+    it('inventories exactly the repo-level MCP configs the pin covers — no drift', async () => {
+      await withTmpDir(async (tmp) => {
+        const declared = repoMcpRelPaths();
+        expect(declared).toContain('.gemini/settings.json');
+
+        // Every base:'cwd' config a client can declare must reach the BOM. A new client added
+        // to CLIENTS lands here for free; a hardcoded list in cyclonedx.js would fail this.
+        for (const [i, rel] of declared.entries()) {
+          const name = `srv_${i}`;
+          const key = rel === 'opencode.json' ? 'mcp' : 'mcpServers';
+          fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true });
+          fs.writeFileSync(path.join(tmp, rel), JSON.stringify({ [key]: { [name]: { command: 'npx', args: ['-y', `p@1.0.${i}`] } } }));
+        }
+
+        const bom = await formatCycloneDx({ score: 90 }, { cwd: tmp });
+        const refs = bom.components.map((c) => c['bom-ref']);
+        for (const [i, rel] of declared.entries()) {
+          expect(refs, `${rel} server dropped from the BOM`).toContain(`mcp-server:srv_${i}`);
+          expect(refs, `${rel} file component dropped from the BOM`).toContain(`file:${rel}`);
+        }
+      });
     });
   });
 
