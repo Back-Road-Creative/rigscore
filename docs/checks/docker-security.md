@@ -59,9 +59,19 @@ Every `findings.push(...)` in `src/checks/docker-security.js` becomes a row here
 
 ## Fix semantics
 
-**No auto-fix.** This check exports no `fixes` array. Every finding requires a human decision: whether a capability is actually required, which base-image digest to pin to, whether a host mount is intentional. Auto-modifying compose files, Dockerfiles, or Kubernetes manifests risks breaking the build or silently changing runtime behaviour — out of scope for `--fix --yes`.
+**Two additive compose fixes.** `--fix` can repair the two findings that harden a service by *adding* an absent key — it never rewrites a value the operator already chose:
 
-- Out of scope: rewriting `docker-compose.yml`, `Dockerfile`, `devcontainer.json`, or K8s manifests.
+| Finding | Fixer id | Action |
+|---|---|---|
+| `docker-security/container-missing-cap-drop-all` | `docker-add-cap-drop-all` | Add `cap_drop: [ALL]` to each flagged service |
+| `docker-security/container-missing-no-new-privileges` | `docker-add-no-new-privileges` | Add `security_opt: [no-new-privileges:true]` to each flagged service |
+
+Both go through the config-merge engine (`src/lib/config-merge.js`, yaml Document API): comments and key order survive the round-trip, the write is idempotent (a second `--fix` is a no-op), and a service that *already declares* `cap_drop`/`security_opt` is left byte-for-byte untouched. Only `docker-compose.{yml,yaml}` / `compose.{yml,yaml}` / `podman-compose.{yml,yaml}` in `cwd` are edited; an absent or unparseable compose file is skipped, never created or clobbered.
+
+**Everything else needs a human decision** — whether a capability is required, which base-image digest to pin to, whether a host mount is intentional:
+
+- Out of scope (removal-class): dropping `privileged: true`, un-mounting the Docker socket, removing `network_mode: host`/`ipc: host`/`pid: host`. Deleting a key can break the build or change runtime behaviour, so it is a separate, riskier follow-up — not auto-applied.
+- Out of scope: rewriting `Dockerfile`, `devcontainer.json`, or K8s manifests.
 - Out of scope: picking a pinned image digest (requires registry lookup; rigscore is offline by default).
 
 ## SARIF
