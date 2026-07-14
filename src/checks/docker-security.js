@@ -468,6 +468,56 @@ async function addKeyToServicesMissingIt(cwd, key, value) {
   return changed;
 }
 
+/**
+ * Removal-class compose surgery: for every service in every compose file under
+ * `cwd`, invoke `mutate(doc, name, serviceMap)` which deletes a specific
+ * dangerous thing in place and returns true iff it changed that service. Uses
+ * the yaml Document API (not the additive config-merge engine, which only ADDS)
+ * so comments, key order, and every unrelated key/service/volume survive. Writes
+ * a file only when something was removed, so a second pass is a no-op (false).
+ * Absent/corrupt compose files are skipped, never created or clobbered.
+ */
+async function editComposeServices(cwd, mutate) {
+  let changed = false;
+  for (const pattern of COMPOSE_PATTERNS) {
+    const filePath = path.join(cwd, pattern);
+    const text = await readFileSafe(filePath);
+    if (!text) continue;
+    const doc = YAML.parseDocument(text);
+    if (doc.errors.length) continue; // corrupt YAML — never rewrite
+    const services = doc.get('services');
+    if (!YAML.isMap(services)) continue;
+
+    let fileChanged = false;
+    for (const pair of services.items) {
+      const service = pair.value;
+      if (!YAML.isMap(service)) continue;
+      if (mutate(doc, String(pair.key), service)) fileChanged = true;
+    }
+    if (fileChanged) {
+      fs.writeFileSync(filePath, doc.toString(), 'utf8');
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** True iff a volume sequence item mounts the docker/podman socket on its host side. */
+function isSocketVolumeItem(item) {
+  // Long mapping form: { source: /var/run/docker.sock, target: ... }
+  if (YAML.isMap(item)) {
+    const source = item.get('source');
+    return typeof source === 'string'
+      && (source.includes('/docker.sock') || source.includes('/podman.sock'));
+  }
+  // Short string form: "host:container[:mode]" — match on the host side only.
+  if (YAML.isScalar(item) && typeof item.value === 'string') {
+    const host = item.value.split(':')[0];
+    return host.includes('/docker.sock') || host.includes('/podman.sock');
+  }
+  return false;
+}
+
 export const fixes = [
   {
     id: 'docker-add-cap-drop-all',
@@ -483,6 +533,35 @@ export const fixes = [
     description: 'Add security_opt: [no-new-privileges:true] to the container',
     async apply(cwd) {
       return addKeyToServicesMissingIt(cwd, 'security_opt', ['no-new-privileges:true']);
+    },
+  },
+  {
+    id: 'docker-remove-privileged',
+    findingIds: ['docker-security/container-running-with-privileged-true'],
+    description: 'Remove privileged: true from the flagged service',
+    async apply(cwd) {
+      return editComposeServices(cwd, (doc, name, service) => {
+        // Only the flagged value (true); privileged: false is already safe.
+        if (service.get('privileged') !== true) return false;
+        return doc.deleteIn(['services', name, 'privileged']);
+      });
+    },
+  },
+  {
+    id: 'docker-remove-docker-socket-mount',
+    findingIds: ['docker-security/container-mounts-docker-socket'],
+    description: 'Remove the Docker socket volume mount from the flagged service',
+    async apply(cwd) {
+      return editComposeServices(cwd, (doc, name, service) => {
+        const seq = service.get('volumes');
+        if (!YAML.isSeq(seq)) return false;
+        const before = seq.items.length;
+        seq.items = seq.items.filter((item) => !isSocketVolumeItem(item));
+        if (seq.items.length === before) return false;
+        // Drop a now-empty volumes key rather than leave `volumes: []`.
+        if (seq.items.length === 0) doc.deleteIn(['services', name, 'volumes']);
+        return true;
+      });
     },
   },
 ];

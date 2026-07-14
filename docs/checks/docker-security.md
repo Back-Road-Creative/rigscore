@@ -59,18 +59,20 @@ Every `findings.push(...)` in `src/checks/docker-security.js` becomes a row here
 
 ## Fix semantics
 
-**Two additive compose fixes.** `--fix` can repair the two findings that harden a service by *adding* an absent key — it never rewrites a value the operator already chose:
+**Four compose fixes — two additive, two removal.** `--fix` can repair four findings on `docker-compose.{yml,yaml}` / `compose.{yml,yaml}` / `podman-compose.{yml,yaml}` in `cwd`. The additive pair *adds* an absent hardening key (never rewriting a value the operator already chose); the removal pair *deletes* one specific dangerous thing (never touching any other key, service, volume, or comment):
 
 | Finding | Fixer id | Action |
 |---|---|---|
 | `docker-security/container-missing-cap-drop-all` | `docker-add-cap-drop-all` | Add `cap_drop: [ALL]` to each flagged service |
 | `docker-security/container-missing-no-new-privileges` | `docker-add-no-new-privileges` | Add `security_opt: [no-new-privileges:true]` to each flagged service |
+| `docker-security/container-running-with-privileged-true` | `docker-remove-privileged` | Remove `privileged: true` from each flagged service (`privileged: false` is left alone) |
+| `docker-security/container-mounts-docker-socket` | `docker-remove-docker-socket-mount` | Remove only the `docker.sock`/`podman.sock` volume entry (short- or long-form) from each flagged service, dropping a now-empty `volumes` key |
 
-Both go through the config-merge engine (`src/lib/config-merge.js`, yaml Document API): comments and key order survive the round-trip, the write is idempotent (a second `--fix` is a no-op), and a service that *already declares* `cap_drop`/`security_opt` is left byte-for-byte untouched. Only `docker-compose.{yml,yaml}` / `compose.{yml,yaml}` / `podman-compose.{yml,yaml}` in `cwd` are edited; an absent or unparseable compose file is skipped, never created or clobbered.
+The additive pair go through the config-merge engine (`src/lib/config-merge.js`); the removal pair use the yaml Document API directly (config-merge is additive-only and cannot delete). Both paths preserve comments and key order, are idempotent (a second `--fix` is a no-op returning no change), and skip an absent or unparseable compose file — never creating or clobbering one. An additive fixer leaves a service that *already declares* the key byte-for-byte untouched; a removal fixer only deletes the exact flagged construct and leaves every sibling volume, key, and service intact.
 
 **Everything else needs a human decision** — whether a capability is required, which base-image digest to pin to, whether a host mount is intentional:
 
-- Out of scope (removal-class): dropping `privileged: true`, un-mounting the Docker socket, removing `network_mode: host`/`ipc: host`/`pid: host`. Deleting a key can break the build or change runtime behaviour, so it is a separate, riskier follow-up — not auto-applied.
+- Still out of scope (removal-class): removing `network_mode: host`/`ipc: host`/`pid: host`, and `volumes_from`. Deleting these can break the build or change runtime behaviour, so they remain a manual decision.
 - Out of scope: rewriting `Dockerfile`, `devcontainer.json`, or K8s manifests.
 - Out of scope: picking a pinned image digest (requires registry lookup; rigscore is offline by default).
 
