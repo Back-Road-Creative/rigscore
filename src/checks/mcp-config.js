@@ -7,7 +7,7 @@ import { readJsonSafe, readFileSafe, fileExists } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { readRepoServers, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
-import { mcpConfigPaths, mcpServersIn } from '../clients.js';
+import { mcpConfigPaths, mcpServersIn, repoMcpRelPaths } from '../clients.js';
 
 const SENSITIVE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -840,18 +840,37 @@ export function checkInlineCredentials(server, name, relPath) {
 }
 
 /**
+ * A single ANTHROPIC_BASE_URL/ANTHROPIC_API_BASE value counts as a redirect
+ * exactly when `checkAnthropicBaseUrl` would fire on it: non-empty AND not
+ * pointing at an allowed host (api.anthropic.com / loopback). Deleting such a
+ * key drops the SDK back to the built-in default. An empty string or an
+ * allowed override is left alone, so the strip fixer is a no-op whenever the
+ * finding did not fire.
+ */
+function isAnthropicRedirectValue(value) {
+  if (typeof value !== 'string' || value === '') return false;
+  const host = extractHost(value);
+  return !(host && ANTHROPIC_BASE_URL_ALLOWED_HOSTS.has(host));
+}
+
+const ANTHROPIC_REDIRECT_ENV_KEYS = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_API_BASE'];
+
+/**
  * Self-registered fixers (collected by checks/index.js getRegisteredFixes()).
  *
- * The auto-approve findings are the one class in this check that is a pure,
- * deterministic value-change on the committed `.claude/settings.json`:
- * `enableAllProjectMcpServers: true` auto-approves every project MCP server
- * on clone without consent (CVE-2025-59536). Setting it to `false` is the safe
- * remediation the findings themselves prescribe. Every other mcp-config finding
- * (typosquat, unpinned version, inline credentials, rug-pull drift, base-url
- * redirect) needs human judgment and stays fix-less — see docs/checks/mcp-config.md.
+ * Two classes of mcp-config finding are pure, deterministic edits on committed,
+ * in-repo config and therefore `--fix`-able:
+ *  1. The auto-approve bypass (`enableAllProjectMcpServers: true`, CVE-2025-59536)
+ *     — set it to `false`.
+ *  2. The ANTHROPIC_BASE_URL/ANTHROPIC_API_BASE redirect (CVE-2026-21852) — strip
+ *     the redirecting env key so API traffic can no longer be silently rerouted
+ *     through a third party.
+ * Every remaining finding (typosquat, unpinned version, inline credentials,
+ * rug-pull drift) needs human judgment and stays fix-less — see docs/checks/mcp-config.md.
  *
- * Scope is the project config only (cwd/.claude/settings.json) — never the
- * per-user homedir settings a repo-level `--fix` has no business rewriting.
+ * Scope is the committed, project-level config only (repoMcpRelPaths / cwd/.claude/
+ * settings.json) — never the per-user homedir configs a repo-level `--fix` has no
+ * business rewriting.
  */
 export const fixes = [
   {
@@ -876,6 +895,42 @@ export const fixes = [
       // changing only this one key; 2-space indent + trailing newline.
       await fs.promises.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
       return true;
+    },
+  },
+  {
+    id: 'anthropic-base-url-redirect-strip',
+    findingIds: ['mcp-config/anthropic-base-url-redirect'],
+    description:
+      'Strip ANTHROPIC_BASE_URL/ANTHROPIC_API_BASE redirect from MCP server env in committed configs',
+    async apply(cwd) {
+      let changed = false;
+      // Only the committed, project-level configs (base:'cwd') — the same set
+      // the rug-pull pin covers. A repo-level `--fix` never rewrites a per-user
+      // homedir config. mcpServersIn() returns references INTO the parsed
+      // config, so deleting a key off `server.env` mutates the object we then
+      // re-serialize; unrelated servers, keys and key order are untouched.
+      for (const relPath of repoMcpRelPaths()) {
+        const abs = path.join(cwd, relPath);
+        const config = await readJsonSafe(abs);
+        if (!config || typeof config !== 'object') continue;
+        let fileChanged = false;
+        for (const server of Object.values(mcpServersIn(relPath, config))) {
+          if (!server || typeof server !== 'object') continue;
+          const env = server.env;
+          if (!env || typeof env !== 'object') continue;
+          for (const key of ANTHROPIC_REDIRECT_ENV_KEYS) {
+            if (key in env && isAnthropicRedirectValue(env[key])) {
+              delete env[key];
+              fileChanged = true;
+            }
+          }
+        }
+        if (fileChanged) {
+          await fs.promises.writeFile(abs, `${JSON.stringify(config, null, 2)}\n`);
+          changed = true;
+        }
+      }
+      return changed;
     },
   },
 ];
