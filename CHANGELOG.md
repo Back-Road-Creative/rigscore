@@ -5,6 +5,11 @@ All notable changes to `rigscore` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Do not add entries to this file in a pull request.** Add a fragment under
+[`changelog.d/`](changelog.d/README.md) instead — one file per change, so two
+PRs in flight never collide on the same lines. `npm run changelog` previews the
+next release; the maintainer folds the fragments in at release time.
+
 ## [Unreleased]
 
 ### Docs
