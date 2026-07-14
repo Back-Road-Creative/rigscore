@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:fixture": "vitest run test/fixture-dogfood.test.js",
-    "verify:docs": "node scripts/verify-docs.js"
+    "verify:docs": "node scripts/verify-docs.js",
+    "changelog": "node scripts/assemble-changelog.js"
   },
   "engines": {
     "node": ">=18.17.0"
