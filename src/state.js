@@ -120,11 +120,11 @@ export async function saveState(cwd, state) {
 }
 
 /**
- * Hash every MCP server in EVERY committed repo-level config (`repoMcpPaths()` — the four
+ * Hash every MCP server in EVERY committed repo-level config (`repoMcpPaths()` — the five
  * `base: 'cwd'` client configs). Home-dir configs stay excluded: per-user, not committed,
  * unreachable from a pull request.
  *
- * This read `<cwd>/.mcp.json` alone, which made the other three a rug-pull blind spot: no
+ * This read `<cwd>/.mcp.json` alone, which made the other four a rug-pull blind spot: no
  * pin was minted, so verifyState() compared an empty set against an empty pin and passed.
  * checks/mcp-config.js mints the pin from THIS function, so minting and verification cannot
  * drift apart.

@@ -40,8 +40,14 @@ export const CLIENTS = [
   { id: 'claude-desktop', name: 'Claude Desktop',
     mcp: [{ path: '.claude/claude_desktop_config.json', base: 'home' }],
     credentials: [{ dir: '.claude', file: 'claude_desktop_config.json' }] },
+  // Cursor reads a COMMITTED, project-level .cursor/mcp.json (it wins over the ~/.cursor/mcp.json
+  // global) — cursor.com/docs/mcp. That committed file is a rug-pull surface, so it needs a
+  // base:'cwd' entry too. Windsurf (~/.codeium/windsurf/mcp_config.json) and Cline
+  // (~/.cline/data/settings/cline_mcp_settings.json) are global-only — no committed project MCP
+  // file exists (cline/cline#2418 is still a proposal) — so neither gets a base:'cwd' entry.
   { id: 'cursor', name: 'Cursor', governance: ['.cursorrules'],
-    mcp: [{ path: '.cursor/mcp.json', base: 'home' }],
+    mcp: [{ path: '.cursor/mcp.json', base: 'cwd' },
+      { path: '.cursor/mcp.json', base: 'home' }],
     credentials: [{ dir: '.cursor', file: 'mcp.json' }] },
   { id: 'windsurf', name: 'Windsurf', governance: ['.windsurfrules'],
     mcp: [{ path: '.windsurf/mcp.json', base: 'home' }],
