@@ -134,6 +134,29 @@ export const CLIENTS = [
   // Library, so there is no local governance file to declare.
   { id: 'cody', name: 'Cody',
     mcp: [{ path: '.vscode/settings.json', base: 'cwd', key: 'cody.mcpServers' }] },
+  // JetBrains Junie (the JetBrains AI coding agent). MCP servers under `mcpServers`:
+  //   junie.jetbrains.com/docs/junie-cli-mcp-configuration.html — committed project config
+  //   .junie/mcp/mcp.json (base:cwd; the docs warn about secrets when it is version-controlled)
+  //   plus user scope ~/.junie/mcp/mcp.json (base:home), whose env maps hold credentials. Rules
+  //   live in .junie/guidelines.md at the project root (junie.jetbrains.com/docs/guidelines-and-memory.html).
+  { id: 'jetbrains-junie', name: 'JetBrains Junie', governance: ['.junie/guidelines.md'],
+    mcp: [{ path: '.junie/mcp/mcp.json', base: 'cwd' },
+      { path: '.junie/mcp/mcp.json', base: 'home' }],
+    credentials: [{ dir: '.junie/mcp', file: 'mcp.json' }] },
+  // Goose (Block). block.github.io/goose docs — project rules live in a committed .goosehints
+  // file at the repo root (context-engineering/using-goosehints). Its extensions (MCP servers)
+  // and secrets live in ~/.config/goose/config.yaml + secrets.yaml, which are YAML — the JSON
+  // MCP/credential readers can't parse them, so (like Codex's TOML) Goose declares no mcp entry.
+  { id: 'goose', name: 'Goose', governance: ['.goosehints'] },
+  // Warp. docs.warp.dev/agent-platform/capabilities/mcp — MCP servers under `mcpServers` in a
+  // committed project-scoped .warp/.mcp.json (base:cwd; project servers never auto-spawn, they
+  // require explicit approval — exactly the rug-pull surface) plus the global ~/.warp/.mcp.json
+  // (base:home), whose env maps hold credentials. No committed governance file is documented
+  // (docs.warp.dev/terminal/settings/file-locations), so governance is omitted.
+  { id: 'warp', name: 'Warp',
+    mcp: [{ path: '.warp/.mcp.json', base: 'cwd' },
+      { path: '.warp/.mcp.json', base: 'home' }],
+    credentials: [{ dir: '.warp', file: '.mcp.json' }] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';

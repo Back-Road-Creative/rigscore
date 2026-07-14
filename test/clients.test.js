@@ -168,6 +168,52 @@ describe('batch-1 client additions (Amazon Q Developer, Roo Code, Cody)', () => 
   });
 });
 
+describe('batch-2 client additions (JetBrains Junie, Goose, Warp)', () => {
+  it('registers the three new clients with unique ids', () => {
+    for (const id of ['jetbrains-junie', 'goose', 'warp']) {
+      expect(CLIENTS.find(c => c.id === id), id).toBeTruthy();
+    }
+  });
+
+  it('JetBrains Junie: guidelines governance, committed .junie/mcp/mcp.json, home config + creds', () => {
+    expect(governanceFiles()).toContain('.junie/guidelines.md');
+    const mcp = mcpConfigPaths(CWD, HOME);
+    // Committed, in-repo (base:cwd) project MCP config.
+    expect(mcp).toContain(path.join(CWD, '.junie/mcp/mcp.json'));
+    // User scope ~/.junie/mcp/mcp.json (base:home).
+    expect(mcp).toContain(path.join(HOME, '.junie/mcp/mcp.json'));
+    // The committed config is pinned against a rug-pull.
+    expect(repoMcpRelPaths()).toContain('.junie/mcp/mcp.json');
+    // Default key — Junie stores servers under `mcpServers`.
+    const servers = { s: { command: 'node' } };
+    expect(mcpServersIn(path.join(CWD, '.junie/mcp/mcp.json'), { mcpServers: servers })).toEqual(servers);
+    // Its user config's env map can hold plaintext secrets.
+    expect(credentialClients().some(c => c.dir === '.junie/mcp' && c.file === 'mcp.json' && c.name)).toBe(true);
+  });
+
+  it('Goose: governance-only (.goosehints); YAML config/secrets are not JSON-reader surfaces', () => {
+    expect(governanceFiles()).toContain('.goosehints');
+    const goose = CLIENTS.find(c => c.id === 'goose');
+    // config.yaml / secrets.yaml are YAML — the JSON MCP/credential readers can't parse them,
+    // so (like Codex's TOML) Goose declares no mcp/credentials surface.
+    expect(goose.mcp).toBeUndefined();
+    expect(goose.credentials).toBeUndefined();
+  });
+
+  it('Warp: committed .warp/.mcp.json, global ~/.warp/.mcp.json, and credentials', () => {
+    const mcp = mcpConfigPaths(CWD, HOME);
+    // Project-scoped committed config (base:cwd) + global (base:home).
+    expect(mcp).toContain(path.join(CWD, '.warp/.mcp.json'));
+    expect(mcp).toContain(path.join(HOME, '.warp/.mcp.json'));
+    // The committed config is pinned against a rug-pull.
+    expect(repoMcpRelPaths()).toContain('.warp/.mcp.json');
+    // Default key — Warp stores servers under `mcpServers`.
+    const servers = { s: { command: 'node' } };
+    expect(mcpServersIn(path.join(CWD, '.warp/.mcp.json'), { mcpServers: servers })).toEqual(servers);
+    expect(credentialClients().some(c => c.dir === '.warp' && c.file === '.mcp.json' && c.name)).toBe(true);
+  });
+});
+
 describe('mcpServersIn', () => {
   it('reads mcpServers by default and opencode\'s "mcp" key', () => {
     const servers = { a: { command: 'x' } };
