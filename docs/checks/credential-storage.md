@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Inspects the MCP env maps inside AI-client config files in `~/` — Claude Desktop, Cursor, Cline, Continue, Windsurf, Amp, Gemini CLI, Zed, opencode — and flags any env value that looks like a literal provider credential rather than a secure reference. The server map and the env map are read per client from the registry (`src/clients.js`), not hardcoded: most clients use `mcpServers[].env`, Zed uses `context_servers[].env`, opencode uses `mcp[].environment`. Maps to **OWASP Agentic Top 10 ASI03 — Identity & Privilege Abuse**: these config files typically sit at default (user-readable) permissions and any process running as the user, any backup tool, any cloud-sync agent, or any MCP server spawned from the config can read them. A passing check guarantees that every declared env value is either (a) not a `KEY_PATTERNS` match, (b) a 1Password CLI reference (`op://…`), or (c) a shell template placeholder (`${VAR}`) — i.e. the real credential is resolved at runtime. A failure means a plaintext key is sitting at rest in a world-adjacent location.
+Inspects the MCP env maps inside AI-client config files in `~/` — Claude Code (`~/.claude.json`), Claude Desktop, Cursor, Cline, Continue, Windsurf, Amp, Gemini CLI, Zed, opencode — and flags any env value that looks like a literal provider credential rather than a secure reference. The server map and the env map are read per client from the registry (`src/clients.js`), not hardcoded: most clients use `mcpServers[].env`, Zed uses `context_servers[].env`, opencode uses `mcp[].environment`. Claude Code's `~/.claude.json` is special-cased (`mcpServersForConfig`): its servers live in a top-level `mcpServers` (user scope) **and** under `projects[<abs-cwd>].mcpServers` (local scope — the servers it loads for that repo), and both are scanned. Maps to **OWASP Agentic Top 10 ASI03 — Identity & Privilege Abuse**: these config files typically sit at default (user-readable) permissions and any process running as the user, any backup tool, any cloud-sync agent, or any MCP server spawned from the config can read them. A passing check guarantees that every declared env value is either (a) not a `KEY_PATTERNS` match, (b) a 1Password CLI reference (`op://…`), or (c) a shell template placeholder (`${VAR}`) — i.e. the real credential is resolved at runtime. A failure means a plaintext key is sitting at rest in a world-adjacent location.
 
 ## Triggers
 
@@ -38,6 +38,7 @@ Client → config path mapping:
 
 | Client | Path (relative to `$HOME`) | Server key | Env key |
 |---|---|---|---|
+| Claude Code | `.claude.json` | `mcpServers` + `projects[<abs-cwd>].mcpServers` | `env` |
 | Claude Desktop | `.claude/claude_desktop_config.json` | `mcpServers` | `env` |
 | Cursor | `.cursor/mcp.json` | `mcpServers` | `env` |
 | Cline | `.cline/mcp_settings.json` | `mcpServers` | `env` |
