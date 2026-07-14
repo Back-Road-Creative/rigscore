@@ -146,9 +146,10 @@ describe('CycloneDX 1.6 AI-BOM export', () => {
         // to CLIENTS lands here for free; a hardcoded list in cyclonedx.js would fail this.
         for (const [i, rel] of declared.entries()) {
           const name = `srv_${i}`;
-          // Each committed config is read under its client's own server key: opencode nests
-          // under `mcp`, Cody's .vscode/settings.json under the flat `cody.mcpServers` setting.
-          const key = rel === 'opencode.json' ? 'mcp'
+          // Each committed config is read under its client's own server key: opencode and Crush
+          // (.crush.json / crush.json) nest under `mcp`, Cody's .vscode/settings.json under the
+          // flat `cody.mcpServers` setting.
+          const key = ['opencode.json', '.crush.json', 'crush.json'].includes(rel) ? 'mcp'
             : rel === '.vscode/settings.json' ? 'cody.mcpServers' : 'mcpServers';
           fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true });
           fs.writeFileSync(path.join(tmp, rel), JSON.stringify({ [key]: { [name]: { command: 'npx', args: ['-y', `p@1.0.${i}`] } } }));
