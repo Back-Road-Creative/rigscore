@@ -230,7 +230,7 @@ export function checkTransportType(server, name, relPath, safeHosts) {
         title: `MCP server "${name}" uses network transport`,
         detail: `Server uses ${transport || 'network'} transport in ${relPath}. Network-based MCP servers have a larger attack surface than stdio.`,
         remediation: 'Prefer stdio transport for local MCP servers. If network transport is required, ensure authentication and TLS.',
-        learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
+        learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/mcp-config.md',
       });
     }
   }
@@ -580,7 +580,7 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
         title: `Corrupted ${STATE_FILENAME} — reset, runtime tool pins LOST`,
         detail: `Could not parse the rigscore state file, and no copy committed at HEAD could supply its runtime tool pins. The config-shape pins are re-minted by this scan, but runtime tool pins are NOT regenerable by a scan — rigscore never executes an MCP server. Any server that had one is now unpinned at runtime, so CVE-2025-54136 rug-pull detection is OFF for it and \`rigscore mcp-verify <name>\` exits 3. (If this repo never ran \`rigscore mcp-pin\`, nothing was lost — the corrupt file cannot be read to tell.)`,
         remediation: `Restore ${STATE_FILENAME} from version control if you can. Otherwise re-pin each server from its own tool list: \`npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin <name>\`. Then commit the file — no scan can regenerate these pins for you.`,
-        learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+        learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/mcp-config.md',
       });
   }
 
@@ -600,7 +600,7 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
           title: `MCP server "${name}" changed shape between scans (possible rug-pull)`,
           detail: `The configured command/args/env-key-set for "${name}" differs from the recorded hash in ${STATE_FILENAME}. This is how MCPoison-class attacks (CVE-2025-54136) pivot trusted MCP servers.`,
           remediation: `Review the diff in ${path.join(cwd, '.mcp.json')} against version control. rigscore keeps the ORIGINAL pin — scanning never re-approves a changed server, so this warning persists until you act on it. If the change is intentional, accept it explicitly: delete "${name}" from the mcpServers map in ${STATE_FILENAME}, then re-run rigscore to re-pin it.`,
-          learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+          learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/mcp-config.md',
           context: { serverName: name, prevHash: prev, currentHash: hash },
         });
       }
@@ -622,7 +622,7 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
         title: `MCP config-shape pinning is DISABLED for this scan (--no-state-write)`,
         detail: `No pin was established or extended in ${STATE_FILENAME}, so rug-pull drift (CVE-2025-54136) on ${names} cannot be detected on the next scan, and \`rigscore --verify-state\` has nothing to verify. This scan checked less than a default scan does.`,
         remediation: `Drop --no-state-write and commit ${STATE_FILENAME} — it stores hashes only (never env values), so it is safe to commit and it is what makes drift detection work in CI. Keep the flag only if you accept losing rug-pull detection.`,
-        learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+        learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/mcp-config.md',
         context: { serverNames: Object.keys(currentHashes) },
       }
       : {
@@ -733,7 +733,7 @@ export function checkBroadFilesystemAccess(server, name, relPath) {
       title: `MCP server "${name}" has broad filesystem access: ${sensitivePaths.join(', ')}`,
       detail: `Server can access sensitive path(s). Found in ${relPath}.`,
       remediation: 'Scope filesystem access to your project directory only.',
-      learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-permissions',
+      learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/mcp-config.md',
     }],
     hasBroadFilesystemAccess: true,
   };
@@ -786,7 +786,7 @@ export function checkUnpinnedVersion(server, name, relPath) {
           title: `MCP server "${name}" uses unpinned version (@${tag})`,
           detail: 'Unstable distribution tags can introduce breaking changes or supply chain attacks.',
           remediation: 'Pin MCP server packages to specific versions.',
-          learnMore: 'https://headlessmode.com/tools/rigscore/#mcp-supply-chain',
+          learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/mcp-config.md',
         }];
       }
     }
