@@ -25,6 +25,14 @@ function writeGovSubdir(dir, filename, content) {
   fs.writeFileSync(path.join(govDir, filename), content);
 }
 
+// Write a directory-form rule file (e.g. .cursor/rules/policy.mdc) — a
+// governance surface scanned by DEFAULT (no config.paths.governanceDirs needed).
+function writeCursorRule(dir, filename, content) {
+  const rulesDir = path.join(dir, '.cursor', 'rules');
+  fs.mkdirSync(rulesDir, { recursive: true });
+  fs.writeFileSync(path.join(rulesDir, filename), content);
+}
+
 function writeSettings(dir, data) {
   const settingsDir = path.join(dir, '.claude');
   fs.mkdirSync(settingsDir, { recursive: true });
@@ -181,6 +189,37 @@ describe('skill-coherence check', () => {
           },
         },
         priorResults: makePriorResults(''),
+      });
+      const layerWarnings = result.findings.filter(f =>
+        f.severity === 'warning' && f.title?.includes('layer'),
+      );
+      expect(layerWarnings.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads DEFAULT directory-form governance (.cursor/rules/*.mdc) with no governanceDirs configured', async () => {
+    const tmpDir = makeTmpDir();
+    // The ONLY governance is a directory-form rule file — no CLAUDE.md, no
+    // priorResults governanceText, and no config.paths.governanceDirs. Before
+    // the fix, skill-coherence saw empty extendedGovernance and stayed silent.
+    writeCursorRule(tmpDir, 'policy.mdc', 'Changes to the governance directory require session-local explicit consent.');
+    writeSkill(tmpDir, 'fixer', [
+      '---',
+      'name: fixer',
+      'description: Fix issues',
+      '---',
+      '# Fixer',
+      'Edit and modify files to fix bugs.',
+      'Create new files as needed.',
+    ].join('\n'));
+    try {
+      const result = await check.run({
+        cwd: tmpDir,
+        homedir: tmpDir,
+        config: joeConstraintsConfig, // constraints opt-in, but governanceDirs left empty
+        priorResults: makePriorResults(''), // no governance text from claude-md
       });
       const layerWarnings = result.findings.filter(f =>
         f.severity === 'warning' && f.title?.includes('layer'),
