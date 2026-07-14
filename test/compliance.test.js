@@ -103,6 +103,38 @@ describe('formatCompliance', () => {
     // eslint-disable-next-line no-control-regex
     expect(text, 'must stay plain text for CI/auditors').not.toMatch(/\x1b\[/);
   });
+
+  it('emits no suppression line when nothing was muted', () => {
+    // The module-level scanResult carries no `suppressed` — the report must not
+    // invent a mute that never happened.
+    expect(text).not.toMatch(/Suppressed \d+ finding/i);
+  });
+});
+
+// A muted CRITICAL (env-leak, root-scope MCP) must leave a trace HERE too — the
+// compliance report was the one findings surface that dropped the suppression
+// summary, so an auditor read a clean WARN with no sign a critical was buried.
+describe('formatCompliance suppression disclosure', () => {
+  const idA = 'env-exposure/env-not-gitignored';
+  const idB = 'mcp-config/fs-root-scope';
+  const suppressedText = formatCompliance({
+    score: 88,
+    results: [
+      { id: 'env-exposure', score: 70, findings: [{ severity: 'warning', title: '.env is world-readable' }] },
+    ],
+    suppressed: { count: 2, ids: [idA, idB] },
+  });
+
+  it('names the suppressed count and ids, matching the other surfaces', () => {
+    expect(suppressedText).toMatch(/Suppressed 2 findings/);
+    expect(suppressedText).toContain(idA);
+    expect(suppressedText).toContain(idB);
+  });
+
+  it('stays plain text for CI/auditors', () => {
+    // eslint-disable-next-line no-control-regex
+    expect(suppressedText).not.toMatch(/\x1b\[/);
+  });
 });
 
 
