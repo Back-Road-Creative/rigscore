@@ -36,9 +36,10 @@ const scan = (dir) => check.run({ cwd: dir, homedir: path.join(dir, 'nohome'), c
 const readPin = (dir) => JSON.parse(fs.readFileSync(path.join(dir, STATE_FILENAME), 'utf-8')).mcpServers;
 
 describe('rug-pull pin covers every committed repo-level MCP config', () => {
-  it('repoMcpPaths() lists exactly the four base:cwd client configs, in declaration order', () => {
+  it('repoMcpPaths() lists exactly the base:cwd client configs, in declaration order', () => {
     expect(repoMcpPaths('/repo').map(p => path.relative('/repo', p)))
-      .toEqual(['.mcp.json', '.vscode/mcp.json', '.gemini/settings.json', 'opencode.json']);
+      .toEqual(['.mcp.json', '.vscode/mcp.json', '.gemini/settings.json', 'opencode.json',
+        '.amazonq/mcp.json', '.amazonq/default.json', '.roo/mcp.json', '.vscode/settings.json']);
   });
 
   for (const [rel, wrap] of Object.entries(REPO_CONFIGS)) {

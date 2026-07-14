@@ -81,6 +81,31 @@ export const CLIENTS = [
   { id: 'zed', name: 'Zed',
     mcp: [{ path: '.config/zed/settings.json', base: 'home', key: 'context_servers' }],
     credentials: [{ dir: '.config/zed', file: 'settings.json' }] },
+  // Amazon Q Developer (CLI + IDE). MCP servers under `mcpServers`:
+  //   docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-config-CLI.html
+  //   (~/.aws/amazonq/mcp.json global, .amazonq/mcp.json workspace) and mcp-ide.html (the
+  //   IDE GUI now writes default.json; legacy mcp.json stays enabled). Project rules live in
+  //   the .amazonq/rules/ DIRECTORY of arbitrarily-named markdown files
+  //   (context-project-rules.html) — no single governance filename to declare, so it is omitted.
+  { id: 'amazon-q', name: 'Amazon Q Developer',
+    mcp: [{ path: '.amazonq/mcp.json', base: 'cwd' }, { path: '.amazonq/default.json', base: 'cwd' },
+      { path: '.aws/amazonq/mcp.json', base: 'home' }, { path: '.aws/amazonq/default.json', base: 'home' }],
+    credentials: [{ dir: '.aws/amazonq', file: 'mcp.json' }, { dir: '.aws/amazonq', file: 'default.json' }] },
+  // Roo Code (VS Code extension, Cline-fork family). docs.roocode.com/features/mcp/using-mcp-in-roo
+  // — project MCP is a committed `.roo/mcp.json` under `mcpServers`; the global config
+  // (mcp_settings.json) lives in VS Code global storage, which has no stable ~/ path, so it and
+  // its credentials surface are omitted. docs.roocode.com/features/custom-instructions — the
+  // `.roo/rules/` directory of arbitrary files falls back to a single `.roorules` file (declared).
+  { id: 'roo-code', name: 'Roo Code', governance: ['.roorules'],
+    mcp: [{ path: '.roo/mcp.json', base: 'cwd' }] },
+  // Cody (Sourcegraph). sourcegraph.com/docs/cody/capabilities/agentic-context-fetching — MCP
+  // servers are read from the `cody.mcpServers` setting (a flat dotted key) in the editor's
+  // settings.json; the committed VS Code workspace form is `.vscode/settings.json`. The global
+  // user settings.json is at an OS-specific path (no stable ~/), so its credentials surface is
+  // omitted; custom commands (.vscode/cody.json) were superseded by the server-side Prompt
+  // Library, so there is no local governance file to declare.
+  { id: 'cody', name: 'Cody',
+    mcp: [{ path: '.vscode/settings.json', base: 'cwd', key: 'cody.mcpServers' }] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';
