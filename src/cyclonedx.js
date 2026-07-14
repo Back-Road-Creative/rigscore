@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { GOVERNANCE_FILES } from './constants.js';
 import { readFileSafe, readJsonSafe } from './utils.js';
-import { mcpServersIn } from './clients.js';
+import { mcpServersIn, repoMcpRelPaths } from './clients.js';
 import { computeServerHash, loadState } from './state.js';
 import { argHasStableVersionPin, extractPackageName, findPackagePositionArg } from './checks/mcp-config.js';
 
@@ -16,9 +16,11 @@ const TARGET_REF = 'rigscore:target';
 
 // Repo-level configs only — home-dir client configs are excluded on purpose:
 // a BOM is shippable and must not carry a developer's machine layout.
-// `opencode.json` nests its servers under `mcp`; servers are read via mcpServersIn()
+// Read from the CLIENTS registry, never restated here: a hardcoded subset silently
+// dropped `.gemini/settings.json` servers from the BOM while the rug-pull pin covered
+// them. `opencode.json` nests its servers under `mcp`; servers are read via mcpServersIn()
 // so each file's own key applies (see src/clients.js).
-const MCP_CONFIG_FILES = ['.mcp.json', '.vscode/mcp.json', 'opencode.json'];
+const MCP_CONFIG_FILES = repoMcpRelPaths();
 const INVENTORIED_FILES = [...MCP_CONFIG_FILES, '.claude/settings.json', ...GOVERNANCE_FILES];
 
 const prop = (name, value) => ({ name, value: String(value) });
