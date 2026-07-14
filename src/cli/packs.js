@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
+import { mergeConfig, formatForPath } from '../lib/config-merge.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -80,7 +82,11 @@ export function hooksPathWarning(root, dests) {
 }
 
 // Never clobber without `force`; escape-check every dest before the first write.
-export function installPack(name, cwd, { force = false, templatesDir = TEMPLATES_DIR } = {}) {
+// `merge` hardens an EXISTING json/yaml dest in place via the additive config-merge
+// engine (adds missing keys, never overwrites a user's value). merge and force are
+// mutually exclusive — merge wins, because it can never destroy content.
+export function installPack(name, cwd, { force = false, merge = false, templatesDir = TEMPLATES_DIR } = {}) {
+  const clobber = merge ? false : force;
   const pack = loadPack(name, templatesDir);
   const root = path.resolve(cwd);
   // Declared defaults seed the substitution map; the runtime PROJECT_NAME always wins over any
@@ -95,19 +101,44 @@ export function installPack(name, cwd, { force = false, templatesDir = TEMPLATES
   });
   const results = [];
   const unresolved = new Set();
+  // Substitute a pack file's {{VARS}}, tracking applied defaults / unresolved placeholders.
+  const substitute = (src) => fs.readFileSync(path.join(pack.dir, src), 'utf-8').replace(/\{\{([A-Z0-9_]+)\}\}/g, (match, key) => {
+    if (key in vars) {
+      if (key in defaults && key !== 'PROJECT_NAME') applied.add(key); // a declared default was used
+      return vars[key];
+    }
+    unresolved.add(key); // never write a placeholder out blank — report it instead
+    return match;
+  });
   for (const f of planned) {
-    if (fs.existsSync(f.target) && !force) {
+    const exists = fs.existsSync(f.target);
+    const format = formatForPath(f.target);
+    // Harden in place: MERGE the pack's keys into an existing mergeable dest. A pack body
+    // that won't parse as its format, or an existing dest the engine refuses (corrupt /
+    // not an object), falls back to a skip — never a clobber, never a corrupt write.
+    if (exists && merge && (format === 'json' || format === 'yaml')) {
+      let hardening;
+      try {
+        const raw = substitute(f.src);
+        hardening = format === 'yaml' ? YAML.parse(raw) : JSON.parse(raw);
+      } catch {
+        results.push({ dest: f.dest, status: 'skipped' });
+        continue;
+      }
+      const merged = mergeConfig(fs.readFileSync(f.target, 'utf-8'), hardening, { format });
+      if (!merged.ok) {
+        results.push({ dest: f.dest, status: 'skipped' });
+        continue;
+      }
+      if (merged.changed) fs.writeFileSync(f.target, merged.text, 'utf-8');
+      results.push({ dest: f.dest, status: merged.changed ? 'merged' : 'merged (no change)', conflicts: merged.conflicts });
+      continue;
+    }
+    if (exists && !clobber) {
       results.push({ dest: f.dest, status: 'skipped' });
       continue;
     }
-    const body = fs.readFileSync(path.join(pack.dir, f.src), 'utf-8').replace(/\{\{([A-Z0-9_]+)\}\}/g, (match, key) => {
-      if (key in vars) {
-        if (key in defaults && key !== 'PROJECT_NAME') applied.add(key); // a declared default was used
-        return vars[key];
-      }
-      unresolved.add(key); // never write a placeholder out blank — report it instead
-      return match;
-    });
+    const body = substitute(f.src);
     fs.mkdirSync(path.dirname(f.target), { recursive: true });
     fs.writeFileSync(f.target, body, 'utf-8');
     if (isExec(f)) fs.chmodSync(f.target, 0o755);
@@ -121,8 +152,18 @@ export function installPack(name, cwd, { force = false, templatesDir = TEMPLATES
 /** Report exactly what was written and which checks it targets — verify, don't trust. */
 export function formatInstallReport({ pack, results, unresolved, appliedDefaults = [], warnings = [] }, cwd) {
   const execs = new Set(pack.files.filter(isExec).map((f) => f.dest));
-  const out = results.map((r) => (r.status === 'written' ? `  written${execs.has(r.dest) ? ' (+x)' : ''}  ${r.dest}` : `  skipped (exists)  ${r.dest}`));
-  if (results.some((r) => r.status === 'skipped')) out.push('  Re-run with --force to overwrite.');
+  const label = (r) => {
+    if (r.status === 'written') return `  written${execs.has(r.dest) ? ' (+x)' : ''}  ${r.dest}`;
+    if (r.status === 'merged' || r.status === 'merged (no change)') return `  ${r.status}  ${r.dest}`;
+    return `  skipped (exists)  ${r.dest}`;
+  };
+  const out = results.map(label);
+  // Additive merge never overwrites a value the user already set — name each kept key so
+  // the operator sees exactly what the pack did NOT change.
+  for (const r of results) {
+    for (const c of r.conflicts || []) out.push(`    kept your existing ${c.path} (pack wanted ${JSON.stringify(c.incoming)})`);
+  }
+  if (results.some((r) => r.status === 'skipped')) out.push('  Re-run with --force to overwrite, or --merge to add missing keys in place.');
   // Defaults resolved to a working baseline — no longer "unresolved", but the operator should review
   // and narrow them (e.g. widen a deny-all allow-list only to the hosts the project truly needs).
   for (const d of appliedDefaults) out.push(`  applied default {{${d.key}}} = ${d.value} — review before relying on it.`);
