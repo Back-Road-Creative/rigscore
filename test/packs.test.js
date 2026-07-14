@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { listPacks, loadPack, installPack } from '../src/cli/packs.js';
+import { listPacks, loadPack, installPack, formatInstallReport } from '../src/cli/packs.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-packs-'));
 const pair = () => [tmp(), tmp()];
@@ -33,6 +33,8 @@ describe('packs', () => {
     'missing description': { ...OK, description: '' },
     'checks not an array': { ...OK, checks: 'claude-md' },
     'exec not a boolean': { ...OK, files: [{ src: 'AGENTS.md', dest: 'AGENTS.md', exec: 'yes' }] },
+    'defaults not an object': { ...OK, defaults: 'x' },
+    'defaults value not a string': { ...OK, defaults: { EGRESS_SUBNET: 5 } },
   };
   for (const [label, manifest] of Object.entries(bad)) {
     it(`rejects a malformed pack: ${label}`, () => {
@@ -49,6 +51,58 @@ describe('packs', () => {
     dropPack(dir, 'esc', { ...OK, name: 'esc', files: [{ src: 'AGENTS.md', dest: '../escaped.md' }] });
     expect(() => loadPack('esc', dir)).toThrow(/escapes the target directory/);
     expect(fs.existsSync(path.join(dir, 'escaped.md'))).toBe(false);
+  });
+
+  it('seeds vars from pack.defaults, resolving declared placeholders at install', () => {
+    const [templates, target] = pair();
+    dropPack(templates, 'demo',
+      { ...OK, vars: { PROJECT_NAME: 'dir name', SUBNET: 'the egress subnet' }, defaults: { SUBNET: '172.30.0.0/16' } },
+      { 'AGENTS.md': 'net={{SUBNET}} name={{PROJECT_NAME}}\n' });
+    const res = installPack('demo', target, { templatesDir: templates });
+    expect(read(target, 'AGENTS.md')).toBe(`net=172.30.0.0/16 name=${path.basename(target)}\n`);
+    expect(res.unresolved).toEqual([]);
+    expect(res.appliedDefaults).toEqual([{ key: 'SUBNET', value: '172.30.0.0/16' }]);
+    // Reports the applied default (operator must review it) but does NOT warn it is unresolved.
+    const report = formatInstallReport(res, target);
+    expect(report).toMatch(/applied default \{\{SUBNET\}\} = 172\.30\.0\.0\/16/);
+    expect(report).not.toMatch(/no value for \{\{SUBNET\}\}/);
+  });
+
+  it('still warns for a placeholder that has neither a default nor a runtime value', () => {
+    const [templates, target] = pair();
+    dropPack(templates, 'demo',
+      { ...OK, vars: { PROJECT_NAME: 'dir name', TOKEN: 'a required secret' }, defaults: {} },
+      { 'AGENTS.md': 'secret={{TOKEN}}\n' });
+    const res = installPack('demo', target, { templatesDir: templates });
+    expect(res.unresolved).toEqual(['TOKEN']);
+    expect(res.appliedDefaults).toEqual([]);
+    expect(read(target, 'AGENTS.md')).toBe('secret={{TOKEN}}\n'); // never written out blank
+    expect(formatInstallReport(res, target)).toMatch(/no value for \{\{TOKEN\}\}/);
+  });
+
+  it('installs the container pack as a working fail-closed baseline (no inert egress placeholders)', () => {
+    const target = tmp(); // real TEMPLATES_DIR — the shipped container pack
+    const res = installPack('container', target);
+    const tinyproxy = read(target, '.devcontainer/egress/tinyproxy.conf');
+    const compose = read(target, '.devcontainer/egress/docker-compose.proxy.yml');
+    const allowlist = read(target, '.devcontainer/egress/allowlist');
+    // EGRESS_SUBNET resolves to the private range in both the ACL and the compose subnet.
+    expect(tinyproxy).toContain('Allow 172.30.0.0/16');
+    expect(tinyproxy).not.toContain('{{EGRESS_SUBNET}}');
+    expect(compose).toContain('172.30.0.0/16');
+    expect(compose).not.toContain('{{EGRESS_SUBNET}}');
+    // ALLOWED_HOSTS resolves to a deny-all default: the substituted line is an inert comment,
+    // so the installed allow-list adds NO extra reachable host until the operator edits it.
+    expect(allowlist).not.toContain('{{ALLOWED_HOSTS}}');
+    const substituted = allowlist.split('\n').at(-2); // last content line was {{ALLOWED_HOSTS}}
+    expect(substituted.trim().startsWith('#')).toBe(true);
+    // Neither ships unresolved, and the report no longer warns about them.
+    expect(res.unresolved).not.toContain('EGRESS_SUBNET');
+    expect(res.unresolved).not.toContain('ALLOWED_HOSTS');
+    expect(res.appliedDefaults.map((d) => d.key)).toEqual(
+      expect.arrayContaining(['EGRESS_SUBNET', 'ALLOWED_HOSTS']));
+    expect(formatInstallReport(res, target))
+      .not.toMatch(/no value for \{\{(EGRESS_SUBNET|ALLOWED_HOSTS)\}\}/);
   });
 
   it('installs the declared files, substituting vars', () => {
