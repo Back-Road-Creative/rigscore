@@ -1,7 +1,71 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
-import { NOT_APPLICABLE_SCORE } from '../constants.js';
+import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
 
 const BROAD_CAPABILITY_NAMES = ['filesystem', 'browser', 'database', 'shell', 'terminal', 'code', 'exec'];
+
+/**
+ * Resolve the project's PRIMARY governance file to append a declaration to.
+ * CLAUDE.md wins when present; otherwise the first existing known governance
+ * file in `cwd`. Returns null when the repo has no governance file at all —
+ * the fixer refuses to fabricate one from nothing (a different, bigger
+ * operation handled by pack install, never by an append-only fix).
+ */
+function resolvePrimaryGovernanceFile(cwd) {
+  const ordered = ['CLAUDE.md', ...GOVERNANCE_FILES.filter((f) => f !== 'CLAUDE.md')];
+  for (const name of ordered) {
+    const full = path.join(cwd, name);
+    if (fs.existsSync(full)) return full;
+  }
+  return null;
+}
+
+/**
+ * Finding-driven fix for `coherence/undeclared-mcp-server`. GENERATES the
+ * declaration the finding asks for: appends a clearly-marked placeholder
+ * section for the undeclared server to the primary governance file, so a red
+ * coherence check has a real installable `--fix` remediation.
+ *
+ * Append-only by construction — it NEVER rewrites or reorders existing
+ * governance content (the hard rule that `--fix` never destructively modifies
+ * governance). Idempotent: skips (returns false) when the server is already
+ * named in the file, so a re-run adds nothing and never duplicates a section.
+ */
+export const fixes = [
+  {
+    id: 'coherence-declare-mcp-server',
+    findingIds: ['coherence/undeclared-mcp-server'],
+    description: 'Append a governance declaration stub for an undeclared MCP server',
+    async apply(cwd, _homedir, finding) {
+      const serverName = finding && typeof finding.serverName === 'string' ? finding.serverName : null;
+      if (!serverName) return false;
+
+      const govPath = resolvePrimaryGovernanceFile(cwd);
+      if (!govPath) return false; // never create a governance file from nothing
+
+      let content;
+      try {
+        content = await fs.promises.readFile(govPath, 'utf8');
+      } catch {
+        return false;
+      }
+
+      // Idempotent + robust-by-construction: mirror the coherence check's own
+      // "mentioned" test. If the server name already appears, there is nothing
+      // to declare and the finding would not have fired — so append nothing.
+      if (content.toLowerCase().includes(serverName.toLowerCase())) return false;
+
+      const leadingGap = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+      const stub =
+        `${leadingGap}\n## MCP server: ${serverName}\n\n` +
+        `_Declared by rigscore --fix. Document this server's purpose, approved use ` +
+        `cases, and scope restrictions._\n`;
+      await fs.promises.appendFile(govPath, stub);
+      return true;
+    },
+  },
+];
 
 /**
  * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
@@ -36,6 +100,8 @@ function checkReverseCoherence(governanceContent, serverNames) {
       findings.push({
         findingId: 'coherence/undeclared-mcp-server',
         severity: 'warning',
+        // Carried so the finding-driven fixer knows which server to declare.
+        serverName,
         title: `Undeclared MCP server: ${serverName}`,
         detail: `Server '${serverName}' is configured but not mentioned in any governance document. Undeclared capabilities create hidden exposure that static reviews miss.`,
         remediation: `Add a section to CLAUDE.md declaring '${serverName}' purpose, approved use cases, and scope restrictions.`,

@@ -105,7 +105,10 @@ export async function applyFixes(fixes, cwd, homedir) {
       continue;
     }
     try {
-      const success = await fixer.apply(cwd, homedir);
+      // Pass the matched finding so finding-driven fixers (e.g. the coherence
+      // MCP-server declaration) can read fields off it. File-discovery fixers
+      // that ignore the third arg are unaffected.
+      const success = await fixer.apply(cwd, homedir, fix.finding);
       if (success) {
         applied.push(fix.description);
       } else {
