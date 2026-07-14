@@ -670,7 +670,7 @@ npx github:Back-Road-Creative/rigscore --badge                   # Generate a ma
 npx github:Back-Road-Creative/rigscore --no-color                # Plain text output
 npx github:Back-Road-Creative/rigscore --cta                     # Opt in to the promotional CTA (off by default)
 npx github:Back-Road-Creative/rigscore --no-cta                  # Deprecated alias — CTA is already off by default; kept for back-compat
-npx github:Back-Road-Creative/rigscore --check <id>              # Run a single check by ID
+npx github:Back-Road-Creative/rigscore --check <id>              # Run a single check by ID (if that check is N/A for the repo — e.g. --check docker-security with no Dockerfile — the score is `n/a` and the run exits 0, not a red 0/100)
 npx github:Back-Road-Creative/rigscore --recursive               # Scan subdirectories as projects
 npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive scan, 2 levels deep
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
@@ -683,7 +683,7 @@ npx github:Back-Road-Creative/rigscore --fix --yes --install-packs # Also instal
 npx github:Back-Road-Creative/rigscore --watch                   # Watch for changes, re-run automatically
 npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-commit hook
 npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-not-gitignored,skill-files/shell-exec" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). See docs/FINDING_IDS.md for the stable ID list. Title-substring still works as a legacy fallback.
-# Suppression is never silent: whether it comes from --ignore or a .rigscorerc.json `suppress:` entry, rigscore reports how many findings were muted and their ids — in the human report (so it shows up in a CI log), in JSON (`suppressed: { count, ids }`), and in SARIF (`runs[0].properties.suppressedCount` / `suppressedIds`). The findings are still removed from scoring; the muting is just visible, not only in a config diff.
+# Suppression is never silent: whether it comes from --ignore or a .rigscorerc.json `suppress:` entry, rigscore reports how many findings were muted and their ids — in the human report (so it shows up in a CI log), in JSON (`suppressed: { count, ids }`), and in SARIF (`runs[0].properties.suppressedCount` / `suppressedIds`). The findings are still removed from scoring; the muting is just visible, not only in a config diff. This holds in `--recursive` / `--profile monorepo` mode too: each project's own `.rigscorerc.json` `suppress:` is honored and rescored per project.
 npx github:Back-Road-Creative/rigscore --verbose                 # Also show passing checks (info/skipped findings already print by default)
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help

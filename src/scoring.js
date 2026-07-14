@@ -121,6 +121,25 @@ export function calculateOverallScore(results, customWeights, options = {}) {
 }
 
 /**
+ * THE single place a scan's headline score is computed; scanner and CLI both
+ * route through it. Returns `{ score, notApplicable }`. Under `--check` the
+ * weighted axis is meaningless, so selected checks are averaged; when EVERY
+ * selected check is N/A there is nothing to average — `notApplicable`, `score:
+ * null`, never a fabricated 0 (which rendered as 0/100 Grade F exit 1). An
+ * unknown/typo'd `--check` id (no check matched) keeps its red.
+ */
+export function scoreScan(results, weights, checkFilter) {
+  if (!checkFilter) {
+    return { score: calculateOverallScore(results, weights), notApplicable: false };
+  }
+  if (results.length === 0) return { score: 0, notApplicable: false };
+  const applicable = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
+  if (applicable.length === 0) return { score: null, notApplicable: true };
+  const avg = applicable.reduce((sum, r) => sum + r.score, 0) / applicable.length;
+  return { score: Math.round(avg), notApplicable: false };
+}
+
+/**
  * Practice-axis score (0-100), or `null` when the repo has NO practice surface
  * at all (every practice check N/A). Null — not 0 — is the honest answer there:
  * a repo with no agent loops, no specs and no memory files isn't "bad at driving

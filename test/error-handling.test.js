@@ -17,9 +17,14 @@ function runCli(args, opts = {}) {
 }
 
 describe('CLI error handling', () => {
-  it('exits 1 with a clean message when the target directory does not exist', () => {
+  // Q5 (corrected, not weakened): this test used to pin exit 1. That WAS the bug.
+  // README's exit-code table already classifies an invalid target directory as a
+  // *configuration error* (code 2) and tells CI authors to branch on 0 vs 1 for
+  // score-gating — so a typo'd path exiting 1 was indistinguishable from a real
+  // below-threshold score. Code now matches the documented contract.
+  it('exits 2 with a clean message when the target directory does not exist', () => {
     const res = runCli(['/nonexistent/path/that-should-not-exist-xyz']);
-    expect(res.status).toBe(1);
+    expect(res.status).toBe(2);
     expect(res.stderr).toMatch(/not a valid directory/);
     expect(res.stderr).not.toMatch(/at Object\.|at async|Error:.*\n.*at /); // no Node stack trace
   });
