@@ -54,6 +54,11 @@ export function loadPack(name, templatesDir = TEMPLATES_DIR) {
   const badVars = m.vars !== undefined && (m.vars === null || typeof m.vars !== 'object' || Array.isArray(m.vars));
   if (badVars) fail(name, '"vars" must be an object of PLACEHOLDER → description');
   for (const [k, d] of Object.entries(m.vars || {})) if (!isText(d)) fail(name, `vars.${k} needs a description`);
+  // Optional PLACEHOLDER → default-value map applied at install so the shipped config works out of
+  // the box (an empty string is a legal default — "substitute nothing"). Missing defaults still warn.
+  const badDefaults = m.defaults !== undefined && (m.defaults === null || typeof m.defaults !== 'object' || Array.isArray(m.defaults));
+  if (badDefaults) fail(name, '"defaults" must be an object of PLACEHOLDER → default value');
+  for (const [k, v] of Object.entries(m.defaults || {})) if (typeof v !== 'string') fail(name, `defaults.${k} must be a string`);
   return { ...m, dir };
 }
 
@@ -78,7 +83,11 @@ export function hooksPathWarning(root, dests) {
 export function installPack(name, cwd, { force = false, templatesDir = TEMPLATES_DIR } = {}) {
   const pack = loadPack(name, templatesDir);
   const root = path.resolve(cwd);
-  const vars = { PROJECT_NAME: path.basename(root) };
+  // Declared defaults seed the substitution map; the runtime PROJECT_NAME always wins over any
+  // default of the same name. A placeholder absent here still lands in `unresolved` and warns.
+  const defaults = pack.defaults || {};
+  const vars = { ...defaults, PROJECT_NAME: path.basename(root) };
+  const applied = new Set();
   const planned = pack.files.map((f) => {
     const target = path.resolve(root, f.dest);
     if (!target.startsWith(root + path.sep)) fail(name, `dest escapes the target directory: "${f.dest}"`);
@@ -92,7 +101,10 @@ export function installPack(name, cwd, { force = false, templatesDir = TEMPLATES
       continue;
     }
     const body = fs.readFileSync(path.join(pack.dir, f.src), 'utf-8').replace(/\{\{([A-Z0-9_]+)\}\}/g, (match, key) => {
-      if (key in vars) return vars[key];
+      if (key in vars) {
+        if (key in defaults && key !== 'PROJECT_NAME') applied.add(key); // a declared default was used
+        return vars[key];
+      }
       unresolved.add(key); // never write a placeholder out blank — report it instead
       return match;
     });
@@ -102,14 +114,18 @@ export function installPack(name, cwd, { force = false, templatesDir = TEMPLATES
     results.push({ dest: f.dest, status: 'written' });
   }
   const warn = hooksPathWarning(root, planned.map((f) => f.dest));
-  return { pack, results, unresolved: [...unresolved], warnings: warn ? [warn] : [] };
+  const appliedDefaults = [...applied].map((k) => ({ key: k, value: defaults[k] }));
+  return { pack, results, unresolved: [...unresolved], appliedDefaults, warnings: warn ? [warn] : [] };
 }
 
 /** Report exactly what was written and which checks it targets — verify, don't trust. */
-export function formatInstallReport({ pack, results, unresolved, warnings = [] }, cwd) {
+export function formatInstallReport({ pack, results, unresolved, appliedDefaults = [], warnings = [] }, cwd) {
   const execs = new Set(pack.files.filter(isExec).map((f) => f.dest));
   const out = results.map((r) => (r.status === 'written' ? `  written${execs.has(r.dest) ? ' (+x)' : ''}  ${r.dest}` : `  skipped (exists)  ${r.dest}`));
   if (results.some((r) => r.status === 'skipped')) out.push('  Re-run with --force to overwrite.');
+  // Defaults resolved to a working baseline — no longer "unresolved", but the operator should review
+  // and narrow them (e.g. widen a deny-all allow-list only to the hosts the project truly needs).
+  for (const d of appliedDefaults) out.push(`  applied default {{${d.key}}} = ${d.value} — review before relying on it.`);
   for (const k of unresolved) out.push(`  warning: no value for {{${k}}} — edit it by hand.`);
   for (const w of warnings) out.push(`  WARNING: ${w}`);
   out.push(`  Targets checks: ${pack.checks.join(', ') || '(none)'}`);

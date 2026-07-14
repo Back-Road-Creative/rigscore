@@ -14,5 +14,9 @@
     "PROJECT_NAME": "myproject",
     "ALLOWED_HOSTS": "# one extended-regex host per line, e.g. (^|\\.)crates\\.io$",
     "EGRESS_SUBNET": "172.30.0.0/16"
+  },
+  "defaults": {
+    "EGRESS_SUBNET": "172.30.0.0/16",
+    "ALLOWED_HOSTS": "# fail-closed default: no hosts beyond the curated baseline above. Add one extended-regex host per line to widen egress."
   }
 }
