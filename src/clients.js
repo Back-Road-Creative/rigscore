@@ -118,6 +118,40 @@ export function repoMcpPaths(cwd) {
   return repoMcpRelPaths().map(p => path.join(cwd, p));
 }
 
+/**
+ * Env-map string values from every committed repo-level MCP config, grouped by
+ * relative path. Each config's servers are resolved with mcpServersIn() (its own
+ * key — `.vscode/mcp.json` reads `servers`, opencode reads `mcp`) and each server's
+ * env map is read from `env` or, for opencode, `environment`. `readJson` is injected
+ * (async path -> parsed object | null) so this module needs no filesystem or
+ * child_process import. Paths in `skip` are omitted — env-exposure passes its raw-
+ * scanned config list so a config covered there is not double-reported.
+ * Consolidating the read here keeps MCP-server data out of any child_process-capable
+ * module (see test/mcp-runtime-hash.test.js).
+ */
+export async function repoMcpEnvValues(cwd, readJson, skip = []) {
+  const skipSet = new Set(skip);
+  const out = [];
+  for (const relPath of repoMcpRelPaths()) {
+    if (skipSet.has(relPath)) continue;
+    const config = await readJson(path.join(cwd, relPath));
+    if (!config) continue;
+    const values = [];
+    for (const server of Object.values(mcpServersIn(relPath, config))) {
+      if (!server || typeof server !== 'object') continue;
+      for (const envKey of ['env', 'environment']) {
+        const env = server[envKey];
+        if (!env || typeof env !== 'object') continue;
+        for (const value of Object.values(env)) {
+          if (typeof value === 'string') values.push(value);
+        }
+      }
+    }
+    if (values.length) out.push({ relPath, values });
+  }
+  return out;
+}
+
 /** Same set — network-exposure historically scanned a subset; it now sees the union. */
 export function networkMcpPaths(cwd, homedir) {
   return mcpConfigPaths(cwd, homedir);
