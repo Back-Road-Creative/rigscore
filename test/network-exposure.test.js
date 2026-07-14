@@ -63,6 +63,24 @@ describe('network-exposure check', () => {
     }
   });
 
+  // ~/.claude.json holds Claude Code's local-scoped servers under projects[<abs-cwd>];
+  // the flat MCP reader can't see that nesting, so they were invisible to this check.
+  it('CRITICAL for a non-loopback URL in ~/.claude.json projects[cwd].mcpServers', async () => {
+    const home = makeTmpDir();
+    const proj = '/repo/proj';
+    fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+      projects: { [proj]: { mcpServers: { remote: { transport: 'sse', url: 'http://0.0.0.0:9000/sse' } } } },
+    }));
+    try {
+      const result = await check.run({ cwd: proj, homedir: home, config: defaultConfig, priorResults: [] });
+      const critical = result.findings.find(f => f.severity === 'critical' && f.title.includes('non-loopback'));
+      expect(critical).toBeDefined();
+      expect(critical.title).toContain('remote');
+    } finally {
+      fs.rmSync(home, { recursive: true });
+    }
+  });
+
   it('INFO on malformed URL in MCP config — no throw', async () => {
     const tmpDir = makeTmpDir();
     fs.writeFileSync(path.join(tmpDir, '.mcp.json'), JSON.stringify({

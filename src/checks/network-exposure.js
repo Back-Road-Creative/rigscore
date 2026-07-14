@@ -3,7 +3,7 @@ import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, AI_SERVICE_PORTS, MCP_SSE_PORT_RANGE } from '../constants.js';
 import { readFileSafe, readJsonSafe, execSafe } from '../utils.js';
-import { networkMcpPaths, mcpServersIn } from '../clients.js';
+import { networkMcpPaths, mcpServersForConfig } from '../clients.js';
 
 const DEFAULT_SAFE_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 
@@ -62,7 +62,7 @@ async function checkMcpConfigUrls(context) {
     const mcpConfig = await readJsonSafe(configPath);
     if (!mcpConfig) continue;
 
-    const servers = mcpServersIn(configPath, mcpConfig);
+    const servers = mcpServersForConfig(configPath, mcpConfig, cwd);
     const relPath = path.relative(cwd, configPath) || configPath;
 
     for (const [name, server] of Object.entries(servers)) {

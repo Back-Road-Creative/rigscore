@@ -13,9 +13,11 @@ import path from 'node:path';
  *                 `base: 'cwd'` means COMMITTED, in-repo — those are the configs a PR can
  *                 mutate, so they are exactly the ones the rug-pull pin covers (repoMcpPaths).
  *   credentials — $HOME configs whose MCP servers' env maps can hold plaintext secrets:
- *                 { dir, file, envKey? }. Servers are read through `mcpServersIn()`, so the
- *                 client's own `key` applies (Zed: `context_servers`). `envKey` defaults to
- *                 'env' (opencode nests its variables under 'environment').
+ *                 { dir, file, envKey? }. Servers are read through `mcpServersForConfig()`
+ *                 (a superset of `mcpServersIn()` that also resolves `~/.claude.json`'s
+ *                 per-project `projects[<cwd>].mcpServers`), so the client's own `key`
+ *                 applies (Zed: `context_servers`). `envKey` defaults to 'env' (opencode
+ *                 nests its variables under 'environment').
  *   sandbox     — config declaring the agent's approval/sandbox boundary: { path, base, format }.
  *                 `format` picks the reader: 'toml' (Codex's approval_policy/sandbox_mode),
  *                 'json' (Claude Code's permissions.deny). Entries are listed in precedence
@@ -33,8 +35,18 @@ import path from 'node:path';
  *              (AGENTS.md).
  */
 export const CLIENTS = [
+  // `~/.claude.json` is Claude Code's REAL user store (distinct from the committed
+  // `.mcp.json` and from `.claude/` settings). It holds MCP servers in two places:
+  // a top-level `mcpServers` (user scope) and `projects[<abs-cwd>].mcpServers` (local
+  // scope, the default — servers Claude Code loads only for that repo). base:'home' so
+  // its top-level servers reach the home-config scanners; the nested per-project map is
+  // resolved by mcpServersForConfig() (the flat reader can't express it). NOT base:'cwd'
+  // — a home file no PR can mutate, so it is deliberately outside the rug-pull pin.
+  // Scopes/precedence: code.claude.com/docs/en/mcp "MCP installation scopes".
   { id: 'claude-code', name: 'Claude Code', governance: ['CLAUDE.md'],
-    mcp: [{ path: '.mcp.json', base: 'cwd' }],
+    mcp: [{ path: '.mcp.json', base: 'cwd' },
+      { path: '.claude.json', base: 'home' }],
+    credentials: [{ dir: '.', file: '.claude.json' }],
     sandbox: [{ path: '.claude/settings.json', base: 'cwd', format: 'json' },
       { path: '.claude/settings.local.json', base: 'cwd', format: 'json' }] },
   { id: 'claude-desktop', name: 'Claude Desktop',
@@ -221,4 +233,28 @@ export function mcpServersIn(configPath, config) {
     }
   }
   return out;
+}
+
+const CLAUDE_JSON = '.claude.json';
+
+/** True only for Claude Code's user store `~/.claude.json` (never the `.claude/` dir configs). */
+function isClaudeJsonPath(configPath) {
+  return configPath === CLAUDE_JSON || configPath.endsWith(path.sep + CLAUDE_JSON);
+}
+
+/**
+ * MCP server map for a config, resolving Claude Code's `~/.claude.json` two-place layout:
+ * a top-level `mcpServers` (user scope) PLUS `projects[<abs-cwd>].mcpServers` (local scope —
+ * the servers Claude Code actually loads in the repo at `cwd`). The flat `{path,base,key}`
+ * reader (mcpServersIn) models only the top level, so the per-project map was invisible to
+ * the home-config scanners. For `~/.claude.json` this merges both — the per-project (local)
+ * entry wins a name collision, matching Claude Code's local > user precedence. Every other
+ * path is the plain mcpServersIn() read, unchanged, so it is a safe drop-in at any call site.
+ */
+export function mcpServersForConfig(configPath, config, cwd) {
+  const base = mcpServersIn(configPath, config);
+  if (!isClaudeJsonPath(configPath) || !config || typeof config !== 'object') return base;
+  const perProject = config.projects?.[cwd]?.mcpServers;
+  if (!perProject || typeof perProject !== 'object') return base;
+  return { ...base, ...perProject };
 }
