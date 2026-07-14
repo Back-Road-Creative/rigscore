@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
 import { calculateCheckScore } from '../scoring.js';
@@ -837,6 +838,47 @@ export function checkInlineCredentials(server, name, relPath) {
   }
   return [];
 }
+
+/**
+ * Self-registered fixers (collected by checks/index.js getRegisteredFixes()).
+ *
+ * The auto-approve findings are the one class in this check that is a pure,
+ * deterministic value-change on the committed `.claude/settings.json`:
+ * `enableAllProjectMcpServers: true` auto-approves every project MCP server
+ * on clone without consent (CVE-2025-59536). Setting it to `false` is the safe
+ * remediation the findings themselves prescribe. Every other mcp-config finding
+ * (typosquat, unpinned version, inline credentials, rug-pull drift, base-url
+ * redirect) needs human judgment and stays fix-less — see docs/checks/mcp-config.md.
+ *
+ * Scope is the project config only (cwd/.claude/settings.json) — never the
+ * per-user homedir settings a repo-level `--fix` has no business rewriting.
+ */
+export const fixes = [
+  {
+    id: 'mcp-auto-approve-disable',
+    findingIds: [
+      'mcp-config/mcp-auto-approve-enabled',
+      'mcp-config/cve-2025-59536-auto-approve-on-clone',
+    ],
+    description: 'Set enableAllProjectMcpServers to false in .claude/settings.json',
+    async apply(cwd) {
+      const settingsPath = path.join(cwd, '.claude', 'settings.json');
+      // readJsonSafe returns null for BOTH absent and unparseable — either way
+      // there is nothing safe to surgically edit, so leave the file untouched
+      // (never create, never clobber a corrupt file).
+      const settings = await readJsonSafe(settingsPath);
+      if (!settings || typeof settings !== 'object') return false;
+      // Idempotent: only the genuine `true` bypass is a change. Already-false or
+      // absent is safe, so a second `--fix` writes nothing (no mtime churn).
+      if (settings.enableAllProjectMcpServers !== true) return false;
+      settings.enableAllProjectMcpServers = false;
+      // Re-serialize the whole object (JSON.parse/stringify preserve key order),
+      // changing only this one key; 2-space indent + trailing newline.
+      await fs.promises.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+      return true;
+    },
+  },
+];
 
 export default {
   id: 'mcp-config',
