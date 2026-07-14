@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import { scan, scanRecursive, suppressFindings } from './scanner.js';
-import { calculateOverallScore } from './scoring.js';
+import { scoreScan } from './scoring.js';
 import { resolveWeights } from './config.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
@@ -163,6 +163,24 @@ function writePackOffer(packs) {
 }
 
 /**
+ * Apply a unit's own `.rigscorerc.json` `suppress:` + CLI `--ignore` and rescore
+ * it in place. A "unit" is a single-project scan() result OR one recursive
+ * project. Both branches call this — the recursive path used to ignore
+ * `config.suppress` and skip rescoring, so the monorepo escape hatch was inert.
+ * @returns {{count:number, ids:string[]}} what was muted (0 = nothing).
+ */
+function suppressAndRescore(unit, ignore, checkFilter) {
+  const patterns = [...(unit.config?.suppress || []), ...(ignore || [])];
+  if (patterns.length === 0) return { count: 0, ids: [] };
+  const summary = suppressFindings(unit.results, patterns);
+  unit.suppressed = summary;
+  const { score, notApplicable } = scoreScan(unit.results, resolveWeights(unit.config), checkFilter);
+  unit.score = score;
+  unit.notApplicable = notApplicable;
+  return summary;
+}
+
+/**
  * Top-level CLI entrypoint. Parses args, validates the target directory,
  * applies profile hints (recursive/depth defaults from `monorepo` etc.),
  * dispatches to scan() or scanRecursive(), formats output (terminal /
@@ -190,16 +208,18 @@ export async function run(args) {
 
   const cwd = options.cwd || process.cwd();
 
-  // Validate directory exists
+  // Validate directory exists. Exit 2 (config error), not 1 — README's exit-code
+  // table classifies an invalid target dir as a config error, and CI branches on
+  // 0 vs 1 for score-gating, so exit 1 hid a typo'd path as a low score.
   try {
     const stat = fs.statSync(cwd);
     if (!stat.isDirectory()) {
       process.stderr.write(`Error: ${cwd} is not a valid directory\n`);
-      process.exit(1);
+      process.exit(2);
     }
   } catch {
     process.stderr.write(`Error: ${cwd} is not a valid directory\n`);
-    process.exit(1);
+    process.exit(2);
   }
 
   // Apply profile hints (recursive / depth defaults from `monorepo` etc.)
@@ -311,27 +331,28 @@ export async function run(args) {
       process.exit(2);
     }
 
-    // --ignore in recursive mode: apply per-project suppression before formatting.
-    // Mirrors the non-recursive branch but doesn't recompute scores — recursive
-    // formatters present per-project numbers as-scanned.
-    if (options.ignore && options.ignore.length > 0) {
-      // Aggregate the mute summary across projects so the recursive report /
-      // JSON can surface it too (same transparency rationale as single-project).
-      const aggregate = { count: 0, ids: [] };
-      const seenIds = new Set();
-      for (const project of result.projects) {
-        if (!project.results) continue;
-        const summary = suppressFindings(project.results, options.ignore);
-        aggregate.count += summary.count;
-        for (const id of summary.ids) {
-          if (!seenIds.has(id)) {
-            seenIds.add(id);
-            aggregate.ids.push(id);
-          }
-        }
+    // Per-project suppression: each project's own `suppress:` + CLI `--ignore`,
+    // rescored via the same helper the single-project branch uses. Aggregate the
+    // mute summary onto the root result so the recursive report / JSON disclose it.
+    const aggregate = { count: 0, ids: [] };
+    const seenIds = new Set();
+    let rescored = false;
+    for (const project of result.projects) {
+      if (!project.results) continue;
+      const summary = suppressAndRescore(project, options.ignore, options.checkFilter);
+      if (project.suppressed) rescored = true;
+      aggregate.count += summary.count;
+      for (const id of summary.ids) {
+        if (!seenIds.has(id)) { seenIds.add(id); aggregate.ids.push(id); }
       }
-      if (aggregate.count > 0) result.suppressed = aggregate;
     }
+    // Per-project scores moved, so the header average must move with them.
+    if (rescored) {
+      const scored = result.projects.filter((p) => !p.notApplicable
+        && (p.score > 0 || p.results.some((r) => r.score !== NOT_APPLICABLE_SCORE && r.score !== undefined)));
+      if (scored.length) result.score = Math.round(scored.reduce((s, p) => s + p.score, 0) / scored.length);
+    }
+    if (aggregate.count > 0) result.suppressed = aggregate;
 
     if (options.sarif) {
       // SARIF for recursive: one run per project
@@ -342,8 +363,9 @@ export async function run(args) {
       process.stdout.write(formatTerminalRecursive(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }
 
-    // Fail if ANY project is below threshold (fail-fast on worst)
-    const allPassed = result.projects.every((p) => p.score >= options.failUnder);
+    // Fail if ANY project is below threshold (fail-fast on worst). A project with
+    // nothing to score (`--check` selected only N/A checks) can't fail the gate.
+    const allPassed = result.projects.every((p) => p.notApplicable || p.score >= options.failUnder);
     // Use exitCode + return so Node flushes piped stdout before exiting.
     // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
     process.exitCode = allPassed ? 0 : 1;
@@ -357,25 +379,9 @@ export async function run(args) {
       return; // unreachable — handleFatal always exits
     }
 
-    // Apply suppress/ignore patterns
-    const suppressPatterns = [...(result.config?.suppress || []), ...(options.ignore || [])];
-    if (suppressPatterns.length > 0) {
-      // Thread the mute summary onto `result` so every output branch (human /
-      // SARIF / JSON) can surface it — suppression stays a delete-from-scoring,
-      // it is just no longer silent.
-      result.suppressed = suppressFindings(result.results, suppressPatterns);
-      // Mirror scan()'s scoring branch so --check + suppress doesn't fall back
-      // to weighted scoring (which dilutes the single-check score).
-      if (options.checkFilter) {
-        const applicable = result.results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
-        const avg = applicable.length > 0
-          ? applicable.reduce((sum, r) => sum + r.score, 0) / applicable.length
-          : 0;
-        result.score = Math.round(avg);
-      } else {
-        result.score = calculateOverallScore(result.results, resolveWeights(result.config));
-      }
-    }
+    // Apply suppress/ignore patterns + rescore — same helper the recursive
+    // branch uses, so the two paths cannot drift apart again.
+    suppressAndRescore(result, options.ignore, options.checkFilter);
 
     if (options.sarif) {
       process.stdout.write(JSON.stringify(formatSarif(result), null, 2) + '\n');
@@ -468,7 +474,7 @@ export async function run(args) {
       // matches watcher.js:47 "warn-only in loop" intent. The previous
       // hard-exit(1) made --watch unusable on projects that started red,
       // even though that's exactly when you'd want to watch for fixes.
-      if (options.failUnder && result.score < options.failUnder) {
+      if (!result.notApplicable && options.failUnder && result.score < options.failUnder) {
         process.stderr.write(
           `\nWarning: score ${result.score} is below --fail-under ${options.failUnder} ` +
           '(entering watch mode anyway)\n',
@@ -479,7 +485,8 @@ export async function run(args) {
     } else {
       // Use exitCode + return so Node flushes piped stdout before exiting.
       // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
-      process.exitCode = result.score >= options.failUnder ? 0 : 1;
+      // Nothing to score (`--check` selected only N/A checks) is not a failure.
+      process.exitCode = result.notApplicable || result.score >= options.failUnder ? 0 : 1;
       return;
     }
   }

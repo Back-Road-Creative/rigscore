@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadChecks } from './checks/index.js';
-import { calculateOverallScore, calculatePracticeScore } from './scoring.js';
+import { calculatePracticeScore, scoreScan } from './scoring.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
 import {
@@ -83,21 +83,13 @@ export async function scan(options = {}) {
   // Assign stable finding IDs
   assignFindingIds(results);
 
-  // When filtering to specific checks, use average of their scores
-  // instead of weighted system (which assumes all checks are present)
-  let overallScore;
-  if (options.checkFilter) {
-    const applicable = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
-    const avg = applicable.length > 0
-      ? applicable.reduce((sum, r) => sum + r.score, 0) / applicable.length
-      : 0;
-    overallScore = Math.round(avg);
-  } else {
-    overallScore = calculateOverallScore(results, weights);
-  }
+  // Single scorer for every path (see scoreScan). `notApplicable` is true when a
+  // --check filter selected only N/A checks: nothing to score → `null`, not a 0.
+  const { score: overallScore, notApplicable } = scoreScan(results, weights, options.checkFilter);
 
   return {
     score: overallScore,
+    notApplicable,
     results,
     config,
     // Second axis; `null` when the repo has no practice surface. A getter, not
@@ -214,7 +206,11 @@ export async function scanRecursive(options = {}) {
           path: path.relative(rootDir, dir) || path.basename(dir),
           absolutePath: dir,
           score: result.score,
+          notApplicable: result.notApplicable,
           results: result.results,
+          // The project's OWN config — the CLI needs it to honor that project's
+          // `suppress:` and rescore. Without it the recursive escape hatch was inert.
+          config: result.config,
         };
       }),
     );
