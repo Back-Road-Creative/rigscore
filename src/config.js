@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readJsonStrict } from './utils.js';
+import { readJsonStrict, ConfigParseError } from './utils.js';
 import { WEIGHTS } from './constants.js';
 
 const DEFAULTS = {
@@ -185,20 +185,99 @@ export function resolveWeights(config) {
  * objects from the higher-precedence file override the lower one. This
  * lets users keep personal suppressions / safeHosts in ~/.rigscorerc.json
  * and have them additive with project-specific rules.
+ *
+ * A config file (home or project) may declare an `extends` key to inherit from
+ * a shared baseline — see applyConfigWithExtends for the resolution rules.
  */
 export async function loadConfig(cwd, homedir) {
   // Strict parse — a malformed .rigscorerc.json surfaces a ConfigParseError
   // (propagated to the CLI, which exits 2 with a friendly message) instead
   // of silently falling back to defaults and confusing the user.
-  const homeConfig = homedir
-    ? await readJsonStrict(path.join(homedir, '.rigscorerc.json'))
-    : null;
-  const cwdConfig = await readJsonStrict(path.join(cwd, '.rigscorerc.json'));
+  const homePath = homedir ? path.join(homedir, '.rigscorerc.json') : null;
+  const cwdPath = path.join(cwd, '.rigscorerc.json');
+  const homeConfig = homePath ? await readJsonStrict(homePath) : null;
+  const cwdConfig = await readJsonStrict(cwdPath);
 
   let merged = structuredClone(DEFAULTS);
-  if (homeConfig) merged = mergeConfig(homeConfig, merged);
-  if (cwdConfig) merged = mergeConfig(cwdConfig, merged);
+  // Seed `visited` with the declaring file's own absolute path so a base that
+  // extends back to it is caught as a cycle. Home and project are resolved
+  // independently — each may declare its own `extends`.
+  if (homeConfig) {
+    merged = await applyConfigWithExtends(homeConfig, merged, homedir, new Set([homePath]));
+  }
+  if (cwdConfig) {
+    merged = await applyConfigWithExtends(cwdConfig, merged, cwd, new Set([cwdPath]));
+  }
   return merged;
+}
+
+/**
+ * Resolve a config's `extends` chain, then merge the config's own keys on top.
+ *
+ * `extends` lets a .rigscorerc.json inherit from one or more shared baselines so
+ * a single hardened config is reusable across many repos. Semantics:
+ *   - Value is a string OR an array of strings, each a LOCAL path (a relative
+ *     path resolves against `baseDir` — the directory of the file that declared
+ *     it; an absolute path is allowed).
+ *   - An extended base is LOWER precedence than the file that extends it, and
+ *     within an array LATER entries override EARLIER ones (ESLint convention).
+ *     Layering is thus: incoming `merged` → each target (recursively, in array
+ *     order) → this file's own keys.
+ *   - Recursive: a target may itself declare `extends`; it is resolved
+ *     depth-first before its own keys apply.
+ *   - `visited` holds ABSOLUTE paths on the current ancestor chain; re-entering
+ *     one throws a ConfigParseError naming the cycle. Each target gets an
+ *     independent copy, so a diamond (two bases sharing one grandparent) is NOT
+ *     a cycle.
+ *   - No egress: a value starting with `http://` or `https://` is REJECTED,
+ *     never fetched — rigscore makes no external calls by default. Node-module
+ *     resolution ("some-pkg/base") is out of scope; such a value simply fails
+ *     the local-path lookup as "extends target not found".
+ *   - `extends` is meta and is stripped before mergeConfig (whose signature is
+ *     unchanged) ever sees it.
+ */
+async function applyConfigWithExtends(config, merged, baseDir, visited) {
+  const ext = config.extends;
+  if (ext !== undefined) {
+    const targets = Array.isArray(ext) ? ext : [ext];
+    for (const target of targets) {
+      if (typeof target !== 'string') {
+        throw new ConfigParseError({
+          filePath: baseDir,
+          parseMessage: `extends entries must be strings, got ${typeof target}`,
+        });
+      }
+      if (/^https?:\/\//i.test(target)) {
+        throw new ConfigParseError({
+          filePath: target,
+          parseMessage: 'extends must be a local path, not a URL — rigscore never fetches remote config',
+        });
+      }
+      const targetPath = path.resolve(baseDir, target);
+      if (visited.has(targetPath)) {
+        throw new ConfigParseError({
+          filePath: targetPath,
+          parseMessage: `extends cycle detected: ${[...visited, targetPath].join(' -> ')}`,
+        });
+      }
+      const targetConfig = await readJsonStrict(targetPath);
+      if (targetConfig === null) {
+        throw new ConfigParseError({
+          filePath: targetPath,
+          parseMessage: `extends target not found: ${target}`,
+        });
+      }
+      merged = await applyConfigWithExtends(
+        targetConfig,
+        merged,
+        path.dirname(targetPath),
+        new Set([...visited, targetPath]),
+      );
+    }
+  }
+  // Strip the meta `extends` key before the additive merge runs.
+  const { extends: _extends, ...own } = config;
+  return mergeConfig(own, merged);
 }
 
 function mergeConfig(userConfig, baseline) {
