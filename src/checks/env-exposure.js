@@ -189,7 +189,7 @@ export default {
           detail: 'Your API keys and secrets will be committed to version control.',
           evidence: `unignored: ${fileList}`,
           remediation: `Add ${unignored.length === 1 ? unignored[0] : 'these files'} to .gitignore immediately.`,
-          learnMore: 'https://headlessmode.com/tools/rigscore/#env-security',
+          learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/env-exposure.md',
         });
       } else {
         findings.push({

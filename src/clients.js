@@ -126,6 +126,38 @@ export function governanceFiles() {
   return [...new Set(CLIENTS.flatMap(c => c.governance || []))];
 }
 
+// Directory-form rule sets modern clients read by DEFAULT. Unlike the single-file
+// names in governanceFiles(), each of these is a DIRECTORY whose files are all
+// governance rules — so a repo using ONLY `.cursor/rules/*.mdc` is governed, not
+// "ungoverned". `.clinerules` appears in both worlds: the single-file form lives in
+// governanceFiles(), the directory form here. Extension policy is vendor-exact:
+// Cursor reads only *.mdc, Copilot only *.instructions.md; Windsurf and Cline treat
+// every non-dotfile in the dir as a rule (ext: null).
+const DEFAULT_GOVERNANCE_DIRS = [
+  { dir: '.cursor/rules', ext: '.mdc' },
+  { dir: '.windsurf/rules', ext: null },
+  { dir: '.clinerules', ext: null },
+  { dir: '.github/instructions', ext: '.instructions.md' },
+];
+
+/** Built-in directory-form governance rule sets, scanned by default (dir names). */
+export function governanceDirDefaults() {
+  return DEFAULT_GOVERNANCE_DIRS.map(d => d.dir);
+}
+
+/**
+ * Does basename `name` count as a rule file inside governance dir `dir`? Known
+ * default dirs apply their vendor extension; an unknown (user-configured) dir
+ * accepts `.md`/`.mdc`. Dotfiles never count.
+ */
+export function isGovernanceDirRuleFile(dir, name) {
+  const base = String(name).split(/[\\/]/).pop();
+  if (!base || base.startsWith('.')) return false;
+  const known = DEFAULT_GOVERNANCE_DIRS.find(d => d.dir === dir);
+  if (known) return known.ext === null || base.endsWith(known.ext);
+  return base.endsWith('.md') || base.endsWith('.mdc');
+}
+
 /** Absolute MCP config paths for every known client. */
 export function mcpConfigPaths(cwd, homedir) {
   return mcpEntries().map(m => path.join(m.base === 'cwd' ? cwd : homedir, m.path));

@@ -247,7 +247,7 @@ Skill files (`.cursorrules`, `.windsurfrules`, `.continuerules`, `.roorules`, `c
 
 Your CLAUDE.md file tells AI agents what they can and can't do. Without one, your agent operates with no explicit rules — it can access any file, run any command, and make any API call that its underlying permissions allow.
 
-rigscore recognizes governance files for all major AI coding clients: CLAUDE.md, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `.roorules`, `copilot-instructions.md`, `AGENTS.md`, and `.aider.conf.yml`.
+rigscore recognizes governance files for all major AI coding clients: CLAUDE.md, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `.roorules`, `copilot-instructions.md`, `AGENTS.md`, and `.aider.conf.yml`. It also scans the modern **directory-form** rule sets by default — `.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` (directory), and `.github/instructions/*.instructions.md` — so a repo governed only by those is not mis-scored as ungoverned.
 
 **What rigscore looks for:**
 - Does a governance file exist in the project root?
