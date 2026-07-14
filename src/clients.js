@@ -101,15 +101,21 @@ export function mcpConfigPaths(cwd, homedir) {
 }
 
 /**
- * Absolute paths of the COMMITTED, repo-level MCP configs — every `base: 'cwd'` entry.
- * The single source of truth for what the CVE-2025-54136 rug-pull pin covers: both the
- * minting side (checks/mcp-config.js) and the gate (state.js) read it, so they cannot
- * disagree about scope. A hardcoded `.mcp.json` on either side is what let a rug-pull in
- * `.gemini/settings.json` or `opencode.json` pass with "0 pinned MCP server(s) verified".
+ * Repo-relative paths of the COMMITTED, repo-level MCP configs — every `base: 'cwd'` entry.
+ * The single source of truth for what the CVE-2025-54136 rug-pull pin covers: the minting
+ * side (checks/mcp-config.js), the gate (state.js) and the CycloneDX AI-BOM all read it, so
+ * they cannot disagree about scope. A hardcoded `.mcp.json` on any of them is what let a
+ * rug-pull in `.gemini/settings.json` or `opencode.json` pass with "0 pinned MCP server(s)
+ * verified" — and what dropped a Gemini server from the shipped BOM.
  * Order is CLIENTS declaration order and is STABLE — name collisions resolve by it.
  */
+export function repoMcpRelPaths() {
+  return [...new Set(mcpEntries().filter(m => m.base === 'cwd').map(m => m.path))];
+}
+
+/** Same set, absolute against `cwd`. */
 export function repoMcpPaths(cwd) {
-  return mcpEntries().filter(m => m.base === 'cwd').map(m => path.join(cwd, m.path));
+  return repoMcpRelPaths().map(p => path.join(cwd, p));
 }
 
 /** Same set — network-exposure historically scanned a subset; it now sees the union. */

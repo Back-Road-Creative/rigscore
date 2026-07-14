@@ -26,11 +26,18 @@ not produce a green run.
 
 | Discovered thing | CycloneDX shape |
 | --- | --- |
-| MCP server in `.mcp.json` / `.vscode/mcp.json` | `components[]`, `type: application`, `bom-ref: mcp-server:<name>` |
+| MCP server in **any** repo-level client config | `components[]`, `type: application`, `bom-ref: mcp-server:<name>` |
 | npm-launched MCP server with a **stable version pin** | that component's `version` + `purl` (`pkg:npm/…`) |
-| AI client configs (`.mcp.json`, `.vscode/mcp.json`, `.claude/settings.json`) | `components[]`, `type: file` + SHA-256 content digest |
+| AI client configs (every repo-level MCP config, plus `.claude/settings.json`) | `components[]`, `type: file` + SHA-256 content digest |
 | Governance files (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, …) | `components[]`, `type: file` + SHA-256 content digest |
 | All of the above | a flat `dependencies[]` graph rooted at `metadata.component` |
+
+**Repo-level** means every committed, in-repo MCP config the client registry declares —
+today `.mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json` and `opencode.json`. The BOM
+reads that set from the registry (`repoMcpRelPaths()`), the same source of truth the
+rug-pull pin uses, so a client added to rigscore is inventoried without touching this
+exporter. Home-dir configs (`~/.cursor/mcp.json`, …) are excluded on purpose: a BOM is
+shippable and must not carry a developer's machine layout.
 
 ## Facts that ride on `properties` — and why
 
