@@ -169,6 +169,19 @@ npx github:Back-Road-Creative/rigscore --watch
 npx github:Back-Road-Creative/rigscore --init-hook
 ```
 
+**Using the [pre-commit](https://pre-commit.com) framework?** Add rigscore to your `.pre-commit-config.yaml` (it's backed by `.pre-commit-hooks.yaml` at this repo root):
+
+```yaml
+repos:
+  - repo: https://github.com/Back-Road-Creative/rigscore
+    rev: v2.0.0
+    hooks:
+      - id: rigscore
+        # args: [--fail-under=80, --ci]   # optional: tune the gate
+```
+
+This is **framework-managed** — pre-commit clones and installs rigscore itself (`language: node`, no npm publish needed) — as opposed to `rigscore --init-hook` above, a **native git-hook installer** that writes a pinned `npx` line straight into your repo's `.git/hooks/pre-commit`.
+
 ## Platform notes
 
 | Platform | Status | Notes |
