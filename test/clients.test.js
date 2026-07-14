@@ -123,6 +123,51 @@ describe('Claude Code ~/.claude.json (finding A4)', () => {
   });
 });
 
+describe('batch-1 client additions (Amazon Q Developer, Roo Code, Cody)', () => {
+  it('registers the three new clients with unique ids', () => {
+    for (const id of ['amazon-q', 'roo-code', 'cody']) {
+      expect(CLIENTS.find(c => c.id === id), id).toBeTruthy();
+    }
+  });
+
+  it('Amazon Q Developer: surfaces CLI + IDE MCP configs (cwd committed and home) and credentials', () => {
+    const mcp = mcpConfigPaths(CWD, HOME);
+    // Committed, in-repo (base:cwd) — CLI project config + IDE GUI (default.json) config.
+    expect(mcp).toContain(path.join(CWD, '.amazonq/mcp.json'));
+    expect(mcp).toContain(path.join(CWD, '.amazonq/default.json'));
+    // Global (base:home) under ~/.aws/amazonq.
+    expect(mcp).toContain(path.join(HOME, '.aws/amazonq/mcp.json'));
+    expect(mcp).toContain(path.join(HOME, '.aws/amazonq/default.json'));
+    // Both committed configs are pinned against a rug-pull.
+    const repoRel = repoMcpRelPaths();
+    expect(repoRel).toContain('.amazonq/mcp.json');
+    expect(repoRel).toContain('.amazonq/default.json');
+    // Its home configs' env maps can hold plaintext secrets.
+    const creds = credentialClients();
+    expect(creds.some(c => c.dir === '.aws/amazonq' && c.file === 'mcp.json')).toBe(true);
+    expect(creds.some(c => c.dir === '.aws/amazonq' && c.file === 'default.json')).toBe(true);
+  });
+
+  it('Roo Code: surfaces the .roorules governance file and the committed .roo/mcp.json', () => {
+    expect(governanceFiles()).toContain('.roorules');
+    const repoRel = repoMcpRelPaths();
+    expect(repoRel).toContain('.roo/mcp.json');
+    // Default key — Roo (a Cline fork) nests servers under `mcpServers`.
+    const servers = { s: { command: 'node' } };
+    expect(mcpServersIn(path.join(CWD, '.roo/mcp.json'), { mcpServers: servers })).toEqual(servers);
+  });
+
+  it('Cody: surfaces the committed .vscode/settings.json under the cody.mcpServers key', () => {
+    const repoRel = repoMcpRelPaths();
+    expect(repoRel).toContain('.vscode/settings.json');
+    const servers = { s: { command: 'node', env: { TOKEN: 'x' } } };
+    // Cody reads its MCP servers from the flat `cody.mcpServers` setting, NOT `mcpServers`.
+    expect(mcpServersIn(path.join(CWD, '.vscode/settings.json'), { 'cody.mcpServers': servers }))
+      .toEqual(servers);
+    expect(mcpServersIn(path.join(CWD, '.vscode/settings.json'), { mcpServers: servers })).toEqual({});
+  });
+});
+
 describe('mcpServersIn', () => {
   it('reads mcpServers by default and opencode\'s "mcp" key', () => {
     const servers = { a: { command: 'x' } };

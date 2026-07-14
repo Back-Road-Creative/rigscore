@@ -20,8 +20,10 @@ import path from 'node:path';
  *                 nests its variables under 'environment').
  *   sandbox     — config declaring the agent's approval/sandbox boundary: { path, base, format }.
  *                 `format` picks the reader: 'toml' (Codex's approval_policy/sandbox_mode),
- *                 'json' (Claude Code's permissions.deny). Entries are listed in precedence
- *                 order — later files override/extend earlier ones.
+ *                 'json' (Claude Code's permissions.deny), 'gemini' (.gemini/settings.json
+ *                 general.defaultApprovalMode), 'opencode' (opencode.json permission block),
+ *                 'cursor' (.cursor/permissions.json terminal/mcp allowlists). Entries are
+ *                 listed in precedence order — later files override/extend earlier ones.
  *
  * Paths for the three newest clients are from primary vendor docs:
  *   Codex CLI  developers.openai.com/codex/config-reference — ~/.codex/config.toml and project
@@ -60,6 +62,10 @@ export const CLIENTS = [
   { id: 'cursor', name: 'Cursor', governance: ['.cursorrules'],
     mcp: [{ path: '.cursor/mcp.json', base: 'cwd' },
       { path: '.cursor/mcp.json', base: 'home' }],
+    // .cursor/permissions.json is COMMITTED per-repo (cursor.com/docs/reference/permissions):
+    // terminalAllowlist / mcpAllowlist. A "*" (or "*:*") wildcard auto-runs everything.
+    sandbox: [{ path: '.cursor/permissions.json', base: 'home', format: 'cursor' },
+      { path: '.cursor/permissions.json', base: 'cwd', format: 'cursor' }],
     credentials: [{ dir: '.cursor', file: 'mcp.json' }] },
   { id: 'windsurf', name: 'Windsurf', governance: ['.windsurfrules'],
     mcp: [{ path: '.windsurf/mcp.json', base: 'home' }],
@@ -85,10 +91,14 @@ export const CLIENTS = [
   { id: 'gemini', name: 'Gemini CLI', governance: ['GEMINI.md'],
     mcp: [{ path: '.gemini/settings.json', base: 'cwd' },
       { path: '.gemini/settings.json', base: 'home' }],
+    sandbox: [{ path: '.gemini/settings.json', base: 'home', format: 'gemini' },
+      { path: '.gemini/settings.json', base: 'cwd', format: 'gemini' }],
     credentials: [{ dir: '.gemini', file: 'settings.json' }] },
   { id: 'opencode', name: 'opencode', governance: ['AGENTS.md'],
     mcp: [{ path: 'opencode.json', base: 'cwd', key: 'mcp' },
       { path: '.config/opencode/opencode.json', base: 'home', key: 'mcp' }],
+    sandbox: [{ path: '.config/opencode/opencode.json', base: 'home', format: 'opencode' },
+      { path: 'opencode.json', base: 'cwd', format: 'opencode' }],
     credentials: [{ dir: '.config/opencode', file: 'opencode.json', envKey: 'environment' }] },
   { id: 'amp', name: 'Amp',
     mcp: [{ path: '.amp/mcp.json', base: 'home' }],
@@ -99,6 +109,31 @@ export const CLIENTS = [
   { id: 'zed', name: 'Zed',
     mcp: [{ path: '.config/zed/settings.json', base: 'home', key: 'context_servers' }],
     credentials: [{ dir: '.config/zed', file: 'settings.json' }] },
+  // Amazon Q Developer (CLI + IDE). MCP servers under `mcpServers`:
+  //   docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-config-CLI.html
+  //   (~/.aws/amazonq/mcp.json global, .amazonq/mcp.json workspace) and mcp-ide.html (the
+  //   IDE GUI now writes default.json; legacy mcp.json stays enabled). Project rules live in
+  //   the .amazonq/rules/ DIRECTORY of arbitrarily-named markdown files
+  //   (context-project-rules.html) — no single governance filename to declare, so it is omitted.
+  { id: 'amazon-q', name: 'Amazon Q Developer',
+    mcp: [{ path: '.amazonq/mcp.json', base: 'cwd' }, { path: '.amazonq/default.json', base: 'cwd' },
+      { path: '.aws/amazonq/mcp.json', base: 'home' }, { path: '.aws/amazonq/default.json', base: 'home' }],
+    credentials: [{ dir: '.aws/amazonq', file: 'mcp.json' }, { dir: '.aws/amazonq', file: 'default.json' }] },
+  // Roo Code (VS Code extension, Cline-fork family). docs.roocode.com/features/mcp/using-mcp-in-roo
+  // — project MCP is a committed `.roo/mcp.json` under `mcpServers`; the global config
+  // (mcp_settings.json) lives in VS Code global storage, which has no stable ~/ path, so it and
+  // its credentials surface are omitted. docs.roocode.com/features/custom-instructions — the
+  // `.roo/rules/` directory of arbitrary files falls back to a single `.roorules` file (declared).
+  { id: 'roo-code', name: 'Roo Code', governance: ['.roorules'],
+    mcp: [{ path: '.roo/mcp.json', base: 'cwd' }] },
+  // Cody (Sourcegraph). sourcegraph.com/docs/cody/capabilities/agentic-context-fetching — MCP
+  // servers are read from the `cody.mcpServers` setting (a flat dotted key) in the editor's
+  // settings.json; the committed VS Code workspace form is `.vscode/settings.json`. The global
+  // user settings.json is at an OS-specific path (no stable ~/), so its credentials surface is
+  // omitted; custom commands (.vscode/cody.json) were superseded by the server-side Prompt
+  // Library, so there is no local governance file to declare.
+  { id: 'cody', name: 'Cody',
+    mcp: [{ path: '.vscode/settings.json', base: 'cwd', key: 'cody.mcpServers' }] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';

@@ -69,6 +69,9 @@ describe('sandbox-posture: verdicts', () => {
 const MINIMAL = {
   toml: 'sandbox_mode = "read-only"\n',
   json: JSON.stringify({ permissions: { deny: ['Bash(curl:*)'] } }),
+  gemini: JSON.stringify({ general: { defaultApprovalMode: 'plan' } }),
+  opencode: JSON.stringify({ permission: { '*': 'deny' } }),
+  cursor: JSON.stringify({ terminalAllowlist: ['git'] }),
 };
 
 describe('sandbox-posture: the client registry is the surface list', () => {
@@ -199,5 +202,103 @@ describe('sandbox-posture: Claude Code deny-rule posture', () => {
     expect(ids(r)).not.toContain('sandbox-posture/claude-no-deny-rules');
     expect(r.data.postures['claude-code']).toBeUndefined();
     expect(r.score).toBe(NOT_APPLICABLE_SCORE);
+  });
+});
+
+describe('sandbox-posture: Gemini CLI approval mode', () => {
+  it('flags general.defaultApprovalMode "yolo" as unrestricted (auto-approves every tool call)', async () => {
+    const r = await run(tree({ '.gemini/settings.json': JSON.stringify({ general: { defaultApprovalMode: 'yolo' } }) }));
+    expect(ids(r)).toContain('sandbox-posture/gemini-yolo-approval');
+    expect(sev(r, 'sandbox-posture/gemini-yolo-approval')).toBe('warning');
+    expect(r.data.postures.gemini).toBe('unrestricted');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('flags "auto_edit" as auto-approving edits without prompting (partial posture, still a warning)', async () => {
+    const r = await run(tree({ '.gemini/settings.json': JSON.stringify({ general: { defaultApprovalMode: 'auto_edit' } }) }));
+    expect(ids(r)).toContain('sandbox-posture/gemini-auto-edit');
+    expect(sev(r, 'sandbox-posture/gemini-auto-edit')).toBe('warning');
+    expect(r.data.postures.gemini).toBe('partial');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('passes read-only "plan" mode and normalizes it to restricted', async () => {
+    const r = await run(tree({ '.gemini/settings.json': JSON.stringify({ general: { defaultApprovalMode: 'plan' } }) }));
+    expect(r.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning')).toHaveLength(0);
+    expect(r.data.postures.gemini).toBe('restricted');
+    expect(r.score).toBe(100);
+  });
+
+  it('passes the interactive "default" mode with no finding (partial — prompts every call)', async () => {
+    const r = await run(tree({ '.gemini/settings.json': JSON.stringify({ general: { defaultApprovalMode: 'default' } }) }));
+    expect(r.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning')).toHaveLength(0);
+    expect(r.data.postures.gemini).toBe('partial');
+  });
+});
+
+describe('sandbox-posture: opencode permission block', () => {
+  it('flags permission.bash "allow" as unrestricted (auto-runs shell)', async () => {
+    const r = await run(tree({ 'opencode.json': JSON.stringify({ permission: { bash: 'allow' } }) }));
+    expect(ids(r)).toContain('sandbox-posture/opencode-auto-run-shell');
+    expect(sev(r, 'sandbox-posture/opencode-auto-run-shell')).toBe('warning');
+    expect(r.data.postures.opencode).toBe('unrestricted');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('flags a "*": "allow" catch-all the same way', async () => {
+    const r = await run(tree({ 'opencode.json': JSON.stringify({ permission: { '*': 'allow' } }) }));
+    expect(ids(r)).toContain('sandbox-posture/opencode-auto-run-shell');
+    expect(r.data.postures.opencode).toBe('unrestricted');
+  });
+
+  it('passes when bash is "deny" and normalizes it to restricted', async () => {
+    const r = await run(tree({ 'opencode.json': JSON.stringify({ permission: { bash: 'deny' } }) }));
+    expect(ids(r)).not.toContain('sandbox-posture/opencode-auto-run-shell');
+    expect(r.data.postures.opencode).toBe('restricted');
+    expect(r.score).toBe(100);
+  });
+
+  it('an opencode.json with no permission block is not a sandbox surface (N/A, never zero)', async () => {
+    const r = await run(tree({ 'opencode.json': JSON.stringify({ mcp: { foo: { type: 'local' } } }) }));
+    expect(r.data.postures.opencode).toBeUndefined();
+    expect(r.score).toBe(NOT_APPLICABLE_SCORE);
+    expect(r.data.surfacesScanned).toBe(0);
+  });
+});
+
+describe('sandbox-posture: Cursor permissions.json allowlist', () => {
+  it('flags a "*" terminalAllowlist wildcard as unrestricted (auto-runs any command)', async () => {
+    const r = await run(tree({ '.cursor/permissions.json': JSON.stringify({ terminalAllowlist: ['*'] }) }));
+    expect(ids(r)).toContain('sandbox-posture/cursor-wildcard-autorun');
+    expect(sev(r, 'sandbox-posture/cursor-wildcard-autorun')).toBe('warning');
+    expect(r.data.postures.cursor).toBe('unrestricted');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('flags a "*:*" mcpAllowlist wildcard the same way', async () => {
+    const r = await run(tree({ '.cursor/permissions.json': JSON.stringify({ mcpAllowlist: ['*:*'] }) }));
+    expect(ids(r)).toContain('sandbox-posture/cursor-wildcard-autorun');
+    expect(r.data.postures.cursor).toBe('unrestricted');
+  });
+
+  it('passes a narrow allowlist (partial posture, no wildcard) — Cursor has no restricted ceiling here', async () => {
+    const r = await run(tree({ '.cursor/permissions.json': JSON.stringify({ terminalAllowlist: ['git', 'npm'], mcpAllowlist: ['github:*'] }) }));
+    expect(ids(r)).not.toContain('sandbox-posture/cursor-wildcard-autorun');
+    expect(r.data.postures.cursor).toBe('partial');
+    expect(r.score).toBe(100);
+  });
+});
+
+describe('sandbox-posture: new clients — absent config is not-applicable (no false positive)', () => {
+  it.each([
+    ['gemini', 'sandbox-posture/gemini-yolo-approval'],
+    ['opencode', 'sandbox-posture/opencode-auto-run-shell'],
+    ['cursor', 'sandbox-posture/cursor-wildcard-autorun'],
+  ])('%s absent → no posture, no finding, even with another client present', async (clientId, findingId) => {
+    // A locked Codex config makes the check applicable; the target client's file is absent,
+    // so its reader must neither crash nor fabricate a posture/finding.
+    const r = await run(tree({ '.codex/config.toml': 'sandbox_mode = "read-only"\n' }));
+    expect(r.data.postures[clientId]).toBeUndefined();
+    expect(ids(r)).not.toContain(findingId);
   });
 });
