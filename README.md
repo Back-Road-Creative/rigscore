@@ -195,7 +195,7 @@ npx github:Back-Road-Creative/rigscore --init-hook
 
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets AI agents connect to external tools via servers. Each server exposes capabilities — filesystem access, API calls, database queries. The security risk is in the permissions.
 
-rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), and Amp (`~/.amp/mcp.json`).
+rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), and Cody (`cody.mcpServers` in `.vscode/settings.json`).
 
 **What rigscore looks for:**
 - Transport type: `stdio` (local, safer) vs. `sse` (network, riskier)
@@ -230,7 +230,7 @@ The coherence check is rigscore's second pass — it compares what your governan
 
 ### 3. Skill file safety (10 points) {#skill-file-injection}
 
-Skill files (`.cursorrules`, `.windsurfrules`, `.continuerules`, `copilot-instructions.md`, `AGENTS.md`, `.aider.conf.yml`) tell AI agents how to behave. They're also a prompt injection vector — malicious instructions embedded in skill files can override agent behavior.
+Skill files (`.cursorrules`, `.windsurfrules`, `.continuerules`, `.roorules`, `copilot-instructions.md`, `AGENTS.md`, `.aider.conf.yml`) tell AI agents how to behave. They're also a prompt injection vector — malicious instructions embedded in skill files can override agent behavior.
 
 **What rigscore looks for:**
 - Instruction override patterns ("ignore previous instructions", "disregard", "new system prompt")
@@ -247,7 +247,7 @@ Skill files (`.cursorrules`, `.windsurfrules`, `.continuerules`, `copilot-instru
 
 Your CLAUDE.md file tells AI agents what they can and can't do. Without one, your agent operates with no explicit rules — it can access any file, run any command, and make any API call that its underlying permissions allow.
 
-rigscore recognizes governance files for all major AI coding clients: CLAUDE.md, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `copilot-instructions.md`, `AGENTS.md`, and `.aider.conf.yml`. It also scans the modern **directory-form** rule sets by default — `.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` (directory), and `.github/instructions/*.instructions.md` — so a repo governed only by those is not mis-scored as ungoverned.
+rigscore recognizes governance files for all major AI coding clients: CLAUDE.md, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `.roorules`, `copilot-instructions.md`, `AGENTS.md`, and `.aider.conf.yml`. It also scans the modern **directory-form** rule sets by default — `.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` (directory), and `.github/instructions/*.instructions.md` — so a repo governed only by those is not mis-scored as ungoverned.
 
 **What rigscore looks for:**
 - Does a governance file exist in the project root?
