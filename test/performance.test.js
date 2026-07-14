@@ -72,6 +72,11 @@ spec:
     }
   });
 
+  // Explicit 30s per-test timeout (below): without it the test inherits vitest's
+  // 10s default, which is BELOW this test's own 15s assertion ceiling — so under
+  // load vitest aborts at 10s before `elapsed < 15000` can ever be evaluated,
+  // turning a real perf regression signal into a load-sensitive flake. The 30s
+  // ceiling keeps the 15s assertion the actual gate.
   it('recursive scan with 20 projects under 15s', async () => {
     const tmpDir = makeTmpDir();
     try {
@@ -92,5 +97,5 @@ spec:
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
-  });
+  }, 30000);
 });
