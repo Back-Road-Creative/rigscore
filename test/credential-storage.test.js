@@ -125,6 +125,40 @@ describe('credential-storage check', () => {
     }
   });
 
+  // Claude Code's real user store `~/.claude.json` holds MCP servers in two places:
+  // a top-level `mcpServers` (user scope) and `projects[<abs-cwd>].mcpServers` (local
+  // scope). Source: code.claude.com/docs/en/mcp "MCP installation scopes" — verified 2026-07-14.
+  it('CRITICAL for plaintext key in top-level ~/.claude.json mcpServers (user scope)', async () => {
+    const homedir = makeTmpDir();
+    fs.writeFileSync(path.join(homedir, '.claude.json'), JSON.stringify({
+      mcpServers: { db: { command: 'npx', args: ['s'], env: { API_KEY: fakeStripeKey } } },
+    }));
+    try {
+      const result = await check.run({ homedir });
+      const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Claude Code'));
+      expect(finding).toBeDefined();
+      expect(result.data.secretsFound).toBeGreaterThanOrEqual(1);
+    } finally {
+      fs.rmSync(homedir, { recursive: true });
+    }
+  });
+
+  it('CRITICAL for plaintext key in ~/.claude.json projects[cwd].mcpServers (local scope)', async () => {
+    const homedir = makeTmpDir();
+    const cwd = '/repo/proj';
+    fs.writeFileSync(path.join(homedir, '.claude.json'), JSON.stringify({
+      projects: { [cwd]: { mcpServers: { proj: { command: 'npx', env: { GH_TOKEN: fakeGhToken } } } } },
+    }));
+    try {
+      const result = await check.run({ homedir, cwd });
+      const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Claude Code'));
+      expect(finding).toBeDefined();
+      expect(result.data.secretsFound).toBe(1);
+    } finally {
+      fs.rmSync(homedir, { recursive: true });
+    }
+  });
+
   it('N/A when no AI client configs found', async () => {
     const homedir = makeTmpDir();
     try {

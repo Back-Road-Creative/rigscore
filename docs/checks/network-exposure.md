@@ -51,7 +51,7 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 
 ## Scope and limitations
 
-- MCP configs checked: every path in the client registry (`src/clients.js`) — `.mcp.json`, `.vscode/mcp.json`, `opencode.json` and `.gemini/settings.json` in the project, plus the client configs under `$HOME` (`.claude/claude_desktop_config.json`, `.cursor/mcp.json`, `.cline/mcp_settings.json`, `.continue/config.json`, `.windsurf/mcp.json`, `.amp/mcp.json`, `.config/zed/settings.json`, `.gemini/settings.json`, `.config/opencode/opencode.json`). Extra paths can be added via `config.paths.mcpConfig`.
+- MCP configs checked: every path in the client registry (`src/clients.js`) — `.mcp.json`, `.vscode/mcp.json`, `opencode.json` and `.gemini/settings.json` in the project, plus the client configs under `$HOME` (`.claude.json` — Claude Code's user store, whose top-level `mcpServers` and per-project `projects[<abs-cwd>].mcpServers` are both resolved via `mcpServersForConfig` — `.claude/claude_desktop_config.json`, `.cursor/mcp.json`, `.cline/mcp_settings.json`, `.continue/config.json`, `.windsurf/mcp.json`, `.amp/mcp.json`, `.config/zed/settings.json`, `.gemini/settings.json`, `.config/opencode/opencode.json`). Extra paths can be added via `config.paths.mcpConfig`.
 - Compose files checked: `docker-compose.{yml,yaml}`, `compose.{yml,yaml}`. Extra paths via `config.paths.dockerCompose`.
 - Safe-host list is overridable via `config.network.safeHosts`; default is `['127.0.0.1', 'localhost', '::1']`.
 - Live-listener probe requires `ss` (Linux) or `lsof` (macOS) in PATH. On Windows or in minimal containers without either tool, this surface silently degrades to no findings.

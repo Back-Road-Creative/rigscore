@@ -2,7 +2,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readJsonSafe } from '../utils.js';
-import { credentialClients, mcpServersIn } from '../clients.js';
+import { credentialClients, mcpServersForConfig } from '../clients.js';
 
 const EXAMPLE_RE = /\b(example|placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me)\b/i;
 
@@ -29,7 +29,7 @@ export default {
   category: 'secrets',
 
   async run(context) {
-    const { homedir } = context;
+    const { homedir, cwd } = context;
     const findings = [];
     let filesScanned = 0;
     let secretsFound = 0;
@@ -42,7 +42,8 @@ export default {
 
       // Per-client server key (Zed: `context_servers`, opencode: `mcp`) and env key
       // (opencode: `environment`) come from the registry — never hardcode `mcpServers`/`env`.
-      const servers = mcpServersIn(configPath, config);
+      // mcpServersForConfig also resolves `~/.claude.json`'s per-project (local-scope) servers.
+      const servers = mcpServersForConfig(configPath, config, cwd);
       for (const [serverName, server] of Object.entries(servers)) {
         const env = server?.[client.envKey || 'env'] || {};
         for (const [key, value] of Object.entries(env)) {

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import {
   CLIENTS, governanceFiles, mcpConfigPaths, credentialClients, networkMcpPaths, mcpServersIn,
-  repoMcpRelPaths,
+  mcpServersForConfig, repoMcpRelPaths,
 } from '../src/clients.js';
 
 const CWD = '/proj';
@@ -83,6 +83,43 @@ describe('no regression vs the old hardcoded lists', () => {
     for (const [dir, file] of LEGACY_CREDENTIALS) {
       expect(clients.some(c => c.dir === dir && c.file === file && c.name), file).toBe(true);
     }
+  });
+});
+
+describe('Claude Code ~/.claude.json (finding A4)', () => {
+  it('registers ~/.claude.json as a home MCP config and a credential store', () => {
+    expect(mcpConfigPaths(CWD, HOME)).toContain(path.join(HOME, '.claude.json'));
+    expect(networkMcpPaths(CWD, HOME)).toContain(path.join(HOME, '.claude.json'));
+    expect(credentialClients().some(c => c.name === 'Claude Code' && c.file === '.claude.json')).toBe(true);
+  });
+
+  it('does NOT pin ~/.claude.json — it is home-scoped, never a committed repo config', () => {
+    expect(repoMcpRelPaths()).not.toContain('.claude.json');
+  });
+
+  it('mcpServersForConfig merges top-level (user) + projects[cwd] (local) servers', () => {
+    const p = path.join(HOME, '.claude.json');
+    const config = {
+      mcpServers: { userGlobal: { command: 'a' } },
+      projects: { [CWD]: { mcpServers: { perProject: { command: 'b' } } } },
+    };
+    const servers = mcpServersForConfig(p, config, CWD);
+    expect(Object.keys(servers).sort()).toEqual(['perProject', 'userGlobal']);
+  });
+
+  it('mcpServersForConfig lets the per-project (local) entry win a name collision', () => {
+    const p = path.join(HOME, '.claude.json');
+    const config = {
+      mcpServers: { dup: { command: 'user' } },
+      projects: { [CWD]: { mcpServers: { dup: { command: 'local' } } } },
+    };
+    expect(mcpServersForConfig(p, config, CWD).dup.command).toBe('local');
+  });
+
+  it('mcpServersForConfig is identical to mcpServersIn for non-claude paths', () => {
+    const p = path.join(CWD, '.mcp.json');
+    const config = { mcpServers: { a: { command: 'x' } } };
+    expect(mcpServersForConfig(p, config, CWD)).toEqual(mcpServersIn(p, config));
   });
 });
 
