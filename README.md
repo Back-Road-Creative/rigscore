@@ -186,7 +186,24 @@ npx github:Back-Road-Creative/rigscore --init-hook
 
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
 - **Docker image (GHCR).** The Docker Publish workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/back-road-creative/rigscore:<tag>` automatically on `v*.*.*` tag pushes. It is also callable via `workflow_dispatch` for manual and dry-run builds. Pull a published tag as `ghcr.io/back-road-creative/rigscore:<tag>`.
-- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.0.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published.
+- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action, [listed on the GitHub Marketplace](https://github.com/marketplace/actions/rigscore). Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.0.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published. Copy-paste job:
+
+  ```yaml
+  name: rigscore
+  on: [push, pull_request]
+  jobs:
+    rigscore:
+      runs-on: ubuntu-latest
+      permissions:
+        contents: read
+        security-events: write  # required for upload-sarif
+      steps:
+        - uses: actions/checkout@v4
+        - uses: Back-Road-Creative/rigscore@v2.0.0  # MUST be an exact vX.Y.Z tag — floating refs are rejected
+          with:
+            fail-under: '70'
+            upload-sarif: true
+  ```
 - **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node 18/20. WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
 
 ## What it checks
