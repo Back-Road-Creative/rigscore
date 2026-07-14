@@ -18,8 +18,10 @@ import path from 'node:path';
  *                 'env' (opencode nests its variables under 'environment').
  *   sandbox     — config declaring the agent's approval/sandbox boundary: { path, base, format }.
  *                 `format` picks the reader: 'toml' (Codex's approval_policy/sandbox_mode),
- *                 'json' (Claude Code's permissions.deny). Entries are listed in precedence
- *                 order — later files override/extend earlier ones.
+ *                 'json' (Claude Code's permissions.deny), 'gemini' (.gemini/settings.json
+ *                 general.defaultApprovalMode), 'opencode' (opencode.json permission block),
+ *                 'cursor' (.cursor/permissions.json terminal/mcp allowlists). Entries are
+ *                 listed in precedence order — later files override/extend earlier ones.
  *
  * Paths for the three newest clients are from primary vendor docs:
  *   Codex CLI  developers.openai.com/codex/config-reference — ~/.codex/config.toml and project
@@ -48,6 +50,10 @@ export const CLIENTS = [
   { id: 'cursor', name: 'Cursor', governance: ['.cursorrules'],
     mcp: [{ path: '.cursor/mcp.json', base: 'cwd' },
       { path: '.cursor/mcp.json', base: 'home' }],
+    // .cursor/permissions.json is COMMITTED per-repo (cursor.com/docs/reference/permissions):
+    // terminalAllowlist / mcpAllowlist. A "*" (or "*:*") wildcard auto-runs everything.
+    sandbox: [{ path: '.cursor/permissions.json', base: 'home', format: 'cursor' },
+      { path: '.cursor/permissions.json', base: 'cwd', format: 'cursor' }],
     credentials: [{ dir: '.cursor', file: 'mcp.json' }] },
   { id: 'windsurf', name: 'Windsurf', governance: ['.windsurfrules'],
     mcp: [{ path: '.windsurf/mcp.json', base: 'home' }],
@@ -73,10 +79,14 @@ export const CLIENTS = [
   { id: 'gemini', name: 'Gemini CLI', governance: ['GEMINI.md'],
     mcp: [{ path: '.gemini/settings.json', base: 'cwd' },
       { path: '.gemini/settings.json', base: 'home' }],
+    sandbox: [{ path: '.gemini/settings.json', base: 'home', format: 'gemini' },
+      { path: '.gemini/settings.json', base: 'cwd', format: 'gemini' }],
     credentials: [{ dir: '.gemini', file: 'settings.json' }] },
   { id: 'opencode', name: 'opencode', governance: ['AGENTS.md'],
     mcp: [{ path: 'opencode.json', base: 'cwd', key: 'mcp' },
       { path: '.config/opencode/opencode.json', base: 'home', key: 'mcp' }],
+    sandbox: [{ path: '.config/opencode/opencode.json', base: 'home', format: 'opencode' },
+      { path: 'opencode.json', base: 'cwd', format: 'opencode' }],
     credentials: [{ dir: '.config/opencode', file: 'opencode.json', envKey: 'environment' }] },
   { id: 'amp', name: 'Amp',
     mcp: [{ path: '.amp/mcp.json', base: 'home' }],
