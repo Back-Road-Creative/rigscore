@@ -4,6 +4,7 @@ import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readFileSafe, readJsonSafe } from '../utils.js';
+import { writeMerged } from '../lib/config-merge.js';
 
 const SENSITIVE_MOUNTS = ['/', '/etc', '/root', '/home'];
 const COMPOSE_PATTERNS = [
@@ -430,6 +431,61 @@ async function scanK8sManifests(cwd, findings) {
 
   return foundAny;
 }
+
+/**
+ * Additive compose-service hardening: add `key: value` to every compose service
+ * in `cwd` that lacks the key ENTIRELY. Uses the config-merge engine (yaml
+ * Document API) so comments and key order survive and the write is idempotent.
+ * A service that already declares `key` is left untouched — the additive
+ * doctrine never rewrites a value the operator chose. Absent/corrupt compose
+ * files are skipped, never created or clobbered. Returns true iff a file changed.
+ */
+async function addKeyToServicesMissingIt(cwd, key, value) {
+  let changed = false;
+  for (const pattern of COMPOSE_PATTERNS) {
+    const filePath = path.join(cwd, pattern);
+    const text = await readFileSafe(filePath);
+    if (!text) continue;
+    let compose;
+    try {
+      compose = YAML.parse(text);
+    } catch {
+      continue; // corrupt YAML — never rewrite
+    }
+    const services = compose?.services;
+    if (!services || typeof services !== 'object' || Array.isArray(services)) continue;
+
+    const targets = {};
+    for (const [name, service] of Object.entries(services)) {
+      if (!service || typeof service !== 'object' || Array.isArray(service)) continue;
+      if (service[key] === undefined) targets[name] = { [key]: value };
+    }
+    if (Object.keys(targets).length === 0) continue;
+
+    const result = writeMerged(filePath, { services: targets }, { format: 'yaml' });
+    if (result.ok && result.changed) changed = true;
+  }
+  return changed;
+}
+
+export const fixes = [
+  {
+    id: 'docker-add-cap-drop-all',
+    findingIds: ['docker-security/container-missing-cap-drop-all'],
+    description: 'Add cap_drop: [ALL] to the container',
+    async apply(cwd) {
+      return addKeyToServicesMissingIt(cwd, 'cap_drop', ['ALL']);
+    },
+  },
+  {
+    id: 'docker-add-no-new-privileges',
+    findingIds: ['docker-security/container-missing-no-new-privileges'],
+    description: 'Add security_opt: [no-new-privileges:true] to the container',
+    async apply(cwd) {
+      return addKeyToServicesMissingIt(cwd, 'security_opt', ['no-new-privileges:true']);
+    },
+  },
+];
 
 export default {
   id: 'docker-security',
