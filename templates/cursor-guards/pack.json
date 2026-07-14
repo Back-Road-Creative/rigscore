@@ -1,0 +1,8 @@
+{
+  "name": "cursor-guards",
+  "description": "Least-privilege Cursor baseline: a narrow terminal/MCP allowlist with no auto-run wildcard, so nothing unlisted runs without approval",
+  "checks": ["sandbox-posture"],
+  "files": [
+    { "src": "permissions.json", "dest": ".cursor/permissions.json" }
+  ]
+}

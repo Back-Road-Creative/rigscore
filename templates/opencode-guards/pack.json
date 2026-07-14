@@ -1,0 +1,8 @@
+{
+  "name": "opencode-guards",
+  "description": "Least-privilege opencode baseline: an ask/deny permission block so no shell, edit, or fetch auto-runs without approval",
+  "checks": ["sandbox-posture"],
+  "files": [
+    { "src": "opencode.json", "dest": "opencode.json" }
+  ]
+}
