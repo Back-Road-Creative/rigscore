@@ -446,11 +446,22 @@ changelog.
   shape to detect rug-pulls (CVE-2025-54136).
 - Scoring documentation — the coverage-scaling formula is now documented and
   covered by characterization tests (#77).
+- `instruction-effectiveness` and `skill-coherence` advisory checks (#67).
+- Author-agnostic check defaults; author-specific heuristics are opt-in (#69).
+- Extended homoglyph coverage (Mathematical, Fullwidth, Cherokee) (#73).
+- MCP shape hash-pinning scaffolding (CVE-2025-54136) (#75).
 
 ### Changed
 - CTA output is now opt-in via `--cta` (#80). `--no-cta` is kept as a
   back-compat alias. Default output is quieter for CI and hooks.
 - CI self-scan `--fail-under` tightened from 14 to 30 (#76).
+- `skill-files` check scoped to the project (cwd) by default (#74).
+- `mcp-config` version-pin check scoped to the package-position argument (#72).
+
+### Fixed
+- Broken GitHub Action entry points repaired; self-scan gate made meaningful
+  (#68).
+- Correctness bugs W3 — issues C3, C5, H2, H4 (#70).
 
 ## [0.8.0] - 2026-03-28
 
@@ -459,23 +470,14 @@ changelog.
   `chattr` immutability, deny-list, sandbox-gate registration (#64).
 - `site-security` advisory check — absorbs HTTP header / PII / JS secret /
   SSL / fingerprinting probes behind `--online`.
-- `instruction-effectiveness` and `skill-coherence` advisory checks (#67).
-- Author-agnostic check defaults; author-specific heuristics are opt-in (#69).
-- Extended homoglyph coverage (Mathematical, Fullwidth, Cherokee) (#73).
-- MCP shape hash-pinning scaffolding (CVE-2025-54136) (#75).
 
 ### Changed
 - Distributed via GitHub only: `npx github:Back-Road-Creative/rigscore`. npm
   publish is intentionally dropped (#62).
-- `skill-files` check scoped to the project (cwd) by default (#74).
-- `mcp-config` version-pin check scoped to the package-position argument (#72).
 
 ### Fixed
 - Release workflow consolidated into a single `release.yml`; `NODE_AUTH_TOKEN`
   wiring corrected (#60, #61, #63).
-- Broken GitHub Action entry points repaired; self-scan gate made meaningful
-  (#68).
-- Correctness bugs W3 — issues C3, C5, H2, H4 (#70).
 
 ## [0.7.2] - 2026-03-20
 

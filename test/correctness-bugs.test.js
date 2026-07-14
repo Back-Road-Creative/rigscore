@@ -447,20 +447,34 @@ describe('C3: CVE learnMore URLs reference Check Point Research (not author doma
     expect(joined).toMatch(/CVE-2026-21852/);
   });
 
-  it('T3.16: non-CVE learnMore URLs pointing to headlessmode.com are unchanged', () => {
-    // These four non-CVE learnMore references existed before this workstream and
-    // are explicitly out of scope — they must remain.
-    const expectedKept = [
-      ['claude-md.js', '#why-claude-md-matters'],
-      ['claude-md.js', '#claude-md-hardening'],
-      ['docker-security.js', '#docker-socket-risk'],
-      ['mcp-config.js', '#mcp-permissions'],
-      ['mcp-config.js', '#mcp-supply-chain'],
-      ['env-exposure.js', '#env-security'],
-    ];
-    for (const [file, anchor] of expectedKept) {
-      const src = fs.readFileSync(path.join(CHECKS_DIR, file), 'utf8');
-      expect(src, `${file} should still contain non-CVE learnMore anchor ${anchor}`).toContain(anchor);
+  // The headlessmode.com site retired its /tools/ section, so every
+  // headlessmode.com/tools/rigscore/#… learnMore was a live 404. Those URLs now
+  // point at the versioned per-check docs that ship with this repo
+  // (docs/checks/<check>.md), which cannot drift from the code the way the
+  // site did. SARIF `helpUri` is derived from `learnMore` (src/sarif.js), so
+  // guarding learnMore guards helpUri too.
+  it('T3.16: no learnMore/helpUri points at the retired headlessmode.com/tools/rigscore page', () => {
+    const sources = readAllCheckSources();
+    for (const { file, content } of sources) {
+      const badMatch = content.match(/headlessmode\.com\/tools\/rigscore/i);
+      expect(badMatch, `File ${file} still links the retired page: ${badMatch?.[0]}`).toBeNull();
     }
+  });
+
+  it('T3.17: every repo-hosted learnMore URL resolves to a file that ships with this repo', () => {
+    const sources = readAllCheckSources();
+    const repoBlob = /https:\/\/github\.com\/Back-Road-Creative\/rigscore\/blob\/main\/([^'"#\s]+)/g;
+    let seen = 0;
+    for (const { file, content } of sources) {
+      for (const match of content.matchAll(repoBlob)) {
+        seen += 1;
+        const relPath = match[1];
+        const abs = path.join(process.cwd(), relPath);
+        expect(fs.existsSync(abs), `${file} links ${match[0]} but ${relPath} does not exist`).toBe(true);
+      }
+    }
+    // Guard the guard: the 11 repointed remediation links must be found, so a
+    // regex or path change cannot silently turn this test into a no-op.
+    expect(seen).toBeGreaterThanOrEqual(11);
   });
 });
