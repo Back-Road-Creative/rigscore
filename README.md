@@ -187,6 +187,18 @@ npx github:Back-Road-Creative/rigscore --init-hook
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
 - **Docker image (GHCR).** The Docker Publish workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/back-road-creative/rigscore:<tag>` automatically on `v*.*.*` tag pushes. It is also callable via `workflow_dispatch` for manual and dry-run builds. Pull a published tag as `ghcr.io/back-road-creative/rigscore:<tag>`.
 - **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.0.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published.
+- **pre-commit framework.** Adopters who use the [pre-commit](https://pre-commit.com) framework add rigscore to their `.pre-commit-config.yaml` (backed by `.pre-commit-hooks.yaml` at this repo root):
+
+  ```yaml
+  repos:
+    - repo: https://github.com/Back-Road-Creative/rigscore
+      rev: v2.0.0
+      hooks:
+        - id: rigscore
+          # args: [--fail-under=80, --ci]   # optional: tune the gate
+  ```
+
+  This is **framework-managed** — pre-commit clones and installs rigscore itself (`language: node`, no npm publish needed) — as opposed to `rigscore --init-hook`, which is a **native git-hook installer** that writes a pinned `npx` line straight into your repo's `.git/hooks/pre-commit`.
 - **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node 18/20. WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
 
 ## What it checks
