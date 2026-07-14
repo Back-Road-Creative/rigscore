@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, readJsonSafe } from '../utils.js';
+import { readFileSafe, readJsonSafe, collectGovernanceDirFiles } from '../utils.js';
 
 /**
  * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
@@ -250,10 +250,28 @@ export default {
     const claudeMdResult = priorResults?.find(r => r.id === 'claude-md');
     const governanceText = claudeMdResult?.data?.governanceText || '';
 
-    // Also read extra governance directories directly for richer context.
-    // Path list is user-configurable via config.paths.governanceDirs.
-    // Default empty: no extra reading.
+    // Assemble the extended governance text from two additive sources, deduped
+    // by absolute path so a file returned by both is read only once.
     let extendedGovernance = governanceText;
+    const seenGovFiles = new Set();
+
+    // (1) Built-in directory-form rule sets (.cursor/rules/*.mdc, .windsurf/rules,
+    // .clinerules dir, .github/instructions/*.instructions.md) are governance too,
+    // scanned by DEFAULT via the shared helper — so a repo governed ONLY by
+    // directory-form rules still feeds this constraint-awareness check. Precedent:
+    // claude-md, unicode-steganography, and instruction-effectiveness use the same
+    // helper (per-directory extension matching lives there, not here).
+    for (const { full } of await collectGovernanceDirFiles(cwd)) {
+      const abs = path.resolve(full);
+      if (seenGovFiles.has(abs)) continue;
+      seenGovFiles.add(abs);
+      const content = await readFileSafe(full);
+      if (content) extendedGovernance += '\n' + content;
+    }
+
+    // (2) User-configured extra governance directories (additive, not a
+    // replacement). Path list is user-configurable via config.paths.governanceDirs;
+    // default empty: no extra reading.
     const extraGovDirs = Array.isArray(config?.paths?.governanceDirs)
       ? config.paths.governanceDirs
       : [];
@@ -262,7 +280,11 @@ export default {
         const entries = await fs.promises.readdir(govDir);
         for (const entry of entries) {
           if (!entry.endsWith('.md')) continue;
-          const content = await readFileSafe(path.join(govDir, entry));
+          const full = path.join(govDir, entry);
+          const abs = path.resolve(full);
+          if (seenGovFiles.has(abs)) continue;
+          seenGovFiles.add(abs);
+          const content = await readFileSafe(full);
           if (content) extendedGovernance += '\n' + content;
         }
       } catch { /* missing or not readable */ }
