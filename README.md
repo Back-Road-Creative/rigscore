@@ -694,6 +694,50 @@ npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help
 ```
 
+### Config inheritance (`extends`)
+
+A `.rigscorerc.json` can inherit from one or more shared baselines with an
+`extends` key, so a single hardened config is reusable across many repos:
+
+```jsonc
+// rigscore-base.json  (shared, hosted in a repo every project can reach on disk)
+{
+  "profile": "default",
+  "network": { "safeHosts": ["registry.internal"] },
+  "suppress": ["permissions-hygiene/sensitive-file-world-readable"]
+}
+```
+
+```jsonc
+// a project's .rigscorerc.json — inherits the baseline, adds its own bits
+{
+  "extends": "../rigscore-base.json",
+  "sites": ["https://project-a.example"]
+}
+```
+
+Rules:
+
+- **Local paths only.** `extends` is a string or an array of strings. A relative
+  path resolves against the directory of the file that declared it; an absolute
+  path works too. **URLs (`http://`, `https://`) are rejected, never fetched** —
+  rigscore makes no external calls by default. (Node-module resolution like
+  `extends: "some-pkg/base"` is not supported yet; it may arrive in a future
+  release.)
+- **Precedence.** An extended base is *lower* precedence than the file that
+  extends it — the extending file's own keys win. Within an `extends` array,
+  **later entries override earlier** ones (the ESLint convention). Arrays such
+  as `network.safeHosts` and `suppress` still concatenate-and-dedupe across every
+  layer, per the merge policy above.
+- **Recursive & cycle-safe.** A base may itself `extends` another base; the chain
+  resolves depth-first. A cycle (a → b → a) is caught and raises a
+  configuration error naming the loop rather than looping forever.
+- **Errors.** A missing target, a cycle, or a URL each fail the scan with a
+  configuration error (exit `2`).
+
+Both `~/.rigscorerc.json` and a project `.rigscorerc.json` may declare their own
+`extends`.
+
 ### Exit codes
 
 rigscore exits with a stable code so CI can branch cleanly:
