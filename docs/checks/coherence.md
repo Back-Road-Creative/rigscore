@@ -34,11 +34,15 @@ Weight 14 — tied with `mcp-config` as the highest-weight check, and the ONLY c
 
 ## Fix semantics
 
-No auto-fix. The `coherence.js` module does not export a `fixes` array. Every finding is a contradiction between two files — resolving it means choosing which side is the source of truth, and that choice is never safe to automate:
+One `--fix`-able finding; the rest are advisory. `coherence.js` exports a single fixer (`coherence-declare-mcp-server`) for `coherence/undeclared-mcp-server`:
+
+- **`coherence/undeclared-mcp-server` — FIXABLE.** `--fix --yes` APPENDS a clearly-marked placeholder section (`## MCP server: <name>`) for the undeclared server to the project's primary governance file (CLAUDE.md if present, else the first existing governance file). It is append-only — existing content is never rewritten or reordered — and idempotent: a server already named in the file is skipped, so re-running adds nothing. The stub is a placeholder the human fills in; it satisfies the "declared" check while making explicit that real purpose/scope prose is still owed. If the repo has NO governance file, the fixer declines (returns false) rather than fabricate one from nothing — use `init`/pack install for that.
+
+The mismatch findings remain no-auto-fix: each is a contradiction between two files, and resolving it means choosing which side is the source of truth — never safe to automate:
 
 - A `coherence/network-claim-vs-mcp-transport` fix could tighten governance OR loosen governance; only a human knows which reflects intent.
 - A `coherence/anti-injection-claim-vs-skill-injection` finding may be a genuine typo in a skill file OR a deliberately phrased defensive rule that slipped past the defensive-phrase detector.
-- `coherence/undeclared-mcp-server` findings need a human to write the declaration prose — auto-appending a server name to CLAUDE.md would satisfy the check without satisfying the intent.
+- `coherence/no-approved-tools-declaration` (INFO) is not auto-generated: appending a bare "Approved Tools" header to satisfy a keyword regex would be exactly the keyword-stuffing this check warns against.
 - `.gitignore` / untracked governance findings are pass-through INFO records from `claude-md`; `coherence` intentionally does not re-score them.
 
 ## SARIF
