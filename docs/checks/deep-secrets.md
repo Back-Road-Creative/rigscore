@@ -57,7 +57,7 @@ a JWT payload no longer triggers a CRITICAL.
 
 ## Scope and limitations
 
-- Included extensions: `.js .ts .jsx .tsx .py .go .rb .java .yaml .yml .json .toml .sh`, plus any file whose name starts with `.env.` (e.g. `.env.production`).
+- Included extensions: `.js .ts .jsx .tsx .py .go .rb .java .yaml .yml .json .toml .sh`, plus a bare `.env` and any file whose name starts with `.env.` (e.g. `.env.production`).
 - Skipped directories: `node_modules`, `.git`, `vendor`, `dist`, `build`, `__pycache__`, `venv`, `.venv`, `coverage`, `.next`, `.nuxt`, `out`, `.rigscore-action-src` (the GitHub Action's own vendored checkout, so `--deep` never scans rigscore's source as the caller's), and the rest of the machine-generated dotfolders in `SKIP_DIRS`.
 - Skipped files: anything matching `.test.` or `.spec.` — test fixtures legitimately contain example keys.
 - At most one line-level finding per file to keep output actionable. The walker tracks the highest severity seen across the file: an INFO match (comment / example / placeholder) does **not** stop scanning — if a CRITICAL match appears later in the same file the critical one is reported and the info is dropped, so a leading `// Old key: …` comment cannot silently downgrade a real hardcoded secret a few lines below. The walker exits early once a CRITICAL is recorded. The GCP-JSON detector short-circuits line scanning for that file entirely.
