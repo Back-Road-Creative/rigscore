@@ -234,7 +234,7 @@ export default {
     const extraSkip = config?.deepScan?.excludeDirs || [];
     const skipDirs = extraSkip.length ? new Set([...SKIP_DIRS, ...extraSkip]) : SKIP_DIRS;
 
-    const { files, loopDetected, truncated, depthTruncated } = await walkDirSafe(cwd, {
+    const { files, loopDetected, truncated, depthTruncated, readError } = await walkDirSafe(cwd, {
       maxFiles,
       maxDepth,
       skipDirs,
@@ -279,6 +279,9 @@ export default {
 
     let secretCount = 0;
     let oversizeCount = 0;
+    // A candidate file we could stat/walk but not read (chmod 000) is unscanned,
+    // exactly like the walk-level readError — count it so the result can't pass.
+    let unreadableCount = 0;
 
     for (const filePath of files) {
       // A5: files over the per-file cap are read via bounded-memory streaming
@@ -287,6 +290,7 @@ export default {
       try {
         stat = await fs.promises.stat(filePath);
       } catch {
+        unreadableCount++;
         continue;
       }
       if (stat.size > maxFileBytes) {
@@ -303,6 +307,7 @@ export default {
       try {
         content = await fs.promises.readFile(filePath, 'utf-8');
       } catch {
+        unreadableCount++;
         continue;
       }
 
@@ -387,10 +392,28 @@ export default {
       });
     }
 
+    // WARNING, not info: an unreadable directory (walk-level readError) or file
+    // (per-file read failure) was never scanned, so a secret in it is invisible.
+    // Like the cap warning, this must dent the score and block the clean pass —
+    // a scan that "gave up" on a path can never read as "no secrets".
+    const unreadable = readError || unreadableCount > 0;
+    if (unreadable) {
+      findings.push({
+        findingId: 'deep-secrets/unreadable-skipped',
+        severity: 'warning',
+        title: 'Deep scan could not read one or more paths',
+        detail:
+          'A file or directory could not be read (e.g. permission denied) and was NOT scanned, so this result cannot be read as "no secrets".',
+        remediation:
+          'Grant read access to the affected paths (or exclude them via `deepScan.excludeDirs` in `.rigscorerc.json` if they are intentionally out of scope), then re-run.',
+      });
+    }
+
     // Only a scan that actually reached every candidate file may call itself
-    // clean. A truncated walk (file OR depth cap) already carries the warning above;
-    // adding "clean" next to it would be the exact contradiction this fix exists to remove.
-    if (secretCount === 0 && !truncated && !depthTruncated) {
+    // clean. A truncated walk (file OR depth cap) or an unreadable path already
+    // carries a warning above; adding "clean" next to it would be the exact
+    // contradiction this fix exists to remove.
+    if (secretCount === 0 && !truncated && !depthTruncated && !unreadable) {
       findings.push({
         severity: 'pass',
         title: `Deep scan clean — ${files.length} files checked`,
