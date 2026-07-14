@@ -51,12 +51,16 @@ Weight 14 — tied with `coherence` as the highest-weight check. MCP is the prim
 
 ## Fix semantics
 
-No auto-fix. The `mcp-config.js` module does not export a `fixes` array. Every finding this check emits requires human judgment:
+**One auto-fix, `--fix`-able.** The auto-approve bypass is a pure, deterministic value-change on the committed `.claude/settings.json`, so `mcp-config.js` exports a `fixes` array with a single fixer:
+
+- `mcp-auto-approve-disable` — remediates both `mcp-config/mcp-auto-approve-enabled` and `mcp-config/cve-2025-59536-auto-approve-on-clone` by setting `enableAllProjectMcpServers` to `false` in the project's `.claude/settings.json` (the fix the findings' own remediation prescribes). It is idempotent (a second run is a no-op returning "already applied"), touches only that one key while preserving the rest of the file and its key order, and never creates or clobbers a missing/corrupt settings file. Scope is the project config only — the per-user homedir `.claude/settings.json` is never rewritten.
+
+Every other finding this check emits still requires human judgment and has **no** auto-fix:
 
 - Typosquat matches need a human to decide whether the similar name is intentional (e.g. an internal fork).
 - Version pinning requires picking the right version.
 - Credential exfiltration (inline keys, sensitive env vars) needs secret rotation on top of config cleanup.
-- CVE-2025-59536 and CVE-2026-21852 findings require reviewing whether the `.mcp.json` was planted versus legitimately committed.
+- The CVE-2026-21852 `ANTHROPIC_BASE_URL` redirect requires reviewing whether the `.mcp.json` was planted versus legitimately committed before removing the env key.
 - Rug-pull drift requires a git diff review — silently rewriting the state file would defeat the detection.
 
 ## The one file a scan writes: `.rigscore-state.json`
