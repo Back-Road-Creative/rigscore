@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { calculateCheckScore } from '../scoring.js';
 import { GOVERNANCE_FILES, NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, execSafe, hasAnyAITooling } from '../utils.js';
+import { readFileSafe, execSafe, hasAnyAITooling, collectGovernanceDirFiles } from '../utils.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -205,6 +205,14 @@ export default {
       for (const p of config.paths.claudeMd) {
         candidatePaths.push(p);
       }
+    }
+
+    // Directory-form rule sets (.cursor/rules/*.mdc, .windsurf/rules, .clinerules
+    // dir, .github/instructions/*.instructions.md) are governance too — scanned by
+    // default so a repo using ONLY these is not mis-scored "no governance file",
+    // and their contents feed the same injection / quality passes as CLAUDE.md.
+    for (const { full } of await collectGovernanceDirFiles(cwd)) {
+      candidatePaths.push(full);
     }
 
     // Read all files, collect contents

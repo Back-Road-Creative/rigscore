@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, statSafe, fileExists } from '../utils.js';
+import { readFileSafe, statSafe, fileExists, collectGovernanceDirFiles } from '../utils.js';
 
 // Context budget thresholds
 const REFERENCE_CONTEXT = 200_000;
@@ -88,7 +88,8 @@ function buildCrossRepoMatcher(config) {
 }
 
 // Governance: top-level CLAUDE.md / .cursorrules / homedir variants /
-// config-listed paths / opt-in governanceDirs recursive walks.
+// config-listed paths / built-in directory-form rule sets (default) /
+// opt-in governanceDirs recursive walks.
 async function collectGovernanceFiles(cwd, homedir, config, addFile) {
   for (const f of GOVERNANCE_FILES) {
     await addFile(path.join(cwd, f), f, 'governance');
@@ -102,6 +103,13 @@ async function collectGovernanceFiles(cwd, homedir, config, addFile) {
     for (const p of config.paths.claudeMd) {
       await addFile(p, p, 'governance');
     }
+  }
+
+  // Directory-form rule sets (.cursor/rules/*.mdc, .windsurf/rules, .clinerules
+  // dir, .github/instructions/*.instructions.md) scanned by DEFAULT — a repo
+  // using only these was previously invisible to the instruction-quality scan.
+  for (const { full, rel } of await collectGovernanceDirFiles(cwd)) {
+    await addFile(full, rel, 'governance');
   }
 
   const extraGovDirs = Array.isArray(config?.paths?.governanceDirs) ? config.paths.governanceDirs : [];
