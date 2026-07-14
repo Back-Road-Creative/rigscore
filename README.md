@@ -860,9 +860,13 @@ npx github:Back-Road-Creative/rigscore --fix --yes --install-packs
 ```
 
 `--install-packs` only widens what `--yes` may write — it never writes on its own, so
-`--fix --install-packs` (no `--yes`) is still a dry run. An install never overwrites an
-existing file: it is reported `skipped (exists)` and left byte-for-byte alone. To install one
-specific pack, or to overwrite deliberately, use `rigscore init --<pack> [--force]`.
+`--fix --install-packs` (no `--yes`) is still a dry run. An install never overwrites one of your
+values: a file you are missing is written, and a json/yaml config you already have is **hardened in
+place** by the additive merge engine — the pack's absent keys are merged in (reported `merged`),
+a value you already set is kept (`kept your existing <path>`), and a corrupt or non-mergeable dest
+falls back to `skipped (exists)`, left byte-for-byte. This is the same non-destructive behavior as
+`rigscore init --<pack> --merge`. To install one specific pack, or to overwrite a file wholesale,
+use `rigscore init --<pack> [--force]`.
 
 ### Plugins
 

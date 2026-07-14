@@ -163,18 +163,22 @@ export function findApplicablePacks(results, templatesDir = TEMPLATES_DIR) {
  * Install the given packs into `cwd`. Only ever called behind `--yes
  * --install-packs` (or `init --<pack>`) — never as a side effect of `--yes`.
  *
- * Deliberately does NOT pass `force`: installPack skips a dest that already
- * exists, so this adds missing governance files and never rewrites one the
- * operator wrote. Returns { installed: string[], skipped: string[] } — the
- * installed entries are formatted per-pack reports naming every file as
- * `written` or `skipped (exists)`.
+ * Passes `merge` (never `force`): a missing dest is written, an EXISTING
+ * json/yaml config is hardened in place by the additive config-merge engine
+ * — the pack's absent keys are added, a value the operator already set is kept
+ * and reported as a conflict, and a corrupt / non-mergeable dest falls back to
+ * a skip. Same non-destructive semantics as `init --merge`; never rewrites a
+ * value the operator wrote. Returns { installed: string[], skipped: string[] }
+ * — the installed entries are formatted per-pack reports naming every file as
+ * `written`, `merged`, or `skipped (exists)`.
  */
 export function installPacks(packs, cwd, templatesDir = TEMPLATES_DIR) {
   const installed = [];
   const skipped = [];
   for (const p of packs) {
     try {
-      const report = installPack(p.name, cwd, { templatesDir }); // no force — never clobber
+      // merge (not force): add missing files, harden existing configs additively, never clobber
+      const report = installPack(p.name, cwd, { templatesDir, merge: true });
       installed.push(formatInstallReport(report, cwd).trimEnd());
     } catch (err) {
       skipped.push(`${p.name} (error: ${err.message})`);

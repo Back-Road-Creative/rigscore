@@ -63,12 +63,15 @@ fix your red checks — listing costs nothing — and writes none of them.
 `--install-packs` only widens what `--yes` may write; it never writes on its own, so
 `rigscore . --fix --install-packs` (no `--yes`) is still a dry run.
 
-`--fix` never rewrites governance content. It installs packs *without* `--force` **and without
-`--merge`**, so a file you already wrote is reported `skipped (exists)` and left byte-for-byte alone
-— `--fix --install-packs` can only add the files you are missing. To harden a file you already have,
-run `rigscore init --<pack> --merge` yourself (additive; see above); to overwrite it wholesale, run
-`rigscore init --<pack> --force`. (Wiring `--merge` into the `--fix --install-packs` path is a
-deliberate follow-up — this release scopes in-place hardening to `rigscore init`.)
+`--fix` never rewrites governance content, but it does **harden an existing config in place**. It
+installs packs with the additive `--merge` engine (never `--force`): a file you are missing is
+written, and a json/yaml config you already have gets the pack's **absent** keys merged in — a value
+you already set is kept and reported (`kept your existing <path>`), and a corrupt or non-mergeable
+dest (e.g. a `.sh` hook) falls back to `skipped (exists)`, left byte-for-byte. So
+`--fix --install-packs` both adds the files you are missing *and* tops up the configs you already
+have, without ever overwriting one of your values — the same non-destructive semantics as
+`rigscore init --<pack> --merge`. To overwrite a file wholesale instead, run
+`rigscore init --<pack> --force`.
 
 ## Not covered (yet)
 
