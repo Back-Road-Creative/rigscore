@@ -214,6 +214,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before (depth 50, `walkDirSafe`'s own default), so default scan scope is unchanged;
   raising it now actually reaches the governance files past the old cut.
 
+- **The oversize-stream-scan memory test no longer flakes.** It measured process-wide
+  RSS against a fixed `0.5 * fileSize` bound — mostly allocator slack and GC timing
+  noise, so it sat a hair under its own threshold and failed CI at 32.34 MB vs 31.97 MB
+  on a PR touching neither `deep-secrets.js` nor `utils.js`. It now runs `readline` over
+  the same fixture as a control arm and asserts the chunk-streaming peak is a fraction of
+  it, self-calibrating across platforms and GC modes. The invariant is unchanged and
+  still enforced: reintroducing readline drives the ratio to 1.60 against a 0.50 bound.
+
 - **`suppress:` is honored (and rescored) in `--recursive` / `--profile monorepo` mode.**
   The recursive path applied only `--ignore`, never a project's own `.rigscorerc.json`
   `suppress:`, and never recomputed scores — so the escape hatch was inert exactly where
@@ -227,6 +235,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **An invalid target directory exits 2 (configuration error), not 1** — matching README's
   exit-code table, so a typo'd path is no longer indistinguishable from a real low score.
+
 
 
 
