@@ -39,6 +39,9 @@ export async function scan(options = {}) {
     config,
     deep: options.deep || false,
     online: options.online || false,
+    // Opt-in `--semantic` tool-description judge. The semantic-tools check is a
+    // no-op returning N/A (zero external calls) unless this is true.
+    semantic: options.semantic || false,
     refreshMcpRegistry: options.refreshMcpRegistry || false,
     includeHomeSkills: options.includeHomeSkills || false,
     // Absolute host paths the windows-security WSL-guest arm reads (`/etc/wsl.conf`,

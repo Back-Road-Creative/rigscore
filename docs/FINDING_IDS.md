@@ -454,6 +454,10 @@ Grouped by check. Each ID is stable within the current major.
 - `spec-goals/domain-spec-incomplete` (info) — a domain spec is missing required parts.
 - `spec-goals/agents-md-hollow` (info) — AGENTS.md names no runnable command.
 
+### semantic-tools
+
+- `semantic-tools/suspicious-tool-description` (warning) — the opt-in `--semantic` first-party `claude -p` judge classified an MCP tool description as possible tool-poisoning (obfuscated instruction-injection / data-exfiltration phrasing). Advisory, weight 0.
+
 ### Stable check-level IDs
 
 Every check id in `src/checks/` is stable. These work in `--ignore` and
@@ -464,8 +468,8 @@ Every check id in `src/checks/` is stable. These work in `--ignore` and
 `docker-security`, `documentation`, `env-exposure`, `git-hooks`,
 `infrastructure-security`, `instruction-effectiveness`, `loop-governance`,
 `mcp-config`, `memory-hygiene`, `network-exposure`, `permissions-hygiene`,
-`sandbox-posture`, `site-security`, `skill-coherence`, `skill-files`,
-`spec-goals`, `unicode-steganography`, `windows-security`,
+`sandbox-posture`, `semantic-tools`, `site-security`, `skill-coherence`,
+`skill-files`, `spec-goals`, `unicode-steganography`, `windows-security`,
 `workflow-maturity`.
 
 ## How to discover IDs you're seeing right now
