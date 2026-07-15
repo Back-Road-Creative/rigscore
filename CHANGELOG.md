@@ -12,36 +12,118 @@ next release; the maintainer folds the fragments in at release time.
 
 ## [Unreleased]
 
-### Docs
-- **Config merging (`~/.rigscorerc.json` + project `.rigscorerc.json`) is now on
-  the record.** The behavior has shipped for some time (`src/config.js`
-  `loadConfig` / `mergeConfig`) but was never written down anywhere a user would
-  look — its only prose description lived in an untracked release-notes scratch
-  file, which is now deleted. The semantics: precedence runs DEFAULTS →
-  `~/.rigscorerc.json` → project `.rigscorerc.json`; **arrays concatenate and
-  deduplicate** across the two files (so personal `suppress` / `safeHosts` /
-  `crossRepoRefs` in your home config compose with a project's rules instead of
-  being clobbered by them), while **scalars and objects from the
-  higher-precedence file override** the lower one. A malformed
-  `.rigscorerc.json` raises a `ConfigParseError` and exits 2 rather than silently
-  falling back to defaults. (The previously-documented `profile`-key precedence,
-  #88, is one instance of this general rule, not a separate one.)
-- **The README's GitHub Action recipe is pinned to an exact released tag.** It
-  showed `uses: Back-Road-Creative/rigscore@v2.0.0` as `@v1` — a tag that does
-  not exist (the published tags are `v0.1.0 … v1.0.0`, `v2.0.0`, `v2.1.0-rc1`;
-  no moving major tag is cut). Worse, `action.yml` deliberately rejects any ref
-  that is not an exact `vX.Y.Z`, so even a moving `@v1` would have hard-errored
-  at the guard — whose own message already says "Pin to a tag like @v1.0.0". A
-  user copying the canonical recipe out of the README got an action that could
-  not resolve. The docs now match the guard, and `test/action-yml.test.js`
-  extracts the guard's regex from `action.yml` itself and asserts every action
-  ref shown in `README.md` / `docs/**` satisfies it, so the two cannot drift
-  apart again.
-- **`--verbose` is described accurately in `--help` and the README.** Both said
-  it surfaces info-level (and, in the README, skipped) findings. It does not:
-  `src/reporter.js` gates only `pass` findings behind the flag, and `info` and
-  `skipped` print on every default scan. The flag adds passing checks and
-  nothing else.
+## [2.1.0] - 2026-07-15
+
+### Added
+- **Enforcement-grade labels per check.** Every check now carries an
+  `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
+  `[grade]` tag in the reporter score line and as
+  `properties.enforcementGrade` on every SARIF result. A legend line renders
+  below the score box in terminal mode (suppressed in `--json` and `--sarif`
+  output). This is a transparency / display change — **no scoring changes**,
+  no weight changes, no new dependencies. Users can now see *how* each point
+  was earned (deterministic config check vs. regex/structural vs. presence
+  detection) and calibrate trust accordingly. `keyword`-graded checks are
+  the most gameable surface — see [`THREAT-MODEL.md`](THREAT-MODEL.md) §3.1
+  and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for
+  specifics. Classification rationale lives in
+  `.data/plans/enforcement-grade-classification.md`.
+- **Directory-form rule sets are now scanned by default.** `.cursor/rules/*.mdc`,
+  `.windsurf/rules/`, `.clinerules/` (directory form), and
+  `.github/instructions/*.instructions.md` are read with no `.rigscorerc.json`
+  opt-in, union'd with any configured `paths.governanceDirs`. A repo governed
+  only by `.cursor/rules/*.mdc` no longer scores "no governance," and the
+  `claude-md` injection, `unicode-steganography`, and `instruction-effectiveness`
+  checks now run on those files. Vendor-exact extensions (Cursor `.mdc`, Copilot
+  `.instructions.md`; Windsurf/Cline accept any non-dotfile) live in
+  `src/clients.js`; a shared `collectGovernanceDirFiles()` reuses the existing
+  symlink-safe walker so the three checks agree on what a rule set contains.
+- Client registry now recognizes Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roorules`, `.roo/mcp.json`), and Cody (`cody.mcpServers` in `.vscode/settings.json`), so their governance, MCP, and credential files are scanned, rug-pull-pinned, and inventoried like every other client.
+- **`credential-storage` and `network-exposure` now scan Claude Code's real user
+  store, `~/.claude.json`.** rigscore modeled only the project-committed
+  `.mcp.json`; `~/.claude.json` — which holds MCP servers in a top-level
+  `mcpServers` (user scope) and under `projects[<abs-cwd>].mcpServers` (local
+  scope, the default) — was invisible, so plaintext secrets in those servers'
+  `env` maps went undetected. A new `mcpServersForConfig()` resolves both places
+  for the repo being scanned (local-scope entries win a name collision). It stays
+  outside the rug-pull pin by design: `~/.claude.json` is home-scoped, and no pull
+  request can reach it.
+- **`sandbox-posture` now grades Gemini CLI, opencode, and Cursor approval posture.**
+  Beyond Codex CLI and Claude Code, the check reads Gemini CLI's
+  `general.defaultApprovalMode` (`.gemini/settings.json`: `"yolo"`/`"auto_edit"`
+  flag, `"plan"` is restricted), opencode's `permission` block (`opencode.json`:
+  `bash`/`*` `= "allow"` auto-runs shell unprompted, `"deny"` is restricted), and
+  a `"*"`/`"*:*"` wildcard in Cursor's committed `.cursor/permissions.json`
+  allowlists. Each reuses the existing restricted/partial/unrestricted reducer
+  via one reader + rule table per format. Windsurf is not graded — its Turbo-mode
+  auto-execute posture lives only in the Settings UI, with no committed in-repo
+  file to read.
+- **New `src/lib/config-merge.js` — an idempotent, non-destructive JSON/YAML deep-merge engine.** The Phase-2 keystone that lets rigscore harden a config that *already exists* (previously the only install path scaffolded brand-new files and skipped any dest present). It adds absent keys, unions arrays by value, leaves any conflicting user value untouched (reported, never clobbered), preserves YAML comments/order via the `yaml` Document API and emits stable 2-space JSON, and is idempotent on a second pass. The pure `mergeConfig` never writes; `writeMerged` is the only disk writer. TOML is deferred by construction (no round-trip TOML parser ships); the engine fails a `toml` call explicitly rather than faking a merge.
+- Client registry: JetBrains Junie (`.junie/guidelines.md`, `.junie/mcp/mcp.json`), Goose (`.goosehints`), and Warp (`.warp/.mcp.json`) are now recognized across governance, MCP scanning, rug-pull pinning, and credential surfaces.
+- `skill-coherence` now reads default directory-form governance (`.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` dir, `.github/instructions/*.instructions.md`), so a repo governed only by those still feeds its constraint-awareness check.
+- **`mcp-config` now has an auto-fix for the MCP auto-approve bypass.** `rigscore --fix --yes` disables `enableAllProjectMcpServers` in the project's `.claude/settings.json`, remediating both `mcp-config/mcp-auto-approve-enabled` and `mcp-config/cve-2025-59536-auto-approve-on-clone` (CVE-2025-59536). The fix is idempotent, touches only that one key while preserving the rest of the file, never creates or clobbers a missing/corrupt file, and never rewrites the per-user homedir settings. Every other `mcp-config` finding still requires human judgment.
+- Hardened-baseline install packs for non-Claude clients — `cursor-guards`, `opencode-guards`, `gemini-guards` — each installing a generic least-privilege approval/permission config that moves the client's `sandbox-posture` grade off `unrestricted`.
+- `docker-security` findings for a missing `cap_drop: [ALL]` and missing `no-new-privileges` are now auto-fixable via `--fix` — each adds the key through the additive config-merge engine, preserving comments and never overwriting an operator's existing value.
+- **`coherence/undeclared-mcp-server` is now `--fix`-able.** The weight-14
+  `coherence` check previously exported no fixes. `--fix --yes` now appends a
+  clearly-marked placeholder declaration section (`## MCP server: <name>`) for
+  each undeclared MCP server to the project's primary governance file (CLAUDE.md
+  if present). The fixer is append-only (existing content is never rewritten or
+  reordered), idempotent (a server already named in the file is skipped), and
+  declines when the repo has no governance file rather than fabricate one. The
+  mismatch findings remain no-auto-fix — resolving a governance/config
+  contradiction requires a human to choose the source of truth.
+- Pack `pack.json` gains a `defaults` map (`PLACEHOLDER → applied value`), substituted at install so a shipped pack works out of the box. The `container` pack now resolves `EGRESS_SUBNET` to `172.30.0.0/16` and `ALLOWED_HOSTS` to a deny-all fail-closed default, so its egress proxy is no longer inert on install.
+- **`docker-security --fix` can now remove `privileged: true` and the Docker socket volume mount.** Two removal-class compose fixers (`docker-remove-privileged`, `docker-remove-docker-socket-mount`) complete the pair started by the additive fixers. Because deletion is outside the additive config-merge engine, they edit the compose file through the `yaml` Document API: only the exact flagged construct is dropped, `privileged: false` is left alone, a now-empty `volumes` key is removed, and every unrelated key, service, volume, and comment survives. Idempotent, and an absent or unparseable compose file is skipped rather than rewritten.
+- `rigscore init --<pack> --merge` (alias `--harden`) hardens an EXISTING config in place: it merges a pack's keys into an existing json/yaml dest via the additive config-merge engine instead of skipping it. Additive-only — a value you already set is kept and reported as a conflict, never overwritten; arrays union; YAML comments survive. A corrupt or non-mergeable dest (shell hook, `.conf`, TOML) falls back to the current skip. `--merge` and `--force` are mutually exclusive (merge wins). The `--fix --install-packs` path stays skip-only for now.
+- **pre-commit.com framework support.** A `.pre-commit-hooks.yaml` at the repo
+  root lets adopters run rigscore via the [pre-commit](https://pre-commit.com)
+  framework — add `- id: rigscore` under a
+  `repo: https://github.com/Back-Road-Creative/rigscore` entry in
+  `.pre-commit-config.yaml`. `language: node` installs rigscore from the cloned
+  repo and exposes its `bin`, so no npm publish is needed. This is the
+  framework-managed alternative to the native `rigscore --init-hook` installer.
+- **The composite GitHub Action is now GitHub-Marketplace-listable.** `action.yml`
+  gains a top-level `branding:` block (`icon: shield`, `color: green`) — the
+  metadata GitHub Marketplace requires to list the action — and the README
+  Distribution section gains a copy-paste workflow example wiring
+  `uses: Back-Road-Creative/rigscore@v2.0.0` with `upload-sarif: true` and a
+  `fail-under`, reiterating that the action must be pinned to an exact `vX.Y.Z`
+  tag.
+- Config `extends`: a `.rigscorerc.json` (home or project) can inherit from one or more shared baselines via an `extends` key, so a single hardened config is reusable across many repos. Local paths only (relative resolves against the declaring file's directory), recursive and cycle-safe, later array entries override earlier, and the extending file's own keys win. URLs are rejected — never fetched — preserving the no-external-calls-by-default guarantee.
+- **Three more AI dev clients in the registry: Kiro, Qwen Code, and Crush.**
+  Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code
+  (`.qwen/settings.json`, `~/.qwen/settings.json`, governance `QWEN.md`), and
+  Crush (`.crush.json` / `crush.json` / `~/.config/crush/crush.json`, servers
+  under the `mcp` key, governance `CRUSH.md`) now flow through the existing
+  MCP-config, coherence, credential-storage, and env/network-exposure checks
+  with no new finding or check. Their committed configs join the CVE-2025-54136
+  rug-pull pin and the CycloneDX AI-BOM for free, since `src/clients.js` is the
+  single surface list every consumer reads.
+- **The `--cyclonedx` AI-BOM now models the grant surface** — the thing a generic
+  SBOM generator cannot see. Each MCP server component carries `rigscore:grant:*`
+  properties for its auto-approve state (`enableAllProjectMcpServers`, via the same
+  `checkClaudeSettings` parser the mcp-config check uses) and the `.claude/settings.json`
+  allow/deny entries that scope it (`mcp__<server>` / `mcp__<server>__<tool>`; tool
+  identifiers only, never secret values). Skills (`.claude/{skills,commands}/<name>/SKILL.md`)
+  and directory-form rules (via `collectGovernanceDirFiles`) are added as hashed `file`
+  components with `rigscore:file:role` = `skill` / `rule`. Stays CycloneDX 1.6-valid
+  (properties + hashes only) and reuses the existing check parsers — no drifting reader.
+- `--fix` now strips `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirects (CVE-2026-21852) from committed MCP server configs. The new `anthropic-base-url-redirect-strip` fixer remediates the existing `mcp-config/anthropic-base-url-redirect` finding: it scans project-level MCP configs (`.mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json`, etc.), deletes only a redirecting key whose value would actually fire the finding (an `api.anthropic.com`/loopback override is left alone), preserves unrelated servers/keys and order, is idempotent, and never rewrites per-user homedir configs.
+- Governance scanning now recognizes Amazon Q's `.amazonq/rules/*.md` and Kiro's `.kiro/steering/*.md` directory-form rule sets by default, so a repo governed only by those is no longer mis-scored as ungoverned (they flow through every governance-scanning check and the CycloneDX BOM).
+- Broadened `KEY_PATTERNS` secret detection with six genuinely-missing provider token formats, all under the existing secret finding (no new `findingId`): GitHub user/server/refresh tokens (`ghu_`/`ghs_`/`ghr_`) and fine-grained PATs (`github_pat_`), Google OAuth client secrets (`GOCSPX-`), legacy OpenAI keys (`sk-` + 48), Shopify app tokens (`shpat_`/`shpss_`/`shppa_`/`shpca_`), and Databricks PATs (`dapi`). Every pattern is `\b`-anchored and length-bounded to keep false positives low; UUID-only formats (e.g. Postmark) are deliberately excluded, and the docs note the trufflehog/gitleaks handoff for git-history/entropy scans.
+- **Opt-in `--semantic` tool-description judge (`semantic-tools` check).** Catches
+  *obfuscated* MCP tool poisoning — a hidden directive paraphrased into a tool
+  description so the static regex checks never fire. OFF by default and makes zero
+  external calls unless you pass `--semantic`; then it hands each tool description
+  (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot`,
+  the same JSON piped into `rigscore mcp-hash`) to your own first-party `claude -p`
+  to classify benign vs. suspicious. First-party CLI only — never an API key or SDK
+  client — and it shells out via `execSafe`, so a missing `claude` skips gracefully
+  (no finding, no crash). Each description is wrapped in a data-only frame and the
+  judge is told to treat it as data, not instructions, so a poisoned description
+  cannot hijack the judge. Advisory (weight 0). New finding id
+  `semantic-tools/suspicious-tool-description`.
 
 ### Changed
 - **`docs/FINDING_IDS.md` coverage is now enforced per finding ID, not per
@@ -54,6 +136,31 @@ next release; the maintainer folds the fragments in at release time.
   baseline diffs. The gate now fails when any literal id a built-in check emits
   is absent from the page and names the missing id; all 39 are backfilled.
   Dynamic-fragment ids keep their `<category>`/`<reason>` shorthand treatment.
+- **Changelog entries are now one file per change (`changelog.d/`), not shared
+  lines in `CHANGELOG.md`.** Every PR appended to the same `### Fixed` list, so
+  any two PRs open at once conflicted on the same lines: in a parallel wave the
+  second, third and fourth sibling each needed a hand-resolved conflict before
+  they could merge. Contributors now add `changelog.d/<id>.<type>.md` and leave
+  `CHANGELOG.md` alone — two PRs never touch the same line, so the collision is
+  structurally impossible rather than merely easier to resolve. (A
+  `.gitattributes` `merge=union` was the obvious fix and was rejected: GitHub
+  does not honor `.gitattributes` when it merges a PR, so it would have healed
+  the local merge while leaving the PR itself flagged as conflicting.)
+  `npm run changelog` previews the next release; `scripts/assemble-changelog.js
+  --release <version>` folds the fragments in and reopens `## [Unreleased]`.
+- **`--fix --install-packs` now hardens an EXISTING config in place instead of
+  skipping it.** The fix path was SKIP-ONLY: a pack whose json/yaml dest already
+  existed was reported `skipped (exists)` and left untouched, so `--fix
+  --install-packs` could only scaffold files you were missing — to top up a
+  config you already had you had to re-run `rigscore init --<pack> --merge` by
+  hand. The fixer now threads `merge` into the same additive `config-merge`
+  engine `init --merge/--harden` already drives: a missing dest is still
+  written, an existing json/yaml config gets the pack's **absent** keys merged
+  in (reported `merged`), a value you already set is kept and reported (`kept
+  your existing <path>`), and a corrupt or non-mergeable dest (e.g. a `.sh`
+  hook) falls back to `skipped (exists)` byte-for-byte. Non-destructive by
+  construction — the engine never overwrites one of your values — so no new
+  consent is needed beyond the existing `--install-packs` opt-in.
 
 ### Fixed
 - **mcp-config: a corrupt `.rigscore-state.json` no longer silently destroys the
@@ -240,25 +347,109 @@ next release; the maintainer folds the fragments in at release time.
 
 - **An invalid target directory exits 2 (configuration error), not 1** — matching README's
   exit-code table, so a typo'd path is no longer indistinguishable from a real low score.
+- **The CycloneDX AI-BOM no longer drops `.gemini/settings.json` MCP servers.** The
+  exporter kept its own hardcoded 3-file list of repo-level MCP configs
+  (`.mcp.json`, `.vscode/mcp.json`, `opencode.json`) while the client registry —
+  the source of truth the CVE-2025-54136 rug-pull pin reads — declares **four**.
+  A Gemini MCP server was therefore invisible in the shipped BOM (no
+  `mcp-server:` component *and* no `file:` component), even though the
+  `mcp-config` check and the pin both inventoried it: a supply-chain reviewer
+  reading the AI-BOM would not have seen a repo-level agent server that was
+  really there. The exporter now reads `repoMcpRelPaths()` instead of restating
+  the list, so a client added to the registry is inventoried for free and the
+  two surfaces cannot drift apart again.
+- **`--deep` secret scanning now covers a bare `.env`, not just the `.env.*`
+  family.** `env-exposure` only reads the repository root, so a nested
+  `apps/api/.env` — the most common monorepo secret layout, under the most
+  common env filename — fell to `deep-secrets`, which skipped it: a bare `.env`
+  has no scanned extension and does not start with `.env.` (that needs the
+  trailing dot), so it was excluded while its `.env.production` sibling in the
+  same folder was caught. A live provider key in a nested bare `.env` therefore
+  produced no finding and a passing grade. `deep-secrets` now includes a bare
+  `.env` as well; `.envrc` and similar `.env`-prefixed non-env files stay
+  excluded.
+- **The `--report compliance` output now discloses config/`--ignore`
+  suppression, like every other findings surface.** The compliance report is
+  the auditor-facing artifact, yet it was the one surface that read only
+  `results` and `score` and never `scanResult.suppressed` — so a repo that muted
+  a critical `.env`-leak or `/`-scope MCP finding via `.rigscorerc.json` produced
+  a compliance report with no trace of the mute, while the terminal, `--json`
+  and `--sarif` all disclosed it. `formatCompliance` now emits the same
+  `⚠ Suppressed N findings via config/--ignore: …` line the other surfaces use.
+  Disclosure only — no scoring or verdict change.
+- **`env-exposure` now scans the `env` map of every committed repo-level MCP
+  config, not just `.mcp.json`.** A plaintext key in the `env` map of
+  `.vscode/mcp.json` was caught by no secret scanner (a total blind spot —
+  `.vscode` is also skipped by `deep-secrets`), while the same key in `.mcp.json`
+  was a double-CRITICAL; `.gemini/settings.json` and `opencode.json` env secrets
+  were missed on the default scan and recoverable only under `--deep`. The
+  scanned set is now driven from the client-registry SSOT `repoMcpRelPaths()` —
+  the same source #284 wired the CycloneDX BOM to — so a newly registered client
+  is covered for free. The registry read lives in a new `repoMcpEnvValues()` in
+  `src/clients.js` (which has no `child_process`), keeping raw MCP-server objects
+  out of the spawn-capable check and honoring the existing security guard rather
+  than weakening it.
+- **`--deep` secret scanning no longer reports an unreadable path as "clean".** A
+  file or directory the scan could not read (e.g. `chmod 000`) silently vanished
+  from the walk, and the result still said `Deep scan clean — N files checked`
+  with score 100 — a live key under an unreadable path was invisible, exactly the
+  "I stopped looking" rendering as "no secrets" that the file/depth-cap warning
+  already guards against. `walkDirSafe` swallowed `readdir`/`lstat` failures with a
+  silent `catch{return}` (unlike the caps, which it surfaces), and `deep-secrets`
+  swallowed per-file `stat`/`readFile` failures the same way. The walker now sets a
+  `readError` signal and `deep-secrets` emits a `deep-secrets/unreadable-skipped`
+  warning and suppresses the PASS finding, so a scan that gave up on a path can no
+  longer look identical to one that read everything and found nothing.
+- A committed, project-level `.cursor/mcp.json` is now scanned by `mcp-config` and covered by the CVE-2025-54136 rug-pull pin (and the CycloneDX AI-BOM / `--verify-state`) — previously Cursor was declared home-only, so a checked-in project config was a scan and pin blind spot, the same class already fixed for `.gemini`/`opencode`. (Windsurf and Cline stay home-only: vendor docs confirm neither has a committed project-level MCP file.)
+- **Remediation links no longer 404.** Eleven `learnMore` URLs (and the SARIF
+  `helpUri` derived from them) pointed at `headlessmode.com/tools/rigscore/#…`,
+  a page the site retired — every "learn more" link in scan output and SARIF
+  was a live 404. They now point at the per-check docs that ship with this repo
+  (`docs/checks/<check>.md` on GitHub), which are versioned with the code and
+  cannot drift the way the site did. A new test enforces that every repo-hosted
+  `learnMore` URL resolves to a file that exists.
+- **Release workflow no longer stages dead site paths.** `release.yml` staged
+  `content/journal/` and `content/tools/rigscore.md` in the headlessmode
+  checkout, but the release-post generator writes `content/releases/` and
+  `content/tools/` no longer exists — the cross-repo post step would fail. It
+  now stages `content/releases/` and `content/docs.md`, matching the site-side
+  scripts.
+- **CHANGELOG history corrected.** PRs #67–#75 were listed under 0.8.0 but
+  landed between v0.8.0 and v0.9.0 (verified against the release tags); their
+  entries moved to the 0.9.0 section.
+- The `performance` suite's 20-project recursive-scan test no longer flakes under load: its per-test timeout was raised above its own 15s assertion ceiling so the assertion is the real gate.
 
-
-
-
-
-### Added
-- **Enforcement-grade labels per check.** Every check now carries an
-  `enforcementGrade` of `mechanical`, `pattern`, or `keyword`, surfaced as a
-  `[grade]` tag in the reporter score line and as
-  `properties.enforcementGrade` on every SARIF result. A legend line renders
-  below the score box in terminal mode (suppressed in `--json` and `--sarif`
-  output). This is a transparency / display change — **no scoring changes**,
-  no weight changes, no new dependencies. Users can now see *how* each point
-  was earned (deterministic config check vs. regex/structural vs. presence
-  detection) and calibrate trust accordingly. `keyword`-graded checks are
-  the most gameable surface — see [`THREAT-MODEL.md`](THREAT-MODEL.md) §3.1
-  and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for
-  specifics. Classification rationale lives in
-  `.data/plans/enforcement-grade-classification.md`.
+### Docs
+- **Config merging (`~/.rigscorerc.json` + project `.rigscorerc.json`) is now on
+  the record.** The behavior has shipped for some time (`src/config.js`
+  `loadConfig` / `mergeConfig`) but was never written down anywhere a user would
+  look — its only prose description lived in an untracked release-notes scratch
+  file, which is now deleted. The semantics: precedence runs DEFAULTS →
+  `~/.rigscorerc.json` → project `.rigscorerc.json`; **arrays concatenate and
+  deduplicate** across the two files (so personal `suppress` / `safeHosts` /
+  `crossRepoRefs` in your home config compose with a project's rules instead of
+  being clobbered by them), while **scalars and objects from the
+  higher-precedence file override** the lower one. A malformed
+  `.rigscorerc.json` raises a `ConfigParseError` and exits 2 rather than silently
+  falling back to defaults. (The previously-documented `profile`-key precedence,
+  #88, is one instance of this general rule, not a separate one.)
+- **The README's GitHub Action recipe is pinned to an exact released tag.** It
+  showed `uses: Back-Road-Creative/rigscore@v2.0.0` as `@v1` — a tag that does
+  not exist (the published tags are `v0.1.0 … v1.0.0`, `v2.0.0`, `v2.1.0-rc1`;
+  no moving major tag is cut). Worse, `action.yml` deliberately rejects any ref
+  that is not an exact `vX.Y.Z`, so even a moving `@v1` would have hard-errored
+  at the guard — whose own message already says "Pin to a tag like @v1.0.0". A
+  user copying the canonical recipe out of the README got an action that could
+  not resolve. The docs now match the guard, and `test/action-yml.test.js`
+  extracts the guard's regex from `action.yml` itself and asserts every action
+  ref shown in `README.md` / `docs/**` satisfies it, so the two cannot drift
+  apart again.
+- **`--verbose` is described accurately in `--help` and the README.** Both said
+  it surfaces info-level (and, in the README, skipped) findings. It does not:
+  `src/reporter.js` gates only `pass` findings behind the flag, and `info` and
+  `skipped` print on every default scan. The flag adds passing checks and
+  nothing else.
+- Corrected an inline `--install-packs` comment that still described the old skip-only behavior after #309 made it merge into an existing config additively.
 
 ## [2.0.0] - 2026-04-20
 
