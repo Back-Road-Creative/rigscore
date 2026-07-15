@@ -114,7 +114,7 @@ export const CLIENTS = [
   //   (~/.aws/amazonq/mcp.json global, .amazonq/mcp.json workspace) and mcp-ide.html (the
   //   IDE GUI now writes default.json; legacy mcp.json stays enabled). Project rules live in
   //   the .amazonq/rules/ DIRECTORY of arbitrarily-named markdown files
-  //   (context-project-rules.html) — no single governance filename to declare, so it is omitted.
+  //   (context-project-rules.html) — governed as a directory-form rule set (see DEFAULT_GOVERNANCE_DIRS).
   { id: 'amazon-q', name: 'Amazon Q Developer',
     mcp: [{ path: '.amazonq/mcp.json', base: 'cwd' }, { path: '.amazonq/default.json', base: 'cwd' },
       { path: '.aws/amazonq/mcp.json', base: 'home' }, { path: '.aws/amazonq/default.json', base: 'home' }],
@@ -162,8 +162,8 @@ export const CLIENTS = [
   //   (base:cwd; a PR can mutate it, so it is a rug-pull surface) plus user scope
   //   ~/.kiro/settings/mcp.json (base:home), whose env maps hold credentials; workspace wins a
   //   merge collision. Steering rules live in the .kiro/steering/ DIRECTORY of arbitrarily-named
-  //   markdown files (kiro.dev/docs/steering) — no single governance filename to declare, so it
-  //   is omitted (as with Amazon Q's .amazonq/rules/).
+  //   markdown files (kiro.dev/docs/steering) — governed as a directory-form rule set
+  //   (see DEFAULT_GOVERNANCE_DIRS, like Amazon Q's .amazonq/rules/).
   { id: 'kiro', name: 'Kiro',
     mcp: [{ path: '.kiro/settings/mcp.json', base: 'cwd' },
       { path: '.kiro/settings/mcp.json', base: 'home' }],
@@ -214,6 +214,8 @@ const DEFAULT_GOVERNANCE_DIRS = [
   { dir: '.windsurf/rules', ext: null },
   { dir: '.clinerules', ext: null },
   { dir: '.github/instructions', ext: '.instructions.md' },
+  { dir: '.amazonq/rules', ext: '.md' },
+  { dir: '.kiro/steering', ext: '.md' },
 ];
 
 /** Built-in directory-form governance rule sets, scanned by default (dir names). */

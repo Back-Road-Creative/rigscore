@@ -3,7 +3,8 @@
  *
  * Modern clients keep their rules in DIRECTORIES, not single files:
  *   .cursor/rules/*.mdc, .windsurf/rules/, .clinerules/ (dir form),
- *   .github/instructions/*.instructions.md
+ *   .github/instructions/*.instructions.md, .amazonq/rules/*.md (Amazon Q),
+ *   .kiro/steering/*.md (Kiro)
  *
  * Before this change governanceFiles() only knew single-file names, so a repo
  * using ONLY `.cursor/rules/foo.mdc` scored "no governance" and the injection /
@@ -31,12 +32,15 @@ function write(dir, rel, content) {
 }
 
 describe('clients: directory-form governance defaults', () => {
-  it('governanceDirDefaults() returns the four built-in rule dirs', () => {
+  it('governanceDirDefaults() returns the built-in rule dirs', () => {
     const dirs = governanceDirDefaults();
     expect(dirs).toContain('.cursor/rules');
     expect(dirs).toContain('.windsurf/rules');
     expect(dirs).toContain('.clinerules');
     expect(dirs).toContain('.github/instructions');
+    // Amazon Q project rules + Kiro steering are governed dir-form rule sets too.
+    expect(dirs).toContain('.amazonq/rules');
+    expect(dirs).toContain('.kiro/steering');
   });
 
   it('isGovernanceDirRuleFile applies vendor-correct extensions', () => {
@@ -47,8 +51,15 @@ describe('clients: directory-form governance defaults', () => {
     // Windsurf / Cline: any non-dotfile
     expect(isGovernanceDirRuleFile('.windsurf/rules', 'rules.md')).toBe(true);
     expect(isGovernanceDirRuleFile('.clinerules', '01-style.md')).toBe(true);
+    // Amazon Q / Kiro: arbitrarily-named markdown
+    expect(isGovernanceDirRuleFile('.amazonq/rules', 'foo.md')).toBe(true);
+    expect(isGovernanceDirRuleFile('.kiro/steering', 'bar.md')).toBe(true);
+    // ...but only markdown — a stray non-rule file is not misclassified
+    expect(isGovernanceDirRuleFile('.amazonq/rules', 'notes.txt')).toBe(false);
+    expect(isGovernanceDirRuleFile('.kiro/steering', 'data.json')).toBe(false);
     // Dotfiles never count
     expect(isGovernanceDirRuleFile('.cursor/rules', '.keep')).toBe(false);
+    expect(isGovernanceDirRuleFile('.amazonq/rules', '.keep')).toBe(false);
   });
 });
 
