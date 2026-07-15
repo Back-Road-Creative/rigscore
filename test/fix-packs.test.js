@@ -94,6 +94,37 @@ describe('installPacks', () => {
     expect(installed.join('\n')).toContain('skipped (exists)');
   });
 
+  it('MERGES a pack config into an existing dest additively — adds missing keys, keeps & reports conflicts, never skips', () => {
+    const templates = tmp();
+    const cwd = tmp();
+    const jsonPack = {
+      name: 'demo',
+      description: 'demo pack',
+      checks: ['claude-settings'],
+      files: [{ src: 'settings.json', dest: '.claude/settings.json' }],
+    };
+    dropPack(templates, 'demo', jsonPack, {
+      'settings.json': '{"permissions":{"deny":["Bash(rm -rf:*)"],"defaultMode":"acceptEdits"}}',
+    });
+    // The operator already wrote their own settings — including a value the pack also sets.
+    fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, '.claude/settings.json'),
+      '{"permissions":{"allow":["Read(./src/**)"],"defaultMode":"plan"},"mine":42}',
+    );
+    const packs = findApplicablePacks(red('claude-settings'), templates);
+    const { installed } = installPacks(packs, cwd, templates);
+    const merged = JSON.parse(fs.readFileSync(path.join(cwd, '.claude/settings.json'), 'utf-8'));
+    expect(merged.mine).toBe(42); // unrelated user key preserved
+    expect(merged.permissions.allow).toEqual(['Read(./src/**)']); // user subtree preserved
+    expect(merged.permissions.deny).toEqual(['Bash(rm -rf:*)']); // pack key merged in (was missing)
+    expect(merged.permissions.defaultMode).toBe('plan'); // conflicting user value NOT overwritten
+    const report = installed.join('\n');
+    expect(report).toContain('merged');
+    expect(report).not.toContain('skipped (exists)');
+    expect(report).toMatch(/kept your existing permissions\.defaultMode/);
+  });
+
   it('a malformed pack is reported, not thrown', () => {
     const templates = tmp();
     const cwd = tmp();
