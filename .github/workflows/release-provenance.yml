@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout tag
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
@@ -56,27 +56,24 @@ jobs:
           test -s sbom.cdx.json
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
             ${{ steps.pack.outputs.tarball }}
             sbom.cdx.json
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           name: rigscore ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          body: |
-            Signed release with build provenance + CycloneDX SBOM.
-
-            Verify locally with:
-            ```bash
-            scripts/verify-release.sh ${{ github.ref_name }}
-            ```
+          # No `body:`/`generate_release_notes:` on purpose. On the canonical
+          # path release.yml already created this release with the curated
+          # changelog; softprops preserves an existing release's body when the
+          # body input is omitted, so this job only attaches the tarball + SBOM
+          # instead of clobbering those notes with boilerplate + auto-notes.
           files: |
             ${{ steps.pack.outputs.tarball }}
             sbom.cdx.json
