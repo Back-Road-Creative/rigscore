@@ -124,6 +124,25 @@ next release; the maintainer folds the fragments in at release time.
   judge is told to treat it as data, not instructions, so a poisoned description
   cannot hijack the judge. Advisory (weight 0). New finding id
   `semantic-tools/suspicious-tool-description`.
+- **Practice score — a second 100-point axis.** Alongside the Security hygiene
+  score, rigscore now computes and prints a `Practice` score from the
+  Practice-pillar advisory checks (`loop-governance`, `spec-goals`,
+  `ci-agent-caps`, `memory-hygiene`), surfaced on every terminal run and in
+  `--json`. It is `n/a` (never `0/100`) when the repo has no practice surface to
+  score, so a repo simply out of scope is not libelled with a zero. The Security
+  axis is unchanged — these checks stay weight-0 there, so no existing score
+  shifts.
+- **10MB response-body cap on `--online` fetches (`http.js` `MAX_RESPONSE_BYTES`).**
+  `fetchBody` now rejects a response whose `Content-Length` declares more than the
+  cap and aborts mid-stream once bytes read exceed it, instead of concatenating an
+  unbounded body into memory. `mcp-registry.js` shares the same constant and falls
+  back to stale cache / empty servers on an over-cap registry response.
+- **`site-security` scheme-validates each `sites:` URL.** Every configured site URL
+  is parsed with `new URL()` before dispatch; non-`http(s)` schemes (`file://`,
+  `ftp://`, `javascript:`, `data:`) are rejected with a
+  `site-security/unsupported-scheme` finding and malformed URLs with
+  `site-security/invalid-url`, closing a path where a `file://` entry could read
+  local disk through the old `startsWith('https')` branch.
 
 ### Changed
 - **`docs/FINDING_IDS.md` coverage is now enforced per finding ID, not per

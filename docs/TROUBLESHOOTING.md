@@ -18,7 +18,7 @@ verdict should not be able to claim a perfect 100. **W is your reachable
 ceiling** — at W = 80, an all-passing scan still reports 80/100, and the
 `Coverage:` line in the report discloses the `×0.80` scaling.
 
-rigscore does this to itself — the self-score is 35/100 F. See the
+rigscore does this to itself — the self-score is 37/100 F. See the
 [Dogfooding](../README.md#dogfooding) section for the calibration and the
 ["Coverage scaling"](../README.md#scoring) note for the math. A lower
 fail-under than the public default is normal for projects that don't
