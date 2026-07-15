@@ -452,7 +452,8 @@ export async function run(args) {
           process.stderr.write('\nInstallable packs (NOT installed \u2014 pass --install-packs):\n');
           writePackOffer(packs);
         } else if (packs.length > 0) {
-          // Install packs \u2014 existing files are reported `skipped (exists)`, never rewritten.
+          // Install packs \u2014 new files created; an existing json/yaml config is merged into
+          // additively (user values kept, conflicts reported), a non-mergeable dest is skipped.
           const { installed, skipped: packErrors } = installPacks(packs, cwd);
           if (installed.length > 0) {
             process.stderr.write('\nInstalled packs:\n');
