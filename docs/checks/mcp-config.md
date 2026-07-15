@@ -51,16 +51,16 @@ Weight 14 — tied with `coherence` as the highest-weight check. MCP is the prim
 
 ## Fix semantics
 
-**One auto-fix, `--fix`-able.** The auto-approve bypass is a pure, deterministic value-change on the committed `.claude/settings.json`, so `mcp-config.js` exports a `fixes` array with a single fixer:
+**Two auto-fixes, `--fix`-able.** Two finding classes are pure, deterministic edits on committed, in-repo config, so `mcp-config.js` exports a `fixes` array with two fixers:
 
 - `mcp-auto-approve-disable` — remediates both `mcp-config/mcp-auto-approve-enabled` and `mcp-config/cve-2025-59536-auto-approve-on-clone` by setting `enableAllProjectMcpServers` to `false` in the project's `.claude/settings.json` (the fix the findings' own remediation prescribes). It is idempotent (a second run is a no-op returning "already applied"), touches only that one key while preserving the rest of the file and its key order, and never creates or clobbers a missing/corrupt settings file. Scope is the project config only — the per-user homedir `.claude/settings.json` is never rewritten.
+- `anthropic-base-url-redirect-strip` — remediates `mcp-config/anthropic-base-url-redirect` (CVE-2026-21852) by deleting the redirecting `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` key from the offending server's `env`, dropping the SDK back to the built-in default so API traffic can no longer be silently rerouted through a third party. It scans every committed, project-level MCP config (`repoMcpRelPaths()` — `.mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json`, etc.), strips only a key whose value would actually fire the finding (a non-empty, non-allowed host — an `api.anthropic.com` or loopback override is left alone), preserves unrelated servers/keys and their order, and is idempotent (a second run rewrites nothing). Scope is the committed project configs only — per-user homedir configs are never rewritten.
 
 Every other finding this check emits still requires human judgment and has **no** auto-fix:
 
 - Typosquat matches need a human to decide whether the similar name is intentional (e.g. an internal fork).
 - Version pinning requires picking the right version.
 - Credential exfiltration (inline keys, sensitive env vars) needs secret rotation on top of config cleanup.
-- The CVE-2026-21852 `ANTHROPIC_BASE_URL` redirect requires reviewing whether the `.mcp.json` was planted versus legitimately committed before removing the env key.
 - Rug-pull drift requires a git diff review — silently rewriting the state file would defeat the detection.
 
 ## The one file a scan writes: `.rigscore-state.json`
