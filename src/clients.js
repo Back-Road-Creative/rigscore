@@ -157,6 +157,37 @@ export const CLIENTS = [
     mcp: [{ path: '.warp/.mcp.json', base: 'cwd' },
       { path: '.warp/.mcp.json', base: 'home' }],
     credentials: [{ dir: '.warp', file: '.mcp.json' }] },
+  // Kiro (AWS's agentic IDE). MCP servers under `mcpServers`:
+  //   kiro.dev/docs/mcp/configuration — committed workspace config .kiro/settings/mcp.json
+  //   (base:cwd; a PR can mutate it, so it is a rug-pull surface) plus user scope
+  //   ~/.kiro/settings/mcp.json (base:home), whose env maps hold credentials; workspace wins a
+  //   merge collision. Steering rules live in the .kiro/steering/ DIRECTORY of arbitrarily-named
+  //   markdown files (kiro.dev/docs/steering) — no single governance filename to declare, so it
+  //   is omitted (as with Amazon Q's .amazonq/rules/).
+  { id: 'kiro', name: 'Kiro',
+    mcp: [{ path: '.kiro/settings/mcp.json', base: 'cwd' },
+      { path: '.kiro/settings/mcp.json', base: 'home' }],
+    credentials: [{ dir: '.kiro/settings', file: 'mcp.json' }] },
+  // Qwen Code (Alibaba's Gemini-CLI fork). MCP servers under `mcpServers`:
+  //   qwenlm.github.io/qwen-code-docs/en/users/configuration/settings — committed project
+  //   .qwen/settings.json (base:cwd) plus user scope ~/.qwen/settings.json (base:home), whose env
+  //   maps hold credentials. Reads QWEN.md for hierarchical context (`context.fileName`). Its
+  //   approval boundary is `tools.approvalMode` (NOT Gemini's general.defaultApprovalMode), so
+  //   the `gemini` sandbox reader cannot grade it — no sandbox entry is declared.
+  { id: 'qwen-code', name: 'Qwen Code', governance: ['QWEN.md'],
+    mcp: [{ path: '.qwen/settings.json', base: 'cwd' },
+      { path: '.qwen/settings.json', base: 'home' }],
+    credentials: [{ dir: '.qwen', file: 'settings.json' }] },
+  // Crush (Charm's terminal coding agent). Like opencode, it nests servers under `mcp`:
+  //   github.com/charmbracelet/crush — committed project config, read as .crush.json then
+  //   crush.json (both base:cwd; either is a rug-pull surface) plus global
+  //   ~/.config/crush/crush.json (base:home), whose per-server `env` maps hold credentials. Reads
+  //   a project-root CRUSH.md for rules.
+  { id: 'crush', name: 'Crush', governance: ['CRUSH.md'],
+    mcp: [{ path: '.crush.json', base: 'cwd', key: 'mcp' },
+      { path: 'crush.json', base: 'cwd', key: 'mcp' },
+      { path: '.config/crush/crush.json', base: 'home', key: 'mcp' }],
+    credentials: [{ dir: '.config/crush', file: 'crush.json' }] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';
