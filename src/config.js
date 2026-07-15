@@ -7,6 +7,9 @@ const DEFAULTS = {
     claudeMd: [],
     dockerCompose: [],
     mcpConfig: [],
+    // `tools/list` snapshot JSON files (the same shape piped into `rigscore
+    // mcp-hash`) that the opt-in --semantic judge reads tool descriptions from.
+    mcpToolsSnapshot: [],
     hookDirs: [],
     hookFiles: [],
     skillFiles: [],

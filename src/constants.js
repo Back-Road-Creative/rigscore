@@ -51,6 +51,9 @@ export const WEIGHTS = {
   'memory-hygiene': 0,
   'ai-disclosure': 0,
   'sandbox-posture': 0,
+  // Opt-in `--semantic` tool-description judge — advisory, never moves the
+  // Security score (it only runs when the operator asks for the external call).
+  'semantic-tools': 0,
 };
 
 // OWASP Top 10 for Agentic Applications 2026 — official IDs are `ASIxx:2026`;

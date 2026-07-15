@@ -48,6 +48,7 @@ export function parseArgs(args) {
     depth: 1,
     deep: false,
     online: false,
+    semantic: false,
     refreshMcpRegistry: false,
     includeHomeSkills: false,
     failUnder: 70,
@@ -113,6 +114,7 @@ const FLAG_DEFS = (() => {
     '--cta':                  { handler: (o) => { o.noCta = false; } },
     '--deep':                 { handler: setTrue('deep') },
     '--online':               { handler: setTrue('online') },
+    '--semantic':             { handler: setTrue('semantic') },
     '--include-home-skills':  { handler: setTrue('includeHomeSkills') },
     '--fix':                  { handler: setTrue('fix') },
     '--install-packs':        { handler: setTrue('installPacks') },
@@ -277,6 +279,9 @@ export async function run(args) {
     checkFilter: options.checkFilter,
     deep: options.deep,
     online: options.online,
+    // Opt-in semantic tool-description judge (first-party `claude -p`). OFF by
+    // default so a normal scan makes zero external calls from that check.
+    semantic: options.semantic,
     refreshMcpRegistry: options.refreshMcpRegistry,
     includeHomeSkills: options.includeHomeSkills,
     profile: options.profile,
