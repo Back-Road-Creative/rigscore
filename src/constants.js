@@ -271,10 +271,14 @@ export const KEY_PATTERNS = [
   /\bAKIA[0-9A-Z]{16}\b/,                             // AWS access key
   /\bghp_[a-zA-Z0-9]{36}\b/,                          // GitHub PAT
   /\bgho_[a-zA-Z0-9]{36}\b/,                          // GitHub OAuth
+  /\bgh[usr]_[a-zA-Z0-9]{36}\b/,                      // GitHub user/server/refresh tokens (ghu_/ghs_/ghr_)
+  /\bgithub_pat_[0-9a-zA-Z_]{82}\b/,                  // GitHub fine-grained PAT (11-char prefix + 82-char body)
   /\bxoxb-[a-zA-Z0-9-]{30,}\b/,                       // Slack bot token (real tokens are 50+ chars)
   /\bxoxp-[a-zA-Z0-9-]{30,}\b/,                       // Slack user token (real tokens are 50+ chars)
   /\bxox[aers]-[a-zA-Z0-9-]{30,}\b/,                  // Slack other tokens (app/refresh/etc.)
   /\bsk-(?:proj|svcacct)-[a-zA-Z0-9_-]{20,}\b/,       // OpenAI (current format)
+  /\bsk-[a-zA-Z0-9]{48}\b/,                            // OpenAI API key (legacy 48-char body)
+  /\bGOCSPX-[a-zA-Z0-9_-]{20,}\b/,                     // Google OAuth client secret
   /\bglpat-[a-zA-Z0-9_-]{20,}\b/,                     // GitLab PAT
   /\bsk_live_[a-zA-Z0-9]{24,}\b/,                     // Stripe secret key
   /\bsk_test_[a-zA-Z0-9]{24,}\b/,                     // Stripe test secret key
@@ -288,6 +292,8 @@ export const KEY_PATTERNS = [
   /\bnpm_[a-zA-Z0-9]{36}\b/,                          // npm access token
   /\bpypi-[a-zA-Z0-9_-]{16,}\b/,                      // PyPI API token
   /\bhf_[a-zA-Z0-9]{34}\b/,                           // Hugging Face token
+  /\bshp(?:at|ss|pa|ca)_[a-fA-F0-9]{32}\b/,          // Shopify admin/shared/private/custom app token
+  /\bdapi[0-9a-f]{32}\b/,                             // Databricks personal access token
   /\bmongodb\+srv:\/\/[^\s"']+/,                      // MongoDB connection string (URL-shaped)
   /\bvercel_[a-zA-Z0-9_-]{24,}\b/,                    // Vercel token
   /\bsbp_[a-f0-9]{40}\b/,                             // Supabase service role key
