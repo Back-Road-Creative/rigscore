@@ -15,7 +15,7 @@ Inspects the MCP env maps inside AI-client config files in `~/` — Claude Code 
 | No client config files found in `~/` | INFO (N/A) | `credential-storage/no-client-configs-found` | Check returns `NOT_APPLICABLE` — no score impact |
 | Config files present with no plaintext credentials | PASS | — | — |
 
-The trigger list is deliberately short: the check is a pattern scan against `KEY_PATTERNS` (the same ~40 provider regexes used by `env-exposure` and `deep-secrets`), and each regex hit becomes exactly one of the two severity rows above depending on the example-word check.
+The trigger list is deliberately short: the check is a pattern scan against `KEY_PATTERNS` (the same ~45 provider regexes used by `env-exposure` and `deep-secrets`), and each regex hit becomes exactly one of the two severity rows above depending on the example-word check.
 
 Both ids are emitted from a **single `findings.push`** whose `findingId` is a ternary on the example-word test (`findingId: isExample ? '…/example-credential-in-client-config' : '…/plaintext-credential-in-client-config'`). A tool that extracts ruleIds by matching a quoted string straight after `findingId:` will find **none** here — it must read every string literal in the `findingId` expression, both branches included.
 
