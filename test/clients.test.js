@@ -214,6 +214,62 @@ describe('batch-2 client additions (JetBrains Junie, Goose, Warp)', () => {
   });
 });
 
+describe('batch-3 client additions (Kiro, Qwen Code, Crush)', () => {
+  it('registers the three new clients with unique ids', () => {
+    for (const id of ['kiro', 'qwen-code', 'crush']) {
+      expect(CLIENTS.find(c => c.id === id), id).toBeTruthy();
+    }
+  });
+
+  it('Kiro: committed .kiro/settings/mcp.json, global ~/.kiro/settings/mcp.json, and credentials', () => {
+    const mcp = mcpConfigPaths(CWD, HOME);
+    // Workspace, in-repo (base:cwd) + user scope (base:home).
+    expect(mcp).toContain(path.join(CWD, '.kiro/settings/mcp.json'));
+    expect(mcp).toContain(path.join(HOME, '.kiro/settings/mcp.json'));
+    // The committed config is pinned against a rug-pull.
+    expect(repoMcpRelPaths()).toContain('.kiro/settings/mcp.json');
+    // Default key — Kiro stores servers under `mcpServers`.
+    const servers = { s: { command: 'node' } };
+    expect(mcpServersIn(path.join(CWD, '.kiro/settings/mcp.json'), { mcpServers: servers })).toEqual(servers);
+    // Its user config's env map can hold plaintext secrets.
+    expect(credentialClients().some(c => c.dir === '.kiro/settings' && c.file === 'mcp.json' && c.name)).toBe(true);
+  });
+
+  it('Qwen Code: QWEN.md governance, committed .qwen/settings.json, home config + creds', () => {
+    expect(governanceFiles()).toContain('QWEN.md');
+    const mcp = mcpConfigPaths(CWD, HOME);
+    // Project config (base:cwd) + user scope ~/.qwen/settings.json (base:home).
+    expect(mcp).toContain(path.join(CWD, '.qwen/settings.json'));
+    expect(mcp).toContain(path.join(HOME, '.qwen/settings.json'));
+    // The committed config is pinned against a rug-pull.
+    expect(repoMcpRelPaths()).toContain('.qwen/settings.json');
+    // Default key — Qwen Code (a Gemini CLI fork) stores servers under `mcpServers`.
+    const servers = { s: { command: 'node' } };
+    expect(mcpServersIn(path.join(CWD, '.qwen/settings.json'), { mcpServers: servers })).toEqual(servers);
+    // Its config's env maps can hold plaintext secrets.
+    expect(credentialClients().some(c => c.dir === '.qwen' && c.file === 'settings.json' && c.name)).toBe(true);
+  });
+
+  it('Crush: CRUSH.md governance, committed .crush.json/crush.json under the `mcp` key, home creds', () => {
+    expect(governanceFiles()).toContain('CRUSH.md');
+    const mcp = mcpConfigPaths(CWD, HOME);
+    // Both committed project filenames (base:cwd) + global ~/.config/crush/crush.json (base:home).
+    expect(mcp).toContain(path.join(CWD, '.crush.json'));
+    expect(mcp).toContain(path.join(CWD, 'crush.json'));
+    expect(mcp).toContain(path.join(HOME, '.config/crush/crush.json'));
+    // Both committed configs are pinned against a rug-pull.
+    const repoRel = repoMcpRelPaths();
+    expect(repoRel).toContain('.crush.json');
+    expect(repoRel).toContain('crush.json');
+    // Crush nests its servers under `mcp` (like opencode), NOT `mcpServers`.
+    const servers = { s: { command: 'node', env: { TOKEN: 'x' } } };
+    expect(mcpServersIn(path.join(CWD, '.crush.json'), { mcp: servers })).toEqual(servers);
+    expect(mcpServersIn(path.join(CWD, '.crush.json'), { mcpServers: servers })).toEqual({});
+    // Its global config's env maps can hold plaintext secrets.
+    expect(credentialClients().some(c => c.dir === '.config/crush' && c.file === 'crush.json' && c.name)).toBe(true);
+  });
+});
+
 describe('mcpServersIn', () => {
   it('reads mcpServers by default and opencode\'s "mcp" key', () => {
     const servers = { a: { command: 'x' } };

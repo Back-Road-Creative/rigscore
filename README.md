@@ -225,7 +225,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets AI agents connect to external tools via servers. Each server exposes capabilities — filesystem access, API calls, database queries. The security risk is in the permissions.
 
-rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), and Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`).
+rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`), Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code (`.qwen/settings.json`, `~/.qwen/settings.json`), and Crush (`.crush.json`, `crush.json`, `~/.config/crush/crush.json` — servers under the `mcp` key).
 
 **What rigscore looks for:**
 - Transport type: `stdio` (local, safer) vs. `sse` (network, riskier)
@@ -277,7 +277,7 @@ Skill files (`.cursorrules`, `.windsurfrules`, `.continuerules`, `.roorules`, `.
 
 Your CLAUDE.md file tells AI agents what they can and can't do. Without one, your agent operates with no explicit rules — it can access any file, run any command, and make any API call that its underlying permissions allow.
 
-rigscore recognizes governance files for all major AI coding clients: CLAUDE.md, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `.roorules`, `.goosehints`, `.junie/guidelines.md`, `copilot-instructions.md`, `AGENTS.md`, and `.aider.conf.yml`. It also scans the modern **directory-form** rule sets by default — `.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` (directory), and `.github/instructions/*.instructions.md` — so a repo governed only by those is not mis-scored as ungoverned.
+rigscore recognizes governance files for all major AI coding clients: CLAUDE.md, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `.roorules`, `.goosehints`, `.junie/guidelines.md`, `QWEN.md`, `CRUSH.md`, `copilot-instructions.md`, `AGENTS.md`, and `.aider.conf.yml`. It also scans the modern **directory-form** rule sets by default — `.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/` (directory), and `.github/instructions/*.instructions.md` — so a repo governed only by those is not mis-scored as ungoverned.
 
 **What rigscore looks for:**
 - Does a governance file exist in the project root?
