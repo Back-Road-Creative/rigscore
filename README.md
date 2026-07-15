@@ -838,6 +838,8 @@ npx github:Back-Road-Creative/rigscore --fix --yes
 - `chmod 600` on `.env` files
 - `chmod 700` on `~/.ssh`
 - `chmod 600` on SSH private keys
+- Disable the `enableAllProjectMcpServers` MCP auto-approve bypass in `.claude/settings.json`
+- Strip an `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirect (CVE-2026-21852) from a committed MCP server env
 
 rigscore never modifies governance file content.
 
