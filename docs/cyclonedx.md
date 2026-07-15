@@ -35,7 +35,7 @@ not produce a green run.
 | All of the above | a flat `dependencies[]` graph rooted at `metadata.component` |
 
 **Repo-level** means every committed, in-repo MCP config the client registry declares —
-today `.mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json` and `opencode.json`. The BOM
+today the 15 paths `repoMcpRelPaths()` lists — `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json`, plus the Amazon Q, Roo Code, Cody, Junie, Warp, Kiro, Qwen, and Crush variants. The BOM
 reads that set from the registry (`repoMcpRelPaths()`), the same source of truth the
 rug-pull pin uses, so a client added to rigscore is inventoried without touching this
 exporter. Home-dir configs (`~/.cursor/mcp.json`, …) are excluded on purpose: a BOM is
