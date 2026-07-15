@@ -698,6 +698,7 @@ npx github:Back-Road-Creative/rigscore                           # Scan current 
 npx github:Back-Road-Creative/rigscore /path/to/project          # Scan a specific project
 npx github:Back-Road-Creative/rigscore --json                    # JSON output for CI/scripting
 npx github:Back-Road-Creative/rigscore --sarif                   # SARIF output for security tools
+npx github:Back-Road-Creative/rigscore --cyclonedx               # CycloneDX 1.6 AI-BOM: MCP servers + their grant surface (permission scopes), skills, rules (see docs/cyclonedx.md)
 npx github:Back-Road-Creative/rigscore --ci                      # CI mode (--sarif --no-color --no-cta)
 npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score < 80 (default: 70)
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
