@@ -10,7 +10,16 @@ on:
   push:
     branches: [main, master]
     paths: ['package.json']
-  workflow_dispatch:   # allows manual re-trigger after tag/release cleanup
+  # rc/beta/alpha tags never reach this workflow: it fires only on a
+  # package.json version bump, and rc tags do not bump package.json. rc site
+  # posts are therefore hand-authored by design (release-provenance.yml still
+  # signs the rc tag; only the headlessmode site post is skipped).
+  workflow_dispatch:   # manual re-trigger after tag/release cleanup
+    inputs:
+      force_site_post:
+        description: 'Re-post to the headlessmode site even though the release already exists (e.g. after rotating a dead HEADLESSMODE_PAT). Bypasses the released==true guard so a re-dispatch is not silently skipped.'
+        type: boolean
+        default: false
 
 jobs:
   release:
@@ -62,7 +71,9 @@ jobs:
         run: npm run verify:docs
 
       - name: Build changelog
-        if: steps.check.outputs.exists == 'false'
+        # Also runs on a forced re-post so the site job still has release notes,
+        # even though the release itself already exists.
+        if: steps.check.outputs.exists == 'false' || inputs.force_site_post
         id: changelog
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
@@ -115,13 +126,18 @@ jobs:
       # it doesn't have to re-checkout this repo.
       - name: Export release outputs
         id: release_out
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.exists == 'false' || inputs.force_site_post
+        # Pass the changelog through env, not raw `${{ }}` interpolation, so a
+        # commit/PR title with shell metacharacters cannot execute in the runner
+        # (same handling as the "Create GitHub release" step above).
+        env:
+          CHANGELOG: ${{ steps.changelog.outputs.log }}
         run: |
           {
             echo "version=${{ steps.pkg.outputs.version }}"
             echo "prev_tag=${{ steps.changelog.outputs.prev_tag }}"
             echo "changelog<<EOF"
-            printf '%s\n' "${{ steps.changelog.outputs.log }}"
+            printf '%s\n' "$CHANGELOG"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
     outputs:
@@ -138,10 +154,13 @@ jobs:
   headlessmode-post:
     name: Post release to headlessmode
     needs: release
-    if: needs.release.outputs.released == 'true'
+    # Forced re-post (force_site_post) bypasses the released==true guard so a
+    # re-dispatch after a dead PAT is not silently skipped.
+    if: needs.release.outputs.released == 'true' || inputs.force_site_post
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write     # "Create issue on failure" step opens a tracking issue
     steps:
       - name: Guard — require HEADLESSMODE_PAT
         env:
@@ -151,6 +170,22 @@ jobs:
             echo "HEADLESSMODE_PAT not set — skipping cross-repo post."
             echo "skip=true" >> "$GITHUB_ENV"
           fi
+
+      # Fail loudly here, BEFORE the cross-repo clone, if the PAT is set but
+      # dead — otherwise the clone dies at `git clone` with an opaque exit 128
+      # ("Authentication failed"), which is exactly how the v2.1.0 site post
+      # broke unnoticed.
+      - name: Preflight — HEADLESSMODE_PAT must be valid
+        if: env.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
+        run: |
+          if ! login=$(gh api user --jq '.login' 2>/tmp/pat-err); then
+            echo "::error::HEADLESSMODE_PAT is set but invalid/expired — 'gh api user' failed. Rotate the PAT; the cross-repo site post cannot run." >&2
+            cat /tmp/pat-err >&2
+            exit 1
+          fi
+          echo "HEADLESSMODE_PAT valid — authenticated as ${login}."
 
       - name: Generate headlessmode release post + docs page sync
         if: env.skip != 'true'
@@ -197,3 +232,18 @@ jobs:
             --body "Auto-generated release post for rigscore v${VERSION}. Includes release post and docs page version bump. Created by rigscore release workflow." \
             --head "${BRANCH}" \
             --base master
+
+      # Mirrors the headlessmode site deploy job's alerting: if any step above
+      # failed (dead PAT, patch-script drift, PR-create error), open a tracking
+      # issue so a broken site post cannot sit unnoticed the way v2.1.0 did.
+      - name: Create issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "Release post to headlessmode failed: v${VERSION:-unknown} ($(date +'%Y-%m-%d %H:%M'))" \
+            --body "The GitHub release exists but the headlessmode site post / docs sync did not complete, so the live site is stale. Likely causes: expired HEADLESSMODE_PAT or patch-script drift.
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || echo "Could not create issue"
