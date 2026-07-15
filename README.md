@@ -544,6 +544,10 @@ Every agent CLI expresses "how much can this agent do without asking me" differe
 
 Windsurf is deliberately **not** graded: its Turbo-mode auto-execute level and allow/deny lists live only in the Windsurf Settings UI / global config, with no committed in-repo file rigscore can read at cwd.
 
+### 28. Semantic tool-description judge (advisory, 0 points, `--semantic`) {#semantic-tools}
+
+Opt-in check for **obfuscated MCP tool poisoning** — a hidden directive paraphrased into a tool description so static regex checks miss it. Runs **only** with `--semantic`; a default scan makes zero external calls from it. For each tool description (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` — the same JSON you pipe into `rigscore mcp-hash`), it asks your **own first-party `claude -p`** (Max-plan CLI — never an API key or SDK client) to classify the text benign vs. suspicious. Each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge. If `claude` is not on PATH the check skips gracefully (no finding, no crash). See [`docs/checks/semantic-tools.md`](docs/checks/semantic-tools.md).
+
 ## Scoring
 
 | Score | Grade | Meaning |
