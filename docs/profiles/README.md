@@ -20,5 +20,6 @@ controls how each check contributes to the overall 0–100 score.
 
 Unknown profiles throw a descriptive error at scan time.
 
-See [`home.md`](./home.md) and [`monorepo.md`](./monorepo.md) for the new
-profiles added in Moat & Ship.
+Per-profile weight tables: [`default.md`](./default.md),
+[`minimal.md`](./minimal.md), [`ci.md`](./ci.md), [`home.md`](./home.md),
+[`monorepo.md`](./monorepo.md).

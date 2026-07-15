@@ -91,6 +91,10 @@ Options:
   --online           Enable online MCP supply chain verification
   --refresh-mcp-registry  Force a refetch of the MCP registry cache
                           (implies --online; bypasses the 24h TTL)
+  --semantic         Enable the opt-in semantic MCP tool-description judge
+                     (semantic-tools check). Shells to your first-party
+                     claude -p (Max-plan CLI, never an API key); skips
+                     silently if claude is not on PATH
   --include-home-skills  Also scan ~/.claude/skills and ~/.claude/commands
                          (default: scan cwd only; home findings do not
                          affect project scores unless this flag is set)
@@ -122,6 +126,9 @@ Options:
   --baseline <path>  Baseline mode. On first run writes findings to <path>;
                      on subsequent runs reports ONLY new findings vs baseline
                      and exits 1 if any new finding is found
+  --baseline-refresh (Re)write the working-tree baseline at <path> from the
+                     current findings — the sanctioned way to accept new
+                     findings; review and commit the regenerated file
   --report <kind>    Render findings grouped by compliance-framework control
                      (kinds: compliance). Not supported with --recursive.
   --version          Show version
@@ -149,6 +156,13 @@ Checks (moat-heavy weighting):
   windows-security        Windows-specific config hygiene (advisory)
   network-exposure        Bound-service / port exposure (advisory)
   agent-output-schemas    JSON-emitting agents declare schemas (advisory)
+  loop-governance         Bounded, stoppable agent loops (advisory, Practice)
+  spec-goals              Agents driven from written goals/specs (advisory, Practice)
+  ci-agent-caps           CI agent turn/timeout/tool caps (advisory, Practice)
+  memory-hygiene          Agent memory budget & layout (advisory, Practice)
+  ai-disclosure           AI-use disclosure policy present (advisory)
+  sandbox-posture         Agent approval/sandbox posture (advisory)
+  semantic-tools          Semantic MCP tool-description judge (--semantic, advisory)
 
 Subcommands:
   init [--profile <name>]          Write a commented .rigscorerc.json starter
