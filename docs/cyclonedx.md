@@ -28,8 +28,10 @@ not produce a green run.
 | --- | --- |
 | MCP server in **any** repo-level client config | `components[]`, `type: application`, `bom-ref: mcp-server:<name>` |
 | npm-launched MCP server with a **stable version pin** | that component's `version` + `purl` (`pkg:npm/…`) |
+| The **grant surface** of each MCP server — auto-approve + the settings allow/deny that name it | `rigscore:grant:*` properties on that server component |
 | AI client configs (every repo-level MCP config, plus `.claude/settings.json`) | `components[]`, `type: file` + SHA-256 content digest |
 | Governance files (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, …) | `components[]`, `type: file` + SHA-256 content digest |
+| Skills (`.claude/{skills,commands}/<name>/SKILL.md`) and directory-form rules (`.cursor/rules/*.mdc`, `.windsurf/rules`, `.clinerules`, `.github/instructions`) | `components[]`, `type: file` + SHA-256 digest, `rigscore:file:role` = `skill` / `rule` |
 | All of the above | a flat `dependencies[]` graph rooted at `metadata.component` |
 
 **Repo-level** means every committed, in-repo MCP config the client registry declares —
@@ -53,11 +55,23 @@ rather than invent fields 1.6 does not define, AI facts are emitted as `properti
 | `rigscore:mcp:env-key` (repeats) | each **declared env var name**. Values are never emitted — they are credentials |
 | `rigscore:mcp:config-shape-sha256` | rigscore's rug-pull hash of `{command, args, envKeys}`. Not an artifact digest, so it does not belong in `hashes` |
 | `rigscore:mcp:runtime-tool-sha256` | the pinned `tools/list` hash from `.rigscore-state.json`, when pinned |
-| `rigscore:file:role` | `governance` or `ai-client-config` |
+| `rigscore:grant:auto-approve` | `enableAllProjectMcpServers` — present only when project settings auto-approve every server on clone (the same signal the mcp-config check reads via `checkClaudeSettings`) |
+| `rigscore:grant:allow`, `rigscore:grant:deny` (repeat) | each `.claude/settings.json` permission entry scoping **this** server — `mcp__<name>` or `mcp__<name>__<tool>`. Tool identifiers only; a secret can never appear here |
+| `rigscore:file:role` | `governance`, `ai-client-config`, `skill`, or `rule` |
 | `rigscore:score`, `rigscore:profile` | the scan's score and profile (on `metadata`) |
 
 The config file each server is declared in, and a network server's endpoint URL, ride on
 `externalReferences` (`configuration` / `other`) — 1.6 constructs that do exist.
+
+## The grant surface — the cdxgen-can't differentiator
+
+A generic SBOM generator can list the npm packages an MCP server pulls in. It cannot say
+**which tools that server is permitted to run**, nor enumerate the skills and rules steering
+the agent — that lives in `.claude/settings.json` permissions and in the skill/rule files, not
+in a lockfile. rigscore already parses all of it for its checks, so the BOM emits it too:
+per-server `rigscore:grant:*` scopes (auto-approve + the allow/deny that name the server) plus
+one hashed `file` component per skill and per directory-form rule (`role: skill` / `role: rule`).
+Grounded in the exact parsers the checks use — no second, drifting reader.
 
 ## Limits
 

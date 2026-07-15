@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { GOVERNANCE_FILES } from './constants.js';
-import { readFileSafe, readJsonSafe } from './utils.js';
+import { readFileSafe, readJsonSafe, collectGovernanceDirFiles } from './utils.js';
 import { mcpServersIn, repoMcpRelPaths } from './clients.js';
 import { computeServerHash, loadState } from './state.js';
-import { argHasStableVersionPin, extractPackageName, findPackagePositionArg } from './checks/mcp-config.js';
+import { argHasStableVersionPin, checkClaudeSettings, extractPackageName, findPackagePositionArg } from './checks/mcp-config.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
@@ -38,9 +39,33 @@ function npmCoordinates(args) {
   return { version: pinned, purl: `pkg:npm/${name.replace('@', '%40')}@${pinned}` };
 }
 
+// A file component (content digest + role). Shared by the inventoried configs/governance
+// files and by the grant-surface skill/rule components below.
+function fileComponent(relPath, content, role) {
+  return {
+    type: 'file', 'bom-ref': `file:${relPath}`, name: relPath,
+    hashes: [{ alg: 'SHA-256', content: sha256(content) }],
+    properties: [prop('rigscore:file:role', role)],
+  };
+}
+
+// The GRANT SURFACE for one server: whether it is auto-approved on clone, and the
+// settings.json allow/deny entries that name it. `mcp__<server>[__<tool>]` is Claude
+// Code's MCP permission form, so an entry scopes THIS server only when it matches that.
+// Tool identifiers, never secret values.
+function grantProps(name, grant) {
+  const properties = [];
+  if (grant.autoApprove) properties.push(prop('rigscore:grant:auto-approve', 'enableAllProjectMcpServers'));
+  const scopes = (entry) => typeof entry === 'string'
+    && (entry === `mcp__${name}` || entry.startsWith(`mcp__${name}__`));
+  for (const entry of grant.allow.filter(scopes)) properties.push(prop('rigscore:grant:allow', entry));
+  for (const entry of grant.deny.filter(scopes)) properties.push(prop('rigscore:grant:deny', entry));
+  return properties;
+}
+
 // One MCP server → one `application` component. AI facts with no first-class home
 // in 1.6 ride on `properties`. Env VALUES are never emitted — they are credentials.
-function serverComponent(name, server, relPath, pin) {
+function serverComponent(name, server, relPath, pin, grant) {
   const args = Array.isArray(server.args) ? server.args : [];
   const properties = [
     prop('rigscore:mcp:transport', server.transport || (server.url ? 'http' : 'stdio')),
@@ -53,6 +78,7 @@ function serverComponent(name, server, relPath, pin) {
   if (pin && typeof pin.runtimeToolHash === 'string') {
     properties.push(prop('rigscore:mcp:runtime-tool-sha256', pin.runtimeToolHash));
   }
+  properties.push(...grantProps(name, grant));
   const externalReferences = [{ type: 'configuration', url: relPath, comment: 'MCP server declaration' }];
   if (typeof server.url === 'string') {
     externalReferences.push({ type: 'other', url: server.url, comment: 'MCP server endpoint' });
@@ -71,6 +97,20 @@ export async function formatCycloneDx(result, options = {}) {
   const components = [];
   const { state } = await loadState(cwd);
   const pins = (state && typeof state.servers === 'object' && state.servers) || {};
+
+  // Grant surface, read once from the project `.claude/settings.json` (repo-scoped, so
+  // homedir === cwd). Auto-approve comes from the same parser the mcp-config check uses
+  // (checkClaudeSettings → enableAllProjectMcpServers); allow/deny use the claude-settings
+  // permission shape (`allowedTools` || `permissions.allow`, `permissions.deny`).
+  const asArray = (v) => (Array.isArray(v) ? v : []);
+  const { autoApproveEnabled } = await checkClaudeSettings(cwd, cwd);
+  const settings = (await readJsonSafe(path.join(cwd, '.claude', 'settings.json'))) || {};
+  const grant = {
+    autoApprove: autoApproveEnabled,
+    allow: asArray(settings.allowedTools || settings.permissions?.allow),
+    deny: asArray(settings.permissions?.deny),
+  };
+
   const seen = new Set();
   for (const relPath of MCP_CONFIG_FILES) {
     const config = await readJsonSafe(path.join(cwd, relPath));
@@ -78,7 +118,7 @@ export async function formatCycloneDx(result, options = {}) {
     for (const [name, server] of Object.entries(servers)) {
       if (!server || typeof server !== 'object' || seen.has(name)) continue;
       seen.add(name);
-      components.push(serverComponent(name, server, relPath, pins[name]));
+      components.push(serverComponent(name, server, relPath, pins[name], grant));
     }
   }
 
@@ -87,12 +127,31 @@ export async function formatCycloneDx(result, options = {}) {
     const content = await readFileSafe(path.join(cwd, relPath));
     if (content === null) continue;
     const role = GOVERNANCE_FILES.includes(relPath) ? 'governance' : 'ai-client-config';
-    components.push({
-      type: 'file', 'bom-ref': `file:${relPath}`, name: relPath,
-      hashes: [{ alg: 'SHA-256', content: sha256(content) }],
-      properties: [prop('rigscore:file:role', role)],
-    });
+    components.push(fileComponent(relPath, content, role));
   }
+
+  // Grant surface, part 2 — skills and directory-form rules as hashed `file` components.
+  // Skill discovery mirrors skill-coherence's convention (`.claude/{skills,commands}/<name>/SKILL.md`);
+  // rules reuse `collectGovernanceDirFiles` — the exact set skill-coherence / claude-md scan
+  // (`.cursor/rules/*.mdc`, `.windsurf/rules`, `.clinerules`, `.github/instructions`). cdxgen
+  // models neither, so this is the differentiator. Deduped against files already inventoried.
+  const fileRefs = new Set(components.filter((c) => c.type === 'file').map((c) => c['bom-ref']));
+  const addFile = async (relPath, role) => {
+    if (fileRefs.has(`file:${relPath}`)) return;
+    const content = await readFileSafe(path.join(cwd, relPath));
+    if (content === null) return;
+    fileRefs.add(`file:${relPath}`);
+    components.push(fileComponent(relPath, content, role));
+  };
+  for (const dir of ['.claude/skills', '.claude/commands']) {
+    let subs;
+    try { subs = await fs.promises.readdir(path.join(cwd, dir), { withFileTypes: true }); } catch { continue; }
+    for (const sub of subs) {
+      if (!sub.isDirectory() || sub.name.startsWith('.')) continue;
+      await addFile(path.join(dir, sub.name, 'SKILL.md'), 'skill');
+    }
+  }
+  for (const { rel } of await collectGovernanceDirFiles(cwd)) await addFile(rel, 'rule');
   const refs = components.map((c) => c['bom-ref']);
   const tool = { type: 'application', name: 'rigscore', version, externalReferences: [{ type: 'website', url: RIGSCORE_URL }] };
 
