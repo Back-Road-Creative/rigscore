@@ -26,33 +26,44 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Checked out at the ref the caller dispatched with (`gh workflow run
+      # --ref v<version>` from release.yml), so a dispatched build uses the
+      # released tag's tree — not main-at-dispatch.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Compute image tags and push flag
         id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_PUSH: ${{ inputs.push }}
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
-            {
-              echo "push=true"
-              echo "tags<<RIGSCORE_EOF"
-              echo "ghcr.io/back-road-creative/rigscore:${VERSION}"
-              echo "ghcr.io/back-road-creative/rigscore:latest"
-              echo "RIGSCORE_EOF"
-            } >> "$GITHUB_OUTPUT"
+            PUSH=true
           else
-            {
-              echo "push=${{ inputs.push }}"
-              echo "tags=ghcr.io/back-road-creative/rigscore:${{ inputs.tag }}"
-            } >> "$GITHUB_OUTPUT"
+            # Dispatch path (release.yml after `gh release create`, or manual).
+            # Normalize identically to the tag-push path: strip any leading `v`
+            # and also tag `latest`, so a dispatched release image satisfies the
+            # same contract (e.g. 2.1.0 + latest) instead of pushing `:v2.1.0`
+            # and leaving `latest` pinned to a stale prior release.
+            VERSION="${INPUT_TAG#v}"
+            PUSH="${INPUT_PUSH}"
           fi
+          {
+            echo "push=${PUSH}"
+            echo "version=${VERSION}"
+            echo "tags<<RIGSCORE_EOF"
+            echo "ghcr.io/back-road-creative/rigscore:${VERSION}"
+            echo "ghcr.io/back-road-creative/rigscore:latest"
+            echo "RIGSCORE_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GHCR
         if: steps.meta.outputs.push == 'true'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -64,6 +75,10 @@ jobs:
           context: .
           push: ${{ steps.meta.outputs.push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
+          # Feeds Dockerfile ARG VERSION so org.opencontainers.image.version is
+          # the real release, not the "dev" default.
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           labels: |
             org.opencontainers.image.source=https://github.com/Back-Road-Creative/rigscore
             org.opencontainers.image.description=AI dev environment hygiene checker
