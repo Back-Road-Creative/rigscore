@@ -2,7 +2,7 @@
   "_comment": "Expiring permissions manifest for {{PROJECT_NAME}}. Permissions should rot loudly, not accrete silently. Every grant below has an owner and a reason; the whole manifest has an expiry.",
   "scope": "{{PROJECT_NAME}}",
   "version": 1,
-  "expires": "2026-10-12",
+  "expires": "{{EXPIRES_90D}}",
   "renewal": {
     "policy": "Re-review every 90 days. At renewal, DELETE every grant not used since the last review, then bump `expires` and append a changelog entry. Renewal is a deletion exercise, not a rubber stamp.",
     "reviewers": ["repo-maintainer"],

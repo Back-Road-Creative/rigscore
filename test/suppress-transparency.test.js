@@ -48,8 +48,11 @@ describe('suppressFindings return value', () => {
   });
 
   it('returns a zero summary when there is nothing to suppress', () => {
-    expect(suppressFindings(makeResults(), [])).toEqual({ count: 0, ids: [] });
-    expect(suppressFindings(makeResults(), ['nonexistent/finding'])).toEqual({ count: 0, ids: [] });
+    expect(suppressFindings(makeResults(), [])).toEqual({ count: 0, ids: [], unmatched: [] });
+    // A pattern that removed nothing is reported in `unmatched` so a stale/typo'd
+    // suppress can be warned about instead of silently no-op'ing.
+    expect(suppressFindings(makeResults(), ['nonexistent/finding']))
+      .toEqual({ count: 0, ids: [], unmatched: ['nonexistent/finding'] });
   });
 });
 

@@ -92,7 +92,13 @@ export function installPack(name, cwd, { force = false, merge = false, templates
   // Declared defaults seed the substitution map; the runtime PROJECT_NAME always wins over any
   // default of the same name. A placeholder absent here still lands in `unresolved` and warns.
   const defaults = pack.defaults || {};
-  const vars = { ...defaults, PROJECT_NAME: path.basename(root) };
+  // Computed install-time placeholders. A pack that hardcodes a date ships an
+  // already-stale artifact after that day; {{EXPIRES_90D}} resolves to today +
+  // 90d AT INSTALL, so the guards manifest's own expiry gate starts fresh
+  // instead of failing CI on day one. Kept out of `defaults` so it is never
+  // reported as an applied default needing operator review.
+  const in90d = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const vars = { ...defaults, EXPIRES_90D: in90d, PROJECT_NAME: path.basename(root) };
   const applied = new Set();
   const planned = pack.files.map((f) => {
     const target = path.resolve(root, f.dest);
