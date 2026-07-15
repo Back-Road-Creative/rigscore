@@ -91,6 +91,21 @@ jobs:
             --notes-file /tmp/release-notes.txt
           echo "Created release v${{ steps.pkg.outputs.version }}"
 
+      # The v<version> tag `gh release create` just made was pushed with the
+      # job's GITHUB_TOKEN, and GitHub does NOT re-trigger `push: tags` workflows
+      # from a GITHUB_TOKEN-created tag (anti-recursion). So docker-publish.yml and
+      # release-provenance.yml never fired on release before. workflow_dispatch is
+      # the documented exception GITHUB_TOKEN CAN trigger — kick them explicitly.
+      - name: Trigger tag-scoped workflows (docker + provenance)
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run docker-publish.yml --repo "${{ github.repository }}" \
+            -f tag="v${{ steps.pkg.outputs.version }}" -f push=true
+          gh workflow run release-provenance.yml --repo "${{ github.repository }}" \
+            --ref "v${{ steps.pkg.outputs.version }}"
+
       # Export changelog + prev-tag for the downstream headlessmode job so
       # it doesn't have to re-checkout this repo.
       - name: Export release outputs
