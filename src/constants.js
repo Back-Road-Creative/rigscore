@@ -16,7 +16,7 @@ export const CATEGORY = {
   PROCESS: 'process',
 };
 
-// Weights must sum to 100 — moat-heavy: AI-specific checks get ~63%
+// Weights must sum to 100 — moat-heavy: AI-specific checks get ~48%
 export const WEIGHTS = {
   'mcp-config': 14,
   'coherence': 14,

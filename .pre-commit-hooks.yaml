@@ -3,7 +3,7 @@
 #
 #   repos:
 #     - repo: https://github.com/Back-Road-Creative/rigscore
-#       rev: v2.0.0
+#       rev: v2.1.0
 #       hooks:
 #         - id: rigscore
 #           # args: [--fail-under=80, --ci]   # tune the gate to taste
