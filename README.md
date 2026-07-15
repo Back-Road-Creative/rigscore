@@ -226,7 +226,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets AI agents connect to external tools via servers. Each server exposes capabilities — filesystem access, API calls, database queries. The security risk is in the permissions.
 
-rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`), Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code (`.qwen/settings.json`, `~/.qwen/settings.json`), and Crush (`.crush.json`, `crush.json`, `~/.config/crush/crush.json` — servers under the `mcp` key).
+rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Gemini CLI (`.gemini/settings.json`), opencode (`opencode.json`, servers under the `mcp` key), Claude Desktop (`~/.claude/claude_desktop_config.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`), Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code (`.qwen/settings.json`, `~/.qwen/settings.json`), and Crush (`.crush.json`, `crush.json`, `~/.config/crush/crush.json` — servers under the `mcp` key).
 
 **What rigscore looks for:**
 - Transport type: `stdio` (local, safer) vs. `sse` (network, riskier)
@@ -238,7 +238,7 @@ rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vsco
 
 **Supply chain risk:** An MCP server installed as `@latest` today could push a malicious update tomorrow. Version pinning prevents this. {#mcp-supply-chain}
 
-**MCP registry augmentation (`--online`):** when `--online` is passed, rigscore augments the hand-curated typosquat list with data from the official MCP registry at `https://registry.modelcontextprotocol.io/v0/servers`. The response is cached at `~/.cache/rigscore/mcp-registry.json` (XDG convention; overridable via `XDG_CACHE_HOME`) with a 24-hour TTL. If the refetch fails after expiry, the stale cache is still used and an INFO finding surfaces the state. The registry only **augments** the hand-curated list — it never replaces it. Pass `--refresh-mcp-registry` to force a refetch (implies `--online`).
+**MCP registry augmentation (`--online`):** when `--online` is passed, rigscore augments the hand-curated typosquat list with data from the official MCP registry at `https://registry.modelcontextprotocol.io/v0/servers`. The response is cached at `~/.cache/rigscore/mcp-registry.json` (XDG convention; overridable via `XDG_CACHE_HOME` **only when it resolves inside `$HOME`** — a value pointing outside your home directory is silently ignored and the cache falls back to `~/.cache`) with a 24-hour TTL. If the refetch fails after expiry, the stale cache is still used and an INFO finding surfaces the state. The registry only **augments** the hand-curated list — it never replaces it. Pass `--refresh-mcp-registry` to force a refetch (implies `--online`).
 
 **Air-gapped / offline pre-populate:** place a JSON file at `~/.cache/rigscore/mcp-registry.json` with the shape `{"fetchedAt": "<ISO-8601 timestamp>", "data": { ... raw /v0/servers response ... }}`. rigscore will treat it like any other cache entry and respect the 24h TTL. An air-gapped host can refresh the file from a machine with network access on whatever cadence it chooses.
 
@@ -323,7 +323,7 @@ API keys, tokens, and credentials in the wrong places are the most common securi
 
 **What rigscore looks for:**
 - `.env` files present but not in `.gitignore`
-- API key patterns in config files, governance files, skill files, or MCP configs
+- API key patterns in config files, governance files, and the `env` maps of committed MCP configs (skill files are covered by the skill-file safety check, not here)
 - `.env` file permissions (world-readable vs. user-only)
 - SOPS encryption detection
 
@@ -342,7 +342,7 @@ rigscore scans **Docker Compose**, **Podman Compose**, **Kubernetes manifests**,
 **What rigscore looks for:**
 - Docker socket (`/var/run/docker.sock`) mounted in containers — this is a container escape vector {#docker-socket-risk}
 - `privileged: true` — gives the container full host access
-- Volume/hostPath mounts to sensitive host directories (`/`, `/etc`, `/root`, `~/.ssh`)
+- Volume/hostPath mounts to sensitive host directories — the exact-match set is `/`, `/etc`, `/root`, `/home`
 - Host network mode — bypasses container network isolation
 - Missing `user` directive (container runs as root)
 - Missing `cap_drop: [ALL]` (retains default Linux capabilities)
@@ -358,12 +358,12 @@ rigscore scans **Docker Compose**, **Podman Compose**, **Kubernetes manifests**,
 Host-level controls that sit beneath your project: root-owned git hooks, a git wrapper that cannot be bypassed, a shell safety guard, and immutable governance directories. These are the backstop when per-project hooks or settings are missing or tampered with. This check is Linux-only — it returns N/A on macOS and Windows.
 
 **What rigscore looks for:**
-- A global git hooks directory at `/opt/git-hooks/` (path is configurable via `.rigscorerc.json` → `paths.hooksDir`)
+- A managed git hooks directory (default: the repository's own, resolved via `git rev-parse --git-path hooks`; point it at a root-owned system dir such as `/opt/git-hooks/` via `.rigscorerc.json` → `paths.hooksDir`)
 - That directory is owned by root
 - Required hooks present and executable: `pre-commit`, `pre-push`, `commit-msg`
 - A git safety wrapper at `/usr/local/bin/git` (configurable) that is root-owned and strips `--no-verify` to prevent hook bypass
 - A shell safety guard at `/etc/profile.d/safety-gates.sh` (configurable) that blocks dangerous patterns like `chmod 777`
-- Immutable flag (`chattr +i`) on `_governance/` and `_foundation/` workspace directories (and any dirs listed in `paths.immutableDirs`)
+- Immutable flag (`chattr +i`) on any directories listed in `.rigscorerc.json` → `paths.immutableDirs` (empty by default — nothing is inspected here unless you configure it)
 - `permissions.deny` list in `~/.claude/settings.json` includes dangerous patterns: `git push --force`, `git reset --hard`, `rm -rf`, `git push origin main`, `git push origin master`
 - A `sandbox-gate` hook registered under `PreToolUse` to gate Write/Edit/Bash
 
@@ -372,9 +372,10 @@ Host-level controls that sit beneath your project: root-owned git hooks, a git w
 Checks skill files and CLAUDE.md for hidden characters that render identically to legitimate text but redirect agent behavior. Covers the attack surface from the ToxicSkills and Rules File Backdoor incidents.
 
 **What rigscore looks for:**
-- Greek/Armenian/Georgian lookalikes that render as Latin letters
+- Greek/Cyrillic/Armenian/Georgian/Cherokee lookalikes that render as Latin letters
 - Zero-width joiners and zero-width non-joiners
 - Bidirectional control characters (bidi overrides)
+- Tag characters (U+E0000–U+E007F) — an invisible ASCII-shadow channel
 
 ### 12. Git hooks (2 points) {#git-hooks-for-ai}
 
@@ -412,7 +413,7 @@ On Windows, rigscore checks for WSL-specific security risks. This is an advisory
 - Windows Defender exclusions that include project directories or `node_modules`
 - NTFS permissions advisory for sensitive files
 
-**Platform note:** Returns N/A on non-Windows systems. Weight 0 means it never affects the score.
+**Platform note:** Runs on Windows hosts *and* on WSL2 Linux guests (the WSL arm is marker-based — it fires when the kernel release string contains `microsoft`, so a WSL guest is graded even though it is Linux). Returns N/A only on plain Linux and macOS. Weight 0 means it never affects the score.
 
 ### 15. Network exposure (advisory, 0 points) {#network-exposure}
 
@@ -455,15 +456,16 @@ Scans every SKILL.md under `.claude/skills/` and `.claude/commands/` (both proje
 - Skills that push/commit/ship without mentioning branch protection (no force push, no direct push to main/master)
 - Hook ↔ settings conflicts where a PreToolUse hook blocks a pattern that `settings.json` allow-lists
 
+**Opt-in by default.** The detections above are driven by `.rigscorerc.json` → `skillCoherence.constraints` and `skillCoherence.hookSettingsConflicts`, both of which ship **empty** — a stock install emits nothing from this check until you configure the constraints your workspace enforces. The `gh-merge-approved` / `_governance/` / `_active/svc-*` examples are the conventions this repo configures, not built-in defaults.
+
 ### 19. Workflow maturity (advisory, 0 points) {#workflow-maturity}
 
-Classifies the project's workflow artefacts against the AI development taxonomy and surfaces graduation signals — skills that should become code, pipelines that should be split, memory files that have gone stale. Advisory.
+Classifies the project's workflow artefacts against the AI development taxonomy and surfaces graduation signals — skills that should become code, pipelines that should be split, orphan memory files. Advisory.
 
 **What rigscore looks for:**
 - Pipeline step overload: single modules with too many `# Stage N` / `# Step N` / `# Phase N` markers, or stage directories that suggest a monolithic pipeline should be decomposed
 - Skills that have matured past the LLM-driven stage and should be graduated to deterministic code
-- Stale memory files and orphan memory that is not linked from `MEMORY.md`
-- Taxonomy misclassification between skills, agents, pipelines, and memory
+- Orphan memory files that are not linked from `MEMORY.md` (`workflow-maturity/memory-orphan`)
 
 ### 20. Agent output schemas (advisory, 0 points) {#agent-output-schemas}
 
@@ -573,7 +575,7 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 | Credential storage hygiene | 6 | secrets |
 | Docker security | 6 | isolation |
 | Infrastructure security | 6 | process |
-| Unicode steganography | 4 | supply-chain |
+| Unicode steganography | 4 | governance |
 | Permissions hygiene | 4 | process |
 | Git hooks | 2 | process |
 | Windows/WSL security | 0 | isolation (advisory) |
@@ -657,7 +659,7 @@ on first scan — all are local, none phone home.
 
 | Path | When written | Purpose |
 |---|---|---|
-| `<cwd>/.rigscore-state.json` | Only when the project has a repo-level `.mcp.json`. | Stores SHA-256 hashes of each MCP server's `{command, args, envKeys}` shape. Detects silent MCPoison-class (CVE-2025-54136) pivots on subsequent scans. **Values are never hashed — only env-var keys.** |
+| `<cwd>/.rigscore-state.json` | Only when the project has a repo-level MCP config — any of the 15 committed client paths (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json`, and the Amazon Q / Roo / Junie / Warp / Kiro / Qwen / Crush variants), not just `.mcp.json`. | Stores SHA-256 hashes of each MCP server's `{command, args, envKeys}` shape. Detects silent MCPoison-class (CVE-2025-54136) pivots on subsequent scans. **Values are never hashed — only env-var keys.** |
 | `$XDG_CACHE_HOME/rigscore/mcp-registry.json` (falls back to `~/.cache/rigscore/mcp-registry.json`) | Only with `--online` or `--refresh-mcp-registry`. | Caches the official MCP registry response. 24h TTL. Used to augment typosquat detection. |
 
 Recommendations:
@@ -979,11 +981,11 @@ For details on what rigscore writes to disk on first scan and how to purge it, s
 
 ## State file
 
-When your project has a repo-level `.mcp.json`, rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
+When your project has a repo-level MCP config — any of the 15 committed client configs, not just `.mcp.json` — rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
 
 **This is the one file a scan writes.** Every other check is read-only.
 
-**Commit `.rigscore-state.json`. Do not `.gitignore` it.** The instinct on seeing a new generated file is to ignore it — here that silently disables the protection. The pin *is* the detection substrate: `mcp-config/server-hash-drift` and the `rigscore --verify-state` CI gate both work by comparing today's `.mcp.json` against it, so a pin that doesn't survive a fresh CI checkout detects nothing. It is safe to commit by construction — env **values** are deliberately excluded from the hash, so it cannot leak a secret. Supply-chain changes then show up in code review, and cross-collaborator drift resolves via git.
+**Commit `.rigscore-state.json`. Do not `.gitignore` it.** The instinct on seeing a new generated file is to ignore it — here that silently disables the protection. The pin *is* the detection substrate: `mcp-config/server-hash-drift` and the `rigscore --verify-state` CI gate both work by comparing today's committed MCP configs against it, so a pin that doesn't survive a fresh CI checkout detects nothing. It is safe to commit by construction — env **values** are deliberately excluded from the hash, so it cannot leak a secret. Supply-chain changes then show up in code review, and cross-collaborator drift resolves via git.
 
 The write only ever *establishes* or *extends* the pin — it is skipped on drift (re-pinning would re-approve the rug-pull the scan just reported) and skipped when the pin is already current (so a scan never dirties your tree). Full write/skip table and the "accept this drift" procedure: [`docs/checks/mcp-config.md`](docs/checks/mcp-config.md#the-one-file-a-scan-writes-rigscore-statejson).
 

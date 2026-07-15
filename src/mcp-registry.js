@@ -204,8 +204,11 @@ export async function fetchRegistry(options = {}) {
   try {
     response = await fetchImpl(url);
   } catch (err) {
-    // A5: surface timeout distinctly so the CLI can emit a WARN
-    // `network-timeout` (vs. a generic unreachable INFO).
+    // A5: distinguish a timeout from a generic network error on the returned
+    // result (`errorKind` below), so a programmatic caller can tell them apart —
+    // asserted by test/network-timeout.test.js. The default scan path
+    // (checks/mcp-config.js) currently renders both as one INFO
+    // `mcp-config/registry-fallback` finding; it does not branch on errorKind.
     const isTimeout = (err && (err.name === 'AbortError' || /timeout/i.test(err.message || '')));
     const kind = isTimeout ? 'network-timeout' : 'network-error';
     // Network error. If we have a stale cache, use it.
