@@ -45,6 +45,7 @@ npx github:Back-Road-Creative/rigscore
   │         HYGIENE SCORE: 78/100          │
   │         Grade: B                       │
   │         Risk: Standard                 │
+  │         Practice: 82/100 (B)           │
   │                                        │
   ╰────────────────────────────────────────╯
 
@@ -602,6 +603,12 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 
 Put plainly: **W is your reachable ceiling.** If only 80 of the 100 points of check weight apply, then even an all-passing scan caps at 80/100 — and the report says so on the coverage line (`— score scaled ×0.80`). Full coverage (W ≥ 100) is a no-op. The compound risk penalty above is applied *after* scaling, as a flat 10-point deduction (it is not itself scaled). Characterization tests pin the exact behavior in `test/scoring-coverage.test.js`; see the design note at the top of `src/scoring.js` for the rationale.
 
+### The Practice score (second axis)
+
+Every run computes a second 0–100 axis — the **Practice** score — printed under the hygiene score in the box above and exposed in `--json` as `practiceScore`. Where the hygiene (Security) score measures configuration *safety*, Practice measures *operator practice*: it is built from the Practice-pillar advisory checks (`loop-governance`, `spec-goals`, `ci-agent-caps`, `memory-hygiene`). Those checks are weight-0 on the Security axis, so the Practice score is fully independent — it never moves your hygiene score.
+
+A repo with no practice surface to grade — no agent loops, specs, CI agent jobs, or memory files — reports `Practice: n/a`, never `0/100`, so a project that is simply out of scope for these checks is not penalised. See [`docs/practice-score.md`](docs/practice-score.md) for the per-check math.
+
 **Scoring profiles:** Five built-in profiles:
 - `default` — balanced AI dev environment audit (WEIGHTS from `src/constants.js`).
 - `minimal` — AI-moat checks only (mcp-config 30, coherence 30, skill-files 20, claude-md 20; rest 0).
@@ -711,6 +718,7 @@ npx github:Back-Road-Creative/rigscore /path/to/project          # Scan a specif
 npx github:Back-Road-Creative/rigscore --json                    # JSON output for CI/scripting
 npx github:Back-Road-Creative/rigscore --sarif                   # SARIF output for security tools
 npx github:Back-Road-Creative/rigscore --cyclonedx               # CycloneDX 1.6 AI-BOM: MCP servers + their grant surface (permission scopes), skills, rules (see docs/cyclonedx.md)
+npx github:Back-Road-Creative/rigscore --report compliance       # Group findings by compliance-framework control (see docs/compliance.md; not supported with --recursive)
 npx github:Back-Road-Creative/rigscore --ci                      # CI mode (--sarif --no-color --no-cta)
 npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score < 80 (default: 70)
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
@@ -724,6 +732,7 @@ npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive sca
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
 npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
+npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to first-party `claude -p`, no API key; skips if claude absent)
 npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan ~/.claude/skills and ~/.claude/commands (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations (edits existing files only — never scaffolds new ones)
@@ -791,8 +800,27 @@ rigscore exits with a stable code so CI can branch cleanly:
 | `1` | Scan completed. Score is below `--fail-under`, OR (baseline mode) new findings were detected. |
 | `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, an unreadable **or corrupt/malformed** baseline file (unparseable JSON or no findings array fails closed — never silently re-minted), or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. In a git repo the baseline gate reads the copy **committed at HEAD** (`git show HEAD:<path>`, like `--verify-state`), so a deleted/corrupt working-tree baseline can't launder findings. This also covers HEAD-deletion: a baseline that was tracked but **removed at HEAD** (a PR that `git rm`'d it) fails closed here rather than silently re-minting a fresh baseline over the new findings — distinguished from a genuine first run (never tracked, still mints + exit `0`) by git history. Regenerate with `--baseline-refresh` then commit. |
 | `3` | Reserved for subcommand pre-conditions. Currently used by `rigscore mcp-verify <server>` when no runtime tool hash is pinned for that server. The main scan path does not emit `3`. |
+| `4` | Runtime tool-description **drift** detected by `rigscore mcp-verify <server>` — the server's current `tools/list` hash differs from the pinned snapshot (CVE-2025-54136 "MCP rug pull" class). Re-pin with `mcp-hash \| mcp-pin` if the change is intentional. The main scan path does not emit `4`. |
 
 A runtime crash inside a check surfaces as exit `2` with `Error: scan failed: ...` on stderr; it does not currently use a distinct code. CI authors should treat non-zero as failure and branch only on `0` vs `1` for score-gating logic.
+
+### Baseline mode and `diff`
+
+Baseline mode gates on *new* findings rather than an absolute score — useful when you want CI to block regressions without first driving an existing repo to a clean score.
+
+```bash
+# First run writes the baseline; later runs report ONLY findings new vs it,
+# and exit 1 if any appeared.
+rigscore --baseline .rigscore-baseline.json .
+
+# Intentionally accept the current findings as the new baseline, then commit it.
+rigscore --baseline .rigscore-baseline.json --baseline-refresh .
+
+# Standalone diff of two findings files (exit 1 if `current` adds any).
+rigscore diff old-baseline.json new-findings.json
+```
+
+In a git repo the baseline is read from the copy **committed at HEAD** (like `--verify-state`), so a deleted or corrupt working-tree baseline can't launder findings. `--baseline-refresh` is the sanctioned way to (re)write the working-tree file for review and commit. Exit codes `0`/`1`/`2` follow the table above.
 
 ### Watch mode
 
@@ -1015,6 +1043,14 @@ Supplementary docs live under `docs/`:
   page per module in `src/checks/`.
 - [`docs/profiles/`](docs/profiles/) — weight tables for each scoring
   profile (`default`, `minimal`, `ci`, `home`, `monorepo`).
+- [`docs/compliance.md`](docs/compliance.md) — how each check maps to
+  compliance-framework controls (the mapping `--report compliance` renders).
+- [`docs/practice-score.md`](docs/practice-score.md) — the Practice axis:
+  which checks feed it and how the second score is computed.
+
+Prefer the terminal? `rigscore explain <findingId>` prints the relevant
+`docs/checks/` page (finding-specific section when available) — e.g.
+`rigscore explain claude-md/missing-claude-md`.
 
 ## Contributing
 
