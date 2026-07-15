@@ -60,6 +60,12 @@ export function parseArgs(args) {
     ignore: null,
     baseline: null,
     baselineRefresh: false,
+    // Non-fatal argv complaints surfaced on stderr by run() — an unknown flag
+    // or a value-flag left dangling must never be indistinguishable from a
+    // clean parse (the product's own "a scan that gave up must not look clean"
+    // invariant). `argError` is a fatal misuse of a safety flag (exit 2).
+    warnings: [],
+    argError: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -67,19 +73,31 @@ export function parseArgs(args) {
     const def = FLAG_DEFS[arg];
     if (def) {
       if (def.takesValue) {
-        // Match prior behavior: a value-taking flag at the end of argv
-        // with no following arg is silently ignored, not errored.
-        if (i + 1 >= args.length) continue;
+        if (i + 1 >= args.length) {
+          // Value-flag with no value. For the safety gate this is FATAL:
+          // silently falling back to the default threshold turns an intended
+          // gate into a no-op that looks clean. Everything else is warn-only.
+          if (arg === '--fail-under') {
+            options.argError = `${arg} requires a numeric value (0-100); `
+              + 'refusing to silently fall back to the default threshold';
+          } else {
+            options.warnings.push(`${arg} expects a value but none was given; ignoring it`);
+          }
+          continue;
+        }
         def.handler(options, args[++i]);
       } else {
         def.handler(options);
       }
-    } else if (!arg.startsWith('-')) {
+    } else if (arg.startsWith('-')) {
+      // Unknown flag. Tolerate it (forward-compat: CI scripts pass through
+      // extra flags) but SURFACE it — a typo like `--fail-unde` must not
+      // silently gate at the default threshold with nothing on stderr.
+      options.warnings.push(`unknown flag ${arg} ignored`);
+    } else {
       // Bare positional → target directory; last positional wins.
       options.cwd = arg;
     }
-    // Unknown --flag is silently ignored (preserves the prior contract;
-    // forward-compat for CI scripts that pass through extra flags).
   }
 
   return options;
@@ -207,6 +225,18 @@ function suppressAndRescore(unit, ignore, checkFilter) {
  */
 export async function run(args) {
   const options = parseArgs(args);
+
+  // Surface argv problems on stderr before doing anything — a scan that ran on
+  // mis-parsed flags must not be indistinguishable from a clean one. A malformed
+  // safety flag (dangling --fail-under) is fatal: exit 2 rather than gate at the
+  // silent default. Unknown/dangling non-safety flags warn but proceed.
+  for (const w of options.warnings) {
+    process.stderr.write(`rigscore: warning: ${w}\n`);
+  }
+  if (options.argError) {
+    process.stderr.write(`rigscore: ${options.argError}\n`);
+    process.exit(2);
+  }
 
   const cwd = options.cwd || process.cwd();
 
