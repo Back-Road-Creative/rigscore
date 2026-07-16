@@ -10,6 +10,8 @@ import path from 'node:path';
  *                 `key` defaults to 'mcpServers' (opencode nests its servers under 'mcp') and
  *                 may be an ARRAY when a client reads more than one key (VS Code documents
  *                 'servers'; 'mcpServers' is the widely copy-pasted alias). Earlier keys win.
+ *                 A DOTTED key (OpenClaw's 'mcp.servers') is walked as a nested path only when
+ *                 no literal key of that exact name exists (keeps Cody's flat 'cody.mcpServers').
  *                 `base: 'cwd'` means COMMITTED, in-repo — those are the configs a PR can
  *                 mutate, so they are exactly the ones the rug-pull pin covers (repoMcpPaths).
  *   credentials — $HOME configs whose MCP servers' env maps can hold plaintext secrets:
@@ -188,6 +190,24 @@ export const CLIENTS = [
       { path: 'crush.json', base: 'cwd', key: 'mcp' },
       { path: '.config/crush/crush.json', base: 'home', key: 'mcp' }],
     credentials: [{ dir: '.config/crush', file: 'crush.json' }] },
+  // OpenClaw. docs.openclaw.ai/gateway/configuration-reference + cli/mcp — the sole user
+  // config is ~/.openclaw/openclaw.json (home only; `openclaw mcp` reads/writes just this file,
+  // no committed project config exists). Unlike every other JSON client its servers NEST under
+  // `mcp.servers` (a two-level path, NOT a flat `mcpServers`), and each server's env map
+  // (`mcp.servers.<name>.env`) can hold plaintext secrets — so it declares the nested key plus a
+  // home credentials surface. No project-level file, so nothing to pin.
+  { id: 'openclaw', name: 'OpenClaw',
+    mcp: [{ path: '.openclaw/openclaw.json', base: 'home', key: 'mcp.servers' }],
+    credentials: [{ dir: '.openclaw', file: 'openclaw.json' }] },
+  // Google Antigravity (the agentic IDE; shares Gemini's config root). MCP servers under
+  // `mcpServers` in the global ~/.gemini/antigravity/mcp_config.json — a DISTINCT file from
+  // Gemini CLI's ~/.gemini/settings.json (github/github-mcp-server install-antigravity.md;
+  // antigravity.google/docs/mcp). Home only — no committed project MCP file is documented, so
+  // nothing to pin — but its env maps hold credentials. Reads AGENTS.md for project rules
+  // (AGENTS.md → GEMINI.md precedence).
+  { id: 'antigravity', name: 'Antigravity', governance: ['AGENTS.md'],
+    mcp: [{ path: '.gemini/antigravity/mcp_config.json', base: 'home' }],
+    credentials: [{ dir: '.gemini/antigravity', file: 'mcp_config.json' }] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';
@@ -304,6 +324,26 @@ export function credentialClients() {
 }
 
 /**
+ * Resolve a client's server map by `key`. A key is normally a flat top-level key
+ * (`mcpServers`, opencode's `mcp`) or a flat DOTTED key present literally (Cody's
+ * `cody.mcpServers`, a real VS Code settings.json key). OpenClaw instead NESTS its servers
+ * two levels deep under `mcp.servers`, which no flat lookup reaches. So: try the literal key
+ * first (leaves Cody and every existing client byte-for-byte unchanged); only when a dotted
+ * key has no literal object value do we walk the dotted path.
+ */
+function resolveServers(config, key) {
+  const literal = config[key];
+  if (literal && typeof literal === 'object') return literal;
+  if (!key.includes('.')) return literal;
+  let node = config;
+  for (const seg of key.split('.')) {
+    if (!node || typeof node !== 'object') return undefined;
+    node = node[seg];
+  }
+  return node;
+}
+
+/**
  * Read the MCP server map out of a parsed config, honoring the owning client's key.
  * Unknown paths (e.g. user-supplied `config.paths.mcpConfig`) fall back to `mcpServers`.
  */
@@ -317,7 +357,7 @@ export function mcpServersIn(configPath, config) {
   // Merge them, earliest key winning, so a multi-key client is read the way it runs.
   const out = {};
   for (const key of [entry?.key || DEFAULT_MCP_KEY].flat()) {
-    const servers = config[key];
+    const servers = resolveServers(config, key);
     if (!servers || typeof servers !== 'object') continue;
     for (const [name, server] of Object.entries(servers)) {
       if (!(name in out)) out[name] = server;
