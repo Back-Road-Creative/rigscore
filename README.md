@@ -45,6 +45,7 @@ npx github:Back-Road-Creative/rigscore
   │         HYGIENE SCORE: 78/100          │
   │         Grade: B                       │
   │         Risk: Standard                 │
+  │         Practice: 82/100 (B)           │
   │                                        │
   ╰────────────────────────────────────────╯
 
@@ -61,7 +62,7 @@ rigscore scores AI-agent config hygiene and catches contradictions between what 
 
 Most AI-agent security scanning today is either finding-stream static analysis (Snyk Agent Scan, Semgrep rules) or manual review. rigscore fills a narrower slot: a single hygiene score with an A–F grade, a cross-config **coherence** pass that compares governance claims to observed behavior (MCP scope, Docker privileges, approval gates), and a CI-gate exit code. It runs fully offline by default; `--online` is opt-in for site probes and MCP supply-chain verification.
 
-It's the thing you run before you care about tool pinning, before you stand up a SARIF pipeline, before you adopt an enterprise scanner. If your CLAUDE.md says "never access `/etc`" and your MCP config mounts `/`, rigscore tells you.
+It's the thing you run before you stand up a SARIF pipeline or adopt an enterprise scanner — though it also ships offline MCP rug-pull pinning (`mcp-hash`/`mcp-pin`/`mcp-verify`) and a two-axis Security + Practice score most scanners don't. If your CLAUDE.md says "never access `/etc`" and your MCP config mounts `/`, rigscore tells you.
 
 **What rigscore checks:** MCP scope and supply chain, cross-config coherence, skill-file injection vectors, governance quality, Claude settings bypass combos, secret exposure in config files, container and devcontainer isolation, Unicode steganography, git hooks, file permissions, credential storage, and (advisory) instruction effectiveness, skill↔governance coherence, workflow maturity, Windows/WSL boundary, site security, network exposure, agent output schemas, documentation coverage, loop governance, spec goals, CI agent caps, agent memory hygiene, AI-use disclosure, and sandbox posture.
 
@@ -69,27 +70,31 @@ Run it. See the score. Fix what's broken.
 
 ## How rigscore compares
 
-rigscore isn't the only AI-agent config scanner. The April-2026 landscape has real alternatives — pick based on what you actually need.
+rigscore isn't the only AI-agent config scanner. The 2026 landscape is real and crowded — scored offline scanners, OSS policy-enforcement platforms, and MCP gateways all now exist. Pick based on what you actually need.
 
 | Tool | Niche | Use when |
 |------|-------|----------|
-| **rigscore** | Single-score hygiene check + cross-config coherence | You want one local command, an A–F grade, and a CI gate. No account, no token. |
-| **Snyk Agent Scan** ([github.com/snyk/agent-scan](https://github.com/snyk/agent-scan)) | 15+ risk-category finding stream, tool-hash pinning (rug-pull detection) | You need enterprise reporting, MCP tool-pinning to detect supply-chain drift, or already have a Snyk contract. Requires `SNYK_TOKEN` for full features. |
+| **rigscore** | Single-score hygiene check + cross-config coherence + a second Practice axis | You want one local command, an A–F grade, and a CI gate. No account, no token, no data leaves your machine. |
+| **Snyk Agent Scan** (ex-Invariant mcp-scan) ([github.com/snyk/agent-scan](https://github.com/snyk/agent-scan)) | 15+ risk-category finding stream over MCP configs, live tool descriptions, and skills | You need enterprise reporting or already have Snyk. Requires `SNYK_TOKEN`, and per Snyk's own README your "skills, agent applications, tool names, and descriptions are shared with Snyk." |
+| **AgentAuditKit** ([marketplace](https://github.com/marketplace/actions/agentauditkit-mcp-security-scan)) | MCP configs + agent settings, 0–100 score + A–F grade + SARIF + compliance reports, fully offline | You want a scored offline gate with no account — the closest analogue to rigscore. (Its own page contradicts itself on rule count, 77 vs 246.) No cross-config coherence and no operator-practice axis. |
+| **Cisco AI Defense OSS** (DefenseClaw, mcp-scanner, skill-scanner) ([github](https://github.com/cisco-ai-defense/mcp-scanner)) | Skills (AST / taint / bytecode / VirusTotal), MCP servers (live + static), policy enforcement, AI-BOM | You want deep skill dataflow analysis or live MCP introspection. Core analyzers run offline; LLM / VirusTotal are opt-in. No single hygiene score or coherence pass. |
 | **Semgrep** ([semgrep.dev](https://semgrep.dev)) | General static analysis, 5000+ rules, optional MCP server | You're scanning source code, not config hygiene, or already run Semgrep in CI and want to extend it. |
 
-**Where rigscore differs from Snyk Agent Scan:**
-- Cross-config COHERENCE check — compares what your governance file claims against what your actual MCP/settings/Docker configuration does. Snyk scans each config independently and doesn't cross-reference them against a governance file.
-- Single-score CI gate with `--fail-under N` and grade A–F. Snyk is a finding stream; you'd have to script a threshold yourself.
-- Fully local, no account, no API token, no external call by default. `--online` is opt-in.
+**What sets rigscore apart (no competitor found does all of these):**
+- **Cross-config COHERENCE.** Compares what your governance file *claims* against what your MCP / settings / Docker configuration actually *does*. Snyk, AgentAuditKit, and the Cisco suite each scan configs independently — none cross-reference them against a governance file.
+- **Two-axis scoring.** A Security hygiene score *and* a separate Practice score for operator practice (agent loops, specs, CI caps, memory). No other scanner grades operator practice at all.
+- **Single-score CI gate** with `--fail-under N` and an A–F grade, plus honest **coverage scaling** and per-check enforcement-grade labels so a partial scan can't claim a perfect 100. Snyk is a finding stream you would have to threshold yourself.
+- **Sandbox-posture normalization** across Codex / Claude / Gemini / opencode / Cursor into one `restricted` / `partial` / `unrestricted` verdict.
+- **Honest compliance mapping** — `--report compliance` prints `NOT EVIDENCED` / `UNMAPPED` rather than padding a framework count.
+- **In-scan CycloneDX 1.6 AI-BOM** (`--cyclonedx`) including the MCP grant surface — the Cisco suite needs a separate `aibom` tool for this.
+- **Offline MCP rug-pull pinning that ships today** (`mcp-hash` / `mcp-pin` / `mcp-verify`, CVE-2025-54136 class) — both config-shape *and* runtime tool-description drift, no account. Snyk's agent-scan has no tool-pinning issue code; that capability left with the old Invariant mcp-scan.
+- **Fully local by default** — no account, no API token, no external call. `--online` and `--semantic` are opt-in.
 
-**Where Snyk is ahead:**
-- Tool Pinning: hashes MCP tool descriptions and flags drift over time (mitigates CVE-2025-54136 class "MCP rug pull" attacks). rigscore does not persist tool-description hashes across scans — this is a planned follow-up, not a current capability.
-- Detailed published threat models for SKILL.md and agent configs. rigscore's skill-files check is pattern-based and has a documented **semantic-reversal weakness** (see Limitations).
-- Broader risk-category coverage (toxic flows, tool shadowing, malware payloads).
+**Where the others are ahead:** Snyk and Cisco's skill-scanner ship deeper skill analysis than rigscore's pattern-based `skill-files` check — Cisco does AST / taint / bytecode / VirusTotal, and both publish detailed SKILL.md threat models. rigscore's keyword checks carry a documented **semantic-reversal weakness** (see Limitations). AgentAuditKit advertises broader compliance-framework breadth. Snyk and Cisco also introspect *live* MCP servers; rigscore is print-and-paste only.
 
 **Where Semgrep is a better fit:** you want to scan your application source for vulnerabilities, not validate your AI-agent configuration. rigscore does not replace Semgrep — it runs upstream of it.
 
-**Picking one:** run rigscore as a pre-commit / PR-gate hygiene check. Run Snyk Agent Scan in CI if you need tool pinning and enterprise reporting. Run Semgrep against your application code. They are complementary.
+**Picking one:** run rigscore as a pre-commit / PR-gate hygiene check. Reach for Snyk, the Cisco suite, or AgentAuditKit when you need live MCP introspection, deep skill dataflow, or enterprise reporting. Run Semgrep against your application code. They are complementary.
 
 ### What the grades mean
 
@@ -225,7 +230,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets AI agents connect to external tools via servers. Each server exposes capabilities — filesystem access, API calls, database queries. The security risk is in the permissions.
 
-rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`), Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code (`.qwen/settings.json`, `~/.qwen/settings.json`), and Crush (`.crush.json`, `crush.json`, `~/.config/crush/crush.json` — servers under the `mcp` key).
+rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Gemini CLI (`.gemini/settings.json`), opencode (`opencode.json`, servers under the `mcp` key), Claude Desktop (`~/.claude/claude_desktop_config.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`), Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code (`.qwen/settings.json`, `~/.qwen/settings.json`), and Crush (`.crush.json`, `crush.json`, `~/.config/crush/crush.json` — servers under the `mcp` key).
 
 **What rigscore looks for:**
 - Transport type: `stdio` (local, safer) vs. `sse` (network, riskier)
@@ -237,7 +242,7 @@ rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vsco
 
 **Supply chain risk:** An MCP server installed as `@latest` today could push a malicious update tomorrow. Version pinning prevents this. {#mcp-supply-chain}
 
-**MCP registry augmentation (`--online`):** when `--online` is passed, rigscore augments the hand-curated typosquat list with data from the official MCP registry at `https://registry.modelcontextprotocol.io/v0/servers`. The response is cached at `~/.cache/rigscore/mcp-registry.json` (XDG convention; overridable via `XDG_CACHE_HOME`) with a 24-hour TTL. If the refetch fails after expiry, the stale cache is still used and an INFO finding surfaces the state. The registry only **augments** the hand-curated list — it never replaces it. Pass `--refresh-mcp-registry` to force a refetch (implies `--online`).
+**MCP registry augmentation (`--online`):** when `--online` is passed, rigscore augments the hand-curated typosquat list with data from the official MCP registry at `https://registry.modelcontextprotocol.io/v0/servers`. The response is cached at `~/.cache/rigscore/mcp-registry.json` (XDG convention; overridable via `XDG_CACHE_HOME` **only when it resolves inside `$HOME`** — a value pointing outside your home directory is silently ignored and the cache falls back to `~/.cache`) with a 24-hour TTL. If the refetch fails after expiry, the stale cache is still used and an INFO finding surfaces the state. The registry only **augments** the hand-curated list — it never replaces it. Pass `--refresh-mcp-registry` to force a refetch (implies `--online`).
 
 **Air-gapped / offline pre-populate:** place a JSON file at `~/.cache/rigscore/mcp-registry.json` with the shape `{"fetchedAt": "<ISO-8601 timestamp>", "data": { ... raw /v0/servers response ... }}`. rigscore will treat it like any other cache entry and respect the 24h TTL. An air-gapped host can refresh the file from a machine with network access on whatever cadence it chooses.
 
@@ -322,7 +327,7 @@ API keys, tokens, and credentials in the wrong places are the most common securi
 
 **What rigscore looks for:**
 - `.env` files present but not in `.gitignore`
-- API key patterns in config files, governance files, skill files, or MCP configs
+- API key patterns in config files, governance files, and the `env` maps of committed MCP configs (skill files are covered by the skill-file safety check, not here)
 - `.env` file permissions (world-readable vs. user-only)
 - SOPS encryption detection
 
@@ -341,7 +346,7 @@ rigscore scans **Docker Compose**, **Podman Compose**, **Kubernetes manifests**,
 **What rigscore looks for:**
 - Docker socket (`/var/run/docker.sock`) mounted in containers — this is a container escape vector {#docker-socket-risk}
 - `privileged: true` — gives the container full host access
-- Volume/hostPath mounts to sensitive host directories (`/`, `/etc`, `/root`, `~/.ssh`)
+- Volume/hostPath mounts to sensitive host directories — the exact-match set is `/`, `/etc`, `/root`, `/home`
 - Host network mode — bypasses container network isolation
 - Missing `user` directive (container runs as root)
 - Missing `cap_drop: [ALL]` (retains default Linux capabilities)
@@ -357,12 +362,12 @@ rigscore scans **Docker Compose**, **Podman Compose**, **Kubernetes manifests**,
 Host-level controls that sit beneath your project: root-owned git hooks, a git wrapper that cannot be bypassed, a shell safety guard, and immutable governance directories. These are the backstop when per-project hooks or settings are missing or tampered with. This check is Linux-only — it returns N/A on macOS and Windows.
 
 **What rigscore looks for:**
-- A global git hooks directory at `/opt/git-hooks/` (path is configurable via `.rigscorerc.json` → `paths.hooksDir`)
+- A managed git hooks directory (default: the repository's own, resolved via `git rev-parse --git-path hooks`; point it at a root-owned system dir such as `/opt/git-hooks/` via `.rigscorerc.json` → `paths.hooksDir`)
 - That directory is owned by root
 - Required hooks present and executable: `pre-commit`, `pre-push`, `commit-msg`
 - A git safety wrapper at `/usr/local/bin/git` (configurable) that is root-owned and strips `--no-verify` to prevent hook bypass
 - A shell safety guard at `/etc/profile.d/safety-gates.sh` (configurable) that blocks dangerous patterns like `chmod 777`
-- Immutable flag (`chattr +i`) on `_governance/` and `_foundation/` workspace directories (and any dirs listed in `paths.immutableDirs`)
+- Immutable flag (`chattr +i`) on any directories listed in `.rigscorerc.json` → `paths.immutableDirs` (empty by default — nothing is inspected here unless you configure it)
 - `permissions.deny` list in `~/.claude/settings.json` includes dangerous patterns: `git push --force`, `git reset --hard`, `rm -rf`, `git push origin main`, `git push origin master`
 - A `sandbox-gate` hook registered under `PreToolUse` to gate Write/Edit/Bash
 
@@ -371,9 +376,10 @@ Host-level controls that sit beneath your project: root-owned git hooks, a git w
 Checks skill files and CLAUDE.md for hidden characters that render identically to legitimate text but redirect agent behavior. Covers the attack surface from the ToxicSkills and Rules File Backdoor incidents.
 
 **What rigscore looks for:**
-- Greek/Armenian/Georgian lookalikes that render as Latin letters
+- Greek/Cyrillic/Armenian/Georgian/Cherokee lookalikes that render as Latin letters
 - Zero-width joiners and zero-width non-joiners
 - Bidirectional control characters (bidi overrides)
+- Tag characters (U+E0000–U+E007F) — an invisible ASCII-shadow channel
 
 ### 12. Git hooks (2 points) {#git-hooks-for-ai}
 
@@ -411,7 +417,7 @@ On Windows, rigscore checks for WSL-specific security risks. This is an advisory
 - Windows Defender exclusions that include project directories or `node_modules`
 - NTFS permissions advisory for sensitive files
 
-**Platform note:** Returns N/A on non-Windows systems. Weight 0 means it never affects the score.
+**Platform note:** Runs on Windows hosts *and* on WSL2 Linux guests (the WSL arm is marker-based — it fires when the kernel release string contains `microsoft`, so a WSL guest is graded even though it is Linux). Returns N/A only on plain Linux and macOS. Weight 0 means it never affects the score.
 
 ### 15. Network exposure (advisory, 0 points) {#network-exposure}
 
@@ -454,15 +460,16 @@ Scans every SKILL.md under `.claude/skills/` and `.claude/commands/` (both proje
 - Skills that push/commit/ship without mentioning branch protection (no force push, no direct push to main/master)
 - Hook ↔ settings conflicts where a PreToolUse hook blocks a pattern that `settings.json` allow-lists
 
+**Opt-in by default.** The detections above are driven by `.rigscorerc.json` → `skillCoherence.constraints` and `skillCoherence.hookSettingsConflicts`, both of which ship **empty** — a stock install emits nothing from this check until you configure the constraints your workspace enforces. The `gh-merge-approved` / `_governance/` / `_active/svc-*` examples are the conventions this repo configures, not built-in defaults.
+
 ### 19. Workflow maturity (advisory, 0 points) {#workflow-maturity}
 
-Classifies the project's workflow artefacts against the AI development taxonomy and surfaces graduation signals — skills that should become code, pipelines that should be split, memory files that have gone stale. Advisory.
+Classifies the project's workflow artefacts against the AI development taxonomy and surfaces graduation signals — skills that should become code, pipelines that should be split, orphan memory files. Advisory.
 
 **What rigscore looks for:**
 - Pipeline step overload: single modules with too many `# Stage N` / `# Step N` / `# Phase N` markers, or stage directories that suggest a monolithic pipeline should be decomposed
 - Skills that have matured past the LLM-driven stage and should be graduated to deterministic code
-- Stale memory files and orphan memory that is not linked from `MEMORY.md`
-- Taxonomy misclassification between skills, agents, pipelines, and memory
+- Orphan memory files that are not linked from `MEMORY.md` (`workflow-maturity/memory-orphan`)
 
 ### 20. Agent output schemas (advisory, 0 points) {#agent-output-schemas}
 
@@ -572,7 +579,7 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 | Credential storage hygiene | 6 | secrets |
 | Docker security | 6 | isolation |
 | Infrastructure security | 6 | process |
-| Unicode steganography | 4 | supply-chain |
+| Unicode steganography | 4 | governance |
 | Permissions hygiene | 4 | process |
 | Git hooks | 2 | process |
 | Windows/WSL security | 0 | isolation (advisory) |
@@ -601,6 +608,12 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 **Coverage scaling (what the `Coverage: N of M checks applicable (weight W/100)` line means):** Checks that find nothing to scan are marked N/A and excluded from the weighted average — their weight is redistributed proportionally across the remaining applicable checks. The final overall score is then multiplied by `min(1, W / 100)`, where W is the total applicable check weight. This scaling is **continuous and always applied — there is no threshold and no step.** A project where only part of the check suite can reach a verdict should not be able to claim a perfect 100 — partial coverage means partial confidence.
 
 Put plainly: **W is your reachable ceiling.** If only 80 of the 100 points of check weight apply, then even an all-passing scan caps at 80/100 — and the report says so on the coverage line (`— score scaled ×0.80`). Full coverage (W ≥ 100) is a no-op. The compound risk penalty above is applied *after* scaling, as a flat 10-point deduction (it is not itself scaled). Characterization tests pin the exact behavior in `test/scoring-coverage.test.js`; see the design note at the top of `src/scoring.js` for the rationale.
+
+### The Practice score (second axis)
+
+Every run computes a second 0–100 axis — the **Practice** score — printed under the hygiene score in the box above and exposed in `--json` as `practiceScore`. Where the hygiene (Security) score measures configuration *safety*, Practice measures *operator practice*: it is built from the Practice-pillar advisory checks (`loop-governance`, `spec-goals`, `ci-agent-caps`, `memory-hygiene`). Those checks are weight-0 on the Security axis, so the Practice score is fully independent — it never moves your hygiene score.
+
+A repo with no practice surface to grade — no agent loops, specs, CI agent jobs, or memory files — reports `Practice: n/a`, never `0/100`, so a project that is simply out of scope for these checks is not penalised. See [`docs/practice-score.md`](docs/practice-score.md) for the per-check math.
 
 **Scoring profiles:** Five built-in profiles:
 - `default` — balanced AI dev environment audit (WEIGHTS from `src/constants.js`).
@@ -650,7 +663,7 @@ on first scan — all are local, none phone home.
 
 | Path | When written | Purpose |
 |---|---|---|
-| `<cwd>/.rigscore-state.json` | Only when the project has a repo-level `.mcp.json`. | Stores SHA-256 hashes of each MCP server's `{command, args, envKeys}` shape. Detects silent MCPoison-class (CVE-2025-54136) pivots on subsequent scans. **Values are never hashed — only env-var keys.** |
+| `<cwd>/.rigscore-state.json` | Only when the project has a repo-level MCP config — any of the 15 committed client paths (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json`, and the Amazon Q / Roo / Junie / Warp / Kiro / Qwen / Crush variants), not just `.mcp.json`. | Stores SHA-256 hashes of each MCP server's `{command, args, envKeys}` shape. Detects silent MCPoison-class (CVE-2025-54136) pivots on subsequent scans. **Values are never hashed — only env-var keys.** |
 | `$XDG_CACHE_HOME/rigscore/mcp-registry.json` (falls back to `~/.cache/rigscore/mcp-registry.json`) | Only with `--online` or `--refresh-mcp-registry`. | Caches the official MCP registry response. 24h TTL. Used to augment typosquat detection. |
 
 Recommendations:
@@ -678,7 +691,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 
 - **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. The only mitigation that ships today is the cross-config coherence pass, which cross-checks governance claims against observed configuration. LLM-judge assist (opt-in) is a **planned** roadmap item — it is not implemented (see [Roadmap](#roadmap)).
 - **Injection detection is pattern-based.** The injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
-- **Config-shape pinning only (not runtime tool descriptions).** rigscore hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). It does **not** hash the tool descriptions that a running MCP server advertises; doing so would require actually invoking servers (out of scope for offline mode). Snyk Agent Scan's Tool Pinning covers runtime description drift; rigscore covers the config-file rug-pull. See "State file" below.
+- **The default scan pins config-shape; runtime tool descriptions are pinned on demand.** A scan hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). Hashing the tool descriptions a *running* server advertises is handled by the separate, opt-in `mcp-hash` / `mcp-verify` print-and-paste workflow ([Runtime tool pinning](#runtime-tool-pinning)) — rigscore never spawns the server itself, so runtime drift is verified on demand rather than on every scan. See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use gitleaks or trufflehog.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
 - **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 28 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 37/100 in CI for this reason — only 10 of its own 28 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
@@ -711,6 +724,7 @@ npx github:Back-Road-Creative/rigscore /path/to/project          # Scan a specif
 npx github:Back-Road-Creative/rigscore --json                    # JSON output for CI/scripting
 npx github:Back-Road-Creative/rigscore --sarif                   # SARIF output for security tools
 npx github:Back-Road-Creative/rigscore --cyclonedx               # CycloneDX 1.6 AI-BOM: MCP servers + their grant surface (permission scopes), skills, rules (see docs/cyclonedx.md)
+npx github:Back-Road-Creative/rigscore --report compliance       # Group findings by compliance-framework control (see docs/compliance.md; not supported with --recursive)
 npx github:Back-Road-Creative/rigscore --ci                      # CI mode (--sarif --no-color --no-cta)
 npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score < 80 (default: 70)
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
@@ -724,6 +738,7 @@ npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive sca
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
 npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
+npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to first-party `claude -p`, no API key; skips if claude absent)
 npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan ~/.claude/skills and ~/.claude/commands (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations (edits existing files only — never scaffolds new ones)
@@ -791,8 +806,27 @@ rigscore exits with a stable code so CI can branch cleanly:
 | `1` | Scan completed. Score is below `--fail-under`, OR (baseline mode) new findings were detected. |
 | `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, an unreadable **or corrupt/malformed** baseline file (unparseable JSON or no findings array fails closed — never silently re-minted), or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. In a git repo the baseline gate reads the copy **committed at HEAD** (`git show HEAD:<path>`, like `--verify-state`), so a deleted/corrupt working-tree baseline can't launder findings. This also covers HEAD-deletion: a baseline that was tracked but **removed at HEAD** (a PR that `git rm`'d it) fails closed here rather than silently re-minting a fresh baseline over the new findings — distinguished from a genuine first run (never tracked, still mints + exit `0`) by git history. Regenerate with `--baseline-refresh` then commit. |
 | `3` | Reserved for subcommand pre-conditions. Currently used by `rigscore mcp-verify <server>` when no runtime tool hash is pinned for that server. The main scan path does not emit `3`. |
+| `4` | Runtime tool-description **drift** detected by `rigscore mcp-verify <server>` — the server's current `tools/list` hash differs from the pinned snapshot (CVE-2025-54136 "MCP rug pull" class). Re-pin with `mcp-hash \| mcp-pin` if the change is intentional. The main scan path does not emit `4`. |
 
 A runtime crash inside a check surfaces as exit `2` with `Error: scan failed: ...` on stderr; it does not currently use a distinct code. CI authors should treat non-zero as failure and branch only on `0` vs `1` for score-gating logic.
+
+### Baseline mode and `diff`
+
+Baseline mode gates on *new* findings rather than an absolute score — useful when you want CI to block regressions without first driving an existing repo to a clean score.
+
+```bash
+# First run writes the baseline; later runs report ONLY findings new vs it,
+# and exit 1 if any appeared.
+rigscore --baseline .rigscore-baseline.json .
+
+# Intentionally accept the current findings as the new baseline, then commit it.
+rigscore --baseline .rigscore-baseline.json --baseline-refresh .
+
+# Standalone diff of two findings files (exit 1 if `current` adds any).
+rigscore diff old-baseline.json new-findings.json
+```
+
+In a git repo the baseline is read from the copy **committed at HEAD** (like `--verify-state`), so a deleted or corrupt working-tree baseline can't launder findings. `--baseline-refresh` is the sanctioned way to (re)write the working-tree file for review and commit. Exit codes `0`/`1`/`2` follow the table above.
 
 ### Watch mode
 
@@ -951,11 +985,11 @@ For details on what rigscore writes to disk on first scan and how to purge it, s
 
 ## State file
 
-When your project has a repo-level `.mcp.json`, rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
+When your project has a repo-level MCP config — any of the 15 committed client configs, not just `.mcp.json` — rigscore writes `.rigscore-state.json` at the project root on each scan. It records a SHA-256 hash of each MCP server's `{command, args, envKeys}` (env **keys only** — values are never hashed, so no secrets leak). On subsequent scans, a changed hash for an existing server name fires a WARN — catching MCPoison-class (CVE-2025-54136) silent pivots of trusted MCP servers.
 
 **This is the one file a scan writes.** Every other check is read-only.
 
-**Commit `.rigscore-state.json`. Do not `.gitignore` it.** The instinct on seeing a new generated file is to ignore it — here that silently disables the protection. The pin *is* the detection substrate: `mcp-config/server-hash-drift` and the `rigscore --verify-state` CI gate both work by comparing today's `.mcp.json` against it, so a pin that doesn't survive a fresh CI checkout detects nothing. It is safe to commit by construction — env **values** are deliberately excluded from the hash, so it cannot leak a secret. Supply-chain changes then show up in code review, and cross-collaborator drift resolves via git.
+**Commit `.rigscore-state.json`. Do not `.gitignore` it.** The instinct on seeing a new generated file is to ignore it — here that silently disables the protection. The pin *is* the detection substrate: `mcp-config/server-hash-drift` and the `rigscore --verify-state` CI gate both work by comparing today's committed MCP configs against it, so a pin that doesn't survive a fresh CI checkout detects nothing. It is safe to commit by construction — env **values** are deliberately excluded from the hash, so it cannot leak a secret. Supply-chain changes then show up in code review, and cross-collaborator drift resolves via git.
 
 The write only ever *establishes* or *extends* the pin — it is skipped on drift (re-pinning would re-approve the rug-pull the scan just reported) and skipped when the pin is already current (so a scan never dirties your tree). Full write/skip table and the "accept this drift" procedure: [`docs/checks/mcp-config.md`](docs/checks/mcp-config.md#the-one-file-a-scan-writes-rigscore-statejson).
 
@@ -1015,6 +1049,14 @@ Supplementary docs live under `docs/`:
   page per module in `src/checks/`.
 - [`docs/profiles/`](docs/profiles/) — weight tables for each scoring
   profile (`default`, `minimal`, `ci`, `home`, `monorepo`).
+- [`docs/compliance.md`](docs/compliance.md) — how each check maps to
+  compliance-framework controls (the mapping `--report compliance` renders).
+- [`docs/practice-score.md`](docs/practice-score.md) — the Practice axis:
+  which checks feed it and how the second score is computed.
+
+Prefer the terminal? `rigscore explain <findingId>` prints the relevant
+`docs/checks/` page (finding-specific section when available) — e.g.
+`rigscore explain claude-md/missing-claude-md`.
 
 ## Contributing
 
@@ -1180,7 +1222,7 @@ These tests are public so you can audit our limits. They lock the current behavi
 The full attack-surface and out-of-scope catalog lives in:
 
 - [`THREAT-MODEL.md`](THREAT-MODEL.md) — what rigscore inspects, what it doesn't, and the trust boundaries.
-- [`docs/known-limits.md`](docs/known-limits.md) — concrete examples of attacks rigscore will not detect, with pointers to tools that will (Snyk Agent Scan, Semgrep, AgentShield).
+- [`docs/known-limits.md`](docs/known-limits.md) — concrete examples of attacks rigscore will not detect, with pointers to tools that will (Snyk Agent Scan, Semgrep).
 
 If you need a check rigscore does not implement, file an issue with a fixture. The project's bias is to land characterization tests for known gaps before claiming the gap is closed.
 
