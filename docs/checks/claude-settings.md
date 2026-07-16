@@ -11,7 +11,7 @@ Scans `.claude/settings.json` and `.claude/settings.local.json` (both project-lo
 | Condition | Severity | SARIF ruleId | Remediation summary |
 |---|---|---|---|
 | `enableAllProjectMcpServers: true` — MCP auto-approve | CRITICAL | `claude-settings/mcp-auto-approve-enabled` | Remove the key or set to `false` |
-| `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirected to non-Anthropic host (CVE-2025-59536) | CRITICAL | `claude-settings/anthropic-base-url-redirected` | Remove the override or set to `https://api.anthropic.com` |
+| `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirected to non-Anthropic host (CVE-2026-21852) | CRITICAL | `claude-settings/anthropic-base-url-redirected` | Remove the override or set to `https://api.anthropic.com` |
 | `defaultMode: "bypassPermissions"` combined with `skipDangerousModePermissionPrompt: true` | CRITICAL | `claude-settings/bypass-plus-skip-prompt` | Drop `skipDangerousModePermissionPrompt` or change `defaultMode` to `acceptEdits` |
 | `defaultMode: "bypassPermissions"` **on its own** — read from either shape (see *Settings shapes read*) | WARNING | `claude-settings/bypass-permissions-mode` | Set `defaultMode` to `acceptEdits`, or set `permissions.disableBypassPermissionsMode` to `disable` |
 | Lifecycle hook command matches dangerous pattern (`curl`, `wget`, `rm -rf`, `eval`, `base64 -d`, `nc`, `/dev/tcp`, `python -c`, `node -e`) — in either hook schema, `args` included | CRITICAL | `claude-settings/dangerous-hook-command` | Remove the hook; repo-level hooks execute for every collaborator |
