@@ -105,6 +105,19 @@ describe('packs', () => {
       .not.toMatch(/no value for \{\{(EGRESS_SUBNET|ALLOWED_HOSTS)\}\}/);
   });
 
+  it('resolves the guards manifest {{EXPIRES_90D}} to a ~90-day future date at install', () => {
+    const target = tmp(); // real TEMPLATES_DIR — the shipped guards pack
+    installPack('guards', target);
+    const perms = JSON.parse(read(target, '.claude/permissions.json'));
+    // The placeholder is gone and the date is computed fresh, so a guards install
+    // never ships an already-expired manifest regardless of the calendar.
+    expect(perms.expires).not.toContain('{{');
+    expect(perms.expires).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const days = (Date.parse(perms.expires) - Date.now()) / 86400000;
+    expect(days).toBeGreaterThan(88);
+    expect(days).toBeLessThan(91);
+  });
+
   it('installs the declared files, substituting vars', () => {
     const [templates, target] = pair();
     dropPack(templates, 'demo', OK);

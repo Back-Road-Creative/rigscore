@@ -233,7 +233,7 @@ describe('SARIF output', () => {
           detail: 'Container can control the host daemon.',
           evidence: 'volumes: /var/run/docker.sock',
           remediation: 'Remove the /var/run/docker.sock bind mount.',
-          learnMore: 'https://headlessmode.com/tools/rigscore/#docker-socket-risk',
+          learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/docker-security.md',
         },
         { severity: 'warning', title: 'Running as root' }, // no remediation, no learnMore
       ],
@@ -268,13 +268,13 @@ describe('SARIF output', () => {
     const sarif = formatSarif(remediationResult);
     const sarifResult = sarif.runs[0].results[0];
     const rule = ruleFor(sarif, sarifResult.ruleId);
-    expect(rule.helpUri).toBe('https://headlessmode.com/tools/rigscore/#docker-socket-risk');
+    expect(rule.helpUri).toBe('https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/docker-security.md');
     // helpUri is a reportingDescriptor property (§3.49.12) — never on a result.
     expect(sarifResult.helpUri).toBeUndefined();
     // GitHub does not render helpUri, so the link is also woven into `help`,
     // which it does render next to the result.
-    expect(rule.help.markdown).toContain('https://headlessmode.com/tools/rigscore/#docker-socket-risk');
-    expect(rule.help.text).toContain('https://headlessmode.com/tools/rigscore/#docker-socket-risk');
+    expect(rule.help.markdown).toContain('https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/docker-security.md');
+    expect(rule.help.text).toContain('https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/docker-security.md');
   });
 
   it('never hoists per-result remediation onto the shared rule', () => {
