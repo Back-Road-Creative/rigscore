@@ -171,7 +171,7 @@ function writePackOffer(packs) {
  * `config.suppress` and skip rescoring, so the monorepo escape hatch was inert.
  * @returns {{count:number, ids:string[]}} what was muted (0 = nothing).
  */
-function suppressAndRescore(unit, ignore, checkFilter) {
+export function suppressAndRescore(unit, ignore, checkFilter) {
   const patterns = [...(unit.config?.suppress || []), ...(ignore || [])];
   if (patterns.length === 0) return { count: 0, ids: [] };
   const summary = suppressFindings(unit.results, patterns);
