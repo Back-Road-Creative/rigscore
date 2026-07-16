@@ -16,6 +16,7 @@ Severities follow comparable risks here: `docker-security` grades `privileged: t
 | Agent invocation with unrestricted tools | WARNING | `ci-agent-caps/agent-job-missing-tool-scoping` | Pass `--allowedTools`/`--disallowedTools`, or a sandbox + approval policy |
 | Job delegates to a reusable workflow this scan cannot read — another repo's `owner/repo/…@ref`, or a local path missing from the checkout | INFO | `ci-agent-caps/reusable-workflow-not-analyzed` | Review that workflow's caps by hand, or vendor it into `.github/workflows/` |
 | Workflow file is not valid YAML | INFO | `ci-agent-caps/failed-to-parse-workflow` | Fix the YAML so the job can be analyzed |
+| A workflow invokes an agent and every agent job declares a turn cap, a timeout, and tool scoping | PASS | — | — |
 | No workflow invokes an agent (the common case) | N/A | — | — |
 
 ## Weight rationale

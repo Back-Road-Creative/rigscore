@@ -23,6 +23,7 @@ A plain (non-WSL) Linux or macOS machine matches neither arm and stays N/A. Gues
 | **Guest:** `/etc/wsl.conf` has `[interop] enabled=true` and `appendWindowsPath` is `true` (or unset, which defaults to true) | WARNING | `windows-security/wsl-interop-exposes-path` | Set `appendWindowsPath=false` in `/etc/wsl.conf` `[interop]`. |
 | **Guest:** `[interop] enabled=true` with an explicit `appendWindowsPath=false` | INFO | `windows-security/wsl-interop-enabled` | Informational — exposure is limited. |
 | **Guest:** WSL interop disabled | PASS | — | — |
+| **Guest:** no `/etc/wsl.conf` present, so the interop arm reads nothing | PASS | — | Generic `Windows security checks passed` — no arm produced a finding. |
 | **Host:** `%USERPROFILE%\.wslconfig` sets `networkingMode=mirrored` | INFO | `windows-security/wsl-mirrored-networking` | Consider NAT mode for stronger host/guest isolation. |
 | **Host:** `.wslconfig` exists but has no `firewall=true` line | INFO | `windows-security/wsl-firewall-not-enabled` | Add `firewall=true` to `.wslconfig`. |
 | **Host:** `.wslconfig` has `firewall=true` | PASS | — | — |
