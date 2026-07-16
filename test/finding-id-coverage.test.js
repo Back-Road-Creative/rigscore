@@ -319,7 +319,7 @@ describe('E4: every SARIF-reaching finding emits an explicit findingId', () => {
  * docs/FINDING_IDS.md calls itself a stability contract — "which IDs the current
  * release actually guarantees". Consumers pin `--ignore <check>/<slug>`, SARIF→GHAS
  * and baseline diffs to it, yet nothing gated it, so it silently drifted to
- * documenting 21 of 27 checks. This block is that gate's TDD spec.
+ * documenting 21 of 28 checks. This block is that gate's TDD spec.
  *
  * It CONSUMES the exported extractRuleIds / extractDocumentedRuleIds — it never
  * reaches into their `<checkId>/` namespace filter (the collision guard above
