@@ -57,10 +57,12 @@ describe('guards pack templates', () => {
     expect(settings.permissions.defaultMode).not.toBe('bypassPermissions');
   });
 
-  it('permissions.json expires loudly and records an audit trail', () => {
+  it('permissions.json expiry is computed at install, never a hardcoded date', () => {
     const perms = JSON.parse(read('permissions.json'));
-    expect(perms.expires).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(Number.isNaN(Date.parse(perms.expires))).toBe(false);
+    // Robust-by-construction: the SHIPPED template must carry the install-time
+    // placeholder, not a literal date — a hardcoded expiry ships already-stale
+    // (and fails its own suggested CI gate on day one) after that date passes.
+    expect(perms.expires).toBe('{{EXPIRES_90D}}');
     expect(perms.renewal.cadenceDays).toBeGreaterThan(0);
     expect(perms.enforcement.gate).toMatch(/exits? non-zero|fail/i);
     expect(perms.changelog.length).toBeGreaterThan(0);

@@ -175,7 +175,16 @@ function suppressAndRescore(unit, ignore, checkFilter) {
   const patterns = [...(unit.config?.suppress || []), ...(ignore || [])];
   if (patterns.length === 0) return { count: 0, ids: [] };
   const summary = suppressFindings(unit.results, patterns);
-  unit.suppressed = summary;
+  // Keep the serialized shape stable ({count, ids}); `unmatched` is a warn-only
+  // signal to stderr — it never enters JSON/SARIF output.
+  unit.suppressed = { count: summary.count, ids: summary.ids };
+  if (summary.unmatched.length > 0) {
+    process.stderr.write(
+      `rigscore: ${summary.unmatched.length} suppress pattern(s) matched no findings: `
+      + `${summary.unmatched.join(', ')} — a typo, or stale after a check/finding rename? `
+      + 'See docs/FINDING_IDS.md.\n',
+    );
+  }
   const { score, notApplicable } = scoreScan(unit.results, resolveWeights(unit.config), checkFilter);
   unit.score = score;
   unit.notApplicable = notApplicable;

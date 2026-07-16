@@ -24,6 +24,22 @@ function rescoreAfterRemoval(result) {
 export { slugify };
 
 /**
+ * Check-id / finding-id renames: old id → current id.
+ *
+ * docs/FINDING_IDS.md promises a deprecated id stays a working alias for at
+ * least one major version, so a user's `.rigscorerc.json` `suppress:` (or a
+ * baseline) does not silently dead-match on upgrade. This table is that
+ * promise's implementation: `compileSuppressPattern` consults it so a pattern
+ * naming an old id also mutes the renamed finding. Empty today — no rename has
+ * shipped — but a future rename adds ONE entry here instead of quietly breaking
+ * every downstream suppress config. Keys/values match case-insensitively.
+ * @type {Record<string,string>}
+ */
+export const FINDING_ID_RENAMES = {
+  // 'old-check-or-finding-id': 'current-check-or-finding-id',
+};
+
+/**
  * Deduplicate findings across check results.
  * When two checks produce findings with the same severity+title,
  * keep the one from the higher-weighted check.
@@ -150,8 +166,11 @@ export function globToRegExp(glob) {
  *                                namespace match (`<bare>/…`), OR
  *                                case-insensitive substring match against
  *                                title (legacy)
+ *
+ * `renames` (default FINDING_ID_RENAMES) lets a pattern naming a renamed id
+ * still mute the current finding — the alias promise in docs/FINDING_IDS.md.
  */
-export function compileSuppressPattern(raw) {
+export function compileSuppressPattern(raw, renames = FINDING_ID_RENAMES) {
   const str = String(raw);
 
   // Regex form: re:/pattern/flags
@@ -181,10 +200,15 @@ export function compileSuppressPattern(raw) {
   // segment, so a bare token can never leak into a longer check id (e.g.
   // `docker` cannot match `docker-security/…`).
   const lowered = str.toLowerCase();
+  // A pattern naming a renamed id must still mute the current finding: match the
+  // token AND its rename target (see FINDING_ID_RENAMES).
+  const aliases = [lowered];
+  const renamed = renames && renames[lowered];
+  if (renamed) aliases.push(String(renamed).toLowerCase());
   return (finding) => {
     const id = (finding.findingId || '').toLowerCase();
     const title = (finding.title || '').toLowerCase();
-    return id === lowered || id.startsWith(lowered + '/') || title.includes(lowered);
+    return aliases.some((a) => id === a || id.startsWith(a + '/') || title.includes(a));
   };
 }
 
@@ -202,24 +226,32 @@ export function compileSuppressPattern(raw) {
  * stays N/A (see rescoreAfterRemoval). Muting a finding can clean up a check's
  * score; it can never make an inapplicable check count as coverage.
  *
- * Returns a `{ count, ids }` summary of what was muted so callers can surface
- * it (human report / SARIF / JSON) — suppression stays a delete-from-scoring,
- * but a muted finding is now visible in rigscore's own output, not only in a
- * `.rigscorerc.json` diff. `count` is every finding removed; `ids` is the
- * deduped list of their finding ids (title fallback for id-less findings).
+ * Returns a `{ count, ids, unmatched }` summary of what was muted so callers can
+ * surface it (human report / SARIF / JSON) — suppression stays a
+ * delete-from-scoring, but a muted finding is now visible in rigscore's own
+ * output, not only in a `.rigscorerc.json` diff. `count` is every finding
+ * removed; `ids` is the deduped list of their finding ids (title fallback for
+ * id-less findings); `unmatched` is the input patterns that matched NOTHING — a
+ * typo, or a config left stale after a rename — so the caller can warn instead
+ * of letting a dead suppress no-op silently.
  */
-export function suppressFindings(results, patterns) {
-  const summary = { count: 0, ids: [] };
+export function suppressFindings(results, patterns, renames = FINDING_ID_RENAMES) {
+  const summary = { count: 0, ids: [], unmatched: [] };
   if (!patterns || patterns.length === 0) return summary;
 
-  const predicates = patterns.map(compileSuppressPattern);
+  const predicates = patterns.map((p) => compileSuppressPattern(p, renames));
+  const matched = new Array(patterns.length).fill(false);
   const seenIds = new Set();
 
   for (const r of results) {
     const before = r.findings.length;
     const kept = [];
     for (const f of r.findings) {
-      if (predicates.some((pred) => pred(f))) {
+      let hit = false;
+      for (let i = 0; i < predicates.length; i++) {
+        if (predicates[i](f)) { hit = true; matched[i] = true; }
+      }
+      if (hit) {
         summary.count++;
         const id = f.findingId || f.title;
         if (id && !seenIds.has(id)) {
@@ -236,5 +268,6 @@ export function suppressFindings(results, patterns) {
     }
   }
 
+  summary.unmatched = patterns.filter((_, i) => !matched[i]).map(String);
   return summary;
 }
