@@ -20,7 +20,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
@@ -90,6 +90,26 @@ jobs:
             --title "rigscore v${{ steps.pkg.outputs.version }}" \
             --notes-file /tmp/release-notes.txt
           echo "Created release v${{ steps.pkg.outputs.version }}"
+
+      # The v<version> tag `gh release create` just made was pushed with the
+      # job's GITHUB_TOKEN, and GitHub does NOT re-trigger `push: tags`
+      # workflows from a GITHUB_TOKEN-created tag (anti-recursion). So
+      # docker-publish.yml and release-provenance.yml never fired on the
+      # canonical release path. workflow_dispatch is the exception a
+      # GITHUB_TOKEN CAN trigger — dispatch them ON THE TAG (`--ref`) so both
+      # build/attest the released tag's tree, not main-at-dispatch. The
+      # normalized (`v`-stripped) tag is passed so docker-publish tags the
+      # image `<version>` + `latest`, matching the tag-push contract.
+      - name: Trigger tag-scoped workflows (docker + provenance)
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          gh workflow run docker-publish.yml --repo "${{ github.repository }}" \
+            --ref "v${VERSION}" -f tag="${VERSION}" -f push=true
+          gh workflow run release-provenance.yml --repo "${{ github.repository }}" \
+            --ref "v${VERSION}"
 
       # Export changelog + prev-tag for the downstream headlessmode job so
       # it doesn't have to re-checkout this repo.
