@@ -14,7 +14,7 @@ All checks are pure functions of the local filesystem. Default mode makes zero n
 
 | Surface | Check module | Mechanism |
 |---|---|---|
-| MCP server scope (filesystem root access, network transport, typosquats, unstable tags) | [`src/checks/mcp-config.js`](src/checks/mcp-config.js) | String/JSON parse of `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`; typosquat check against a ~52-entry hand-curated registry. |
+| MCP server scope (filesystem root access, network transport, typosquats, unstable tags) | [`src/checks/mcp-config.js`](src/checks/mcp-config.js) | String/JSON parse of the 15 repo-level MCP config paths across the client registry (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, and 12 more); typosquat check against a ~52-entry hand-curated registry. |
 | MCP server config-shape drift (baseline → rescan) | [`src/checks/mcp-config.js`](src/checks/mcp-config.js) (pinning) | SHA-256 of canonicalized config shape, stored in `.rigscore-state.json`. |
 | MCP server tool-description pins (CVE-2025-54136 class) | [`src/checks/mcp-config.js`](src/checks/mcp-config.js) + `rigscore mcp-pin` / `rigscore mcp-verify` | User pipes `tools/list` JSON into `rigscore mcp-hash`; rigscore stores the hash. rigscore does **not** spawn the MCP server. |
 | Docker privileges (`--privileged`, socket mounts, `host` network, `run --user root`) | [`src/checks/docker-security.js`](src/checks/docker-security.js) | Regex scan of `Dockerfile`, `docker-compose*.yml`, `.github/workflows/*.yml`. |
@@ -27,12 +27,13 @@ All checks are pure functions of the local filesystem. Default mode makes zero n
 | Skill-file Unicode steganography | [`src/checks/unicode-steganography.js`](src/checks/unicode-steganography.js) | Codepoint class scan (zero-width, bidi-override, tag chars). |
 | File permissions hygiene | [`src/checks/permissions-hygiene.js`](src/checks/permissions-hygiene.js) | `stat` mode bits on governance files. |
 
-Advisory-weight (scored 0, surfaced only): `windows-security`, `network-exposure`, `site-security`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`.
+Advisory-weight (scored 0, surfaced only): `windows-security`, `network-exposure`, `site-security`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`, `documentation`, `agent-output-schemas`, `loop-governance`, `spec-goals`, `ci-agent-caps`, `memory-hygiene`, `ai-disclosure`, `sandbox-posture`, `semantic-tools`.
 
 ## 2. Trust boundaries
 
-- **Local filesystem only** in default mode. rigscore reads files under the scan target and a small set of `$HOME` paths (`~/.claude/settings.json`, `~/.claude/skills/`). It writes `.rigscore-state.json` into the scan target.
-- **No network unless `--online`.** The online opt-in reaches the npm registry and the MCP registry for typosquat augmentation, plus — if `sites` is configured — HTTP(S) probes of those user-listed hosts via [`site-security`](src/checks/site-security.js). It does not spawn MCP servers, does not call LLM APIs, does not exfiltrate.
+- **Local filesystem only** in default mode. rigscore reads files under the scan target and, across a registry of 22 known agent clients (19 with MCP config paths, 16 holding 17 credential files), the corresponding `$HOME` paths (e.g. `~/.claude/settings.json`, `~/.claude/skills/`). It writes `.rigscore-state.json` into the scan target.
+- **No network unless `--online`.** The online opt-in reaches the npm registry and the MCP registry for typosquat augmentation, plus — if `sites` is configured — HTTP(S) probes of those user-listed hosts via [`site-security`](src/checks/site-security.js). It does not spawn MCP servers and does not exfiltrate.
+- **No LLM calls unless `--semantic`.** Default mode calls no LLM API. The `--semantic` opt-in shells out to a local `claude -p` process (see [`src/checks/semantic-tools.js:97`](src/checks/semantic-tools.js)) to run an LLM judge over MCP tool descriptions; it uses the operator's own installed Claude CLI, not a rigscore-hosted endpoint.
 - **Assumes a user-controlled machine.** rigscore does not sandbox the files it reads. A maliciously crafted `package.json` that triggers a parser exploit in `JSON.parse` is on Node, not on rigscore.
 - **Does not sandbox itself.** The CLI runs with the invoking user's privileges. A compromised dependency in rigscore's own supply chain (chalk, yaml) would run with those privileges. See Stream A (`.github/workflows/release.yml`) for the signed-release + SBOM mitigation.
 - **Point-in-time.** Each scan is a snapshot. There is no daemon, no watcher by default (`--watch` exists but restarts the same point-in-time scan on change). Anything that happens between scans is invisible.
@@ -83,9 +84,9 @@ Mitigation path is Stream A of the verifiability campaign: signed releases, SBOM
 
 ### 3.6 LLM prompt-injection content inside docs/skills (beyond the canonical phrase list)
 
-[`src/checks/skill-files.js`](src/checks/skill-files.js) catches a fixed catalog: *ignore previous instructions*, *disregard prior*, *you are now*, *pretend you are*, *from now on you*, etc. — plus homoglyph and zero-width variants of those phrases (see [`test/injection-evasion.test.js`](test/injection-evasion.test.js)). An injection authored in novel phrasing ("your task has been updated to the following rubric..."), or embedded in a multi-paragraph story, or delivered via a tool-output fixture, will pass. rigscore does not invoke an LLM judge; there is no semantic classifier.
+[`src/checks/skill-files.js`](src/checks/skill-files.js) catches a fixed catalog: *ignore previous instructions*, *disregard prior*, *you are now*, *pretend you are*, *from now on you*, etc. — plus homoglyph and zero-width variants of those phrases (see [`test/injection-evasion.test.js`](test/injection-evasion.test.js)). An injection authored in novel phrasing ("your task has been updated to the following rubric..."), or embedded in a multi-paragraph story, or delivered via a tool-output fixture, will pass. The [`skill-files`](src/checks/skill-files.js) check is keyword-only — it does not invoke an LLM judge over skill or doc prose. (The `--semantic` opt-in added in v2.1.0 does run an LLM judge, but only over MCP *tool descriptions* via [`semantic-tools`](src/checks/semantic-tools.js); it does not read skills or docs.)
 
-Scoped mitigation path exists in Stream E of the campaign plan (`--llm-review` advisory flag). Until that ships, this is a known gap.
+The shipped `--semantic` advisory flag (v2.1.0) is the first step of this mitigation path, but it is scoped to MCP tool descriptions; an LLM judge over skill and doc prose remains a known gap.
 
 ### 3.7 Anything after the scan
 
@@ -107,8 +108,8 @@ No test covers this — it is a design property, not a check.
 
 ## 5. If you need coverage rigscore doesn't provide
 
-- **Live MCP tool-description pinning:** [Snyk Agent Scan](https://snyk.io/product/agent-scan/) probes running MCP servers and anchors tool hashes live.
-- **LLM-judge semantic review layer:** [AgentShield](https://agentshield.io/) and similar provide an adversarial LLM pass over governance docs and skill files.
+- **Live MCP tool-description pinning:** [Snyk Agent Scan](https://github.com/snyk/agent-scan) connects to running MCP servers and retrieves their tool descriptions for inspection.
+- **LLM-judge semantic review layer:** [Anthropic's claude-code-security-review](https://github.com/anthropics/claude-code-security-review) and the LLM-as-judge analyzers in [Cisco AI Defense skill-scanner](https://github.com/cisco-ai-defense/skill-scanner) provide an adversarial LLM pass over governance docs and skill files.
 - **Code SAST (taint analysis, dataflow):** [Semgrep](https://semgrep.dev/) — rigscore does not reason about source-code vulnerabilities.
 - **Git-history secret scanning:** [gitleaks](https://github.com/gitleaks/gitleaks) — rigscore scans the working tree, not git history.
 - **SBOM / dependency vulnerability:** [Trivy](https://trivy.dev/), [osv-scanner](https://osv.dev/) — rigscore publishes its own SBOM but does not scan yours.
@@ -117,4 +118,4 @@ rigscore is complementary to these tools. It closes the "did you configure it sa
 
 ---
 
-*Last updated: 2026-04-21. Source of truth lives in the check modules under [`src/checks/`](src/checks/) — if this document disagrees with the code, the code wins. File an issue.*
+*Last updated: 2026-07-15. Source of truth lives in the check modules under [`src/checks/`](src/checks/) — if this document disagrees with the code, the code wins. File an issue.*
