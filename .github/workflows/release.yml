@@ -205,15 +205,18 @@ jobs:
           fi
           echo "HEADLESSMODE_PAT valid — authenticated as ${login}."
 
-      # Check out the product repo at the released tag so the site post can run
-      # the facts generator against the EXACT released registry (not
-      # main-at-dispatch). generate-facts.js loads the check modules, which pull
-      # in the two runtime deps (chalk, yaml), so npm ci is required.
-      - name: Check out rigscore at the released tag
+      # Check out the product repo on the default branch to run the facts
+      # generator. generate-facts.js lives on main (added after the v2.1.0 tag),
+      # so a released-tag checkout can't find it; the default branch carries the
+      # generator and its check-registry defines the current release, so the
+      # emitted facts match the released registry. generate-facts.js loads the
+      # check modules, which pull in the two runtime deps (chalk, yaml), so
+      # npm ci is required.
+      - name: Check out rigscore (default branch — carries the facts generator)
         if: env.skip != 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: v${{ needs.release.outputs.version }}
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Set up Node
         if: env.skip != 'true'
