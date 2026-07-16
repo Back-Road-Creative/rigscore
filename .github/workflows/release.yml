@@ -267,10 +267,14 @@ jobs:
             --prev-version "${PREV_VERSION}" \
             --git-log-file "/tmp/rigscore-git-log.txt"
 
-          # Patch content/docs.md release DATE only — the version string now
-          # renders from data/rigscore.json (E2 shortcodes), so the version-regex
-          # patch is retired; the site script only stamps the date.
-          node scripts/patch-rigscore-toolpage.js --version "${VERSION}"
+          # Bump content/docs.md frontmatter date to the release date. Version,
+          # counts and the sample-output version now render from data/rigscore.json
+          # (E2 shortcodes), so patch-rigscore-toolpage.js — which searched for a
+          # literal version block that no longer exists — is retired. Hugo
+          # frontmatter can't run shortcodes, so the date stays literal and is
+          # stamped directly.
+          RELEASE_DATE=$(node -pe "require('./data/rigscore.json').date" 2>/dev/null || date -u +%Y-%m-%d)
+          sed -i "0,/^date:/s|^date:.*|date: ${RELEASE_DATE}|" content/docs.md
 
           BRANCH="rigscore-release/v${VERSION}"
           git config user.name "rigscore-bot"
