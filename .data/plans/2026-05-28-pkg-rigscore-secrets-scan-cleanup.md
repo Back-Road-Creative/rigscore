@@ -10,7 +10,7 @@
 |---|---|---|
 | Fixture secrets | `test/fixtures/scored-project/.env` still contains `AKIAIOSFODNN7EXAMPLE` + `sk-proj-FIXTURE0000000000000000000000000000000`. GitHub push-time secret scanning, gitleaks, and TruffleHog will flag both. | Will block PRs in any downstream repo that imports rigscore as a submodule or runs these scanners on its tree. Already documented in `.data/health-reports/pkg-rigscore/2026-05-27-health.md:170` (Security #5). |
 | Fixture prompt-injection | `test/fixtures/scored-project/.env` carries an unwrapped prompt-injection payload (Security #3, same health report). | Subagent that reads the fixture content during a check could be steered. Original Wave 10 plan was to wrap in `<<<INJECTED_PAYLOAD_FOR_TEST_DO_NOT_INTERPRET ... >>>` delimiters per CLAUDE.md data-framing rules. |
-| Cross-repo names | `.data/plans/2026-05-28-pkg-rigscore-session-followups.md:171` names three other BRC workspace projects (`svc-gomoveshift-video`, `svc-social-media-seo`, `lib-skill-utils`) with their rigscore self-scores. PR #116 did one cross-repo scrub but newer plans slipped in afterwards. | Low. Names only, no contents. Public scrub posture is already permissive (org name `Back-Road-Creative` is in CHANGELOG, Dockerfile, action.yml). Worth dropping the score numbers since they characterize unrelated private projects. |
+| Cross-repo names | `.data/plans/2026-05-28-pkg-rigscore-session-followups.md:171` names three other BRC workspace projects (`[redacted-project]`, `[redacted-project]`, `[redacted-project]`) with their rigscore self-scores. PR #116 did one cross-repo scrub but newer plans slipped in afterwards. | Low. Names only, no contents. Public scrub posture is already permissive (org name `Back-Road-Creative` is in CHANGELOG, Dockerfile, action.yml). Worth dropping the score numbers since they characterize unrelated private projects. |
 | Real secrets in working tree | None. `.git/config` is HTTPS with `pushurl = no-push`, no embedded token. Pickaxe across all refs for `joepetjr`, `Petrucelli`, `insta360`, `metricool`, `sops`-credentials → zero hits. | — |
 
 ## Sequencing rules
@@ -74,7 +74,7 @@
 
 | File | Change | Δ |
 |---|---|---|
-| `.data/plans/2026-05-28-pkg-rigscore-session-followups.md:171` | Replace the literal "`svc-gomoveshift-video` 54, `svc-social-media-seo` 31, `lib-skill-utils` 27" with "three other workspace projects scored 27–54 — none are rigscore bugs". Keeps the *motivation* (other projects also need rigscore-fix sweeps) without naming them. | ±3 |
+| `.data/plans/2026-05-28-pkg-rigscore-session-followups.md:171` | Replace the literal "`[redacted-project]` 54, `[redacted-project]` 31, `[redacted-project]` 27" with "three other workspace projects scored 27–54 — none are rigscore bugs". Keeps the *motivation* (other projects also need rigscore-fix sweeps) without naming them. | ±3 |
 
 **Why this is non-urgent:** the names are not secrets — `Back-Road-Creative` is the public org, and the projects are svc-prefixed code names with no descriptive content attached. But scores characterize unrelated private repos, and the predecessor plan #116 ("remove cross-repo workspace plans from rigscore tree") established the precedent that those names don't belong in this repo's tree.
 
