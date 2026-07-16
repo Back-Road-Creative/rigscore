@@ -49,7 +49,7 @@ Client → config path mapping:
 | Zed | `.config/zed/settings.json` | `context_servers` | `env` |
 | opencode | `.config/opencode/opencode.json` | `mcp` | `environment` |
 
-The table is generated from the client registry (`src/clients.js`) — add a client there, not here.
+The table above is a hand-maintained excerpt — it is **not** auto-generated. The authoritative, complete set is whatever `credentialClients()` in `src/clients.js` returns (currently 17 credential clients, more than the 10 shown here); add a client there and treat this table as illustrative, not exhaustive.
 
 ## Example
 

@@ -75,7 +75,7 @@ export const OWASP_AGENTIC_MAP = {
   'infrastructure-security': 'ASI02', // Tool Misuse & Exploitation
   'instruction-effectiveness': 'ASI01', // Agent Goal Hijack
   'skill-coherence': 'ASI01',          // Agent Goal Hijack
-  'workflow-maturity': 'ASI01',        // Agent Goal Hijack — taxonomy misclassification causes goal drift
+  'workflow-maturity': 'ASI01',        // Agent Goal Hijack — orphan/ungraduated workflow artefacts bias goal execution
   'documentation': 'ASI02',            // Tool Misuse & Exploitation — undocumented check behavior
   'agent-output-schemas': 'ASI01',     // Agent Goal Hijack — undeclared JSON contract lets orchestrator-aggregated output drift silently
 };
