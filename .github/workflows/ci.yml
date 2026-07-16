@@ -44,12 +44,12 @@ jobs:
 
       # Dogfood: self-scan rigscore against its own repo with the committed
       # .rigscorerc.json (disables workspace-oriented checks that don't apply
-      # to an npm package). rigscore is a bare npm package, so only 9 of 21
-      # checks are applicable (weight 48/100) and the coverage ratio scales the
+      # to an npm package). rigscore is a bare npm package, so only 10 of 28
+      # checks are applicable (weight 46/100) and the coverage ratio scales the
       # score down — that is intended behavior, not a defect.
       #
       # Measured baseline on a pristine clone with a neutralised $HOME (what a
-      # runner sees): 39/100. Threshold 30 = baseline (39) minus a 9-point
+      # runner sees): 37/100. Threshold 30 = baseline (37) minus a 7-point
       # regression buffer. Reproduce locally with:
       #   HOME=$(mktemp -d) node bin/rigscore.js --no-cta --profile default .
       #

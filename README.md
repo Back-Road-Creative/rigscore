@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 27 checks — 13 scored plus 14 advisory. A hygiene score out of 100. Know where you stand before something breaks.
+One command. 28 checks — 13 scored plus 15 advisory. A hygiene score out of 100. Know where you stand before something breaks.
 
 > **Scope.** rigscore measures **configuration hygiene**, not runtime security. It inspects the files on disk — governance docs, MCP configs, Docker settings, skill files, permissions — and scores what those files *say*. It does not observe the running agent, intercept tool calls, or hash live MCP tool descriptions. It complements [Snyk Agent Scan](https://github.com/snyk/agent-scan) and [Semgrep](https://semgrep.dev); it does not replace them. See [known limits](#known-limits) for what rigscore does not catch.
 
@@ -13,7 +13,7 @@ npx github:Back-Road-Creative/rigscore
 ```
   ╭────────────────────────────────────────╮
   │                                        │
-  │        rigscore v2.0.0                 │
+  │        rigscore v2.1.0                 │
   │   AI Dev Environment Hygiene Check     │
   │                                        │
   ╰────────────────────────────────────────╯
@@ -95,9 +95,9 @@ rigscore isn't the only AI-agent config scanner. The April-2026 landscape has re
 
 Every check in rigscore's output carries an enforcement-grade label so you can see *how* each point was earned, not just how many. The label is display-only — it does not affect scoring.
 
-- **`[mechanical]`** — deterministic config inspection. Parses JSON/YAML/file state and compares to known-bad constants, file modes, or structural invariants. Cannot be gamed by wording. 15 of 27 checks.
-- **`[pattern]`** — regex or structural scan against file content. Secret signatures, Unicode codepoint classes, markdown structural patterns. Resistant to simple wording tricks but evadable by novel obfuscation. 6 of 27 checks.
-- **`[keyword]`** — presence of words or phrases in governance prose. These checks pass if the right words appear, which means a CLAUDE.md can keyword-stuff its way to green while substantively reversing intent. 6 of 27 checks — see [`THREAT-MODEL.md`](THREAT-MODEL.md) for the gameability gap and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for concrete bypasses.
+- **`[mechanical]`** — deterministic config inspection. Parses JSON/YAML/file state and compares to known-bad constants, file modes, or structural invariants. Cannot be gamed by wording. 15 of 28 checks.
+- **`[pattern]`** — regex or structural scan against file content. Secret signatures, Unicode codepoint classes, markdown structural patterns. Resistant to simple wording tricks but evadable by novel obfuscation. 7 of 28 checks.
+- **`[keyword]`** — presence of words or phrases in governance prose. These checks pass if the right words appear, which means a CLAUDE.md can keyword-stuff its way to green while substantively reversing intent. 6 of 28 checks — see [`THREAT-MODEL.md`](THREAT-MODEL.md) for the gameability gap and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for concrete bypasses.
 
 Reproduce the grade breakdown (grades are static per check, so this is config-independent):
 
@@ -105,7 +105,7 @@ Reproduce the grade breakdown (grades are static per check, so this is config-in
 node bin/rigscore.js --json . | jq -r '.results|group_by(.enforcementGrade)[]|"\(.[0].enforcementGrade): \(length)"'
 ```
 
-The 13-scored / 14-advisory split comes from the default weights in `src/constants.js`. Scan a directory with no `.rigscorerc.json` to see it un-skewed — rigscore's own rc file disables four checks, which zeroes their weight in a self-scan:
+The 13-scored / 15-advisory split comes from the default weights in `src/constants.js`. Scan a directory with no `.rigscorerc.json` to see it un-skewed — rigscore's own rc file disables four checks, which zeroes their weight in a self-scan:
 
 ```bash
 node bin/rigscore.js --json "$(mktemp -d)" \
@@ -174,7 +174,7 @@ npx github:Back-Road-Creative/rigscore --init-hook
 ```yaml
 repos:
   - repo: https://github.com/Back-Road-Creative/rigscore
-    rev: v2.0.0
+    rev: v2.1.0
     hooks:
       - id: rigscore
         # args: [--fail-under=80, --ci]   # optional: tune the gate
@@ -199,7 +199,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
 - **Docker image (GHCR).** The Docker Publish workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/back-road-creative/rigscore:<tag>` automatically on `v*.*.*` tag pushes. It is also callable via `workflow_dispatch` for manual and dry-run builds. Pull a published tag as `ghcr.io/back-road-creative/rigscore:<tag>`.
-- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action, [listed on the GitHub Marketplace](https://github.com/marketplace/actions/rigscore). Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.0.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published. Copy-paste job:
+- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action, [listed on the GitHub Marketplace](https://github.com/marketplace/actions/rigscore). Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.1.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published. Copy-paste job:
 
   ```yaml
   name: rigscore
@@ -212,7 +212,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
         security-events: write  # required for upload-sarif
       steps:
         - uses: actions/checkout@v4
-        - uses: Back-Road-Creative/rigscore@v2.0.0  # MUST be an exact vX.Y.Z tag — floating refs are rejected
+        - uses: Back-Road-Creative/rigscore@v2.1.0  # MUST be an exact vX.Y.Z tag — floating refs are rejected
           with:
             fail-under: '70'
             upload-sarif: true
@@ -582,6 +582,14 @@ Scoring uses an additive deduction model with moat-heavy weighting — AI-specif
 | Skill ↔ governance coherence | 0 | governance (advisory) |
 | Workflow maturity | 0 | governance (advisory) |
 | Documentation coverage | 0 | process (advisory) |
+| Agent output schemas | 0 | governance (advisory) |
+| Loop governance | 0 | process (advisory) |
+| Spec goals | 0 | governance (advisory) |
+| CI agent caps | 0 | process (advisory) |
+| Agent memory hygiene | 0 | governance (advisory) |
+| AI-use disclosure | 0 | governance (advisory) |
+| Sandbox posture | 0 | isolation (advisory) |
+| Semantic tool-description judge | 0 | supply-chain (advisory) |
 
 - **CRITICAL** findings zero out their sub-check entirely
 - **WARNING** findings deduct 15 points each (1 WARNING = 85, 2 = 70, 3 = 55...)
@@ -673,20 +681,20 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 - **Config-shape pinning only (not runtime tool descriptions).** rigscore hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). It does **not** hash the tool descriptions that a running MCP server advertises; doing so would require actually invoking servers (out of scope for offline mode). Snyk Agent Scan's Tool Pinning covers runtime description drift; rigscore covers the config-file rug-pull. See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use gitleaks or trufflehog.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
-- **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 27 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 39/100 in CI for this reason — only 11 of its own 27 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
+- **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 28 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 37/100 in CI for this reason — only 10 of its own 28 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
 
 ## Dogfooding
 
 rigscore runs on rigscore in CI. Transparency about what that score means:
 
-- **Self-score: 39/100 (Grade F).** This is the real score, not a vanity baseline. rigscore is an npm package, so only **11 of its 27 checks are applicable (weight 48/100)** — the rest legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. Reproduce the CI number locally with a neutralised `$HOME` (what a runner sees):
+- **Self-score: 37/100 (Grade F).** This is the real score, not a vanity baseline. rigscore is an npm package, so only **10 of its 28 checks are applicable (weight 46/100)** — the rest legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. Reproduce the CI number locally with a neutralised `$HOME` (what a runner sees):
 
   ```bash
   HOME=$(mktemp -d) node bin/rigscore.js --no-cta --profile default .
   ```
 
   If your project is seeing similar — see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for the diagnostic walk-through.
-- **CI threshold: `--fail-under 30`.** Calibrated to the measured baseline (39) with a 9-point regression buffer. The public default is 70 — the gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
+- **CI threshold: `--fail-under 30`.** Calibrated to the measured baseline (37) with a 7-point regression buffer. The public default is 70 — the gap is not a vanity choice, it reflects the project-shape reality above. A lower fail-under than the public default is normal for projects that don't exercise the full check surface; document yours the same way.
 - **`.rigscorerc.json` disables four checks** (`infrastructure-security`, `skill-coherence`, `workflow-maturity`, `agent-output-schemas`) that require workspace-oriented artifacts rigscore doesn't ship. These are per-check disables at the profile level, not ignore-rules on individual findings — the distinction matters when auditing the config.
 
 ## Roadmap
@@ -915,7 +923,7 @@ Plugins must export `id`, `name`, `category` (strings), and `run` (async functio
 Use the rigscore GitHub Action:
 
 ```yaml
-- uses: Back-Road-Creative/rigscore@v2.0.0
+- uses: Back-Road-Creative/rigscore@v2.1.0
   with:
     fail-under: 70
     upload-sarif: true
@@ -1077,12 +1085,12 @@ Weights are defined in `src/constants.js` WEIGHTS map (single source of truth). 
 
 A security tool with no verification story is its own theater problem. Every signed release ships with a Sigstore-backed build-provenance attestation, a CycloneDX SBOM, and a public bypass-test catalog. You should not have to trust the author — verify the artifact.
 
-The current signed pre-release is `v2.1.0-rc1`. All commands below reference it; substitute whatever tag you're auditing.
+The current signed release is `v2.1.0`. All commands below reference it; substitute whatever tag you're auditing.
 
 ### 1. Tag signature
 
 ```bash
-git verify-tag v2.1.0-rc1
+git verify-tag v2.1.0
 ```
 
 Tag signing is opt-in for maintainers. The authoritative provenance signal is the **build attestation** (next section), not the tag — the attestation is generated by GitHub Actions on a clean runner against a specific commit, which is a stronger claim than any local signing key.
@@ -1090,28 +1098,28 @@ Tag signing is opt-in for maintainers. The authoritative provenance signal is th
 ### 2. Provenance attestation (canonical)
 
 ```bash
-gh release download v2.1.0-rc1 --repo Back-Road-Creative/rigscore --pattern '*.tgz'
-gh attestation verify rigscore-2.0.0.tgz --owner Back-Road-Creative
+gh release download v2.1.0 --repo Back-Road-Creative/rigscore --pattern '*.tgz'
+gh attestation verify rigscore-2.1.0.tgz --owner Back-Road-Creative
 ```
 
 One-liner equivalent (downloads, verifies, cleans up):
 
 ```bash
-scripts/verify-release.sh v2.1.0-rc1
+scripts/verify-release.sh v2.1.0
 ```
 
-A green result means: this exact tarball was built by GitHub Actions on `Back-Road-Creative/rigscore`, at the commit pointed to by `v2.1.0-rc1`, by the workflow `.github/workflows/release-provenance.yml`, and signed via Sigstore keyless OIDC against the GitHub Actions identity. No long-lived signing keys are involved. The Rekor transparency log holds the entry; the certificate's signer identity binds the artifact to a specific workflow run.
+A green result means: this exact tarball was built by GitHub Actions on `Back-Road-Creative/rigscore`, at the commit pointed to by `v2.1.0`, by the workflow `.github/workflows/release-provenance.yml`, and signed via Sigstore keyless OIDC against the GitHub Actions identity. No long-lived signing keys are involved. The Rekor transparency log holds the entry; the certificate's signer identity binds the artifact to a specific workflow run.
 
 What this rules out: a maintainer cannot silently publish a tarball built on their laptop, swap a release asset post-hoc, or backdate a release. The signer identity in the attestation must match the workflow path on this repo.
 
-> **Note on tarball name:** the package version inside `package.json` is `2.0.0`; the release tag is `v2.1.0-rc1`. The tarball produced by `npm pack` is therefore `rigscore-2.0.0.tgz`. Use that filename for `gh attestation verify`.
+> **Note on tarball name:** the package version inside `package.json` is `2.1.0`, matching the release tag `v2.1.0`. The tarball produced by `npm pack` is therefore `rigscore-2.1.0.tgz`. Use that filename for `gh attestation verify`.
 
 ### 3. SBOM review
 
 The release bundles a CycloneDX 1.5 SBOM at `sbom.cdx.json`. Pull it directly:
 
 ```bash
-gh release download v2.1.0-rc1 --repo Back-Road-Creative/rigscore --pattern 'sbom.cdx.json'
+gh release download v2.1.0 --repo Back-Road-Creative/rigscore --pattern 'sbom.cdx.json'
 cat sbom.cdx.json | jq '.components[].name' | sort -u
 ```
 
@@ -1134,24 +1142,24 @@ You can rebuild the tarball locally and compare hashes:
 
 ```bash
 git clone https://github.com/Back-Road-Creative/rigscore.git
-cd rigscore && git checkout v2.1.0-rc1
+cd rigscore && git checkout v2.1.0
 nvm use 20      # match the Node version the release workflow used
 npm ci          # package-lock.json is the anchor
 npm pack
-sha256sum rigscore-2.0.0.tgz
+sha256sum rigscore-2.1.0.tgz
 ```
 
-For `v2.1.0-rc1`, the published tarball SHA256 is:
+For `v2.1.0`, the published tarball SHA256 is:
 
 ```
-326722160238a406e026abaac75169c84fe4c9781d3bfb39a20a624957c51da2  rigscore-2.0.0.tgz
+957718ac0aaaa1cdb31b0f9d54e762cca583845ad45373e3f3f6278ed6f6313f  rigscore-2.1.0.tgz
 ```
 
 Compare against the asset:
 
 ```bash
-gh release download v2.1.0-rc1 --repo Back-Road-Creative/rigscore --pattern '*.tgz'
-sha256sum rigscore-2.0.0.tgz
+gh release download v2.1.0 --repo Back-Road-Creative/rigscore --pattern '*.tgz'
+sha256sum rigscore-2.1.0.tgz
 ```
 
 **Caveats.** `npm pack` is reproducible across the same Node minor version when `package-lock.json` is committed (it is). Cross-minor or different `npm` versions can produce slightly different tar headers. If your local hash differs and the attestation in step 2 verifies, trust the attestation — it ties the bytes to the actual GitHub Actions build. The hash recipe is a belt-and-braces sanity check, not the primary signal.
@@ -1165,7 +1173,7 @@ We publish the cases rigscore intentionally does NOT catch:
 - [`test/injection-evasion.test.js`](test/injection-evasion.test.js) — prompt-injection patterns the unicode and skill-file checks do not flag.
 - [`test/ansi-injection.test.js`](test/ansi-injection.test.js) — ANSI-control-sequence injection in governance files.
 
-These tests are public so you can audit our limits. They lock the current behavior — a future PR that closes one of them deletes the corresponding `.skip` and adds the positive assertion. Do not assume rigscore catches anything that is not asserted in the test suite.
+These tests are public so you can audit our limits. They lock the current behavior — each asserts that a specific evasion is *not* caught, so a future PR that closes one of them flips its assertion from "not detected" to detected. Do not assume rigscore catches anything that is not asserted in the test suite.
 
 ### 6. Threat model
 
