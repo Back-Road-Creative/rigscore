@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../src/index.js';
+
+const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'rigscore.js');
+function runCli(args, opts = {}) {
+  return spawnSync('node', [BIN, ...args], {
+    encoding: 'utf-8', env: { ...process.env, NO_COLOR: '1' }, ...opts,
+  });
+}
 
 describe('parseArgs', () => {
   it('parses --fail-under', () => {
@@ -112,13 +122,17 @@ describe('parseArgs', () => {
     expect(parseArgs(['-y']).yes).toBe(true);
   });
 
-  it('unknown --flag is silently tolerated (no crash, no pollution)', () => {
+  it('unknown --flag is tolerated but surfaced as a warning (no crash, no pollution)', () => {
     // Forward-compat: CI scripts may pass through extra flags; rigscore
     // must not reject them. The bare flag should not become the cwd
     // (which would happen if `!arg.startsWith('-')` accidentally fired).
+    // It MUST still be surfaced — a typo like `--fail-unde` cannot silently
+    // gate at the default with nothing on stderr.
     const opts = parseArgs(['--no-such-flag', '--json']);
     expect(opts.json).toBe(true);
     expect(opts.cwd).toBe(null);
+    expect(opts.warnings.join('\n')).toMatch(/unknown flag --no-such-flag/);
+    expect(opts.argError).toBe(null);
   });
 
   it('bare positional becomes cwd; last positional wins', () => {
@@ -127,16 +141,55 @@ describe('parseArgs', () => {
     expect(opts.json).toBe(true);
   });
 
-  it('value-taking flag at the end of argv is tolerated (no crash)', () => {
-    // Matches the prior behavior: `--check` with no following value
-    // does not crash and does not set checkFilter to undefined.
+  it('value-taking flag at the end of argv is tolerated but warns (no crash)', () => {
+    // `--check` with no following value does not crash and does not set
+    // checkFilter to undefined, but it is surfaced as a warning now.
     const opts = parseArgs(['--json', '--check']);
     expect(opts.json).toBe(true);
     expect(opts.checkFilter).toBe(null);
+    expect(opts.warnings.join('\n')).toMatch(/--check expects a value/);
+    expect(opts.argError).toBe(null);
   });
 
   it('--ignore comma list with empty entries drops the empties', () => {
     const opts = parseArgs(['--ignore', 'env,,docker,']);
     expect(opts.ignore).toEqual(['env', 'docker']);
+  });
+
+  // H-unknown-flags — mis-parsed flags must not look like a clean scan.
+
+  it('valid flags produce no warnings and no argError', () => {
+    const opts = parseArgs(['--json', '--fail-under', '80', '.']);
+    expect(opts.warnings).toEqual([]);
+    expect(opts.argError).toBe(null);
+  });
+
+  it('a dangling safety flag (--fail-under with no value) is a FATAL argError, not a silent fallback', () => {
+    const opts = parseArgs(['--fail-under']);
+    expect(opts.argError).toMatch(/--fail-under requires a numeric value/);
+    // It must NOT quietly gate at the default threshold.
+    expect(opts.warnings).toEqual([]);
+  });
+
+  it('a typo of the safety flag (--fail-unde 90) is surfaced, never a silent default gate', () => {
+    const opts = parseArgs(['--fail-unde', '90', '.']);
+    expect(opts.warnings.join('\n')).toMatch(/unknown flag --fail-unde/);
+    expect(opts.argError).toBe(null);
+    // The gate stays at the default — but now it is not silent.
+    expect(opts.failUnder).toBe(70);
+  });
+});
+
+describe('run() surfaces argv problems (H-unknown-flags, end-to-end)', () => {
+  it('exits 2 with a clear stderr line on a dangling --fail-under (no silent gate)', () => {
+    const res = runCli(['--fail-under']);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/rigscore: --fail-under requires a numeric value/);
+    expect(res.stderr).not.toMatch(/^\s*at /m); // no Node stack trace
+  });
+
+  it('warns on stderr for an unknown flag while still running the scan', () => {
+    const res = runCli(['--totally-bogus-flag', '.']);
+    expect(res.stderr).toMatch(/rigscore: warning: unknown flag --totally-bogus-flag/);
   });
 });
