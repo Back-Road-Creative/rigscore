@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:fixture": "vitest run test/fixture-dogfood.test.js",
     "verify:docs": "node scripts/verify-docs.js",
+    "facts": "node scripts/generate-facts.js",
     "changelog": "node scripts/assemble-changelog.js"
   },
   "engines": {
