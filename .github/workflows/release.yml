@@ -102,6 +102,24 @@ jobs:
             --notes-file /tmp/release-notes.txt
           echo "Created release v${{ steps.pkg.outputs.version }}"
 
+      # Attach the machine-readable facts snapshot to the release. This is the
+      # authoritative fact set (version, date, check/scored/advisory counts,
+      # per-check {id,weight,category,grade}, enforcement-grade split,
+      # frameworks, exit codes, CLI flags) every downstream site surface —
+      # homepage count/version, JSON-LD softwareVersion, docs check tables — is
+      # rendered from. The headlessmode-post job regenerates the same fact set
+      # into data/rigscore.json; E4's verify-facts gate compares that file to
+      # THIS asset. Generated here, where npm ci already ran.
+      - name: Attach facts snapshot to release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          node scripts/generate-facts.js --out rigscore-facts.json
+          gh release upload "v${VERSION}" rigscore-facts.json \
+            --repo "${{ github.repository }}" --clobber
+
       # The v<version> tag `gh release create` just made was pushed with the
       # job's GITHUB_TOKEN, and GitHub does NOT re-trigger `push: tags`
       # workflows from a GITHUB_TOKEN-created tag (anti-recursion). So
@@ -187,6 +205,26 @@ jobs:
           fi
           echo "HEADLESSMODE_PAT valid — authenticated as ${login}."
 
+      # Check out the product repo at the released tag so the site post can run
+      # the facts generator against the EXACT released registry (not
+      # main-at-dispatch). generate-facts.js loads the check modules, which pull
+      # in the two runtime deps (chalk, yaml), so npm ci is required.
+      - name: Check out rigscore at the released tag
+        if: env.skip != 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Set up Node
+        if: env.skip != 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: env.skip != 'true'
+        run: npm ci
+
       - name: Generate headlessmode release post + docs page sync
         if: env.skip != 'true'
         env:
@@ -205,6 +243,17 @@ jobs:
           git clone "https://x-access-token:${GH_TOKEN}@github.com/Back-Road-Creative/headlessmode.git" /tmp/headlessmode
           cd /tmp/headlessmode
 
+          # Regenerate the site's product-facts data file from the live rigscore
+          # registry (checked out at the released tag in $GITHUB_WORKSPACE). The
+          # site renders its homepage count/version, JSON-LD softwareVersion and
+          # docs check tables FROM this file, so hand-patched counts/versions —
+          # and the fragile version regex that broke on U+2502 — structurally
+          # cease to exist: a release updates one JSON file and everything
+          # re-renders. generate-facts.js resolves the registry (and node_modules)
+          # from its own checkout dir, so cwd here only decides where --out lands.
+          mkdir -p data
+          node "${GITHUB_WORKSPACE}/scripts/generate-facts.js" --out data/rigscore.json
+
           # Write git log to temp file — avoids multiline shell argument issues
           printf '%s\n' "${RIGSCORE_CHANGELOG}" > /tmp/rigscore-git-log.txt
 
@@ -215,15 +264,17 @@ jobs:
             --prev-version "${PREV_VERSION}" \
             --git-log-file "/tmp/rigscore-git-log.txt"
 
-          # Patch docs page (content/docs.md) version string and date
+          # Patch content/docs.md release DATE only — the version string now
+          # renders from data/rigscore.json (E2 shortcodes), so the version-regex
+          # patch is retired; the site script only stamps the date.
           node scripts/patch-rigscore-toolpage.js --version "${VERSION}"
 
           BRANCH="rigscore-release/v${VERSION}"
           git config user.name "rigscore-bot"
           git config user.email "rigscore-bot@headlessmode.com"
           git checkout -b "${BRANCH}"
-          git add content/releases/ content/docs.md
-          git commit -m "release: rigscore v${VERSION} — release post + docs page sync"
+          git add content/releases/ content/docs.md data/rigscore.json
+          git commit -m "release: rigscore v${VERSION} — facts data + release post + docs date"
           git push origin "${BRANCH}"
 
           gh pr create \
