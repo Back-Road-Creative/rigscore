@@ -270,6 +270,46 @@ describe('batch-3 client additions (Kiro, Qwen Code, Crush)', () => {
   });
 });
 
+describe('batch-4 client additions (OpenClaw, Antigravity)', () => {
+  it('registers the two new clients with unique ids', () => {
+    for (const id of ['openclaw', 'antigravity']) {
+      expect(CLIENTS.find(c => c.id === id), id).toBeTruthy();
+    }
+  });
+
+  it('OpenClaw: home-only ~/.openclaw/openclaw.json, nested mcp.servers key, home creds, no pin', () => {
+    const mcp = mcpConfigPaths(CWD, HOME);
+    const net = networkMcpPaths(CWD, HOME);
+    // Sole user config lives under $HOME (base:home) — no committed project file exists.
+    expect(mcp).toContain(path.join(HOME, '.openclaw/openclaw.json'));
+    expect(net).toContain(path.join(HOME, '.openclaw/openclaw.json'));
+    // Home-only => never pinned as a committed rug-pull surface.
+    expect(repoMcpRelPaths()).not.toContain('.openclaw/openclaw.json');
+    // OpenClaw NESTS its servers two levels deep under `mcp.servers`, not a flat `mcpServers`.
+    const servers = { s: { command: 'node', env: { TOKEN: 'x' } } };
+    const p = path.join(HOME, '.openclaw/openclaw.json');
+    expect(mcpServersIn(p, { mcp: { servers } })).toEqual(servers);
+    expect(mcpServersIn(p, { mcpServers: servers })).toEqual({});
+    // Its per-server env map can hold plaintext secrets.
+    expect(credentialClients().some(c => c.dir === '.openclaw' && c.file === 'openclaw.json' && c.name)).toBe(true);
+  });
+
+  it('Antigravity: home-only ~/.gemini/antigravity/mcp_config.json (distinct from Gemini), AGENTS.md, creds', () => {
+    expect(governanceFiles()).toContain('AGENTS.md');
+    const mcp = mcpConfigPaths(CWD, HOME);
+    // Global config under ~/.gemini/antigravity — a different file from Gemini CLI's settings.json.
+    expect(mcp).toContain(path.join(HOME, '.gemini/antigravity/mcp_config.json'));
+    expect(networkMcpPaths(CWD, HOME)).toContain(path.join(HOME, '.gemini/antigravity/mcp_config.json'));
+    // Home-only => not pinned.
+    expect(repoMcpRelPaths()).not.toContain('.gemini/antigravity/mcp_config.json');
+    // Default key — Antigravity stores servers under `mcpServers`.
+    const servers = { s: { command: 'node' } };
+    expect(mcpServersIn(path.join(HOME, '.gemini/antigravity/mcp_config.json'), { mcpServers: servers })).toEqual(servers);
+    // Its env maps can hold plaintext secrets.
+    expect(credentialClients().some(c => c.dir === '.gemini/antigravity' && c.file === 'mcp_config.json' && c.name)).toBe(true);
+  });
+});
+
 describe('mcpServersIn', () => {
   it('reads mcpServers by default and opencode\'s "mcp" key', () => {
     const servers = { a: { command: 'x' } };
