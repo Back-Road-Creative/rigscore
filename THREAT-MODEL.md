@@ -31,7 +31,7 @@ Advisory-weight (scored 0, surfaced only): `windows-security`, `network-exposure
 
 ## 2. Trust boundaries
 
-- **Local filesystem only** in default mode. rigscore reads files under the scan target and, across a registry of 24 known agent clients (21 with MCP config paths, 18 holding 19 credential files), the corresponding `$HOME` paths (e.g. `~/.claude/settings.json`, `~/.claude/skills/`). It writes `.rigscore-state.json` into the scan target.
+- **Local filesystem only** in default mode. rigscore reads files under the scan target and, across a registry of 29 known agent clients (22 with MCP config paths, 19 holding 20 credential files), the corresponding `$HOME` paths (e.g. `~/.claude/settings.json`, `~/.claude/skills/`). It writes `.rigscore-state.json` into the scan target.
 - **No network unless `--online`.** The online opt-in reaches the npm registry and the MCP registry for typosquat augmentation, plus — if `sites` is configured — HTTP(S) probes of those user-listed hosts via [`site-security`](src/checks/site-security.js). It does not spawn MCP servers and does not exfiltrate.
 - **No LLM calls unless `--semantic`.** Default mode calls no LLM API. The `--semantic` opt-in shells out to a local `claude -p` process (see [`src/checks/semantic-tools.js:97`](src/checks/semantic-tools.js)) to run an LLM judge over MCP tool descriptions; it uses the operator's own installed Claude CLI, not a rigscore-hosted endpoint.
 - **Assumes a user-controlled machine.** rigscore does not sandbox the files it reads. A maliciously crafted `package.json` that triggers a parser exploit in `JSON.parse` is on Node, not on rigscore.
