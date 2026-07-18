@@ -3,6 +3,11 @@ coverage/
 .DS_Store
 *.log
 
+# Local working data — audit reports, plans, health reports, and wave
+# PR/commit scratch. Never commit to this public repo: prior contents leaked
+# private workflow strings and third-party tool mentions (removed 2026-07-18).
+.data/
+
 # Local environment files at repo root — never commit. Anchored with a
 # leading `/` so the pattern does NOT cascade to `test/fixtures/**/.env`,
 # which are intentional fixtures the env-exposure check needs to see as
