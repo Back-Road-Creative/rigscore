@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import crypto from 'node:crypto';
 import chalk from 'chalk';
 import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { resolveWeights } from './config.js';
@@ -40,7 +41,7 @@ function safeField(value) {
   return stripAnsi(value);
 }
 
-function getGrade(score) {
+export function getGrade(score) {
   if (score >= 90) return 'A';
   if (score >= 75) return 'B';
   if (score >= 60) return 'C';
@@ -48,8 +49,18 @@ function getGrade(score) {
   return 'F';
 }
 
-function getRiskProfile(results) {
-  const applicable = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE);
+/**
+ * Hardening tier (Minimal / Standard / Hardened) from the passing ratio of the
+ * SCORE-BEARING applicable checks. Weight-0 advisory checks are excluded — they
+ * never move the score, and letting their N/A drift move the tier is the same
+ * class of bug the scorer fixed by dropping weight-0 checks (scoring.js). Pass
+ * resolved weights (config-aware) where available; falls back to static WEIGHTS.
+ */
+export function getRiskProfile(results, weights = WEIGHTS) {
+  const w = weights || WEIGHTS;
+  const applicable = results.filter(
+    (r) => r.score !== NOT_APPLICABLE_SCORE && (w[r.id] || 0) > 0,
+  );
   const applicableCount = applicable.length;
   const passingCount = applicable.filter((r) => r.score >= 70).length;
 
@@ -160,11 +171,38 @@ export function formatSuppressedSummary(suppressed) {
   return `Suppressed ${count} ${noun} via config/--ignore${idList}`;
 }
 
+/**
+ * Summary-only terminal output for `--quiet` (pre-commit / CI log). Two lines:
+ * the score/grade/posture/practice headline and the finding-severity counts.
+ * Nothing narrows the default report otherwise — only `--verbose` widens it.
+ */
+function formatQuietSummary(result) {
+  const { score, results, config } = result;
+  if (result.notApplicable === true) {
+    return `  ${chalk.dim('rigscore: n/a — nothing to scan (no AI-tooling surface, no findings).')}`;
+  }
+  const posture = getRiskProfile(results, displayWeights(config));
+  const practice = calculatePracticeScore(results);
+  const practiceStr = practice === null ? 'n/a' : `${practice}/100`;
+  const counts = { critical: 0, warning: 0, info: 0 };
+  for (const r of results) {
+    for (const f of r.findings) {
+      if (f.severity in counts) counts[f.severity] += 1;
+    }
+  }
+  const head = getScoreColor(score)(`rigscore ${score}/100 (Grade ${getGrade(score)})`);
+  return [
+    `  ${head}  ${getRiskColor(posture)(`Posture: ${posture}`)}  ${chalk.dim(`Practice: ${practiceStr}`)}`,
+    `  ${chalk.red(`critical ${counts.critical}`)} · ${chalk.yellow(`warning ${counts.warning}`)} · ${chalk.blue(`info ${counts.info}`)}`,
+  ].join('\n');
+}
+
 export function formatTerminal(result, cwd, options = {}) {
   const { score, results, config } = result;
   // `--check` selected only checks that are N/A here: there is nothing to
   // score. Say so — never invent a 0, which renders as Grade F.
   const notApplicable = result.notApplicable === true;
+  if (options.quiet) return formatQuietSummary(result);
   const grade = getGrade(score);
   const colorFn = getScoreColor(score);
   const lines = [];
@@ -224,10 +262,12 @@ export function formatTerminal(result, cwd, options = {}) {
     ? chalk.dim('HYGIENE SCORE: n/a')
     : colorFn(`HYGIENE SCORE: ${score}/100`);
   const gradeStr = notApplicable ? chalk.dim('Grade: n/a') : colorFn(`Grade: ${grade}`);
-  // Risk profile
-  const riskProfile = getRiskProfile(results);
+  // Hardening tier. Labelled "Posture:" not "Risk:" — the buckets (Minimal /
+  // Standard / Hardened) are hardening tiers, so "Risk: Minimal" beside "Grade: F"
+  // read backwards (a minimal-hardening repo is high risk, not low).
+  const riskProfile = getRiskProfile(results, displayWeights(config));
   const riskColor = getRiskColor(riskProfile);
-  const riskStr = riskColor(`Risk: ${riskProfile}`);
+  const riskStr = notApplicable ? chalk.dim('Posture: n/a') : riskColor(`Posture: ${riskProfile}`);
 
   // Second axis. `null` = no practice surface at all — print n/a, never 0/100:
   // a zero would libel every repo that simply isn't in scope for these checks.
@@ -454,15 +494,165 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
 }
 
 export function formatJson(result) {
-  return JSON.stringify(result, null, 2);
+  // Enrich with the A–F grade + hardening tier the terminal shows, so a JSON
+  // consumer (a monorepo dashboard, a CI gate) does not reimplement the
+  // thresholds. Additive — every existing key is preserved. Both the single-
+  // project shape (`results[]`) and the recursive shape (`projects[]`) are handled.
+  const enriched = { ...result };
+  if (typeof result.score === 'number' && result.notApplicable !== true) {
+    enriched.grade = getGrade(result.score);
+  } else if (result.notApplicable === true) {
+    enriched.grade = 'n/a';
+  }
+  if (Array.isArray(result.results)) {
+    enriched.riskProfile = getRiskProfile(result.results, displayWeights(result.config));
+  }
+  if (Array.isArray(result.projects)) {
+    enriched.projects = result.projects.map((p) => ({
+      ...p,
+      grade: p.notApplicable ? 'n/a'
+        : (typeof p.score === 'number' ? getGrade(p.score) : undefined),
+      riskProfile: Array.isArray(p.results)
+        ? getRiskProfile(p.results, displayWeights(p.config)) : undefined,
+    }));
+  }
+  return JSON.stringify(enriched, null, 2);
 }
 
-export function formatBadge(result) {
+const BADGE_COLOR_HEX = {
+  brightgreen: '#4c1', green: '#97ca00', blue: '#007ec6',
+  yellow: '#dfb317', red: '#e05d44', lightgrey: '#9f9f9f',
+};
+
+function badgeColorName(score) {
+  return score >= 90 ? 'brightgreen' : score >= 75 ? 'green'
+    : score >= 60 ? 'blue' : score >= 40 ? 'yellow' : 'red';
+}
+
+/** Minimal self-contained flat SVG badge (no external assets). */
+function renderBadgeSvg(label, message, colorName) {
+  const hex = BADGE_COLOR_HEX[colorName] || BADGE_COLOR_HEX.lightgrey;
+  const lw = Math.round(label.length * 6.5) + 10;
+  const mw = Math.round(message.length * 6.5) + 10;
+  const total = lw + mw;
+  const esc = (s) => escapeXml(s);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${total}" height="20" role="img" aria-label="${esc(label)}: ${esc(message)}">`
+    + `<linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>`
+    + `<rect rx="3" width="${total}" height="20" fill="#555"/>`
+    + `<rect rx="3" x="${lw}" width="${mw}" height="20" fill="${hex}"/>`
+    + `<rect rx="3" width="${total}" height="20" fill="url(#s)"/>`
+    + `<g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="11">`
+    + `<text x="${lw / 2}" y="14">${esc(label)}</text>`
+    + `<text x="${lw + mw / 2}" y="14">${esc(message)}</text>`
+    + `</g></svg>`;
+}
+
+/**
+ * Score badge. `options.format`:
+ *   - `markdown` (default) — the static shields.io image snippet (unchanged).
+ *   - `endpoint` — shields.io Endpoint Badge JSON. Host it at a public URL and
+ *      reference `https://img.shields.io/endpoint?url=<raw-json-url>` for a badge
+ *      that auto-updates as the committed JSON changes.
+ *   - `svg` — a self-contained SVG (no network) to commit and embed directly.
+ */
+export function formatBadge(result, options = {}) {
+  const format = options.format || 'markdown';
   const { score } = result;
-  const color = score >= 90 ? 'brightgreen' : score >= 75 ? 'green' : score >= 60 ? 'blue' : score >= 40 ? 'yellow' : 'red';
-  // Nothing to score → grey n/a badge; a red `0/100` would libel a repo that
-  // simply has no surface for the selected check.
-  const label = result.notApplicable === true || score === null ? 'n%2Fa-lightgrey' : `${score}%2F100-${color}`;
+  const na = result.notApplicable === true || score === null;
+  const colorName = na ? 'lightgrey' : badgeColorName(score);
+  const message = na ? 'n/a' : `${score}/100`;
+
+  if (format === 'endpoint') {
+    return JSON.stringify({ schemaVersion: 1, label: 'rigscore', message, color: colorName }, null, 2);
+  }
+  if (format === 'svg') {
+    return renderBadgeSvg('rigscore', message, colorName);
+  }
+  // markdown (default) — unchanged shields.io static badge.
+  const label = na ? 'n%2Fa-lightgrey' : `${score}%2F100-${badgeColorName(score)}`;
   const url = `https://img.shields.io/badge/rigscore-${label}?cacheSeconds=86400`;
   return `![rigscore](${url})\n\nGenerated by [rigscore](https://github.com/Back-Road-Creative/rigscore)`;
+}
+
+/** Escape the five XML predefined entities for safe attribute/text embedding. */
+function escapeXml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+// Best-effort file path from a finding's text — feeds the JUnit/CodeClimate
+// `location`. Kept minimal and local (sarif.js has its own copy) to avoid a
+// reporter⇄sarif circular import.
+function findingPath(finding) {
+  const text = `${finding.title || ''} ${finding.detail || ''}`;
+  const m = text.match(/(?:\bin|Found in)\s+([.\w][\w./-]*\.\w+)/i)
+    || text.match(/^([.\w][\w./-]*\.\w+)\s+(?:is|has|file|not)/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * JUnit XML — one <testcase> per check (Jenkins / Azure Pipelines / GitLab
+ * ingest it natively). An N/A check is `<skipped/>`; a check carrying any
+ * critical/warning finding is a `<failure>` whose body lists them.
+ */
+export function formatJUnit(result) {
+  const results = result.results || [];
+  const cases = [];
+  let failures = 0;
+  let skipped = 0;
+  for (const r of results) {
+    const cls = `rigscore.${r.category || 'check'}`;
+    if (r.score === NOT_APPLICABLE_SCORE) {
+      skipped += 1;
+      cases.push(`    <testcase name="${escapeXml(r.id)}" classname="${escapeXml(cls)}"><skipped/></testcase>`);
+      continue;
+    }
+    const bad = (r.findings || []).filter((f) => f.severity === 'critical' || f.severity === 'warning');
+    if (bad.length > 0) {
+      failures += 1;
+      const body = bad.map((f) => {
+        const detail = f.detail ? `: ${f.detail}` : '';
+        return `      <failure message="${escapeXml(f.title || 'finding')}">${escapeXml((f.title || '') + detail)}</failure>`;
+      }).join('\n');
+      cases.push(`    <testcase name="${escapeXml(r.id)}" classname="${escapeXml(cls)}">\n${body}\n    </testcase>`);
+    } else {
+      cases.push(`    <testcase name="${escapeXml(r.id)}" classname="${escapeXml(cls)}"/>`);
+    }
+  }
+  const tests = results.length;
+  return '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + `<testsuites name="rigscore" tests="${tests}" failures="${failures}" skipped="${skipped}">\n`
+    + `  <testsuite name="rigscore" tests="${tests}" failures="${failures}" skipped="${skipped}">\n`
+    + `${cases.join('\n')}\n`
+    + '  </testsuite>\n</testsuites>';
+}
+
+const CODECLIMATE_SEVERITY = { critical: 'critical', warning: 'major', info: 'info' };
+
+/**
+ * GitLab Code Quality report (CodeClimate JSON). One issue per critical/warning/
+ * info finding; pass/skipped findings are omitted. `fingerprint` is a stable hash
+ * so GitLab can track an issue across pipelines.
+ */
+export function formatCodeClimate(result) {
+  const issues = [];
+  for (const r of result.results || []) {
+    for (const f of r.findings || []) {
+      const severity = CODECLIMATE_SEVERITY[f.severity];
+      if (!severity) continue; // skip pass/skipped
+      const path = findingPath(f) || r.id;
+      const description = f.detail ? `${f.title}: ${f.detail}` : (f.title || r.name);
+      const fingerprint = crypto.createHash('sha256')
+        .update(`${f.findingId || f.title || r.id}|${path}`).digest('hex').slice(0, 40);
+      issues.push({
+        description,
+        check_name: r.id,
+        fingerprint,
+        severity,
+        location: { path, lines: { begin: 1 } },
+      });
+    }
+  }
+  return JSON.stringify(issues, null, 2);
 }

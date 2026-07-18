@@ -120,6 +120,38 @@ export function calculateOverallScore(results, customWeights, options = {}) {
   return score;
 }
 
+// AI-tooling surface checks. If NONE is applicable, the dir has no agent-config
+// surface — so a sub-100 headline is pure coverage-scaling, not a verdict.
+const AI_SURFACE_CHECK_IDS = new Set([
+  'governance-docs', 'skill-files', 'mcp-config', 'coherence', 'claude-settings',
+]);
+
+// Checks that apply to ANY directory (they scan for the presence/absence of
+// secret leaks and file-permission problems, so they never go N/A). Their being
+// applicable does NOT mean the dir has a scannable surface — an empty dir still
+// runs them. Any OTHER weight-bearing check that applied means a real artifact
+// (a Dockerfile, git hooks, source secrets …) was actually scanned.
+const ALWAYS_ON_CHECK_IDS = new Set(['env-exposure', 'permissions-hygiene']);
+
+/**
+ * True for a surface-free directory: no AI-tooling surface, ONLY the always-on
+ * baseline checks applied, and every one of them scored a perfect 100. There, the
+ * only reason the weighted score sits below 100 is coverage scaling on an empty
+ * repo — reporting "12/100 Grade F" libels it. If any non-baseline check applied
+ * (a Dockerfile was scanned) OR any applicable check found something, there IS a
+ * verdict to report, so we return the honest score instead.
+ */
+function isNothingToScan(results, weights) {
+  const w = weights || WEIGHTS;
+  if (results.some((r) => AI_SURFACE_CHECK_IDS.has(r.id) && r.score !== NOT_APPLICABLE_SCORE)) {
+    return false;
+  }
+  const scoring = results.filter((r) => r.score !== NOT_APPLICABLE_SCORE && (w[r.id] || 0) > 0);
+  if (scoring.length === 0) return false;
+  if (scoring.some((r) => !ALWAYS_ON_CHECK_IDS.has(r.id))) return false;
+  return scoring.every((r) => r.score === 100);
+}
+
 /**
  * THE single place a scan's headline score is computed; scanner and CLI both
  * route through it. Returns `{ score, notApplicable }`. Under `--check` the
@@ -127,9 +159,15 @@ export function calculateOverallScore(results, customWeights, options = {}) {
  * selected check is N/A there is nothing to average — `notApplicable`, `score:
  * null`, never a fabricated 0 (which rendered as 0/100 Grade F exit 1). An
  * unknown/typo'd `--check` id (no check matched) keeps its red.
+ *
+ * A surface-free dir (no AI surface, every scoring check perfect) also returns
+ * `notApplicable` — "nothing to scan" is the honest answer, not "12/100 Grade F".
  */
 export function scoreScan(results, weights, checkFilter) {
   if (!checkFilter) {
+    if (isNothingToScan(results, weights)) {
+      return { score: null, notApplicable: true, nothingToScan: true };
+    }
     return { score: calculateOverallScore(results, weights), notApplicable: false };
   }
   if (results.length === 0) return { score: 0, notApplicable: false };
