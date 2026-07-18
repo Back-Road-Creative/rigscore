@@ -23,7 +23,7 @@ All checks are pure functions of the local filesystem. Default mode makes zero n
 | Skill-file prompt injection, shell-exec lures, broad-tool auto-approval language, base64 payloads, homoglyph / zero-width evasion | [`src/checks/skill-files.js`](src/checks/skill-files.js) | Regex catalog + Unicode normalization pass. |
 | Claude Code `settings.json` (shell allowlists, hook coverage, dangerous flags) | [`src/checks/claude-settings.js`](src/checks/claude-settings.js) | JSON parse + rule table. |
 | Secret exposure in source, env files, credential stores | [`src/checks/deep-secrets.js`](src/checks/deep-secrets.js), [`src/checks/env-exposure.js`](src/checks/env-exposure.js), [`src/checks/credential-storage.js`](src/checks/credential-storage.js) | High-entropy regex + known-provider prefix patterns. |
-| Git hook presence, executability, no-op detection, secret-scan integration | [`src/checks/git-hooks.js`](src/checks/git-hooks.js) | File existence, mode bits, regex scan for "substance" keywords (`gitleaks`, `trufflehog`, `lint`, `test`, etc.). |
+| Git hook presence, executability, no-op detection, secret-scan integration | [`src/checks/git-hooks.js`](src/checks/git-hooks.js) | File existence, mode bits, regex scan for "substance" keywords (`lint`, `test`, secret-scan tokens, etc.). |
 | Skill-file Unicode steganography | [`src/checks/unicode-steganography.js`](src/checks/unicode-steganography.js) | Codepoint class scan (zero-width, bidi-override, tag chars). |
 | File permissions hygiene | [`src/checks/permissions-hygiene.js`](src/checks/permissions-hygiene.js) | `stat` mode bits on governance files. |
 
@@ -78,7 +78,7 @@ Mitigation path is Stream A of the verifiability campaign: signed releases, SBOM
 
 ### 3.5 Obfuscated bash in git hooks
 
-[`src/checks/git-hooks.js`](src/checks/git-hooks.js) decides whether a hook "has substance" by regex-matching keywords like `gitleaks`, `lint`, `test`, `shellcheck`. A hook built from base64-decoded shell (`eval "$(echo <b64> | base64 -d)"`), from positional-parameter tricks (`${!1}`), or from a wrapper that `source`s a separate file in `.git/hooks/`, will pass the substance filter if the wrapper happens to contain any keyword — or fail with only a low-severity info finding if it contains none. rigscore does not tokenize bash, does not trace `source`/`.` directives, and does not flag entropy anomalies in hook content.
+[`src/checks/git-hooks.js`](src/checks/git-hooks.js) decides whether a hook "has substance" by regex-matching keywords like `lint`, `test`, and secret-scan / shell-lint tokens. A hook built from base64-decoded shell (`eval "$(echo <b64> | base64 -d)"`), from positional-parameter tricks (`${!1}`), or from a wrapper that `source`s a separate file in `.git/hooks/`, will pass the substance filter if the wrapper happens to contain any keyword — or fail with only a low-severity info finding if it contains none. rigscore does not tokenize bash, does not trace `source`/`.` directives, and does not flag entropy anomalies in hook content.
 
 **Test coverage:** no characterization test exists for obfuscated-but-keyword-present hooks. `# TODO(stream-E): characterization test needed`.
 
@@ -108,11 +108,11 @@ No test covers this — it is a design property, not a check.
 
 ## 5. If you need coverage rigscore doesn't provide
 
-- **Live MCP tool-description pinning:** [Snyk Agent Scan](https://github.com/snyk/agent-scan) connects to running MCP servers and retrieves their tool descriptions for inspection.
-- **LLM-judge semantic review layer:** [Anthropic's claude-code-security-review](https://github.com/anthropics/claude-code-security-review) and the LLM-as-judge analyzers in [Cisco AI Defense skill-scanner](https://github.com/cisco-ai-defense/skill-scanner) provide an adversarial LLM pass over governance docs and skill files.
-- **Code SAST (taint analysis, dataflow):** [Semgrep](https://semgrep.dev/) — rigscore does not reason about source-code vulnerabilities.
-- **Git-history secret scanning:** [gitleaks](https://github.com/gitleaks/gitleaks) — rigscore scans the working tree, not git history.
-- **SBOM / dependency vulnerability:** [Trivy](https://trivy.dev/), [osv-scanner](https://osv.dev/) — rigscore publishes its own SBOM but does not scan yours.
+- **Live MCP tool-description pinning:** a live MCP introspection scanner connects to running MCP servers and retrieves their tool descriptions for inspection.
+- **LLM-judge semantic review layer:** an adversarial LLM-judge pass over governance docs and skill files flags reversals and novel injection that keyword matching misses.
+- **Code SAST (taint analysis, dataflow):** source-level SAST — rigscore does not reason about source-code vulnerabilities.
+- **Git-history secret scanning:** a git-history secret scanner — rigscore scans the working tree, not git history.
+- **SBOM / dependency vulnerability:** a dependency vulnerability scanner — rigscore publishes its own SBOM but does not scan yours.
 
 rigscore is complementary to these tools. It closes the "did you configure it safely in the first place" gap that SAST and runtime scanners assume was handled upstream.
 
