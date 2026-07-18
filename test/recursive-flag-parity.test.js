@@ -16,9 +16,10 @@ function runCli(args, opts = {}) {
   });
 }
 
-// Regression: before this fix, --ignore / --fix / --baseline / --badge / --verbose
-// were silently no-ops when combined with --recursive because their handler blocks
-// lived in the non-recursive `else` branch only.
+// Regression: before this fix, --ignore / --fix / --baseline / --verbose were
+// silently no-ops when combined with --recursive because their handler blocks
+// lived in the non-recursive `else` branch only. (--badge is now SUPPORTED in
+// recursive mode — it badges the monorepo average — see the positive test below.)
 describe('recursive-mode flag parity', () => {
   let root;
   let projDir;
@@ -34,7 +35,7 @@ describe('recursive-mode flag parity', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  for (const flag of ['--fix', '--baseline', '--badge']) {
+  for (const flag of ['--fix', '--baseline', '--junit', '--code-quality']) {
     it(`rejects ${flag} in --recursive mode with stderr + exit 2`, () => {
       const args = ['--recursive', root];
       // --baseline takes a path arg
@@ -46,6 +47,13 @@ describe('recursive-mode flag parity', () => {
       expect(res.stderr).toMatch(/not supported in --recursive mode/);
     });
   }
+
+  it('--badge IS supported in --recursive mode (badges the average score)', () => {
+    const res = runCli(['--badge', '--recursive', root]);
+    expect(res.status).not.toBe(2);
+    expect(res.stderr).not.toMatch(/not supported in --recursive mode/);
+    expect(res.stdout).toContain('shields.io');
+  });
 
   it('--ignore actually suppresses findings in --recursive mode', () => {
     // Run twice: once with --ignore using a pattern that matches all findings,

@@ -1,7 +1,16 @@
 import { createRequire } from 'node:module';
-import { OWASP_AGENTIC_MAP } from './constants.js';
+import { OWASP_AGENTIC_MAP, OWASP_MCP_MAP, AGENTIC_SKILLS_MAP } from './constants.js';
 import { FINDING_ID_RENAMES } from './findings.js';
-import { stripAnsi } from './reporter.js';
+import { stripAnsi, getGrade, getRiskProfile } from './reporter.js';
+
+// GitHub code scanning reads a numeric `security-severity` (CVSS-like 0.0–10.0)
+// from a rule's property bag to bucket alerts into critical/high/medium/low.
+// rigscore has no CVSS, so map our finding severities onto representative bands.
+const SECURITY_SEVERITY = {
+  critical: '9.0',
+  warning: '5.5',
+  info: '2.0',
+};
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
@@ -139,6 +148,13 @@ export function formatSarif(result) {
       const tags = [];
       const owasp = OWASP_AGENTIC_MAP[r.id];
       if (owasp) tags.push(`owasp-agentic:${owasp}`);
+      // Extend (do not duplicate) the framework tags: OWASP MCP Top 10 for checks
+      // with an MCP nexus, and the OWASP Agentic-Skills Top 10 (Incubator) for the
+      // skills surface. A SARIF consumer can filter alerts by any of the three.
+      const owaspMcp = OWASP_MCP_MAP[r.id];
+      if (owaspMcp) tags.push(`owasp-mcp:${owaspMcp}`);
+      const agenticSkills = AGENTIC_SKILLS_MAP[r.id];
+      if (agenticSkills) tags.push(`owasp-agentic-skills:${agenticSkills}`);
       tags.push(`category:${r.category}`);
 
       const location = {
@@ -171,6 +187,11 @@ export function formatSarif(result) {
           shortDescription: { text: safeTitle || r.name },
           defaultConfiguration: { level: 'warning' },
         };
+        // `security-severity` (§ GitHub code-scanning extension) buckets the alert
+        // in the Security tab. Rule-level per SARIF; the first finding that mints a
+        // ruleId sets its band from that finding's severity.
+        const securitySeverity = SECURITY_SEVERITY[finding.severity];
+        if (securitySeverity) rule.properties = { 'security-severity': securitySeverity };
         // `learnMore` is a constant doc URL per finding class, so it is genuinely
         // rule-level: `helpUri` (§3.49.12) is a reportingDescriptor property and
         // never a result property. GitHub code scanning does not render helpUri,
@@ -232,6 +253,19 @@ export function formatSarif(result) {
     results: sarifResults,
   };
 
+  // Headline score/grade/posture as run-level properties, so a SARIF consumer
+  // reads the same A–F grade and hardening tier the terminal shows instead of
+  // reimplementing the thresholds. Score may be absent (formatSarifMulti passes
+  // per-project scores; a bare `{results}` call has none) — emit what we have.
+  run.properties = {};
+  if (typeof result.score === 'number') {
+    run.properties.score = result.score;
+    run.properties.grade = getGrade(result.score);
+  } else if (result.notApplicable === true) {
+    run.properties.grade = 'n/a';
+  }
+  run.properties.riskProfile = getRiskProfile(results);
+
   // Suppression transparency: record how many findings config/--ignore muted,
   // and which ids, as a run-level property (SARIF §3.14.36 property bag). The
   // dropped findings are deliberately NOT resurrected into `run.results` — a
@@ -239,10 +273,8 @@ export function formatSarif(result) {
   // finding is visible to SARIF consumers, not only in a .rigscorerc.json diff.
   const suppressed = result.suppressed;
   if (suppressed && suppressed.count > 0) {
-    run.properties = {
-      suppressedCount: suppressed.count,
-      suppressedIds: suppressed.ids,
-    };
+    run.properties.suppressedCount = suppressed.count;
+    run.properties.suppressedIds = suppressed.ids;
   }
 
   return {
@@ -264,7 +296,12 @@ export function formatSarifMulti(projects) {
     // Carry that project's own mute summary through, so `suppressedCount` /
     // `suppressedIds` are disclosed per run. Dropping it here is what hid a
     // monorepo's `suppress:` entries from every SARIF consumer.
-    const single = formatSarif({ results: project.results, suppressed: project.suppressed });
+    const single = formatSarif({
+      results: project.results,
+      suppressed: project.suppressed,
+      score: project.score,
+      notApplicable: project.notApplicable,
+    });
     const run = single.runs[0];
     // Tag the run with the project path
     run.automationDetails = { id: project.path };

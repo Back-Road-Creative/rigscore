@@ -110,8 +110,12 @@ describe('SARIF and JSON record suppression', () => {
     expect(sarif.runs[0].results.map((r) => r.ruleId)).not.toContain('mcp-config/broad-filesystem-access');
   });
 
-  it('SARIF omits the property when nothing was suppressed', () => {
-    expect(formatSarif(mockResult()).runs[0].properties).toBeUndefined();
+  it('SARIF omits the suppression keys when nothing was suppressed', () => {
+    // run.properties now always carries grade/riskProfile (RS-14); only the
+    // suppression-specific keys are absent when nothing was muted.
+    const props = formatSarif(mockResult()).runs[0].properties;
+    expect(props.suppressedCount).toBeUndefined();
+    expect(props.suppressedIds).toBeUndefined();
   });
 
   it('JSON includes a suppressed summary field', () => {

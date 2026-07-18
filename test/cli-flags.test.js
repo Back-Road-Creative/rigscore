@@ -110,10 +110,12 @@ describe('parseArgs', () => {
     expect(opts.recursive).toBe(true);
   });
 
-  it('--depth with a non-numeric value falls back to default depth 1', () => {
+  it('--depth with a non-numeric value is a FATAL argError, not a silent depth-1 / recursive flip', () => {
     const opts = parseArgs(['--depth', 'abc']);
-    expect(opts.depth).toBe(1);
-    expect(opts.recursive).toBe(true);
+    expect(opts.argError).toMatch(/--depth requires a numeric value/);
+    // It must NOT silently flip a single-project scan into recursive mode.
+    expect(opts.recursive).toBe(false);
+    expect(opts.depth).toBe(1); // unchanged default
   });
 
   it('-v / -r / -y short aliases resolve to the same options', () => {
