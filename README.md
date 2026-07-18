@@ -553,7 +553,7 @@ Windsurf is deliberately **not** graded: its Turbo-mode auto-execute level and a
 
 ### 28. Semantic tool-description judge (advisory, 0 points, `--semantic`) {#semantic-tools}
 
-Opt-in check for **obfuscated MCP tool poisoning** — a hidden directive paraphrased into a tool description so static regex checks miss it. Runs **only** with `--semantic`; a default scan makes zero external calls from it. For each tool description (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` — the same JSON you pipe into `rigscore mcp-hash`), it asks your **own first-party `claude -p`** (Max-plan CLI — never an API key or SDK client) to classify the text benign vs. suspicious. Each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge. If `claude` is not on PATH the check skips gracefully (no finding, no crash). See [`docs/checks/semantic-tools.md`](docs/checks/semantic-tools.md).
+Opt-in check for **obfuscated MCP tool poisoning** — a hidden directive paraphrased into a tool description so static regex checks miss it. Runs **only** with `--semantic`; a default scan makes zero external calls from it. For each tool description (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` — the same JSON you pipe into `rigscore mcp-hash`), it asks your **own first-party agent CLI** (`claude -p`, `gemini`, `codex exec`, … — never an API key or SDK client) to classify the text benign vs. suspicious. The command is configurable via `semantic.command` in `.rigscorerc.json` (default `["claude", "-p"]`; the judge prompt is appended as the final argument). Each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge. If that binary is not on PATH the check skips gracefully (no finding, no crash). See [`docs/checks/semantic-tools.md`](docs/checks/semantic-tools.md).
 
 ## Scoring
 
@@ -738,7 +738,7 @@ npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive sca
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
 npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
-npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to first-party `claude -p`, no API key; skips if claude absent)
+npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to a first-party agent CLI — `claude -p` default, configurable via semantic.command; no API key; skips if that binary absent)
 npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan ~/.claude/skills and ~/.claude/commands (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations (edits existing files only — never scaffolds new ones)
