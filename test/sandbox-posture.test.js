@@ -70,6 +70,7 @@ const MINIMAL = {
   toml: 'sandbox_mode = "read-only"\n',
   json: JSON.stringify({ permissions: { deny: ['Bash(curl:*)'] } }),
   gemini: JSON.stringify({ general: { defaultApprovalMode: 'plan' } }),
+  qwen: JSON.stringify({ tools: { approvalMode: 'plan' } }),
   opencode: JSON.stringify({ permission: { '*': 'deny' } }),
   cursor: JSON.stringify({ terminalAllowlist: ['git'] }),
 };
@@ -233,6 +234,38 @@ describe('sandbox-posture: Gemini CLI approval mode', () => {
     const r = await run(tree({ '.gemini/settings.json': JSON.stringify({ general: { defaultApprovalMode: 'default' } }) }));
     expect(r.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning')).toHaveLength(0);
     expect(r.data.postures.gemini).toBe('partial');
+  });
+});
+
+describe('sandbox-posture: Qwen Code approval mode (tools.approvalMode)', () => {
+  it('flags tools.approvalMode "yolo" as unrestricted (auto-approves every tool call)', async () => {
+    const r = await run(tree({ '.qwen/settings.json': JSON.stringify({ tools: { approvalMode: 'yolo' } }) }));
+    expect(ids(r)).toContain('sandbox-posture/qwen-yolo-approval');
+    expect(sev(r, 'sandbox-posture/qwen-yolo-approval')).toBe('warning');
+    expect(r.data.postures['qwen-code']).toBe('unrestricted');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('flags "auto-edit" as auto-approving edits without prompting (partial posture, still a warning)', async () => {
+    const r = await run(tree({ '.qwen/settings.json': JSON.stringify({ tools: { approvalMode: 'auto-edit' } }) }));
+    expect(ids(r)).toContain('sandbox-posture/qwen-auto-edit');
+    expect(r.data.postures['qwen-code']).toBe('partial');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it('passes read-only "plan" mode and normalizes it to restricted', async () => {
+    const r = await run(tree({ '.qwen/settings.json': JSON.stringify({ tools: { approvalMode: 'plan' } }) }));
+    expect(r.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning')).toHaveLength(0);
+    expect(r.data.postures['qwen-code']).toBe('restricted');
+    expect(r.score).toBe(100);
+  });
+
+  it('is not graded by the gemini reader — general.defaultApprovalMode is ignored for qwen', async () => {
+    // A qwen settings.json using Gemini's OLD key must NOT be read as a qwen approval mode:
+    // qwen honors tools.approvalMode only, so this is "unknown", posture partial, no finding.
+    const r = await run(tree({ '.qwen/settings.json': JSON.stringify({ general: { defaultApprovalMode: 'yolo' } }) }));
+    expect(ids(r)).not.toContain('sandbox-posture/qwen-yolo-approval');
+    expect(r.data.postures['qwen-code']).toBe('partial');
   });
 });
 

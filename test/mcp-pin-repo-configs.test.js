@@ -42,7 +42,7 @@ describe('rug-pull pin covers every committed repo-level MCP config', () => {
       .toEqual(['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.gemini/settings.json', 'opencode.json',
         '.amazonq/mcp.json', '.amazonq/default.json', '.roo/mcp.json', '.vscode/settings.json',
         '.junie/mcp/mcp.json', '.warp/.mcp.json', '.kiro/settings/mcp.json', '.qwen/settings.json',
-        '.crush.json', 'crush.json']);
+        '.crush.json', 'crush.json', '.kilocode/mcp.json']);
   });
 
   for (const [rel, wrap] of Object.entries(REPO_CONFIGS)) {

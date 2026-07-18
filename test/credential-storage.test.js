@@ -20,8 +20,8 @@ describe('credential-storage check', () => {
 
   it('CRITICAL for plaintext key in claude_desktop_config.json', async () => {
     const homedir = makeTmpDir();
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'my-server': { command: 'node', args: ['s.js'], env: { STRIPE_KEY: fakeStripeKey } },
       },
@@ -55,8 +55,8 @@ describe('credential-storage check', () => {
 
   it('INFO for example/placeholder credentials', async () => {
     const homedir = makeTmpDir();
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'test-server': { command: 'node', args: [], env: { KEY: fakeStripeKey + ' example placeholder' } },
       },
@@ -172,8 +172,8 @@ describe('credential-storage check', () => {
 
   it('PASS when configs exist but no secrets', async () => {
     const homedir = makeTmpDir();
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'clean-server': { command: 'node', args: ['s.js'], env: { NODE_ENV: 'production' } },
       },
