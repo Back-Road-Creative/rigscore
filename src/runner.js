@@ -29,7 +29,10 @@ export async function runChecks(checks, context, options = {}) {
 
   let filtered = checks;
   if (checkFilter) {
-    filtered = checks.filter((c) => c.id === checkFilter);
+    // `--check` accepts a single id (string) OR a comma list (array, like
+    // `--ignore`). Normalize to a set so both shapes filter identically.
+    const wanted = Array.isArray(checkFilter) ? checkFilter : [checkFilter];
+    filtered = checks.filter((c) => wanted.includes(c.id));
   }
 
   const settled = await Promise.allSettled(
