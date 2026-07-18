@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest a new check, client, output format, or capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / gap
+      description: What agent-config risk or workflow gap is not covered today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should rigscore do? For a new check, note what a passing vs failing config looks like.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
