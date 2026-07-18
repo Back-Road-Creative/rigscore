@@ -207,6 +207,13 @@ async function discoverFiles(cwd, homedir, config, includeHomeSkills) {
 
   async function addFile(fullPath, relPath, category) {
     if (seen.has(fullPath)) return;
+    // RS-16: skip agent-worktree clones. A parallel-agent run leaves transient
+    // full-project copies under `.claude/worktrees/**` that the harness never
+    // auto-unlocks; their stale/relative refs would storm the self-scan with
+    // dead-file-reference findings. They are never the project's real instruction
+    // surface — drop them here, the one chokepoint all discovery funnels through.
+    const normPath = String(fullPath).split(path.sep).join('/');
+    if (normPath.includes('/.claude/worktrees/') || normPath.startsWith('.claude/worktrees/')) return;
     const stat = await statSafe(fullPath);
     if (!stat || stat.isDirectory() || stat.size > MAX_FILE_SIZE || stat.size === 0) return;
     const content = await readFileSafe(fullPath);

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, collectGovernanceDirFiles } from '../utils.js';
+import { readFileSafe, collectGovernanceDirFiles, committedConfigScanPaths } from '../utils.js';
 
 // Classic homoglyph ranges (detected AFTER NFKC normalization):
 // Greek, Cyrillic, Armenian, Georgian, Cherokee (U+13A0-13FF has Latin A/D/E/G/H lookalikes)
@@ -22,12 +22,12 @@ function detectModernHomoglyphRanges(text) {
   return ranges;
 }
 
-const CONFIG_FILES = [
-  '.mcp.json',
-  '.vscode/mcp.json',
-  '.claude/settings.json',
-  '.claude/settings.local.json',
-];
+// Committed JSON configs that can hide bidi / tag-char payloads: DERIVED from the
+// client registry (RS-8) — every repo-level MCP config plus committed JSON sandbox
+// settings — so a payload in any of the ~15 registered configs is codepoint-scanned,
+// not just a hardcoded 4. `.mcp.json`, `.vscode/mcp.json` and the two
+// `.claude/settings*` files (the previous hardcoded set) remain covered.
+const CONFIG_FILES = committedConfigScanPaths();
 
 export default {
   id: 'unicode-steganography',

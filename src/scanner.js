@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadChecks } from './checks/index.js';
-import { calculatePracticeScore, scoreScan } from './scoring.js';
+import { calculateOverallScore, calculatePracticeScore, scoreScan } from './scoring.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
+import { governanceFiles, repoMcpRelPaths } from './clients.js';
 import {
   deduplicateFindings,
   assignFindingIds,
@@ -92,6 +93,14 @@ export async function scan(options = {}) {
 
   return {
     score: overallScore,
+    // Always-numeric companion to `score`. `scoreScan` returns null for the
+    // honest "nothing to scan" / all-N/A verdicts, which is right for a single
+    // project's CLI output but breaks any consumer that does arithmetic on the
+    // score — notably scanRecursive's average/worst/allPassed roll-up, where a
+    // null silently poisons the mean and makes an N/A project read as a
+    // failure. Consumers that need a number take this; the `notApplicable`
+    // flag above still carries the honest verdict.
+    numericScore: overallScore ?? calculateOverallScore(results, weights),
     notApplicable,
     results,
     config,
@@ -105,15 +114,25 @@ export async function scan(options = {}) {
   };
 }
 
-// Files that indicate a directory is a scannable project
-const PROJECT_MARKERS = [
+// Build/language/secret markers that are not AI-client governance (stay listed).
+const BUILD_MARKERS = [
   'package.json', 'pyproject.toml', 'setup.py', 'requirements.txt',
   'Dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
   'compose.yml', 'compose.yaml',
-  'CLAUDE.md', '.cursorrules', '.windsurfrules', '.clinerules',
-  '.continuerules', 'AGENTS.md', '.mcp.json',
   '.env', '.sops.yaml',
 ];
+
+// Files that indicate a directory is a scannable project. The AI-client markers
+// (governance files + committed MCP configs) are DERIVED from the client registry
+// (RS-8) so a newly-registered client (GEMINI.md, QWEN.md, CRUSH.md, opencode.json,
+// ...) makes its directory a recognized project automatically. Only single-segment
+// (top-level) registry names can be matched by the flat readdir below; nested paths
+// like `.cursor/mcp.json` are recognized via their parent build files, not a basename.
+const PROJECT_MARKERS = [...new Set([
+  ...BUILD_MARKERS,
+  ...governanceFiles(),
+  ...repoMcpRelPaths(),
+].filter((m) => !m.includes('/')))];
 
 /**
  * Discover project directories under rootDir up to maxDepth levels.
@@ -208,7 +227,7 @@ export async function scanRecursive(options = {}) {
         return {
           path: path.relative(rootDir, dir) || path.basename(dir),
           absolutePath: dir,
-          score: result.score,
+          score: result.numericScore ?? result.score,
           notApplicable: result.notApplicable,
           results: result.results,
           // The project's OWN config — the CLI needs it to honor that project's

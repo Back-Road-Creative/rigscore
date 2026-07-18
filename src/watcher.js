@@ -3,20 +3,29 @@ import path from 'node:path';
 import os from 'node:os';
 import { scan } from './scanner.js';
 import { formatTerminal } from './reporter.js';
-import { governanceFiles, governanceDirDefaults } from './clients.js';
+import { governanceFiles, governanceDirDefaults, repoMcpRelPaths } from './clients.js';
 import { suppressAndRescore } from './index.js';
 
-// Infra/config surfaces the scanner inspects (non-governance). Governance
-// filenames are DERIVED from clients.js — the single source every check reads —
-// so 2.1.0 surfaces (.roorules, .goosehints, QWEN.md, CRUSH.md,
-// .junie/guidelines.md, GEMINI.md, ...) are watched automatically, never
-// hand-maintained here and never drifting from what a scan actually reads.
+// Infra/config surfaces the scanner inspects (non-governance). Both the
+// governance filenames AND the committed MCP config paths are DERIVED from
+// clients.js — the single source every check reads — so a newly-registered
+// client's config (.gemini/settings.json, opencode.json, .warp/.mcp.json, ...)
+// is watched automatically, never hand-maintained here and never drifting from
+// what a scan actually reads. Previously only `.mcp.json` was watched, so a
+// rug-pull edit to any other registered MCP config never triggered a rescan.
 const INFRA_FILES = [
-  '.mcp.json', '.env', 'compose.yml', 'compose.yaml',
+  ...repoMcpRelPaths(),
+  '.env', 'compose.yml', 'compose.yaml',
   'docker-compose.yml', 'docker-compose.yaml',
   'Dockerfile', '.rigscorerc.json',
 ];
 const WATCH_PATTERNS = [...governanceFiles(), ...INFRA_FILES];
+
+// Vendored / build trees are never this project's own governance surface. A
+// dependency's bundled `.mcp.json` (node_modules/*/.mcp.json) matched the bare
+// basename and fired a full rescan on every `npm install` churn — the over-broad
+// endsWith('/.mcp.json') match. Skip any path with one of these segments.
+const IGNORED_SEGMENTS = new Set(['node_modules', 'venv', '.venv', '__pycache__']);
 
 // Directory-form rule sets became default-scanned in 2.1.0 (.cursor/rules,
 // .windsurf/rules, .clinerules, .github/instructions, .amazonq/rules,
@@ -27,6 +36,10 @@ function shouldTrigger(filename) {
   if (!filename) return true; // some platforms don't provide filename
   const norm = String(filename).split(path.sep).join('/');
   const base = path.basename(norm);
+
+  // Never rescan on churn inside a vendored/build tree — a dependency's own
+  // config is not the project's governance surface (over-broad-match fix).
+  if (norm.split('/').some((seg) => IGNORED_SEGMENTS.has(seg))) return false;
 
   if (base.startsWith('.env')) return true;
   if (base.startsWith('Dockerfile')) return true;

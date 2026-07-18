@@ -3,13 +3,48 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { KEY_PATTERNS } from './constants.js';
-import { governanceDirDefaults, isGovernanceDirRuleFile } from './clients.js';
+import { governanceDirDefaults, isGovernanceDirRuleFile, repoMcpRelPaths, CLIENTS } from './clients.js';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Decode a file buffer to text, sniffing the byte-order mark (RS-6). Every read
+ * used to force 'utf-8', so a UTF-16LE/BE file (common on Windows) decoded to
+ * NUL-interleaved mojibake and the whole regex catalog silently missed while the
+ * file still counted as "scanned".
+ *   - FF FE     -> UTF-16LE (its BOM consumed by the decode)
+ *   - FE FF     -> UTF-16BE (byte-swapped to LE, since Node has no utf16be codec)
+ *   - otherwise -> UTF-8, byte-for-byte as before. A leading UTF-8 BOM is PRESERVED
+ *     on purpose: text scanners (skill-files, unicode-steganography) still see and
+ *     flag it as an invisible character; JSON readers strip it themselves before
+ *     JSON.parse (see stripLeadingBom). So ASCII/utf-8 reads are unchanged.
+ */
+export function decodeBuffer(buf) {
+  if (!Buffer.isBuffer(buf)) return String(buf);
+  if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+    return buf.subarray(2).toString('utf16le');
+  }
+  if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) {
+    const body = buf.subarray(2);
+    if (body.length % 2 === 0) {
+      const swapped = Buffer.from(body);
+      swapped.swap16();
+      return swapped.toString('utf16le');
+    }
+    return body.toString('utf16le');
+  }
+  return buf.toString('utf8');
+}
+
+/** Strip a single leading UTF-8 BOM. Only the JSON readers do this — a leading
+ * BOM makes JSON.parse throw, but text scanners want to still see it. */
+function stripLeadingBom(text) {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+}
+
 export async function readFileSafe(p) {
   try {
-    return await fs.promises.readFile(p, 'utf-8');
+    return decodeBuffer(await fs.promises.readFile(p));
   } catch {
     return null;
   }
@@ -68,7 +103,7 @@ export function stripJsonComments(text) {
 
 export async function readJsonSafe(p) {
   try {
-    const content = await fs.promises.readFile(p, 'utf-8');
+    const content = stripLeadingBom(decodeBuffer(await fs.promises.readFile(p)));
     return JSON.parse(stripJsonComments(content));
   } catch {
     return null;
@@ -103,7 +138,7 @@ export class ConfigParseError extends Error {
 export async function readJsonStrict(p) {
   let content;
   try {
-    content = await fs.promises.readFile(p, 'utf-8');
+    content = stripLeadingBom(decodeBuffer(await fs.promises.readFile(p)));
   } catch (err) {
     if (err && err.code === 'ENOENT') return null;
     throw err;
@@ -387,6 +422,23 @@ export async function collectGovernanceDirFiles(cwd, dirs = governanceDirDefault
     }
   }
   return out;
+}
+
+/**
+ * Committed (in-repo) JSON config files a scan should codepoint-inspect for hidden
+ * payloads or plaintext secrets: EVERY repo-level MCP config the client registry
+ * knows (repoMcpRelPaths — the root MCP config, `.gemini/settings.json`,
+ * `opencode.json`, `.cursor/mcp.json`, …) plus committed JSON sandbox settings (Claude Code's
+ * `.claude/settings.json` / `.claude/settings.local.json`). Derived from the
+ * registry (RS-8) so a payload in any registered config is scanned, not just a
+ * hardcoded handful, and so a newly-registered client is covered automatically.
+ * Returned as repo-relative paths (join against cwd at the call site).
+ */
+export function committedConfigScanPaths() {
+  const sandboxJson = CLIENTS.flatMap(c => (c.sandbox || [])
+    .filter(s => s.base === 'cwd' && s.format === 'json')
+    .map(s => s.path));
+  return [...new Set([...repoMcpRelPaths(), ...sandboxJson])];
 }
 
 const COMMENT_PREFIXES = ['#', '//', '<!--', '--', '/*', '*'];
