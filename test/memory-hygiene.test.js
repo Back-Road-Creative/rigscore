@@ -184,7 +184,9 @@ describe('memory-hygiene: single home per rule', () => {
     try {
       const found = dupes(await run(dir));
       expect(found).toHaveLength(1);
-      expect(found[0].detail).toContain(path.join('packages', 'api', 'CLAUDE.md'));
+      // Finding text renders POSIX separators on every platform (see relPosix in
+      // src/utils.js) — path.join() here would assert win32's `\` form.
+      expect(found[0].detail).toContain('packages/api/CLAUDE.md');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
