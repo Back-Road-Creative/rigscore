@@ -248,7 +248,7 @@ Skill files (`.cursorrules`, `.windsurfrules`, `.continuerules`, `.roorules`, `.
 
 **What to fix:** Audit all skill files for unexpected instructions. Lock file permissions so only you can modify them. Be cautious with skill files from untrusted sources — treat them like executable code, because that's effectively what they are.
 
-**Scope:** By default rigscore only scans skill files under the project being scored (cwd). Home-level skills (`~/.claude/skills/`, `~/.claude/commands/`) are user-global and not attributable to a project, so they do not deduct from the project score. Pass `--include-home-skills` if you want home-level skills scanned too; findings from home files are labeled with a `~/` prefix.
+**Scope:** By default rigscore only scans project-level skill/command dirs (cwd) — `.claude/commands`, `.claude/skills`, and the per-client command dirs (`.opencode/commands`, `.gemini/commands`), all derived from the client registry. Home-level skills are user-global and not attributable to a project, so they do not deduct from the project score. Pass `--include-home-skills` to also scan every registered client's home dir (`~/.claude/skills`, `~/.claude/commands`, `~/.codex/prompts`, `~/.config/opencode/commands`, `~/.gemini/commands`); findings from home files are labeled with a `~/` prefix.
 
 ### 4. CLAUDE.md governance (10 points) {#why-claude-md-matters}
 
@@ -711,7 +711,7 @@ npx github:Back-Road-Creative/rigscore --deep                    # Deep source s
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
 npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
 npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to a first-party agent CLI — `claude -p` default, configurable via semantic.command; no API key; skips if that binary absent)
-npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan ~/.claude/skills and ~/.claude/commands (default: off — project scope only)
+npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan every registered client's home dir (~/.claude, ~/.codex/prompts, ~/.config/opencode/commands, ~/.gemini/commands, …) (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations (edits existing files only — never scaffolds new ones)
 npx github:Back-Road-Creative/rigscore --fix --yes --install-packs # Also install the starter packs that target your red checks (creates new files)

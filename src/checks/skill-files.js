@@ -2,15 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
+import { skillDirsForBase } from '../clients.js';
 import { readFileSafe, statSafe, walkDirSafe } from '../utils.js';
 
 // Skill file paths = governance files minus CLAUDE.md (handled by claude-md check)
 const SKILL_FILE_PATHS = GOVERNANCE_FILES.filter((f) => f !== 'CLAUDE.md');
 
-const SKILL_DIRS = [
-  '.claude/commands',
-  '.claude/skills',
-];
+// Skill / command / prompt dirs are DERIVED from the client registry (src/clients.js),
+// so a newly-supported client's dir is scanned without editing this file. SKILL_DIRS are
+// project-level (always scanned); HOME_SKILL_DIRS are $HOME dirs, scanned only under
+// --include-home-skills. Both keep the Claude defaults (.claude/commands, .claude/skills).
+const SKILL_DIRS = skillDirsForBase('cwd');
+const HOME_SKILL_DIRS = skillDirsForBase('home');
 
 const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?previous\s+instructions/i,
@@ -271,7 +274,7 @@ export const fixes = [
     description: 'chmod 644 on world-writable skill files',
     async apply(cwd) {
       if (process.platform === 'win32') return false;
-      const skillDirs = ['.claude/commands', '.claude/skills'];
+      const skillDirs = SKILL_DIRS;
       let fixed = false;
       for (const dir of skillDirs) {
         const dirPath = path.join(cwd, dir);
@@ -571,17 +574,19 @@ export default {
 
     // Collect files from skill directories.
     // Default: cwd only (home-level skills belong to the home profile, not the project).
-    // --include-home-skills opts in to scanning ~/.claude/** as well.
-    const searchRoots = [cwd];
-    if (includeHomeSkills && homedir && homedir !== cwd) searchRoots.push(homedir);
+    // --include-home-skills opts in to scanning the HOME dirs of every registered client too.
+    const searchRoots = [{ root: cwd, dirs: SKILL_DIRS, home: false }];
+    if (includeHomeSkills && homedir && homedir !== cwd) {
+      searchRoots.push({ root: homedir, dirs: HOME_SKILL_DIRS, home: true });
+    }
 
     // A4: symlink-loop-safe walk (was readdir({recursive:true}) which follows
     // symlinks and recurses forever on `ln -s . self`).
     const maxDepth = config?.limits?.maxWalkDepth || 50;
     let skillLoopDetected = false;
     let skillWalkTruncated = false;
-    for (const root of searchRoots) {
-      for (const dir of SKILL_DIRS) {
+    for (const { root, dirs, home } of searchRoots) {
+      for (const dir of dirs) {
         const dirPath = path.join(root, dir);
         const exists = await statSafe(dirPath);
         if (!exists || !exists.isDirectory()) continue;
@@ -596,9 +601,9 @@ export default {
           const entryRel = path.relative(dirPath, fullPath);
           const content = await readFileSafe(fullPath);
           if (content) {
-            const relLabel = root === cwd
-              ? path.join(dir, entryRel)
-              : path.join('~', dir, entryRel);
+            const relLabel = home
+              ? path.join('~', dir, entryRel)
+              : path.join(dir, entryRel);
             filesToScan.push({ path: relLabel, fullPath, content });
           }
         }
