@@ -1,6 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { getRegisteredFixes } from './checks/index.js';
 import { listPacks, loadPack, installPack, formatInstallReport, TEMPLATES_DIR } from './cli/packs.js';
-import { SEVERITY } from './constants.js';
+import { SEVERITY, GOVERNANCE_FILES } from './constants.js';
+import { readFileSafe, collectGovernanceDirFiles, committedConfigScanPaths } from './utils.js';
 
 /**
  * Safe auto-remediation for rigscore findings.
@@ -33,11 +36,153 @@ import { SEVERITY } from './constants.js';
 
 const warnedLegacyMatchers = new Set();
 
+// ---------------------------------------------------------------------------
+// Core-module fixers (RS-26). These live here rather than in their check
+// modules because the check files are owned by other concerns; the matching is
+// by findingId (immune to title rewording), and every apply() is mechanical and
+// non-destructive — it either strips invisible bytes, flips an executable bit, or
+// scaffolds a NEW file it never overwrites.
+// ---------------------------------------------------------------------------
+
+// Invisible / control code points that carry steganographic payloads (NOT
+// homoglyphs, which are visible letters and lossy to strip): zero-width
+// (U+200B-200D, U+2060, U+FEFF), bidi override (U+202A-202E, U+2066-2069) and
+// tag chars (U+E0001-E007F). Built from ranges so this source holds no literal
+// invisible byte. Mirrors unicode-steganography ZERO_WIDTH/BIDI/TAG_CHARS regexes.
+const HIDDEN_UNICODE_RANGES = [
+  [0x200B, 0x200D], [0x2060, 0x2060], [0xFEFF, 0xFEFF],
+  [0x202A, 0x202E], [0x2066, 0x2069], [0xE0001, 0xE007F],
+];
+const HIDDEN_UNICODE_RE = new RegExp(
+  '[' + HIDDEN_UNICODE_RANGES.map(([a, b]) => (a === b
+    ? `\\u{${a.toString(16)}}`
+    : `\\u{${a.toString(16)}}-\\u{${b.toString(16)}}`)).join('') + ']', 'gu');
+
+// Starter deny list scaffolded into a repo that has NO Claude settings at all.
+const CLAUDE_SETTINGS_DENY_SCAFFOLD = {
+  permissions: {
+    deny: [
+      'Bash(rm -rf*)',
+      'Bash(curl*)',
+      'Bash(wget*)',
+      'Read(.env)',
+      'Read(**/.env)',
+      'Read(**/secrets/**)',
+    ],
+  },
+};
+
+/** Extract the env-var key from a credential-storage finding (`env.<KEY> …`). */
+function envKeyFromFinding(finding) {
+  const m = /\benv\.([A-Za-z_][A-Za-z0-9_.-]*)/.exec(String(finding?.detail || ''));
+  return m ? m[1] : null;
+}
+
+const LOCAL_FIXERS = {
+  // Strip zero-width / bidi-override / tag Unicode from every governance and
+  // committed-config file (the same surface unicode-steganography scans). The
+  // finding carries no file path, so this re-scans the surface and only rewrites
+  // files that actually change — idempotent.
+  'unicode-steganography-strip': {
+    id: 'unicode-steganography-strip',
+    findingIds: [
+      'unicode-steganography/bidi-override',
+      'unicode-steganography/zero-width',
+      'unicode-steganography/tag-chars',
+    ],
+    description: 'Strip zero-width / bidi-override / tag Unicode from governance and config files',
+    async apply(cwd) {
+      const targets = [
+        ...GOVERNANCE_FILES.map((r) => path.join(cwd, r)),
+        ...committedConfigScanPaths().map((r) => path.join(cwd, r)),
+        ...(await collectGovernanceDirFiles(cwd)).map((g) => g.full),
+      ];
+      let fixed = false;
+      for (const full of targets) {
+        const content = await readFileSafe(full);
+        if (content === null) continue;
+        const cleaned = content.replace(HIDDEN_UNICODE_RE, '');
+        if (cleaned !== content) {
+          await fs.promises.writeFile(full, cleaned);
+          fixed = true;
+        }
+      }
+      return fixed;
+    },
+  },
+
+  // Flip the executable bit on a git hook git refuses to run because it is not +x.
+  'git-hook-executable': {
+    id: 'git-hook-executable',
+    findingIds: ['git-hooks/hook-not-executable'],
+    description: 'chmod +x on a non-executable git hook',
+    async apply(cwd) {
+      if (process.platform === 'win32') return false;
+      let fixed = false;
+      for (const hook of ['pre-commit', 'pre-push']) {
+        const full = path.join(cwd, '.git', 'hooks', hook);
+        try {
+          const stat = await fs.promises.stat(full);
+          if (!stat.isFile() || stat.size === 0) continue;
+          if ((stat.mode & 0o111) === 0) {
+            await fs.promises.chmod(full, 0o755);
+            fixed = true;
+          }
+        } catch { /* hook absent — skip */ }
+      }
+      return fixed;
+    },
+  },
+
+  // Scaffold a starter permissions.deny list — ONLY when the repo has no Claude
+  // settings file at all. Never clobbers an existing one (governance is the
+  // operator's); an existing file is a no-op skip.
+  'claude-settings-deny-scaffold': {
+    id: 'claude-settings-deny-scaffold',
+    findingIds: ['claude-settings/no-settings-found'],
+    description: 'Scaffold .claude/settings.json with a starter permissions.deny list',
+    async apply(cwd) {
+      const dir = path.join(cwd, '.claude');
+      const target = path.join(dir, 'settings.json');
+      try { await fs.promises.access(target); return false; } catch { /* absent — scaffold */ }
+      await fs.promises.mkdir(dir, { recursive: true });
+      await fs.promises.writeFile(target, JSON.stringify(CLAUDE_SETTINGS_DENY_SCAFFOLD, null, 2) + '\n');
+      return true;
+    },
+  },
+
+  // Scaffold a `.env.example` placeholder for a plaintext client-config credential
+  // so the operator can move the secret out and reference it as ${VAR}. Append-only;
+  // never rewrites the live (home) config, which would destroy the real secret.
+  'credential-storage-env-var-scaffold': {
+    id: 'credential-storage-env-var-scaffold',
+    findingIds: ['credential-storage/plaintext-credential-in-client-config'],
+    description: 'Scaffold a .env.example ${VAR} placeholder for a plaintext client credential',
+    async apply(cwd, _homedir, finding) {
+      const key = envKeyFromFinding(finding);
+      if (!key) return false;
+      const varName = key.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      if (!varName) return false;
+      const target = path.join(cwd, '.env.example');
+      let content = '';
+      try { content = await fs.promises.readFile(target, 'utf-8'); } catch { /* absent */ }
+      const declared = content.split('\n').some((l) => l.split('=')[0].trim() === varName);
+      if (declared) return false;
+      const header = content ? '' : '# Move plaintext client-config credentials here and reference them as ${VAR}.\n';
+      const newline = content && !content.endsWith('\n') ? '\n' : '';
+      await fs.promises.writeFile(target, content + newline + header + `${varName}=\n`);
+      return true;
+    },
+  },
+};
+
 /**
- * Resolve all available fixers: self-registered from check modules.
+ * Resolve all available fixers: self-registered from check modules, plus the
+ * core-module fixers defined above (RS-26). Registered fixers take precedence on
+ * an id collision (there are none today).
  */
 function resolveFixers() {
-  return getRegisteredFixes();
+  return { ...LOCAL_FIXERS, ...getRegisteredFixes() };
 }
 
 /**
