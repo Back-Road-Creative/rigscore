@@ -8,7 +8,7 @@ import { readFileSafe, statSafe, fileExists } from '../utils.js';
 const TASKS = 'tasks.md';
 const DESIGN = 'design.md';
 const SPECS = 'specs';
-const CONSTITUTION_REL = path.join('.specify', 'memory', 'constitution.md');
+const CONSTITUTION_REL = '.specify/memory/constitution.md';
 
 // One planning quarter: long enough that a goal file or spec has demonstrably sat out a
 // cycle, short enough to catch drift while it is cheap to fix. Tunable per repo via

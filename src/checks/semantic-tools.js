@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readJsonSafe, execSafe } from '../utils.js';
+import { readJsonSafe, execSafe, relPosix } from '../utils.js';
 import { extractTools } from '../mcp-hash.js';
 
 /**
@@ -79,7 +79,7 @@ async function gatherDescriptions(cwd, config) {
     const abs = path.isAbsolute(rel) ? rel : path.join(cwd, rel);
     const json = await readJsonSafe(abs);
     if (!json) continue;
-    const label = path.relative(cwd, abs) || abs;
+    const label = relPosix(cwd, abs) || abs;
     for (const tool of extractTools(json)) {
       if (!tool || typeof tool !== 'object') continue;
       const description = typeof tool.description === 'string' ? tool.description : '';

@@ -3,7 +3,7 @@ import path from 'node:path';
 import https from 'node:https';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
-import { readJsonSafe, readFileSafe, fileExists } from '../utils.js';
+import { readJsonSafe, readFileSafe, fileExists, relPosix } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { readRepoServers, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
@@ -364,7 +364,7 @@ export async function checkClaudeSettings(cwd, homedir) {
     const settings = await readJsonSafe(settingsPath);
     if (!settings) continue;
 
-    const relPath = path.relative(cwd, settingsPath) || settingsPath;
+    const relPath = relPosix(cwd, settingsPath) || settingsPath;
 
     if (settings.enableAllProjectMcpServers === true) {
       autoApproveEnabled = true;
@@ -1002,7 +1002,7 @@ export default {
         // clean skip (→ N/A); a present-but-unparseable one is disclosed and keeps the
         // check applicable. Mirrors claude-settings/settings-unparseable.
         if (await fileExists(configPath)) {
-          const relPath = path.relative(cwd, configPath) || configPath;
+          const relPath = relPosix(cwd, configPath) || configPath;
           findings.push({
             findingId: 'mcp-config/config-unparseable',
             severity: 'warning',
@@ -1018,7 +1018,7 @@ export default {
       // Read raw text to detect wildcard env passthrough (e.g. ...process.env)
       const rawText = await readFileSafe(configPath);
       if (rawText && /process\.env\b/.test(rawText)) {
-        const relPath = path.relative(cwd, configPath) || configPath;
+        const relPath = relPosix(cwd, configPath) || configPath;
         findings.push({
           findingId: 'mcp-config/env-wildcard-passthrough',
           severity: 'warning',
@@ -1034,7 +1034,7 @@ export default {
         hasRepoMcpJson = true;
       }
       const servers = mcpServersIn(configPath, mcpConfig);
-      const relPath = path.relative(cwd, configPath) || configPath;
+      const relPath = relPosix(cwd, configPath) || configPath;
       clientServers.set(relPath, servers);
       clientCount++;
       serverCount += Object.keys(servers).length;

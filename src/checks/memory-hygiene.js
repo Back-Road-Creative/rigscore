@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, statSafe, walkDirSafe } from '../utils.js';
+import { readFileSafe, statSafe, walkDirSafe, relPosix } from '../utils.js';
 
 // Thresholds and the reasoning behind them: docs/checks/memory-hygiene.md.
 // 40 KB ≈ 10k tokens ≈ 5% of a 200k-token window. Override per-repo with
@@ -67,7 +67,7 @@ async function discoverMemory(cwd, homedir, includeHomeSkills) {
     const stat = await statSafe(full);
     if (!stat || !stat.isFile()) return;
     const content = stat.size === 0 ? '' : (await readFileSafe(full)) ?? '';
-    files.set(full, { full, rel: path.relative(cwd, full) || full, content, bytes: stat.size });
+    files.set(full, { full, rel: relPosix(cwd, full) || full, content, bytes: stat.size });
   };
   for (const root of roots) {
     for (const e of await readdirSafe(root)) {
@@ -192,7 +192,7 @@ async function governancePaths(cwd, homedir, includeHomeSkills, config) {
     shouldInclude: (full) => GOVERNANCE_BASENAMES.has(path.basename(full)),
   });
   for (const full of files) {
-    if (!paths.has(full)) paths.set(full, path.relative(cwd, full) || full);
+    if (!paths.has(full)) paths.set(full, relPosix(cwd, full) || full);
   }
 
   if (includeHomeSkills && homedir && homedir !== cwd) {
