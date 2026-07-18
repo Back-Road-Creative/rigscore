@@ -363,7 +363,8 @@ describe('H4: op:// and ${VAR} not flagged as plaintext credentials', () => {
       },
     }));
     try {
-      const result = await credentialStorage.run({ homedir });
+      // credential-storage scans $HOME only under --include-home-skills (RS-10).
+      const result = await credentialStorage.run({ homedir, includeHomeSkills: true });
       const critical = result.findings.find(f => f.severity === 'critical' && f.title.includes('Plaintext'));
       expect(critical).toBeDefined();
     } finally {

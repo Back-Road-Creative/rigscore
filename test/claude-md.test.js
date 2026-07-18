@@ -88,7 +88,8 @@ describe('claude-md check', () => {
     }).join('\n');
     fs.writeFileSync(path.join(tmpHome, 'CLAUDE.md'), content);
     try {
-      const result = await check.run({ cwd: fixture('claude-none'), homedir: tmpHome, config: defaultConfig });
+      // Home CLAUDE.md is read only under --include-home-skills (RS-10 home decoupling).
+      const result = await check.run({ cwd: fixture('claude-none'), homedir: tmpHome, config: defaultConfig, includeHomeSkills: true });
       const critical = result.findings.find((f) => f.severity === 'critical');
       expect(critical).toBeUndefined();
     } finally {
@@ -117,10 +118,10 @@ describe('claude-md check', () => {
     }
   });
 
-  it('detects multiple governance layers', async () => {
+  it('detects multiple governance layers (project + home under --include-home-skills)', async () => {
     const tmpHome = makeTmpDir();
     fs.writeFileSync(path.join(tmpHome, 'CLAUDE.md'), '# Global rules\nNever expose secrets');
-    const result = await check.run({ cwd: fixture('claude-full'), homedir: tmpHome, config: defaultConfig });
+    const result = await check.run({ cwd: fixture('claude-full'), homedir: tmpHome, config: defaultConfig, includeHomeSkills: true });
     const multiPass = result.findings.find((f) => f.title.includes('Multiple governance'));
     expect(multiPass).toBeDefined();
     fs.rmSync(tmpHome, { recursive: true });

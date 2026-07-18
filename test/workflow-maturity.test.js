@@ -363,7 +363,8 @@ describe('workflow-maturity check', () => {
       ].join('\n'));
       fs.mkdirSync(path.join(cwd, 'evals', 'unrelated'), { recursive: true });
 
-      const result = await check.run({ cwd, homedir: home });
+      // Home MCP configs are scanned only under --include-home-skills (RS-10).
+      const result = await check.run({ cwd, homedir: home, includeHomeSkills: true });
       const mcpFindings = result.findings.filter(f => f.title?.includes('zed-only-server'));
       expect(result.data.mcpServersChecked).toBe(1);
       expect(mcpFindings.length).toBe(1);
@@ -379,7 +380,7 @@ describe('workflow-maturity check', () => {
         mcpServers: { 'not-a-zed-server': { command: 'npx' } },
       }));
 
-      const result = await check.run({ cwd, homedir: home });
+      const result = await check.run({ cwd, homedir: home, includeHomeSkills: true });
       expect(result.data.mcpServersChecked ?? 0).toBe(0);
       expect(result.findings.some(f => f.title?.includes('not-a-zed-server'))).toBe(false);
     });
@@ -397,7 +398,8 @@ describe('workflow-maturity check', () => {
       fs.writeFileSync(path.join(memDir, 'known.md'), '# Known\n');
       fs.writeFileSync(path.join(memDir, 'orphan.md'), '# Orphan\n');
 
-      const result = await check.run({ cwd, homedir: home });
+      // Operator home memory (~/.claude/projects/*/memory) is scanned only under the flag (RS-10).
+      const result = await check.run({ cwd, homedir: home, includeHomeSkills: true });
       const orphans = result.findings.filter(f =>
         f.title?.includes('orphan.md') && f.title?.includes('not linked'),
       );
@@ -418,7 +420,8 @@ describe('workflow-maturity check', () => {
       fs.writeFileSync(path.join(memDir, 'a.md'), '# A');
       fs.writeFileSync(path.join(memDir, 'b.md'), '# B');
 
-      const result = await check.run({ cwd, homedir: home });
+      // Operator home memory is scanned only under --include-home-skills (RS-10).
+      const result = await check.run({ cwd, homedir: home, includeHomeSkills: true });
       const orphans = result.findings.filter(f =>
         f.severity === 'warning' && f.title?.includes('not linked'),
       );

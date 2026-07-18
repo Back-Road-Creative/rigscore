@@ -3,6 +3,7 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
 import { readJsonSafe } from '../utils.js';
 import { credentialClients, mcpServersForConfig } from '../clients.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 const EXAMPLE_RE = /\b(example|placeholder|demo|sample|template|your_?key|xxx|changeme|replace_?me)\b/i;
 
@@ -34,7 +35,11 @@ export default {
     let filesScanned = 0;
     let secretsFound = 0;
 
-    for (const client of credentialClients()) {
+    // Every credential surface here is a $HOME config (the operator's, not the
+    // project's). Scanning it in a normal project scan would let one operator's
+    // stored secrets change another's project score — so it is gated behind
+    // --include-home-skills. Without the flag the check is N/A (nothing scanned).
+    for (const client of homeScopeEnabled(context) ? credentialClients() : []) {
       const configPath = path.join(homedir, client.dir, client.file);
       const config = await readJsonSafe(configPath);
       if (!config) continue;

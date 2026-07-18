@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { calculateCheckScore } from '../scoring.js';
 import { GOVERNANCE_FILES, NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, execSafe, hasAnyAITooling, collectGovernanceDirFiles } from '../utils.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -190,15 +191,25 @@ export default {
     const { cwd, homedir, config } = context;
     const findings = [];
 
-    // Collect all candidate paths — CLAUDE.md + all known AI client governance files
+    // Collect all candidate paths — CLAUDE.md + all known AI client governance files.
+    // CLAUDE.local.md is a project-level governance surface too (the gitignored,
+    // per-machine override Claude Code loads alongside CLAUDE.md); scanning it here
+    // feeds its content to the same injection / quality passes — it is NOT added to
+    // the git-tracking checks below (GOVERNANCE_FILES), which would false-positive on
+    // a file that is meant to be untracked. Home CLAUDE.md is the operator's, not the
+    // project's — read only under --include-home-skills so it can't swing the score.
     const candidatePaths = [
-      // CLAUDE.md locations (project, homedir .claude, homedir root)
       path.join(cwd, 'CLAUDE.md'),
-      path.join(homedir, '.claude', 'CLAUDE.md'),
-      path.join(homedir, 'CLAUDE.md'),
+      path.join(cwd, 'CLAUDE.local.md'),
       // All other AI client governance files in cwd
       ...GOVERNANCE_FILES.filter((f) => f !== 'CLAUDE.md').map((f) => path.join(cwd, f)),
     ];
+    if (homeScopeEnabled(context)) {
+      candidatePaths.push(
+        path.join(homedir, '.claude', 'CLAUDE.md'),
+        path.join(homedir, 'CLAUDE.md'),
+      );
+    }
 
     // Add config-specified paths
     if (config?.paths?.claudeMd) {

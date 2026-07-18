@@ -113,7 +113,7 @@ describe('agent-output-schemas check', () => {
     expect(result.data.agentsClaimingJson).toBe(0);
   });
 
-  it('scans agents from both cwd and homedir', async () => {
+  it('scans agents from both cwd and homedir (under --include-home-skills)', async () => {
     const cwd = tmp();
     const home = tmp();
     writeAgent(cwd, 'project-agent',
@@ -122,7 +122,8 @@ describe('agent-output-schemas check', () => {
     writeAgent(home, 'user-global-agent',
       'Return ONLY a JSON object with no fence here.\n',
     );
-    const result = await check.run({ cwd, homedir: home });
+    // Home agents dir is scanned only under the flag (RS-10 / RS-41 home gating).
+    const result = await check.run({ cwd, homedir: home, includeHomeSkills: true });
     expect(result.data.agentsScanned).toBe(2);
     const missing = result.findings.filter(
       f => f.findingId === 'agent-output-schemas/missing-schema-block',

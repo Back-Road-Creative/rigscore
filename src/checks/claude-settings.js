@@ -4,6 +4,7 @@ import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, readJsonSafe, walkDirSafe, fileExists } from '../utils.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 const DANGEROUS_HOOK_RE = [
   /\bcurl\b/, /\bwget\b/, /\brm\s+-rf\b/, /\beval\b/, /\bbase64\s+-d\b/,
@@ -28,10 +29,16 @@ const FRONTMATTER_HOOK_DIRS = ['.claude/skills', '.claude/commands', '.claude/ag
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 
-// Allow-list entries that grant dangerous broad access
+// Allow-list entries that grant dangerous broad access. The `sudo -u` rule is
+// GENERAL — `sudo -u <anyuser> <anycommand>` runs arbitrary code as that user, so
+// it must not be scoped to a single hardcoded username (was `sudo -u dev`, this
+// workspace's container user) nor to a single following command (was `… bash`,
+// which let `sudo -u anyone python` slip through). The bash form keeps its own,
+// more specific message and, being listed first, wins the one-finding-per-entry
+// match for that case.
 const DANGEROUS_ALLOW_PATTERNS = [
-  { re: /sudo\s+-u\s+\w+\s+bash/i,   msg: 'allows arbitrary execution as another user via sudo bash' },
-  { re: /sudo\s+-u\s+dev\b/i,         msg: 'allows any operation as the dev user (overly broad)' },
+  { re: /sudo\s+-u\s+\S+\s+bash\b/i,  msg: 'allows arbitrary execution as another user via sudo bash' },
+  { re: /sudo\s+-u\s+\S+/i,            msg: 'allows arbitrary execution as another user via sudo -u (overly broad)' },
   { re: /Bash\(docker\s+run/i,         msg: 'allows unrestricted docker run (potential container escape)' },
   { re: /Bash\(pip[23]?\s+install/i,  msg: 'allows raw pip install (should use project-specific wrapper)' },
 ];
@@ -171,29 +178,36 @@ async function scanHooks(hooksObj, rel, { homedir, findings, configuredHooks }) 
   }
 }
 
+/** Record a truncation against the root LABEL that hit the cap, so the
+ *  hook-file-cap-reached finding names where the operator must actually act —
+ *  not "the project" when it was really the operator's own ~/.claude tree. */
+function recordTruncation(walkState, rootLabel, truncated, depthTruncated) {
+  if (truncated) walkState.truncated = true;
+  if (depthTruncated) walkState.depthTruncated = true;
+  if (truncated || depthTruncated) walkState.truncatedRoots.add(rootLabel);
+}
+
 /** Every `<plugin>/hooks/hooks.json` under a plugins root, via the shared
  *  symlink-loop-safe, depth-capped walker. Never hand-roll a walker here. */
-async function findPluginHookFiles(root, walkState) {
+async function findPluginHookFiles(root, walkState, rootLabel) {
   const { files, truncated, depthTruncated } = await walkDirSafe(root, {
     maxDepth: 6,
     maxFiles: 200,
     shouldInclude: (full, dirent) =>
       dirent.name === 'hooks.json' && path.basename(path.dirname(full)) === 'hooks',
   });
-  if (truncated) walkState.truncated = true;
-  if (depthTruncated) walkState.depthTruncated = true;
+  recordTruncation(walkState, rootLabel, truncated, depthTruncated);
   return files;
 }
 
 /** Every markdown file under a skills/commands/agents root, via the same shared walker. */
-async function findMarkdownFiles(root, walkState) {
+async function findMarkdownFiles(root, walkState, rootLabel) {
   const { files, truncated, depthTruncated } = await walkDirSafe(root, {
     maxDepth: 6,
     maxFiles: 200,
     shouldInclude: (_full, dirent) => dirent.name.endsWith('.md'),
   });
-  if (truncated) walkState.truncated = true;
-  if (depthTruncated) walkState.depthTruncated = true;
+  recordTruncation(walkState, rootLabel, truncated, depthTruncated);
   return files;
 }
 
@@ -247,10 +261,18 @@ export default {
 
     const ctx = { homedir, findings, configuredHooks: allConfiguredHooks };
 
-    const paths = [
-      ...SETTINGS_FILES.map(f => ({ p: path.join(cwd, f), rel: f })),
-      ...SETTINGS_FILES.map(f => ({ p: path.join(homedir, f), rel: '~/' + f })),
-    ];
+    // The HOME settings/plugins/skill trees are the operator's, not the project's —
+    // reading them would let one operator's config swing another's project findings.
+    // Gated behind --include-home-skills. Each hook-scan root carries a LABEL so the
+    // cap disclosure below names the root that actually overflowed.
+    const includeHome = homeScopeEnabled(context);
+    const hookScanRoots = [{ root: cwd, prefix: '', label: 'project' }];
+    if (includeHome) hookScanRoots.push({ root: homedir, prefix: '~/', label: 'home (~)' });
+
+    const paths = SETTINGS_FILES.map(f => ({ p: path.join(cwd, f), rel: f }));
+    if (includeHome) {
+      paths.push(...SETTINGS_FILES.map(f => ({ p: path.join(homedir, f), rel: '~/' + f })));
+    }
 
     for (const { p, rel } of paths) {
       const settings = await readJsonSafe(p);
@@ -376,9 +398,9 @@ export default {
 
     // Plugin hooks run with no settings file present, so finding one is itself enough
     // to make the check applicable — else a hook-only plugin scores NOT_APPLICABLE.
-    const walkState = { truncated: false, depthTruncated: false };
-    for (const [root, prefix] of [[cwd, ''], [homedir, '~/']]) {
-      for (const hookFile of await findPluginHookFiles(path.join(root, PLUGIN_ROOT), walkState)) {
+    const walkState = { truncated: false, depthTruncated: false, truncatedRoots: new Set() };
+    for (const { root, prefix, label } of hookScanRoots) {
+      for (const hookFile of await findPluginHookFiles(path.join(root, PLUGIN_ROOT), walkState, label)) {
         const pluginHooks = await readJsonSafe(hookFile);
         if (!pluginHooks) continue;
         foundAny = true;
@@ -397,9 +419,9 @@ export default {
     //    does — otherwise a repo whose only hook source is a SKILL.md scores
     //    NOT_APPLICABLE and ships that hook unscanned.
     const fmCtx = { ...ctx, configuredHooks: new Set() };
-    for (const [root, prefix] of [[cwd, ''], [homedir, '~/']]) {
+    for (const { root, prefix, label } of hookScanRoots) {
       for (const dir of FRONTMATTER_HOOK_DIRS) {
-        for (const mdFile of await findMarkdownFiles(path.join(root, dir), walkState)) {
+        for (const mdFile of await findMarkdownFiles(path.join(root, dir), walkState, label)) {
           const content = await readFileSafe(mdFile);
           const fm = content ? readFrontmatterHooks(content) : null;
           if (!fm) continue;
@@ -426,12 +448,15 @@ export default {
     // both speaks and keeps the check applicable. Fires for EITHER cap — the 200-file
     // limit or the depth limit; a hook file nested past the depth cap is just as unread.
     if (walkState.truncated || walkState.depthTruncated) {
+      const roots = [...walkState.truncatedRoots];
+      const where = roots.length ? roots.join(' and ') : 'the scanned tree';
       findings.push({
         findingId: 'claude-settings/hook-file-cap-reached',
         severity: 'warning',
-        title: 'Hook-file scan stopped early (cap reached)',
-        detail: 'The walk stopped early (200-file limit and/or directory-depth limit), so plugin/skill hook files beyond the cap were never read and any dangerous hook in them is unscanned.',
-        remediation: 'Move generated or vendored trees out of the plugin/skill roots, or reduce nesting / raise the walk depth so the whole hook surface fits under the cap.',
+        title: `Hook-file scan stopped early (cap reached) in ${where}`,
+        detail: `The walk stopped early (200-file limit and/or directory-depth limit) in ${where}, so plugin/skill hook files there beyond the cap were never read and any dangerous hook in them is unscanned.`,
+        remediation: `Move generated or vendored trees out of the plugin/skill roots in ${where}, or reduce nesting / raise the walk depth so the whole hook surface fits under the cap.`,
+        context: { roots },
       });
       foundAny = true;
     }

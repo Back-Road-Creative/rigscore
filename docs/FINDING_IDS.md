@@ -380,6 +380,9 @@ Grouped by check. Each ID is stable within the current major.
 - `skill-files/symlink-loop-skipped` (info) — a symlink cycle was skipped during traversal.
 - `skill-files/no-skill-files` (info) — no skill/instruction files to scan.
 - `skill-files/walk-cap-reached` (warning) — the skill-directory walk hit the depth (or file) cap, so skill files past it were never read and the result is not a clean bill of health for injection/exfiltration.
+- `skill-files/non-text-file` (warning) — a binary / non-text file (NUL or Unicode replacement char) in a skill directory; not regex-scanned, so it is a blind spot.
+- `skill-files/tag-chars` (critical) — Unicode tag characters (U+E0001, U+E0020-U+E007F) in a skill file, an invisible steganographic channel.
+- `skill-files/file-too-large` (warning) — a skill file over the per-file size cap (`limits.maxFileBytes`) was not read/scanned.
 
 ### unicode-steganography
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, readJsonSafe, collectGovernanceDirFiles } from '../utils.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 /**
  * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
@@ -136,14 +137,16 @@ function checkSettingsConflicts(settingsData) {
 /**
  * Discover skill files and read their content.
  */
-async function discoverSkills(cwd, homedir) {
+async function discoverSkills(cwd, homedir, includeHome) {
   const skills = [];
   const skillDirs = [
     path.join(cwd, '.claude', 'skills'),
     path.join(cwd, '.claude', 'commands'),
   ];
 
-  if (homedir && homedir !== cwd) {
+  // Home skill/command dirs belong to the operator's profile — gated behind
+  // --include-home-skills so they don't feed a project's coherence findings.
+  if (includeHome) {
     skillDirs.push(
       path.join(homedir, '.claude', 'skills'),
       path.join(homedir, '.claude', 'commands'),
@@ -195,7 +198,7 @@ async function readHookContent(hookFilePaths = []) {
 /**
  * Read settings allow/deny lists from settings files.
  */
-async function readSettingsPermissions(cwd, homedir) {
+async function readSettingsPermissions(cwd, homedir, includeHome) {
   const result = { allow: [], deny: [], localAllow: [], localDeny: [] };
 
   // Project settings
@@ -205,18 +208,21 @@ async function readSettingsPermissions(cwd, homedir) {
     result.deny.push(...(projSettings.permissions.deny || []));
   }
 
-  // User settings
-  const userSettings = await readJsonSafe(path.join(homedir, '.claude', 'settings.json'));
-  if (userSettings?.permissions) {
-    result.allow.push(...(userSettings.permissions.allow || []));
-    result.deny.push(...(userSettings.permissions.deny || []));
-  }
+  // User + local-override settings live in $HOME — the operator's, not the
+  // project's. Gated behind --include-home-skills so an operator's own allow/deny
+  // conflict does not surface as a finding on every project scan.
+  if (includeHome) {
+    const userSettings = await readJsonSafe(path.join(homedir, '.claude', 'settings.json'));
+    if (userSettings?.permissions) {
+      result.allow.push(...(userSettings.permissions.allow || []));
+      result.deny.push(...(userSettings.permissions.deny || []));
+    }
 
-  // Local overrides
-  const localSettings = await readJsonSafe(path.join(homedir, '.claude', 'settings.local.json'));
-  if (localSettings?.permissions) {
-    result.localAllow.push(...(localSettings.permissions.allow || []));
-    result.localDeny.push(...(localSettings.permissions.deny || []));
+    const localSettings = await readJsonSafe(path.join(homedir, '.claude', 'settings.local.json'));
+    if (localSettings?.permissions) {
+      result.localAllow.push(...(localSettings.permissions.allow || []));
+      result.localDeny.push(...(localSettings.permissions.deny || []));
+    }
   }
 
   return result;
@@ -291,7 +297,8 @@ export default {
     }
 
     // Discover skills
-    const skills = await discoverSkills(cwd, homedir);
+    const includeHome = homeScopeEnabled(context);
+    const skills = await discoverSkills(cwd, homedir, includeHome);
 
     // --- Check 1: Skill ↔ Governance constraint awareness ---
     if (configuredConstraints.length > 0 && skills.length > 0 && extendedGovernance) {
@@ -320,7 +327,7 @@ export default {
 
     // --- Check 2: Hook ↔ Settings contradictions ---
     const hookContent = await readHookContent(hookFilePaths);
-    const settingsData = await readSettingsPermissions(cwd, homedir);
+    const settingsData = await readSettingsPermissions(cwd, homedir, includeHome);
 
     if (hookContent && settingsData) {
       findings.push(...checkHookSettingsConflicts(hookContent, settingsData, hookConflictPatterns));

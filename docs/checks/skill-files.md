@@ -31,6 +31,9 @@ Findings in a skill file are treated as seriously as findings in CLAUDE.md itsel
 | The walker detected a symlink cycle and skipped it | INFO | `skill-files/symlink-loop-skipped` | Informational — traversal continued safely |
 | The skill-directory walk stopped early — it hit the depth cap (`limits.maxWalkDepth`, default 50) or the file cap, so skill files past it were never read and an injection/exfiltration instruction in one of them is invisible. **Suppresses the PASS**: the check no longer certifies "clean" over a walk that stopped early | WARNING | `skill-files/walk-cap-reached` | Raise `limits.maxWalkDepth` in `.rigscorerc.json`, or reduce nesting under the skill directories |
 | No skill files found | INFO (score = N/A) | `skill-files/no-skill-files` | None — check inapplicable |
+| A file in a skill directory is binary / non-text (contains a NUL or Unicode replacement char). Its bytes are NOT regex-scanned (that would produce mojibake noise, not signal), so it is a blind spot | WARNING | `skill-files/non-text-file` | Remove the binary from the skill directory, or move it outside the scanned tree |
+| Unicode tag characters (U+E0001, U+E0020-U+E007F) — an invisible steganographic channel that can smuggle hidden instructions past human review | CRITICAL | `skill-files/tag-chars` | Remove all tag characters from the file |
+| A skill file exceeds the per-file size cap (`limits.maxFileBytes`, default 512 KB) and was NOT read/scanned — a skill instruction file is never this large, so an over-cap file here is mis-placed data or a scan-evasion attempt | WARNING | `skill-files/file-too-large` | Move large data files out of the skill directories, or raise `limits.maxFileBytes` |
 | All skill files clean | PASS | — | — |
 
 ### Escalation ruleIds
