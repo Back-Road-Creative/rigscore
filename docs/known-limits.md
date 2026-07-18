@@ -8,14 +8,14 @@ For the full reasoning and code pointers, see [`THREAT-MODEL.md`](../THREAT-MODE
 
 | If you need... | rigscore's limit | Reach for |
 |---|---|---|
-| Governance prose that means what it says (not just uses the right words) | [`claude-md`](../src/checks/claude-md.js) is keyword-presence + single-sentence negation. Multi-sentence "unless/except" reversals pass. | A human review gate or a semantic LLM pass like [Anthropic's claude-code-security-review](https://github.com/anthropics/claude-code-security-review). |
-| Live MCP tool-description pinning (CVE-2025-54136 class, between scans) | rigscore stores the hash you hand it via `rigscore mcp-pin`. It does not spawn the MCP server and cannot detect drift you didn't re-pin for. | [Snyk Agent Scan](https://github.com/snyk/agent-scan) connects to running servers and retrieves their live tool descriptions. |
-| Install-time supply-chain integrity of your project's dependencies | rigscore does not inspect `node_modules`, `package.json` lifecycle scripts, or registry provenance of your deps. | [Trivy](https://trivy.dev/), [osv-scanner](https://osv.dev/), npm/pnpm audit, or Socket.dev. |
-| Binary / base64 / minified payloads in skill files | The base64 regex is anchored (contiguous ≥50 chars between whitespace) and raises only a warning. Hex, ROT13, binary dropped into `.claude/skills/`, and base64-in-prose all slip. | Manual review + entropy-based scanners (`detect-secrets`, custom `file --mime-type` sweep for non-text in skill dirs). |
-| Obfuscated bash in git hooks | [`git-hooks`](../src/checks/git-hooks.js) keyword-matches for substance (`lint`, `gitleaks`, `test`). `eval "$(base64 -d)"` wrappers and `source`-chains can pass. | [ShellCheck](https://www.shellcheck.net/) + a bash-semantics linter in CI, or manual hook review. |
-| Novel LLM prompt-injection content (beyond the canonical phrase list) | rigscore matches a fixed catalog of injection phrases plus their Unicode/homoglyph variants. Paraphrased or multi-paragraph injection walks past. | An LLM-judge advisory pass (e.g. [Cisco AI Defense skill-scanner](https://github.com/cisco-ai-defense/skill-scanner)), or [Prisma AIRS](https://www.paloaltonetworks.com/prisma/prisma-airs) (formerly Protect AI Guardian, now part of Palo Alto Networks; the open-source [ModelScan](https://github.com/protectai/modelscan) stays community-maintained). |
-| Source-code vulnerabilities (SQL injection, SSRF, deserialization, etc.) | rigscore does not do SAST. It has never claimed to. | [Semgrep](https://semgrep.dev/), [CodeQL](https://codeql.github.com/). |
-| Secrets in git history | rigscore scans the working tree. A secret committed and then deleted is in history and invisible to rigscore. | [gitleaks](https://github.com/gitleaks/gitleaks), [trufflehog](https://github.com/trufflesecurity/trufflehog). |
+| Governance prose that means what it says (not just uses the right words) | [`claude-md`](../src/checks/claude-md.js) is keyword-presence + single-sentence negation. Multi-sentence "unless/except" reversals pass. | A human review gate or an LLM-judge advisory pass over the governance prose. |
+| Live MCP tool-description pinning (CVE-2025-54136 class, between scans) | rigscore stores the hash you hand it via `rigscore mcp-pin`. It does not spawn the MCP server and cannot detect drift you didn't re-pin for. | A live MCP introspection scanner that connects to running servers and retrieves their live tool descriptions. |
+| Install-time supply-chain integrity of your project's dependencies | rigscore does not inspect `node_modules`, `package.json` lifecycle scripts, or registry provenance of your deps. | A container/dependency vulnerability scanner (SBOM / registry-audit class). |
+| Binary / base64 / minified payloads in skill files | The base64 regex is anchored (contiguous ≥50 chars between whitespace) and raises only a warning. Hex, ROT13, binary dropped into `.claude/skills/`, and base64-in-prose all slip. | Manual review + entropy-based scanners (plus a custom `file --mime-type` sweep for non-text in skill dirs). |
+| Obfuscated bash in git hooks | [`git-hooks`](../src/checks/git-hooks.js) keyword-matches for substance (`lint`, `test`, secret-scan tokens). `eval "$(base64 -d)"` wrappers and `source`-chains can pass. | A shell linter + a bash-semantics linter in CI, or manual hook review. |
+| Novel LLM prompt-injection content (beyond the canonical phrase list) | rigscore matches a fixed catalog of injection phrases plus their Unicode/homoglyph variants. Paraphrased or multi-paragraph injection walks past. | An LLM-judge advisory pass over skill/doc prose, or a model-artifact scanner for model payloads. |
+| Source-code vulnerabilities (SQL injection, SSRF, deserialization, etc.) | rigscore does not do SAST. It has never claimed to. | Source-level SAST (taint / dataflow analysis). |
+| Secrets in git history | rigscore scans the working tree. A secret committed and then deleted is in history and invisible to rigscore. | A git-history secret scanner. |
 | Anything that happens between scans | rigscore is point-in-time. `--watch` re-runs on file change; it is not continuous observation. | A runtime agent monitor (there is no clear category leader yet; log-based observability is the closest off-the-shelf option). |
 
 ## How to read a rigscore report, given the above
@@ -23,9 +23,9 @@ For the full reasoning and code pointers, see [`THREAT-MODEL.md`](../THREAT-MODE
 A green rigscore means: **the configuration surfaces rigscore inspects are clean at scan time.** It does not mean the project is secure. It is one signal among several. The intended pairing is:
 
 1. rigscore — configuration hygiene (this tool).
-2. Semgrep or CodeQL — source-code vulnerabilities.
-3. gitleaks — historical secrets.
-4. Snyk Agent Scan — live MCP behavior.
+2. Source-level SAST — source-code vulnerabilities.
+3. A git-history secret scanner — historical secrets.
+4. A live MCP introspection scanner — live MCP behavior.
 5. An LLM-judge pass or human review — semantic governance.
 
 No single tool in that list is sufficient. rigscore aims to be the best-in-class option for layer 1 and nothing more.
