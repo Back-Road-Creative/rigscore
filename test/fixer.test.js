@@ -29,7 +29,7 @@ describe('fixer', () => {
 
   it('returns empty when no fixable issues', () => {
     const results = [{
-      id: 'claude-md',
+      id: 'governance-docs',
       findings: [{
         severity: 'critical',
         title: 'No governance file found',

@@ -25,7 +25,7 @@ Gated behind `--deep`. The check returns `NOT_APPLICABLE` when the flag is absen
 
 ## Weight rationale
 
-Weight 8 — tied with `claude-settings` and `env-exposure`. Lower than `claude-md` (10) because the check is opt-in (`--deep`) and would unfairly dominate scores of every repo that hasn't passed the flag; higher than `credential-storage` (6) because the search surface is the entire source tree rather than a known set of AI-client config files, and the false-negative cost of a missed key here (production credential committed to a public repo) is catastrophically higher than a plaintext MCP env var on a developer laptop.
+Weight 8 — tied with `claude-settings` and `env-exposure`. Lower than `governance-docs` (10) because the check is opt-in (`--deep`) and would unfairly dominate scores of every repo that hasn't passed the flag; higher than `credential-storage` (6) because the search surface is the entire source tree rather than a known set of AI-client config files, and the false-negative cost of a missed key here (production credential committed to a public repo) is catastrophically higher than a plaintext MCP env var on a developer laptop.
 
 ## Fix semantics
 

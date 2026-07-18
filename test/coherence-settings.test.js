@@ -5,7 +5,7 @@ import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 // Helpers to build priorResults arrays for coherence check
 function claudeMdResult(matchedPatterns = [], governanceText = '') {
   return {
-    id: 'claude-md',
+    id: 'governance-docs',
     score: 80,
     findings: [],
     data: { matchedPatterns, governanceText },

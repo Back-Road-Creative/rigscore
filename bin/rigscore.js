@@ -138,7 +138,7 @@ Checks (moat-heavy weighting):
   mcp-config              MCP server configuration (14 pts)
   coherence               Cross-config coherence (14 pts)
   skill-files             Skill file safety (10 pts)
-  claude-md               CLAUDE.md governance (10 pts)
+  governance-docs         CLAUDE.md / AGENTS.md governance (10 pts)
   deep-secrets            Deep source secret scanning (--deep, 8 pts)
   env-exposure            Secret exposure (8 pts)
   claude-settings         Claude settings safety (8 pts)

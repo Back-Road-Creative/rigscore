@@ -149,7 +149,7 @@ export default {
     }
 
     // Extract data from prior results
-    const claudeMdResult = priorResults.find(r => r.id === 'claude-md');
+    const claudeMdResult = priorResults.find(r => r.id === 'governance-docs');
     const mcpResult = priorResults.find(r => r.id === 'mcp-config');
     const dockerResult = priorResults.find(r => r.id === 'docker-security');
     const skillResult = priorResults.find(r => r.id === 'skill-files');
@@ -259,7 +259,7 @@ export default {
           findingId: 'coherence/governance-gitignored-echo',
           severity: 'info',
           title: 'Governance file is gitignored — ephemeral governance',
-          detail: 'A governance file listed in .gitignore has no audit trail and can be silently modified or removed. (Scored by claude-md check.)',
+          detail: 'A governance file listed in .gitignore has no audit trail and can be silently modified or removed. (Scored by governance-docs check.)',
           remediation: 'Remove governance files from .gitignore and commit them to version control.',
         });
       }
@@ -275,7 +275,7 @@ export default {
           findingId: 'coherence/governance-untracked-echo',
           severity: 'info',
           title: 'Governance file exists but is not version-controlled',
-          detail: 'Untracked governance files can be silently modified without an audit trail. (Scored by claude-md check.)',
+          detail: 'Untracked governance files can be silently modified without an audit trail. (Scored by governance-docs check.)',
           remediation: 'Track governance files in git for change history.',
         });
       }

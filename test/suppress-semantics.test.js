@@ -167,10 +167,10 @@ describe('suppression must not promote an N/A check into coverage', () => {
   function makeNaResults() {
     return [
       {
-        id: 'claude-md',
+        id: 'governance-docs',
         score: 60,
         findings: [
-          { severity: 'warning', title: 'Missing section', findingId: 'claude-md/missing-section' },
+          { severity: 'warning', title: 'Missing section', findingId: 'governance-docs/missing-section' },
         ],
       },
       {
@@ -207,7 +207,7 @@ describe('suppression must not promote an N/A check into coverage', () => {
     // Positive control: legitimate suppression must keep working. An
     // applicable check that is fully muted still rises to 100.
     const results = makeNaResults();
-    suppressFindings(results, ['claude-md/missing-section']);
+    suppressFindings(results, ['governance-docs/missing-section']);
 
     expect(results[0].findings).toEqual([]);
     expect(results[0].score).toBe(100);
@@ -220,10 +220,10 @@ describe('suppression must not promote an N/A check into coverage', () => {
     // fixing an observed failure.
     const results = [
       {
-        id: 'claude-md',
+        id: 'governance-docs',
         score: 85,
         findings: [
-          { severity: 'warning', title: 'Duplicate concern', findingId: 'claude-md/duplicate-concern' },
+          { severity: 'warning', title: 'Duplicate concern', findingId: 'governance-docs/duplicate-concern' },
         ],
       },
       {

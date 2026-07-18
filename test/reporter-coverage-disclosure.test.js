@@ -59,7 +59,7 @@ describe('coverage-scaling disclosure (reporter)', () => {
 
   it('weight below 60 still discloses (no regression on the old threshold)', () => {
     // Keep coherence (14) + skill-files (10) + claude-md (10) + claude-settings (8) = 42.
-    const keep = new Set(['coherence', 'skill-files', 'claude-md', 'claude-settings']);
+    const keep = new Set(['coherence', 'skill-files', 'governance-docs', 'claude-settings']);
     const naIds = Object.entries(WEIGHTS)
       .filter(([id, w]) => w > 0 && !keep.has(id))
       .map(([id]) => id);

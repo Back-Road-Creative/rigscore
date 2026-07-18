@@ -60,7 +60,7 @@ const EXPECTED_GRADES = {
   'windows-security': 'mechanical',
   'deep-secrets': 'pattern',
   'unicode-steganography': 'pattern',
-  'claude-md': 'pattern',
+  'governance-docs': 'pattern',
   'skill-files': 'pattern',
   'coherence': 'keyword',
   'instruction-effectiveness': 'keyword',
@@ -269,7 +269,7 @@ describe('enforcement-grade: advisory and N/A branches', () => {
       score: 80,
       results: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           name: 'CLAUDE.md governance',
           weight: 10,
           score: -1,

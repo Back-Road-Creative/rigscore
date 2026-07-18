@@ -34,7 +34,7 @@ describe('coherence: N/A when configuration exists but no governance file', () =
 
       const result = await scan({ cwd: tmpDir, homedir: tmpHome });
       const coherence = result.results.find((r) => r.id === 'coherence');
-      const claudeMd = result.results.find((r) => r.id === 'claude-md');
+      const claudeMd = result.results.find((r) => r.id === 'governance-docs');
 
       // Precondition sanity: this is the exact shape that fooled the old gate.
       expect(claudeMd.score).not.toBe(NOT_APPLICABLE_SCORE); // real 0, not -1
@@ -72,7 +72,7 @@ describe('coherence: N/A when configuration exists but no governance file', () =
   }
 
   const govPass = (governanceText) => ({
-    id: 'claude-md',
+    id: 'governance-docs',
     score: 100,
     findings: [],
     data: { matchedPatterns: ['forbidden actions', 'path restrictions'], governanceText },
@@ -107,11 +107,11 @@ describe('coherence: N/A when configuration exists but no governance file', () =
         // Exactly what claude-md returns when there is no governance file:
         // CRITICAL, score 0, and NO `data` (so governanceText resolves to '').
         claudeMd: {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 0,
           findings: [
             {
-              findingId: 'claude-md/no-governance-file',
+              findingId: 'governance-docs/no-governance-file',
               severity: 'critical',
               title: 'No governance file found',
             },

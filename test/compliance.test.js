@@ -13,7 +13,7 @@ const text = formatCompliance({
       { severity: 'info', title: 'Consider enabling deep scan' },
     ] },
     { id: 'docker-security', score: 85, findings: [{ severity: 'warning', title: 'Container runs as root' }] },
-    { id: 'claude-md', score: 100, findings: [] },
+    { id: 'governance-docs', score: 100, findings: [] },
     { id: 'mcp-config', score: NOT_APPLICABLE_SCORE, findings: [] },
     { id: 'site-security', score: 90, findings: [] }, // evidences no control anywhere
   ],
@@ -39,7 +39,7 @@ describe('formatCompliance', () => {
   it('rolls each check up to a verdict; N/A is never a free PASS', () => {
     expect(lineFor('deep-secrets')).toContain('CRITICAL');
     expect(lineFor('docker-security')).toContain('WARN');
-    expect(lineFor('claude-md')).toContain('PASS');
+    expect(lineFor('governance-docs')).toContain('PASS');
     expect(lineFor('mcp-config')).toContain('N/A');
     // blocking findings shown; info-level noise is not compliance evidence
     expect(text).toContain('AWS key committed in src/app.js');

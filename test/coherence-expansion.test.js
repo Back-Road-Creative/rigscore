@@ -7,7 +7,7 @@ describe('coherence expansion', () => {
     const context = {
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [{ severity: 'pass', title: 'All good' }],
           data: { matchedPatterns: ['forbidden actions'] },
@@ -37,7 +37,7 @@ describe('coherence expansion', () => {
     const context = {
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [{ severity: 'pass', title: 'ok' }],
           data: { matchedPatterns: ['anti-injection', 'forbidden actions'] },
@@ -73,7 +73,7 @@ describe('coherence expansion', () => {
     const context = {
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [{ severity: 'pass', title: 'ok' }],
           data: { matchedPatterns: [] },
@@ -109,7 +109,7 @@ describe('coherence expansion', () => {
     const context = {
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [{ severity: 'pass', title: 'ok' }],
           data: { matchedPatterns: [] },

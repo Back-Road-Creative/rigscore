@@ -35,7 +35,7 @@ function writeSkill(cwd, name, content) {
 
 function claudeMdResult(matchedPatterns = [], governanceText = '') {
   return {
-    id: 'claude-md',
+    id: 'governance-docs',
     score: 80,
     findings: [],
     data: { matchedPatterns, governanceText },

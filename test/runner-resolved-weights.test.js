@@ -18,9 +18,9 @@ import { withTmpDir } from './helpers.js';
  * pass no resolved map.
  */
 
-// `claude-md` is a pass-1 check; `coherence` is a pass-2 check. Disabling one
+// `governance-docs` is a pass-1 check; `coherence` is a pass-2 check. Disabling one
 // of each proves BOTH runChecks call-sites in scanner.js get resolved weights.
-const DISABLED_PASS1 = 'claude-md';
+const DISABLED_PASS1 = 'governance-docs';
 const DISABLED_PASS2 = 'coherence';
 const KEPT = 'mcp-config';
 

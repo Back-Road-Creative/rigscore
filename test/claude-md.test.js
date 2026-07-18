@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import check from '../src/checks/claude-md.js';
+import check from '../src/checks/governance-docs.js';
 import { WEIGHTS } from '../src/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +30,7 @@ const defaultConfig = { paths: { claudeMd: [] }, network: {} };
 
 describe('claude-md check', () => {
   it('has required shape', () => {
-    expect(check.id).toBe('claude-md');
+    expect(check.id).toBe('governance-docs');
     expect(WEIGHTS[check.id]).toBe(10);
   });
 
@@ -423,7 +423,7 @@ describe('claude-md check', () => {
           fs.writeFileSync(path.join(tmpDir, '.gitignore'), `${pattern}\n`);
           const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
           const critical = result.findings.find(
-            (f) => f.severity === 'critical' && f.findingId === 'claude-md/governance-file-gitignored',
+            (f) => f.severity === 'critical' && f.findingId === 'governance-docs/governance-file-gitignored',
           );
           expect(critical).toBeDefined();
           expect(critical.title).toContain('CLAUDE.md');
@@ -441,7 +441,7 @@ describe('claude-md check', () => {
         fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n*.log\ndist/\n');
         const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
         const critical = result.findings.find(
-          (f) => f.findingId === 'claude-md/governance-file-gitignored',
+          (f) => f.findingId === 'governance-docs/governance-file-gitignored',
         );
         expect(critical).toBeUndefined();
       } finally {
@@ -457,7 +457,7 @@ describe('claude-md check', () => {
         fs.writeFileSync(path.join(tmpDir, '.gitignore'), '# CLAUDE.md must stay tracked\ndist/\n');
         const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
         const critical = result.findings.find(
-          (f) => f.findingId === 'claude-md/governance-file-gitignored',
+          (f) => f.findingId === 'governance-docs/governance-file-gitignored',
         );
         expect(critical).toBeUndefined();
       } finally {
@@ -473,14 +473,14 @@ describe('claude-md check', () => {
         // Bare name: legacy exact-match still catches it (old behavior preserved).
         fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'CLAUDE.md\n');
         const bare = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
-        expect(bare.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored')).toBeDefined();
+        expect(bare.findings.find((f) => f.findingId === 'governance-docs/governance-file-gitignored')).toBeDefined();
 
         // Glob: legacy exact-match MISSES it — a degraded matcher must fail
         // toward the old miss, never a false CRITICAL. This contrast (same
         // glob CRITICALs above WITH git) proves check-ignore is non-vacuous.
         fs.writeFileSync(path.join(tmpDir, '.gitignore'), '*.md\n');
         const glob = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: {} });
-        expect(glob.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored')).toBeUndefined();
+        expect(glob.findings.find((f) => f.findingId === 'governance-docs/governance-file-gitignored')).toBeUndefined();
       } finally {
         fs.rmSync(tmpDir, { recursive: true });
       }
@@ -514,7 +514,7 @@ describe('claude-md check', () => {
         expect(fs.existsSync(path.join(app, '.gitignore'))).toBe(false);
         const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
         const critical = result.findings.find(
-          (f) => f.severity === 'critical' && f.findingId === 'claude-md/governance-file-gitignored',
+          (f) => f.severity === 'critical' && f.findingId === 'governance-docs/governance-file-gitignored',
         );
         expect(critical).toBeDefined();
         expect(critical.title).toContain('CLAUDE.md');
@@ -531,7 +531,7 @@ describe('claude-md check', () => {
         fs.writeFileSync(path.join(infoDir, 'exclude'), 'app/CLAUDE.md\n');
         const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
         expect(
-          result.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored'),
+          result.findings.find((f) => f.findingId === 'governance-docs/governance-file-gitignored'),
         ).toBeDefined();
       } finally {
         fs.rmSync(root, { recursive: true });
@@ -544,7 +544,7 @@ describe('claude-md check', () => {
         fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n*.log\ndist/\n');
         const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
         expect(
-          result.findings.find((f) => f.findingId === 'claude-md/governance-file-gitignored'),
+          result.findings.find((f) => f.findingId === 'governance-docs/governance-file-gitignored'),
         ).toBeUndefined();
       } finally {
         fs.rmSync(root, { recursive: true });
@@ -558,7 +558,7 @@ describe('claude-md check', () => {
         expect(fs.existsSync(path.join(app, '.git'))).toBe(false);
         const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
         const untracked = result.findings.find(
-          (f) => f.findingId === 'claude-md/governance-file-untracked',
+          (f) => f.findingId === 'governance-docs/governance-file-untracked',
         );
         expect(untracked).toBeDefined();
         expect(untracked.severity).toBe('warning');
@@ -579,7 +579,7 @@ describe('claude-md check', () => {
         execFileSync('git', ['-c', 'user.email=t@t.t', '-c', 'user.name=t', 'commit', '-qm', 'init'], gitOpts);
         const result = await check.run({ cwd: app, homedir: '/tmp/nonexistent', config: {} });
         expect(
-          result.findings.find((f) => f.findingId === 'claude-md/governance-file-untracked'),
+          result.findings.find((f) => f.findingId === 'governance-docs/governance-file-untracked'),
         ).toBeUndefined();
       } finally {
         fs.rmSync(root, { recursive: true });

@@ -133,7 +133,7 @@ ${profileLine}
 
   // Suppression patterns. Three forms:
   //   - Substring:   "env file found but NOT in .gitignore"
-  //   - Exact id:    "claude-md/missing-claude-md"
+  //   - Exact id:    "governance-docs/missing-claude-md"
   //   - Glob:        "skill-files/drive-resume-*"
   //   - Regex:       "re:/.*sudo.*/i"
   "suppress": [],

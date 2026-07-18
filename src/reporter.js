@@ -185,7 +185,7 @@ export function formatTerminal(result, cwd, options = {}) {
   // surface that fact at the top so users reading rigscore output for a
   // vanilla project (create-react-app, FastAPI, Rust) understand that
   // generic-hygiene checks still ran but AI-specific ones were skipped.
-  const aiToolingSurfaceIds = new Set(['claude-md', 'skill-files', 'mcp-config', 'coherence', 'claude-settings']);
+  const aiToolingSurfaceIds = new Set(['governance-docs', 'skill-files', 'mcp-config', 'coherence', 'claude-settings']);
   const surfaceResults = results.filter((r) => aiToolingSurfaceIds.has(r.id));
   const allSurfaceMissing = surfaceResults.length > 0 &&
     surfaceResults.every((r) => r.score === NOT_APPLICABLE_SCORE);

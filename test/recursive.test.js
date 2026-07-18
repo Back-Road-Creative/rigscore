@@ -198,7 +198,7 @@ describe('formatTerminalRecursive', () => {
         {
           path: 'svc-alpha',
           score: 100,
-          results: [{ id: 'claude-md', name: 'CLAUDE.md governance', score: 100, weight: 20, findings: [{ severity: 'pass', title: 'OK' }] }],
+          results: [{ id: 'governance-docs', name: 'CLAUDE.md governance', score: 100, weight: 20, findings: [{ severity: 'pass', title: 'OK' }] }],
         },
         {
           path: 'svc-beta',

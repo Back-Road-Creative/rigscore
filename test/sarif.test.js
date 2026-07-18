@@ -17,7 +17,7 @@ describe('SARIF output', () => {
         ],
       },
       {
-        id: 'claude-md',
+        id: 'governance-docs',
         name: 'CLAUDE.md governance',
         category: 'governance',
         weight: 12,
@@ -47,7 +47,7 @@ describe('SARIF output', () => {
     const errorResults = sarif.runs[0].results.filter(r => r.level === 'error');
     expect(errorResults.length).toBe(1);
     // Per-finding ruleId: `<checkId>/<slug>` when no findingId is supplied.
-    expect(errorResults[0].ruleId.startsWith('claude-md/')).toBe(true);
+    expect(errorResults[0].ruleId.startsWith('governance-docs/')).toBe(true);
   });
 
   it('maps warning severity to warning', () => {
@@ -69,9 +69,9 @@ describe('SARIF output', () => {
     const ids = rules.map(r => r.id);
     // Check-level (tool-component) rules stay as fallback.
     expect(ids).toContain('mcp-config');
-    expect(ids).toContain('claude-md');
+    expect(ids).toContain('governance-docs');
     // Per-finding rules are registered alongside the check-level entries.
-    expect(ids.some((id) => id.startsWith('claude-md/'))).toBe(true);
+    expect(ids.some((id) => id.startsWith('governance-docs/'))).toBe(true);
     expect(ids.some((id) => id.startsWith('mcp-config/'))).toBe(true);
   });
 
@@ -97,7 +97,7 @@ describe('SARIF output', () => {
     const result = {
       score: 50,
       results: [{
-        id: 'claude-md',
+        id: 'governance-docs',
         name: 'CLAUDE.md governance',
         category: 'governance',
         weight: 10,
@@ -185,7 +185,7 @@ describe('SARIF output', () => {
     const result = {
       score: 50,
       results: [{
-        id: 'claude-md',
+        id: 'governance-docs',
         name: 'CLAUDE.md governance',
         category: 'governance',
         weight: 10,
@@ -320,7 +320,7 @@ describe('SARIF output', () => {
     const sarif = formatSarif({
       score: 10,
       results: [{
-        id: 'claude-md',
+        id: 'governance-docs',
         name: 'CLAUDE.md governance',
         category: 'governance',
         weight: 10,

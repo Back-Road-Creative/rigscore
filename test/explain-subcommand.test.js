@@ -47,7 +47,7 @@ Ten points.
 
 describe('rigscore explain — CLI dispatch', () => {
   it('routes `explain <findingId>` to the subcommand and prints docs', () => {
-    const res = spawnSync('node', [BIN, 'explain', 'claude-md/missing-claude-md'], {
+    const res = spawnSync('node', [BIN, 'explain', 'governance-docs/missing-claude-md'], {
       encoding: 'utf-8',
       env: { ...process.env, NO_COLOR: '1' },
     });

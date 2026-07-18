@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import check from '../src/checks/claude-md.js';
+import check from '../src/checks/governance-docs.js';
 import uniCheck from '../src/checks/unicode-steganography.js';
 
 function makeTmpDir() {
@@ -146,7 +146,7 @@ describe('semantic reversal (detected under C7)', () => {
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
       const reversalFindings = result.findings.filter(
-        (f) => f.findingId === 'claude-md/governance-reversal-detected',
+        (f) => f.findingId === 'governance-docs/governance-reversal-detected',
       );
       // At least one header → body reversal must be flagged.
       expect(reversalFindings.length).toBeGreaterThanOrEqual(1);
@@ -168,7 +168,7 @@ describe('semantic reversal (detected under C7)', () => {
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
       const finding = result.findings.find(
-        (f) => f.findingId === 'claude-md/governance-reversal-detected',
+        (f) => f.findingId === 'governance-docs/governance-reversal-detected',
       );
       expect(finding).toBeDefined();
       expect(finding.title).toContain('path restrictions');
@@ -193,7 +193,7 @@ describe('E2: adversarial governance reversal / keyword-gaming matrix', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      const rev = result.findings.find((f) => f.findingId === 'claude-md/governance-reversal-detected');
+      const rev = result.findings.find((f) => f.findingId === 'governance-docs/governance-reversal-detected');
       expect(rev).toBeDefined();
       expect(rev.severity).toBe('warning');
     } finally {
@@ -211,7 +211,7 @@ describe('E2: adversarial governance reversal / keyword-gaming matrix', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
-      const rev = result.findings.find((f) => f.findingId === 'claude-md/governance-reversal-detected');
+      const rev = result.findings.find((f) => f.findingId === 'governance-docs/governance-reversal-detected');
       expect(rev).toBeDefined();
       expect(rev.title).toContain('path restrictions');
     } finally {
@@ -234,7 +234,7 @@ describe('E2: adversarial governance reversal / keyword-gaming matrix', () => {
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
       const rev = result.findings.find(
-        (f) => f.findingId === 'claude-md/governance-reversal-detected' && f.title.includes('forbidden actions'),
+        (f) => f.findingId === 'governance-docs/governance-reversal-detected' && f.title.includes('forbidden actions'),
       );
       expect(rev).toBeDefined();
     } finally {
@@ -254,7 +254,7 @@ describe('E2: adversarial governance reversal / keyword-gaming matrix', () => {
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
       const rev = result.findings.find(
-        (f) => f.findingId === 'claude-md/governance-reversal-detected' && f.title.includes('forbidden actions'),
+        (f) => f.findingId === 'governance-docs/governance-reversal-detected' && f.title.includes('forbidden actions'),
       );
       expect(rev).toBeDefined();
     } finally {
@@ -283,7 +283,7 @@ describe('E2: adversarial governance reversal / keyword-gaming matrix', () => {
       expect(missing).toBeDefined();
       // No spurious governance-reversal — the keyword header didn't match, so
       // the reversal detector had no anchor to attach a finding to.
-      const rev = govResult.findings.find((f) => f.findingId === 'claude-md/governance-reversal-detected');
+      const rev = govResult.findings.find((f) => f.findingId === 'governance-docs/governance-reversal-detected');
       expect(rev).toBeUndefined();
 
       const uniResult = await uniCheck.run({ cwd: tmpDir });
@@ -315,7 +315,7 @@ describe('E2: adversarial governance reversal / keyword-gaming matrix', () => {
     try {
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent', config: defaultConfig });
       const reversals = result.findings.filter(
-        (f) => f.findingId === 'claude-md/governance-reversal-detected',
+        (f) => f.findingId === 'governance-docs/governance-reversal-detected',
       );
       // Exactly one reversal — the path-restrictions section, not the
       // forbidden-actions section.

@@ -122,7 +122,7 @@ describe('git-hooks hardening', () => {
 // ---------------------------------------------------------------------------
 describe('governance check multi-client', () => {
   it('detects .cursorrules as a governance file', async () => {
-    const check = (await import('../src/checks/claude-md.js')).default;
+    const check = (await import('../src/checks/governance-docs.js')).default;
     const tmpDir = makeTmpDir();
     const content = Array(60).fill('').map((_, i) => {
       if (i === 0) return '# Cursor Rules';
@@ -144,7 +144,7 @@ describe('governance check multi-client', () => {
   });
 
   it('detects .windsurfrules as a governance file', async () => {
-    const check = (await import('../src/checks/claude-md.js')).default;
+    const check = (await import('../src/checks/governance-docs.js')).default;
     const tmpDir = makeTmpDir();
     const content = Array(60).fill('').map((_, i) => {
       if (i === 0) return '# Windsurf Rules';
@@ -166,7 +166,7 @@ describe('governance check multi-client', () => {
   });
 
   it('detects AGENTS.md as a governance file', async () => {
-    const check = (await import('../src/checks/claude-md.js')).default;
+    const check = (await import('../src/checks/governance-docs.js')).default;
     const tmpDir = makeTmpDir();
     const content = Array(60).fill('').map((_, i) => {
       if (i === 0) return '# Agent Rules';
@@ -188,7 +188,7 @@ describe('governance check multi-client', () => {
   });
 
   it('detects copilot-instructions.md as a governance file', async () => {
-    const check = (await import('../src/checks/claude-md.js')).default;
+    const check = (await import('../src/checks/governance-docs.js')).default;
     const tmpDir = makeTmpDir();
     const content = Array(60).fill('').map((_, i) => {
       if (i === 0) return '# Copilot Instructions';
@@ -210,7 +210,7 @@ describe('governance check multi-client', () => {
   });
 
   it('detects .clinerules as a governance file', async () => {
-    const check = (await import('../src/checks/claude-md.js')).default;
+    const check = (await import('../src/checks/governance-docs.js')).default;
     const tmpDir = makeTmpDir();
     const content = Array(60).fill('').map((_, i) => {
       if (i === 0) return '# Cline Rules';

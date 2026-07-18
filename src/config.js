@@ -1,6 +1,12 @@
 import path from 'node:path';
 import { readJsonStrict, ConfigParseError } from './utils.js';
 import { WEIGHTS } from './constants.js';
+import { FINDING_ID_RENAMES } from './findings.js';
+
+// Map a rc-supplied check id through any shipped rename so a weights/disabled
+// entry keyed on a deprecated id (e.g. `claude-md`) still lands on the renamed
+// check (`governance-docs`) — the alias promise in docs/FINDING_IDS.md.
+const canonicalCheckId = (id) => FINDING_ID_RENAMES[String(id).toLowerCase()] || id;
 
 const DEFAULTS = {
   paths: {
@@ -89,7 +95,7 @@ export const PROFILES = {
     'mcp-config': 30,
     'coherence': 30,
     'skill-files': 20,
-    'claude-md': 20,
+    'governance-docs': 20,
     'deep-secrets': 0,
     'env-exposure': 0,
     'docker-security': 0,
@@ -104,7 +110,7 @@ export const PROFILES = {
   home: {
     'mcp-config': 20,
     'skill-files': 20,
-    'claude-md': 20,
+    'governance-docs': 20,
     'coherence': 15,
     'claude-settings': 10,
     'deep-secrets': 5,
@@ -149,20 +155,23 @@ export function resolveWeights(config) {
 
   const resolved = { ...profile };
 
-  // Apply weight overrides (including plugin weights) with validation
+  // Apply weight overrides (including plugin weights) with validation. Keys are
+  // canonicalized through FINDING_ID_RENAMES so a rc still keyed on a deprecated
+  // id lands on the renamed check.
   if (config?.weights) {
-    for (const [key, value] of Object.entries(config.weights)) {
+    for (const [rawKey, value] of Object.entries(config.weights)) {
+      const key = canonicalCheckId(rawKey);
       if (typeof value !== 'number' || Number.isNaN(value)) {
-        process.stderr.write(`rigscore: ignoring non-numeric weight for "${key}": ${value}\n`);
+        process.stderr.write(`rigscore: ignoring non-numeric weight for "${rawKey}": ${value}\n`);
         continue;
       }
       if (value < 0) {
-        process.stderr.write(`rigscore: clamping negative weight for "${key}" to 0\n`);
+        process.stderr.write(`rigscore: clamping negative weight for "${rawKey}" to 0\n`);
         resolved[key] = 0;
         continue;
       }
       if (value > 100) {
-        process.stderr.write(`rigscore: clamping weight for "${key}" from ${value} to 100\n`);
+        process.stderr.write(`rigscore: clamping weight for "${rawKey}" from ${value} to 100\n`);
         resolved[key] = 100;
         continue;
       }
@@ -170,10 +179,10 @@ export function resolveWeights(config) {
     }
   }
 
-  // Zero out disabled checks
+  // Zero out disabled checks (same rename canonicalization).
   if (config?.checks?.disabled) {
     for (const id of config.checks.disabled) {
-      resolved[id] = 0;
+      resolved[canonicalCheckId(id)] = 0;
     }
   }
 
