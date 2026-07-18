@@ -1,6 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+// Resolves a plugin package directory to its actual entry FILE. A file: URL
+// must point at a file — it gets no package.json "main"/"exports" resolution —
+// so importing the directory URL only worked while Vite's resolver happened to
+// cover for it. require.resolve does the real package resolution.
+const requireFrom = createRequire(import.meta.url);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -213,8 +220,10 @@ export async function discoverPlugins(cwd) {
         if (seenPaths.has(resolved)) continue;
         seenPaths.add(resolved);
 
-        // Same win32 constraint as the built-in check loader above.
-        const mod = await import(pathToFileURL(resolved).href);
+        // Resolve the package entry file, then import it as a file: URL (the
+        // win32 constraint from the built-in loader above still applies).
+        const entry = requireFrom.resolve(resolved);
+        const mod = await import(pathToFileURL(entry).href);
         const plugin = mod.default || mod;
 
         if (!validatePlugin(plugin, dir.name)) continue;
