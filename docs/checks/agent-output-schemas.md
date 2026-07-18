@@ -52,3 +52,10 @@ No auto-fix. Both findings require a human decision about the agent's intended o
 - **Parse-only validation, not key-level.** The check verifies that ```` ```json ```` blocks are valid JSON; it does NOT enforce that required keys (`name`, `verdict`, `rationale`, etc.) are present. Key-level enforcement is the orchestrator's responsibility at runtime — see `STRATEGY_SCHEMA` and `CATEGORY_SCHEMA` in `_active/lib-skill-utils/health-check.py`.
 - **`.rigscorerc.json` disable.** This check is disabled in rigscore's own self-scan profile because rigscore itself is an npm package with no `.claude/agents/` directory. Workspaces that dogfood rigscore should leave it enabled.
 - **No config knobs.** Detection patterns and the agent-directory location are hard-coded. If the convention drifts (e.g., agents move under `.claude/subagents/`), update `discoverAgentDirs` in `src/checks/agent-output-schemas.js` rather than adding configuration.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Top 10 for Agentic Applications (2026) — ASI04/ASI05](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026) — agent tool-call / output surfaces as an injection and privilege-escalation vector.
+- [Model Context Protocol — Tools](https://modelcontextprotocol.io/specification) — the tool-call schema whose drift this check watches.

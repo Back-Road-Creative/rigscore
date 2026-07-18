@@ -90,3 +90,9 @@ No auto-fix. The `governance-docs.js` module does not export a `fixes` array. Th
 - The `git ls-files` tracking check is skipped when no `.git` directory is present.
 - Config override: `.rigscorerc.json` key `paths.claudeMd` adds extra files to the candidate list.
 - Exports `data.matchedPatterns` and `data.governanceText` for the `coherence` check; other checks should not depend on this internal shape.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Top 10 for LLM Applications — LLM01 Prompt Injection](https://genai.owasp.org/llm-top-10/) — keyword-stuffed-but-reversed governance as a semantic-injection surface.

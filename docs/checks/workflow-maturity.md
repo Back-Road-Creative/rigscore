@@ -68,3 +68,9 @@ No `fixes` export. `--fix --yes` is a no-op.
 - MCP consumer count is a case-insensitive substring match on the server name across all discovered SKILL.md content. Servers with very generic names (single English word) may false-positive as "has consumers."
 - Orphan memory detection compares basenames only within a single memory directory — cross-directory links don't count.
 - Eval detection accepts both hyphen- and underscore-normalized skill names (`skill-name` → `test_skill_name*`).
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026) — the agentic-workflow maturity signals this practice axis grades.
