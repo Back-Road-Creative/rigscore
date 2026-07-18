@@ -17,6 +17,7 @@ import agentSchemas from '../src/checks/agent-output-schemas.js';
 import gitHooks from '../src/checks/git-hooks.js';
 import skillCoherence from '../src/checks/skill-coherence.js';
 import workflowMaturity from '../src/checks/workflow-maturity.js';
+import { CLIENTS } from '../src/clients.js';
 import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 
 const tmpdirs = [];
@@ -77,10 +78,20 @@ describe('governance-docs: home CLAUDE.md is gated', () => {
   });
 });
 
+// The registry (src/clients.js) is the single source of truth for where a client
+// keeps its credential-bearing config. Hardcoding the path here made this fixture
+// go stale the moment the registry was corrected, so derive it instead.
+function credentialRelPath(clientId) {
+  const client = CLIENTS.find(c => c.id === clientId);
+  const cred = (client?.credentials || [])[0];
+  if (!cred) throw new Error(`no credential path registered for client "${clientId}"`);
+  return path.join(cred.dir, cred.file);
+}
+
 describe('credential-storage: home client configs are gated', () => {
   function setup() {
     const home = tmp();
-    write(path.join(home, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    write(path.join(home, credentialRelPath('claude-desktop')), JSON.stringify({
       mcpServers: { s: { command: 'node', env: { STRIPE_KEY: fakeStripeKey } } },
     }));
     return home;

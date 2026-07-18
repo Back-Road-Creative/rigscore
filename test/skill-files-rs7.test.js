@@ -42,7 +42,10 @@ describe('skill-files RS-7 hardening', () => {
 
   it('(a) flags a file that decoded to the Unicode replacement char (invalid UTF-8)', async () => {
     const cwd = tmp();
-    skillFile(cwd, 'weird.md', Buffer.from([0xff, 0xfe, 0x41, 0x42])); // invalid UTF-8 → U+FFFD
+    // Lone 0x80-0xBF continuation bytes with NO byte-order mark: invalid UTF-8
+    // under every decoder. (FF FE would be a UTF-16LE BOM, which a BOM-sniffing
+    // reader decodes cleanly — that is a valid file, not a mojibake one.)
+    skillFile(cwd, 'weird.md', Buffer.from([0x41, 0x80, 0x81, 0x42])); // invalid UTF-8 → U+FFFD
     const r = await check.run({ cwd, homedir: cwd, config: {} });
     expect(r.findings.some(f => f.findingId === 'skill-files/non-text-file')).toBe(true);
   });
