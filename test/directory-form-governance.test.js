@@ -71,8 +71,10 @@ describe('collectGovernanceDirFiles: shared default-dir walker', () => {
       write(dir, '.cursor/rules/README.notrule', 'noise');
       const found = await collectGovernanceDirFiles(dir);
       const rels = found.map((f) => f.rel);
-      expect(rels).toContain(path.join('.cursor', 'rules', 'foo.mdc'));
-      expect(rels).not.toContain(path.join('.cursor', 'rules', 'README.notrule'));
+      // `rel` is a rendered label, so it is POSIX on every platform (see relPosix
+      // in src/utils.js) — path.join() here would assert win32's `\` form.
+      expect(rels).toContain('.cursor/rules/foo.mdc');
+      expect(rels).not.toContain('.cursor/rules/README.notrule');
     } finally {
       fs.rmSync(dir, { recursive: true });
     }

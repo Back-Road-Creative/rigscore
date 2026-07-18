@@ -11,6 +11,7 @@ import path from 'node:path';
 import check from '../src/checks/mcp-config.js';
 import { computeServerHash, verifyState, loadState, STATE_FILENAME } from '../src/state.js';
 import { repoMcpPaths } from '../src/clients.js';
+import { relPosix } from '../src/utils.js';
 import { withTmpDir } from './helpers.js';
 
 const defaultConfig = { paths: { mcpConfig: [] }, network: { safeHosts: ['127.0.0.1', 'localhost', '::1'] } };
@@ -38,7 +39,10 @@ const readPin = (dir) => JSON.parse(fs.readFileSync(path.join(dir, STATE_FILENAM
 
 describe('rug-pull pin covers every committed repo-level MCP config', () => {
   it('repoMcpPaths() lists exactly the base:cwd client configs, in declaration order', () => {
-    expect(repoMcpPaths('/repo').map(p => path.relative('/repo', p)))
+    // repoMcpPaths() returns real filesystem paths, so they stay NATIVE — it is the
+    // comparison that must be portable. relPosix (src/utils.js) normalizes here so
+    // the expected list is one POSIX literal set rather than a per-platform fork.
+    expect(repoMcpPaths('/repo').map(p => relPosix('/repo', p)))
       .toEqual(['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.gemini/settings.json', 'opencode.json',
         '.amazonq/mcp.json', '.amazonq/default.json', '.roo/mcp.json', '.vscode/settings.json',
         '.junie/mcp/mcp.json', '.warp/.mcp.json', '.kiro/settings/mcp.json', '.qwen/settings.json',

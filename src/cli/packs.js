@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { mergeConfig, formatForPath } from '../lib/config-merge.js';
+import { toPosix } from '../utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -12,13 +13,12 @@ export const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', 'templates');
 
 const HOOKS = '.git/hooks';
 const HOOK_DIR_RE = /^(\.git\/hooks|\.githooks)\//;
-const slash = (p) => p.replace(/\\/g, '/');
 const isText = (v) => typeof v === 'string' && v.trim().length > 0;
 // A dest outside the target repo is a bug or an attack. Reject both, before any write.
 const escapes = (d) => path.isAbsolute(d) || d.split(/[\\/]/).includes('..');
 // A hook without +x is inert, yet still scores green on presence. Hook dests get it
 // automatically; any other file can ask via "exec": true.
-const isExec = (f) => f.exec === true || HOOK_DIR_RE.test(slash(f.dest));
+const isExec = (f) => f.exec === true || HOOK_DIR_RE.test(toPosix(f.dest));
 const fail = (name, msg) => { throw new Error(`pack "${name}": ${msg}`); };
 
 // Auto-discovered like src/checks: readdir. Dropping in templates/<name>/pack.json IS the
@@ -67,12 +67,12 @@ export function loadPack(name, templatesDir = TEMPLATES_DIR) {
 // core.hooksPath elsewhere → git ignores .git/hooks entirely: the hook never runs while a
 // presence check still passes. Say so at install time.
 export function hooksPathWarning(root, dests) {
-  const hooks = dests.map(slash).filter((d) => HOOK_DIR_RE.test(d));
+  const hooks = dests.map(toPosix).filter((d) => HOOK_DIR_RE.test(d));
   if (hooks.length === 0) return null;
   let set = '';
   try {
     const r = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: root, encoding: 'utf-8' });
-    set = slash((r.stdout || '').trim()).replace(/\/$/, '');
+    set = toPosix((r.stdout || '').trim()).replace(/\/$/, '');
   } catch { return null; }
   const stray = hooks.filter((d) => !d.startsWith(`${set || HOOKS}/`));
   if (stray.length === 0) return null;

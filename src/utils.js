@@ -42,6 +42,34 @@ function stripLeadingBom(text) {
   return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
 }
 
+/**
+ * Path separators in OUTPUT are part of the contract, so they are always `/`.
+ *
+ * `path.relative()` / `path.join()` return NATIVE separators, so on win32 the same
+ * repo rendered `apps\api\.env` where every other platform rendered `apps/api/.env`.
+ * That is not cosmetic — these strings are consumed as data:
+ *   - finding titles/details/`context` are asserted verbatim by tests and by
+ *     downstream tooling, so a `\` makes an otherwise-identical run compare unequal;
+ *   - SARIF `artifactLocation.uri` is URI-style and MUST use `/` per the spec —
+ *     GitHub code scanning cannot map a `\`-separated uri back to a repo file;
+ *   - baseline / state keys are matched as plain strings across machines, so a
+ *     Windows-produced key silently misses its Linux-produced counterpart and the
+ *     finding re-appears as "new".
+ *
+ * Use these for anything DISPLAYED, COMPARED or SERIALIZED. Do NOT use them to build
+ * a path handed to `fs` — normalize the label, keep the native path for the syscall.
+ * (Node accepts `/` on win32 for fs calls, but the intent stays: one path for I/O,
+ * one string for output.)
+ */
+export function toPosix(p) {
+  return typeof p === 'string' ? p.replace(/\\/g, '/') : p;
+}
+
+/** `path.relative()` with the separators the output contract expects. See toPosix. */
+export function relPosix(from, to) {
+  return toPosix(path.relative(from, to));
+}
+
 export async function readFileSafe(p) {
   try {
     return decodeBuffer(await fs.promises.readFile(p));
@@ -418,7 +446,7 @@ export async function collectGovernanceDirFiles(cwd, dirs = governanceDirDefault
     for (const full of files) {
       if (seen.has(full)) continue;
       seen.add(full);
-      out.push({ full, rel: path.relative(cwd, full) });
+      out.push({ full, rel: relPosix(cwd, full) });
     }
   }
   return out;

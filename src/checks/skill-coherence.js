@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, readJsonSafe, collectGovernanceDirFiles } from '../utils.js';
+import { readFileSafe, readJsonSafe, collectGovernanceDirFiles, relPosix, toPosix } from '../utils.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
 
 /**
@@ -165,9 +165,9 @@ async function discoverSkills(cwd, homedir, includeHome) {
             name: entry.name,
             path: skillPath,
             content,
-            relPath: dir.startsWith(cwd)
+            relPath: toPosix(dir.startsWith(cwd)
               ? path.relative(cwd, skillPath)
-              : skillPath.replace(homedir, '~'),
+              : skillPath.replace(homedir, '~')),
           });
         }
       }

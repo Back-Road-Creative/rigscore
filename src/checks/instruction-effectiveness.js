@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
-import { readFileSafe, statSafe, fileExists, collectGovernanceDirFiles } from '../utils.js';
+import { readFileSafe, statSafe, fileExists, collectGovernanceDirFiles, relPosix, toPosix } from '../utils.js';
 
 // Context budget thresholds
 const REFERENCE_CONTEXT = 200_000;
@@ -119,7 +119,7 @@ async function collectGovernanceFiles(cwd, homedir, config, addFile) {
       for (const entry of entries) {
         if (entry.startsWith('.') || !entry.endsWith('.md')) continue;
         const full = path.join(govSubDir, entry);
-        const relName = path.relative(cwd, full) || full;
+        const relName = relPosix(cwd, full) || full;
         await addFile(full, relName, 'governance');
       }
     } catch { /* directory doesn't exist or unreadable */ }
@@ -168,18 +168,18 @@ async function collectMemoryFiles(cwd, homedir, addFile) {
   for (const memPath of memoryLocations) {
     const content = await readFileSafe(memPath);
     if (!content) continue;
-    const rel = memPath.startsWith(cwd)
+    const rel = toPosix(memPath.startsWith(cwd)
       ? path.relative(cwd, memPath)
-      : memPath.replace(homedir, '~');
+      : memPath.replace(homedir, '~'));
     await addFile(memPath, rel, 'memory');
 
     for (const match of content.matchAll(/\[.*?\]\(([^)]+\.md)\)/g)) {
       const linkedPath = match[1];
       if (linkedPath.startsWith('http')) continue;
       const resolvedPath = path.resolve(path.dirname(memPath), linkedPath);
-      const linkedRel = resolvedPath.startsWith(cwd)
+      const linkedRel = toPosix(resolvedPath.startsWith(cwd)
         ? path.relative(cwd, resolvedPath)
-        : resolvedPath.replace(homedir, '~');
+        : resolvedPath.replace(homedir, '~'));
       await addFile(resolvedPath, linkedRel, 'memory');
     }
   }
