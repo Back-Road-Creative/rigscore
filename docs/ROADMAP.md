@@ -42,7 +42,7 @@ relative to each other, not deadlines.
   (CLAUDE.md and peers) that catches semantic-reversal weaknesses keyword
   checks cannot see. Today this is README-Roadmap-only; the `--semantic` /
   `claude -p` plumbing already exists for tool descriptions and can be reused.
-- **Current gap:** README Roadmap-only (README.md:696) — not implemented.
+- **Current gap:** README Roadmap-only ([README §Roadmap](../README.md#roadmap)) — not implemented.
 - **Priority:** high
 
 ---
@@ -61,8 +61,9 @@ relative to each other, not deadlines.
 
 - **Capability:** Offline detection of binary / non-text files dropped into
   skill directories, plus an opt-in `--online` malware-hash lookup.
-- **Current gap:** rigscore admits binaries in `.claude/skills/` are "not
-  inspected at all" (THREAT-MODEL §3.4).
+- **Current gap:** binaries dropped into `.claude/skills/` are read as UTF-8 and
+  regex-scanned as mojibake, so a non-text payload slips the pattern catalog while
+  still counting as "scanned" — there is no non-text sniff to flag it (THREAT-MODEL §3.4).
 - **Priority:** med
 
 ### 6. AST / dataflow (taint) analysis for skill code
@@ -97,7 +98,9 @@ relative to each other, not deadlines.
 
 - **Capability:** A `--fix` lane that suggests rewrites to harden governance /
   system-prompt prose (rewrite-suggest), not just mechanical config edits.
-- **Current gap:** `--fix` edits config only; no prose-hardening suggestions.
+- **Current gap:** `--fix` makes only mechanical or append-only edits — e.g. the
+  coherence fixer appends a governance-declaration stub to CLAUDE.md — and never
+  rewrites existing prose to harden it. Prose-hardening rewrites are the open gap.
 - **Priority:** low
 
 ### 10. A2A (agent-to-agent) config surface — watch, don't build
@@ -151,3 +154,58 @@ Each is on hold until the cross-vendor surface it depends on stabilizes.
 - **Current gap:** `memory-hygiene` conventions are Claude-shaped by necessity
   today; no cross-vendor memory convention exists yet.
 - **Priority:** low (watch)
+
+---
+
+## Competitive landscape — watch & catch-up
+
+Surfaced by the 2026-07 competitive landscape review. Recorded so each is
+tracked, not punted — capability categories, no vendor names (see the
+disclosure-doc neutrality convention). Deliberate *non-build* decisions live in
+[`adr/`](adr/) — e.g. [ADR 0001 — declining the LSP/IDE lane](adr/0001-decline-lsp-ide-plugin-lane.md).
+
+### 15. Watch: general-purpose SAST platforms adding agent-skill rules
+
+- **Signal:** established static-analysis platforms are beginning to ship rule
+  packs for the agent-skill surface across a few clients.
+- **Answer, not alarm:** compete on breadth + a practice/hygiene score, not
+  rule-count — nothing else scores AI-dev workflow maturity or full-surface
+  posture.
+- **Action:** watch only; re-evaluate if a general SAST platform adds a
+  cross-surface *score*.
+- **Priority:** med (watch)
+
+### 16. Watch: OWASP Agentic Skills Top 10 + Universal Skill Format (USF)
+
+- **Signal:** the OWASP Agentic Skills Top 10 project (Incubator; IDs
+  `AST01`–`AST10`) proposes a **Universal Skill Format**, with **USF v1.0 planned
+  for Q4 2026**.
+- **Opportunity:** early validation against USF = citable standards leadership;
+  an `AST01`–`AST10` mapping pairs with the existing OWASP-Agentic SARIF tags.
+- **Action:** track the spec; prototype an AST mapping once USF v1.0 lands.
+- **Priority:** low (watch)
+
+### 17. Catch-up checks deferred from the review
+
+Each is a capability the leading tools ship that rigscore does not yet expose as
+a dedicated check. Recorded here so none is silently dropped:
+
+- **Cross-server toxic-flow / attack-path analysis** — dangerous capability pairs
+  *across* configured MCP servers, a headline feature of the leading MCP
+  scanners. Already captured above as item 4; this is its competitive framing.
+- **MCP typosquat as a dedicated check** — today typosquat detection is folded
+  into `mcp-config` against the ~52-entry `known-mcp-servers` list; a standalone
+  check backed by a larger known-legit registry (the best MCP scanners ship 80+)
+  would surface it as its own signal. **Priority:** med.
+- **Context-drift check** — instruction files referencing dead paths/scripts as a
+  first-class check ("your AGENTS.md is lying"). `instruction-effectiveness`
+  covers dead cross-references partially today; a dedicated check would broaden
+  it. **Priority:** med.
+- **`--connect` live MCP introspection** — already captured as items 1–2
+  (opt-in spawn + auto-TOFU re-pin); listed here for competitive completeness.
+- **Machine-level scan mode** — discover user-global configs + IDE extensions
+  system-wide (some scanners auto-discover ~12 clients system-wide); rigscore's
+  repo-only read is narrower. **Priority:** low.
+- **Homebrew tap + prebuilt binaries** — some competing tools ship them; an
+  npm/npx-only distribution excludes part of the security audience. Distribution,
+  not a check. **Priority:** low.

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,7 +42,11 @@ export async function loadChecks(options = {}) {
       .sort();
 
     for (const file of checkFiles) {
-      const mod = await import(path.join(dir, file));
+      // pathToFileURL, not a bare path: on win32 an absolute path ("C:\...")
+      // is not a valid import specifier and ESM rejects it with
+      // "Only URLs with a scheme in: file, data ...", which aborted the whole
+      // scan on Windows.
+      const mod = await import(pathToFileURL(path.join(dir, file)).href);
       checks.push(mod.default);
 
       // Collect self-registered fixes. A fixer must declare EITHER a `match`
@@ -65,7 +69,66 @@ export async function loadChecks(options = {}) {
   const plugins = await discoverPlugins(options.cwd);
   checks.push(...plugins);
 
+  // Discover local-path plugins declared in the project's `.rigscorerc.json`
+  // `plugins: ["./checks/foo.js"]`. Deduped by id against everything already
+  // loaded (built-ins + npm plugins) — first registration wins.
+  const existingIds = new Set(checks.map((c) => c?.id).filter(Boolean));
+  const localPlugins = await discoverLocalPlugins(options.cwd, options.plugins);
+  for (const p of localPlugins) {
+    if (existingIds.has(p.id)) continue;
+    existingIds.add(p.id);
+    checks.push(p);
+  }
+
   return checks;
+}
+
+/** Read the `plugins` array from the project's `.rigscorerc.json` (best-effort). */
+async function readConfiguredPluginPaths(cwd) {
+  if (!cwd) return [];
+  try {
+    const raw = await fs.promises.readFile(path.join(cwd, '.rigscorerc.json'), 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed?.plugins)
+      ? parsed.plugins.filter((p) => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Load local-path check plugins (`plugins: ["./checks/foo.js"]`). Each entry is a
+ * LOCAL path to an ES module exporting a check ({id,name,category,run}), resolved
+ * relative to the project root. URLs and npm specifiers are rejected — remote and
+ * npm plugins have their own (SHA-verified / registry) discovery paths; this one
+ * is for a check a repo ships in-tree without publishing.
+ *
+ * @param {string} [cwd] Project root. @param {string[]} [pluginPaths] Explicit
+ *   override (else read from `.rigscorerc.json`). @returns {Promise<object[]>}
+ */
+export async function discoverLocalPlugins(cwd, pluginPaths) {
+  const paths = pluginPaths && pluginPaths.length
+    ? pluginPaths : await readConfiguredPluginPaths(cwd);
+  const plugins = [];
+  const seenIds = new Set();
+  for (const rel of paths) {
+    if (/^https?:\/\//i.test(rel)) {
+      process.stderr.write(`rigscore: local plugin "${rel}" ignored — must be a local path, not a URL\n`);
+      continue;
+    }
+    const abs = path.isAbsolute(rel) ? rel : path.resolve(cwd || process.cwd(), rel);
+    try {
+      const mod = await import(pathToFileURL(abs).href);
+      const plugin = mod.default || mod;
+      if (!validatePlugin(plugin, rel)) continue;
+      if (seenIds.has(plugin.id)) continue;
+      seenIds.add(plugin.id);
+      plugins.push(plugin);
+    } catch (err) {
+      process.stderr.write(`rigscore: failed to load local plugin "${rel}": ${err.message}\n`);
+    }
+  }
+  return plugins;
 }
 
 /**
@@ -150,7 +213,8 @@ export async function discoverPlugins(cwd) {
         if (seenPaths.has(resolved)) continue;
         seenPaths.add(resolved);
 
-        const mod = await import(pluginPath);
+        // Same win32 constraint as the built-in check loader above.
+        const mod = await import(pathToFileURL(resolved).href);
         const plugin = mod.default || mod;
 
         if (!validatePlugin(plugin, dir.name)) continue;

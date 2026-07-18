@@ -87,9 +87,11 @@ describe('Q2: --check with a check that is N/A for this repo', () => {
     expect(ok.notApplicable).toBe(false);
     expect(typeof ok.score).toBe('number');
 
-    // A typo'd --check id must NOT silently go green.
+    // A typo'd --check id must NOT silently go green — it now errors loudly
+    // (exit 2 + a diagnostic naming the unknown id and the valid ids), instead
+    // of the old silent 0/100 exit 1.
     const typo = run([project, '--check', 'no-such-check-id', '--json']);
-    expect(typo.status).toBe(1);
-    expect(JSON.parse(typo.stdout).score).toBe(0);
+    expect(typo.status).toBe(2);
+    expect(typo.stderr).toMatch(/unknown check id/i);
   });
 });

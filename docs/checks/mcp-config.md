@@ -198,3 +198,10 @@ Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat
 - **Typosquat 1-2 distance collisions on intentional forks** — Levenshtein 1–2 matches trigger on deliberate internal forks (e.g. `@my-org/filesystem` vs. `@modelcontextprotocol/server-filesystem`). The check can't tell intent apart from intent-imitation. Verify the package source, then add the fork name to your curated list via `paths.mcpConfig` (no dedicated allowlist yet).
 - **`mcp-config/localhost-server` INFO** — always emitted when stdio isn't used and `url` is `localhost`/`127.0.0.1`. Intentional by design but noisy on local MCP dev setups. Currently not suppressible per-server — filter via the suppress list by findingId: `"mcp-config/localhost-server"`.
 - **`mcp-config/cross-client-drift` on intentional per-client overrides** — fires when the same server has different args across Claude Code vs. Cursor vs. Cline. Legitimate when env budgets differ per client. No config knob yet; consider a reasoned suppress entry.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Model Context Protocol — specification](https://modelcontextprotocol.io/specification) — the config + transport surface this check parses and scopes.
+- [CVE-2025-54136 — MCP tool-description rug-pull](https://nvd.nist.gov/vuln/detail/CVE-2025-54136) — the drift-between-scans class the pin/verify workflow defends.

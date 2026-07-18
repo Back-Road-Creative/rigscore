@@ -140,3 +140,10 @@ CRITICAL→`error`, WARNING→`warning`, INFO→`note`. Location: the config pat
   unused `HTTPS_PROXY` silences it, and an agent installed by a name outside its identifier list (a
   vendored binary, a private base image that bakes the CLI in) is not seen at all. It reads the
   devcontainer's own files only — not the base image, not `docker-compose` services it references.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Codex CLI — config reference (approval_policy / sandbox_mode)](https://developers.openai.com/codex/config-reference) — one of the per-client sandbox boundaries this check grades.
+- [Claude Code — settings & permissions](https://code.claude.com/docs/en/settings) — the permissions.deny boundary graded for Claude Code.

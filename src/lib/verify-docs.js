@@ -361,6 +361,169 @@ export async function verifyCheckDocs(opts = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Prose-doc link + registry-count guard.
+//
+// The per-check gate above keeps docs/checks/*.md in sync with src/checks/*.js.
+// The narrative docs (THREAT-MODEL.md, docs/known-limits.md) drift a different
+// way: dead source links after a check rename, and hand-copied registry counts
+// that go stale when src/clients.js grows. Both are DERIVED from the source of
+// truth here so the drift class cannot silently recur — a rename breaks the
+// link check, a new client breaks the count check.
+// ---------------------------------------------------------------------------
+
+/** Narrative docs (repo-root-relative) that get link-checked. */
+export const EXTERNAL_DOC_RELPATHS = ['THREAT-MODEL.md', 'docs/known-limits.md'];
+
+/**
+ * Markdown link targets that point at a repo-local file (relative path),
+ * fragment-stripped. Skips external URLs (http/https/any `scheme://`), mailto,
+ * and pure in-page `#anchor` links — none of those are file-existence checkable.
+ */
+export function relativeLinkTargets(body) {
+  const out = [];
+  const re = /\[[^\]]*\]\(([^)]+)\)/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    let target = m[1].trim();
+    if (!target || /^(#|mailto:)/i.test(target)) continue;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(target)) continue; // http(s):// and any other scheme
+    target = target.split('#')[0].trim(); // drop #anchor fragment
+    if (target) out.push(target);
+  }
+  return out;
+}
+
+/**
+ * Canonical registry counts, derived from a repo root's src/clients.js — the
+ * single source of truth. Dynamic-imports the module (ESM rejects bare relative
+ * specifiers, so a file:// URL is required). Throws if the module is absent,
+ * which the caller treats as "third-party repo, skip the count guard".
+ */
+export async function deriveRegistryCounts(root) {
+  const clientsUrl = pathToFileURL(path.join(root, 'src', 'clients.js')).href;
+  const mod = await import(clientsUrl);
+  const clients = mod.CLIENTS || [];
+  return {
+    clients: clients.length,
+    mcpClients: clients.filter((c) => c.mcp && c.mcp.length).length,
+    credentialClients: clients.filter((c) => c.credentials && c.credentials.length).length,
+    credentialFiles: mod.credentialClients().length,
+  };
+}
+
+/**
+ * Pure count-sentence checks. `texts` maps a repo-relative doc path to its body
+ * (absent keys are skipped). `counts` is the derived truth. A vanished anchor
+ * sentence is itself an offender: a reword must never silently disable the guard.
+ */
+export function checkCountSentences(texts, counts) {
+  const offenders = [];
+  const tm = texts['THREAT-MODEL.md'];
+  if (tm != null) {
+    const m = tm.match(
+      /registry of (\d+) known agent clients \((\d+) with MCP config paths, (\d+) holding (\d+) credential files\)/,
+    );
+    if (!m) {
+      offenders.push({
+        doc: 'THREAT-MODEL.md',
+        reason: 'count-anchor-missing',
+        detail:
+          'the "registry of N known agent clients (…)" sentence the count guard keys on was not found — did its wording change?',
+      });
+    } else {
+      const got = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+      const want = [counts.clients, counts.mcpClients, counts.credentialClients, counts.credentialFiles];
+      if (want.some((w, i) => w !== got[i])) {
+        offenders.push({
+          doc: 'THREAT-MODEL.md',
+          reason: 'count-drift',
+          detail: `registry sentence says ${got.join('/')} (clients/mcp/cred-clients/cred-files); source derives ${want.join('/')}`,
+        });
+      }
+    }
+  }
+  const cs = texts['docs/checks/credential-storage.md'];
+  if (cs != null) {
+    const m = cs.match(/currently (\d+) credential-file entries/);
+    if (!m) {
+      offenders.push({
+        doc: 'docs/checks/credential-storage.md',
+        reason: 'count-anchor-missing',
+        detail: 'the "currently N credential-file entries" sentence the count guard keys on was not found',
+      });
+    } else if (Number(m[1]) !== counts.credentialFiles) {
+      offenders.push({
+        doc: 'docs/checks/credential-storage.md',
+        reason: 'count-drift',
+        detail: `says ${m[1]} credential-file entries; credentialClients() returns ${counts.credentialFiles}`,
+      });
+    }
+  }
+  return offenders;
+}
+
+/**
+ * Verify the narrative docs: every repo-local markdown link resolves to a real
+ * file, and every hand-copied registry count matches what src/clients.js derives.
+ * `exists` and `importCounts` are injectable for tests. A doc or the registry
+ * being absent (a third-party tree reached via --cwd) is a graceful skip, matching
+ * the weights/FINDING_IDS fallbacks in verifyCheckDocs().
+ */
+export async function verifyExternalDocs(opts = {}) {
+  const root = path.resolve(opts.root || defaultRoot());
+  const exists = opts.exists || ((p) => fs.existsSync(p));
+  const importCounts = opts.importCounts || deriveRegistryCounts;
+
+  const linkOffenders = [];
+  for (const relDoc of EXTERNAL_DOC_RELPATHS) {
+    const abs = path.join(root, relDoc);
+    const body = await readFileSafe(abs);
+    if (body === null) continue; // doc absent — third-party repo, skip
+    const docDir = path.dirname(abs);
+    for (const target of relativeLinkTargets(body)) {
+      if (!exists(path.resolve(docDir, target))) {
+        linkOffenders.push({ doc: relDoc, target, reason: 'dead-link' });
+      }
+    }
+  }
+
+  let counts = null;
+  try {
+    counts = await importCounts(root);
+  } catch {
+    counts = null; // no src/clients.js — skip the count guard
+  }
+  let countOffenders = [];
+  if (counts) {
+    const texts = {};
+    for (const rel of ['THREAT-MODEL.md', 'docs/checks/credential-storage.md']) {
+      const b = await readFileSafe(path.join(root, rel));
+      if (b !== null) texts[rel] = b;
+    }
+    countOffenders = checkCountSentences(texts, counts);
+  }
+
+  return {
+    ok: linkOffenders.length === 0 && countOffenders.length === 0,
+    linkOffenders,
+    countOffenders,
+  };
+}
+
+/** Render a human-readable summary of a verifyExternalDocs() result. */
+export function formatExternalDocsResult(result) {
+  const lines = [];
+  for (const { doc, target } of result.linkOffenders || []) {
+    lines.push(`docs-gate: DEAD-LINK ${doc} links to \`${target}\`, which does not exist. Fix or remove the link.`);
+  }
+  for (const { doc, reason, detail } of result.countOffenders || []) {
+    const label = reason === 'count-drift' ? 'COUNT-DRIFT' : 'COUNT-ANCHOR-MISSING';
+    lines.push(`docs-gate: ${label} ${doc} — ${detail}`);
+  }
+  return lines.join('\n');
+}
+
 /**
  * Render a human-readable summary of a verifyCheckDocs() result.
  * One line per offender/orphan plus a stub hint.

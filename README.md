@@ -44,7 +44,7 @@ npx github:Back-Road-Creative/rigscore
   │                                        │
   │         HYGIENE SCORE: 78/100          │
   │         Grade: B                       │
-  │         Risk: Standard                 │
+  │         Posture: Standard              │
   │         Practice: 82/100 (B)           │
   │                                        │
   ╰────────────────────────────────────────╯
@@ -176,7 +176,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 - **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
 - **Docker image (GHCR).** The Docker Publish workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/back-road-creative/rigscore:<tag>` automatically on `v*.*.*` tag pushes. It is also callable via `workflow_dispatch` for manual and dry-run builds. Pull a published tag as `ghcr.io/back-road-creative/rigscore:<tag>`.
-- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite action, [listed on the GitHub Marketplace](https://github.com/marketplace/actions/rigscore). Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.1.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published. Copy-paste job:
+- **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite GitHub Action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.1.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published. Copy-paste job:
 
   ```yaml
   name: rigscore
@@ -194,7 +194,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
             fail-under: '70'
             upload-sarif: true
   ```
-- **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node 18/20. WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
+- **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node `18.17`, `20`, and `22` (`.github/workflows/ci.yml`). WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
 
 ## What it checks
 
@@ -202,7 +202,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets AI agents connect to external tools via servers. Each server exposes capabilities — filesystem access, API calls, database queries. The security risk is in the permissions.
 
-rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Gemini CLI (`.gemini/settings.json`), opencode (`opencode.json`, servers under the `mcp` key), Claude Desktop (`~/.claude/claude_desktop_config.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`), Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code (`.qwen/settings.json`, `~/.qwen/settings.json`), and Crush (`.crush.json`, `crush.json`, `~/.config/crush/crush.json` — servers under the `mcp` key).
+rigscore scans MCP configs across all major clients: Claude (`.mcp.json`, `.vscode/mcp.json`), Cursor (`~/.cursor/mcp.json`), Cline (`~/.cline/mcp_settings.json`), Continue (`~/.continue/config.json`), Windsurf (`~/.windsurf/mcp.json`), Zed (`~/.config/zed/settings.json`), Amp (`~/.amp/mcp.json`), Gemini CLI (`.gemini/settings.json`), opencode (`opencode.json`, servers under the `mcp` key), Claude Desktop (`~/.claude/claude_desktop_config.json`), Amazon Q Developer (`.amazonq/mcp.json`, `.amazonq/default.json`, `~/.aws/amazonq/`), Roo Code (`.roo/mcp.json`), Cody (`cody.mcpServers` in `.vscode/settings.json`), JetBrains Junie (`.junie/mcp/mcp.json`, `~/.junie/mcp/mcp.json`), Warp (`.warp/.mcp.json`, `~/.warp/.mcp.json`), Kiro (`.kiro/settings/mcp.json`, `~/.kiro/settings/mcp.json`), Qwen Code (`.qwen/settings.json`, `~/.qwen/settings.json`), Crush (`.crush.json`, `crush.json`, `~/.config/crush/crush.json` — servers under the `mcp` key), OpenClaw (`~/.openclaw/openclaw.json` — servers under the nested `mcp.servers` key), and Antigravity (`~/.gemini/antigravity/mcp_config.json`).
 
 **What rigscore looks for:**
 - Transport type: `stdio` (local, safer) vs. `sse` (network, riskier)
@@ -589,7 +589,7 @@ A repo with no practice surface to grade — no agent loops, specs, CI agent job
 
 **Scoring profiles:** Five built-in profiles:
 - `default` — balanced AI dev environment audit (WEIGHTS from `src/constants.js`).
-- `minimal` — AI-moat checks only (mcp-config 30, coherence 30, skill-files 20, claude-md 20; rest 0).
+- `minimal` — AI-moat checks only (mcp-config 30, coherence 30, skill-files 20, governance-docs 20; rest 0).
 - `ci` — CI pipelines (identical to `default` today).
 - `home` — single-user dev boxes / `~/` scans. Governance / skill-files / MCP emphasized; infra / docker / windows off so coverage-scaling doesn't punish N/A infra surfaces.
 - `monorepo` — same weights as `default` with hints for `--recursive --depth 3`.
@@ -637,6 +637,7 @@ on first scan — all are local, none phone home.
 |---|---|---|
 | `<cwd>/.rigscore-state.json` | Only when the project has a repo-level MCP config — any of the 15 committed client paths (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json`, and the Amazon Q / Roo / Junie / Warp / Kiro / Qwen / Crush variants), not just `.mcp.json`. | Stores SHA-256 hashes of each MCP server's `{command, args, envKeys}` shape. Detects silent MCPoison-class (CVE-2025-54136) pivots on subsequent scans. **Values are never hashed — only env-var keys.** |
 | `$XDG_CACHE_HOME/rigscore/mcp-registry.json` (falls back to `~/.cache/rigscore/mcp-registry.json`) | Only with `--online` or `--refresh-mcp-registry`. | Caches the official MCP registry response. 24h TTL. Used to augment typosquat detection. |
+| `<cwd>/.rigscore-history.json` | Only with `--record-score` — a plain scan never writes it. | Appends one row per recorded scan (score, grade, timestamp) so `--trend` can print the history and per-run deltas. Local scores only, no findings and no file contents. |
 
 Recommendations:
 
@@ -664,7 +665,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 - **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. The only mitigation that ships today is the cross-config coherence pass, which cross-checks governance claims against observed configuration. LLM-judge assist (opt-in) is a **planned** roadmap item — it is not implemented (see [Roadmap](#roadmap)).
 - **Injection detection is pattern-based.** The injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
 - **The default scan pins config-shape; runtime tool descriptions are pinned on demand.** A scan hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). Hashing the tool descriptions a *running* server advertises is handled by the separate, opt-in `mcp-hash` / `mcp-verify` print-and-paste workflow ([Runtime tool pinning](#runtime-tool-pinning)) — rigscore never spawns the server itself, so runtime drift is verified on demand rather than on every scan. See "State file" below.
-- **Secret scanning covers named config files in the project root.** rigscore checks ~20 named files (config.json, secrets.yaml, .env, etc.). For deep recursive scanning, use `--deep`. For git history scanning, use a dedicated git-history secret scanner.
+- **Secret scanning covers named config files in the project root.** rigscore checks the fixed set of names in `AI_CONFIG_FILES` (`src/constants.js`) — every known governance file plus `config.json`, `secrets.yaml`, `.env`, and similar. For deep recursive scanning, use `--deep`. For git history scanning, use a dedicated git-history secret scanner.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
 - **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 28 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 37/100 in CI for this reason — only 10 of its own 28 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
 
@@ -672,7 +673,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 
 rigscore runs on rigscore in CI. Transparency about what that score means:
 
-- **Self-score: 37/100 (Grade F).** This is the real score, not a vanity baseline. rigscore is an npm package, so only **10 of its 28 checks are applicable (weight 46/100)** — the rest legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). Score is scaled down proportionally when applicable coverage is below 50%, which is the intended behavior. Reproduce the CI number locally with a neutralised `$HOME` (what a runner sees):
+- **Self-score: 37/100 (Grade F).** This is the real score, not a vanity baseline. rigscore is an npm package, so only **10 of its 28 checks are applicable (weight 46/100)** — the rest legitimately return N/A (no MCP config, no Docker, no skill files, no `.claude/settings.json`, etc.). The score is scaled by applicable coverage — the applicable weight over 100, capped at 1 — so partial coverage always means partial confidence (`src/scoring.js`), which is the intended behavior. Reproduce the CI number locally with a neutralised `$HOME` (what a runner sees):
 
   ```bash
   HOME=$(mktemp -d) node bin/rigscore.js --no-cta --profile default .
@@ -700,7 +701,10 @@ npx github:Back-Road-Creative/rigscore --report compliance       # Group finding
 npx github:Back-Road-Creative/rigscore --ci                      # CI mode (--sarif --no-color --no-cta)
 npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score < 80 (default: 70)
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
-npx github:Back-Road-Creative/rigscore --badge                   # Generate a markdown badge
+npx github:Back-Road-Creative/rigscore --badge                   # Generate a score badge (format set by --badge-format)
+npx github:Back-Road-Creative/rigscore --badge --badge-format svg # Badge format: markdown (default, shields.io image snippet), endpoint (shields.io Endpoint Badge JSON for a self-updating README), or svg (self-contained, no network). Also works with --recursive, badging the monorepo average
+npx github:Back-Road-Creative/rigscore --junit                   # JUnit XML — one testcase per check (Jenkins, Azure Pipelines, GitLab test reports)
+npx github:Back-Road-Creative/rigscore --code-quality            # GitLab Code Quality report (CodeClimate JSON)
 npx github:Back-Road-Creative/rigscore --no-color                # Plain text output
 npx github:Back-Road-Creative/rigscore --cta                     # Opt in to the promotional CTA (off by default)
 npx github:Back-Road-Creative/rigscore --no-cta                  # Deprecated alias — CTA is already off by default; kept for back-compat
@@ -720,6 +724,9 @@ npx github:Back-Road-Creative/rigscore --init-hook               # Install pre-c
 npx github:Back-Road-Creative/rigscore --ignore "env-exposure/env-not-gitignored,skill-files/shell-exec" # Suppress findings by finding ID (exact match, case-insensitive, comma-separated). See docs/FINDING_IDS.md for the stable ID list. Title-substring still works as a legacy fallback.
 # Suppression is never silent: whether it comes from --ignore or a .rigscorerc.json `suppress:` entry, rigscore reports how many findings were muted and their ids — in the human report (so it shows up in a CI log), in JSON (`suppressed: { count, ids }`), and in SARIF (`runs[0].properties.suppressedCount` / `suppressedIds`). The findings are still removed from scoring; the muting is just visible, not only in a config diff. This holds in `--recursive` / `--profile monorepo` mode too: each project's own `.rigscorerc.json` `suppress:` is honored and rescored per project.
 npx github:Back-Road-Creative/rigscore --verbose                 # Also show passing checks (info/skipped findings already print by default)
+npx github:Back-Road-Creative/rigscore --quiet                   # Summary only — score, grade, posture and finding counts (pre-commit hooks, terse CI logs)
+npx github:Back-Road-Creative/rigscore --record-score            # Append this scan's score to .rigscore-history.json (opt-in; nothing is recorded without it)
+npx github:Back-Road-Creative/rigscore --trend                   # Print the recorded score history and per-run deltas, then exit (read-only; runs no checks)
 npx github:Back-Road-Creative/rigscore --version                 # Version info
 npx github:Back-Road-Creative/rigscore --help                    # Show help
 ```
@@ -851,15 +858,21 @@ npx github:Back-Road-Creative/rigscore --fix
 npx github:Back-Road-Creative/rigscore --fix --yes
 ```
 
-**Safe fixes only:**
-- Add `.env` to `.gitignore`
-- `chmod 600` on `.env` files
-- `chmod 700` on `~/.ssh`
-- `chmod 600` on SSH private keys
-- Disable the `enableAllProjectMcpServers` MCP auto-approve bypass in `.claude/settings.json`
-- Strip an `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirect (CVE-2026-21852) from a committed MCP server env
+**Safe fixes only** — most fixers self-register from their check modules (`getRegisteredFixes()`); a few mechanical ones that span several checks live in `src/fixer.js` itself. Today that is 17 fixers:
 
-rigscore never modifies governance file content.
+- *Secrets / permissions:* add `.env` to `.gitignore`; add `*.pem`, `*.key` to `.gitignore`; `chmod 600` on `.env` files; `chmod 700` on `~/.ssh`; `chmod 600` on SSH private keys; `chmod 644` on world-writable skill files.
+- *MCP:* disable the `enableAllProjectMcpServers` auto-approve bypass in `.claude/settings.json`; strip an `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_BASE` redirect (CVE-2026-21852) from a committed MCP server env.
+- *Docker:* remove `privileged: true`; remove a Docker-socket volume mount; add `cap_drop: [ALL]`; add `security_opt: [no-new-privileges:true]`.
+- *Coherence:* append a governance-declaration stub for an undeclared MCP server (append-only — never rewrites existing prose).
+- *Unicode:* strip zero-width, bidi-override and tag characters out of governance and committed-config files (invisible codepoints only — visible homoglyphs are left alone, since rewriting them is lossy).
+- *Git hooks:* `chmod +x` a `pre-commit` / `pre-push` hook git is silently skipping because it is not executable.
+- *Permissions:* fill a starter `permissions.deny` list into a `.claude/settings.json` that has none — only into a settings file you already have, and never over a deny list you already wrote.
+- *Credentials:* append a `${VAR}` placeholder for a plaintext client-config credential to an `.env.example` you already have, so the secret has somewhere to move to.
+
+rigscore never modifies existing governance file content, and never creates a file the repo did
+not already have — the last two fixers above edit an existing `.claude/settings.json` /
+`.env.example` and are a no-op skip when that file is absent. Creating one is a pack install,
+behind `--install-packs`.
 
 #### `--install-packs` — scaffolding is a separate opt-in
 
@@ -1064,7 +1077,7 @@ Supplementary docs live under `docs/`:
 
 Prefer the terminal? `rigscore explain <findingId>` prints the relevant
 `docs/checks/` page (finding-specific section when available) — e.g.
-`rigscore explain claude-md/missing-claude-md`.
+`rigscore explain governance-docs/no-governance-file`.
 
 ## Contributing
 

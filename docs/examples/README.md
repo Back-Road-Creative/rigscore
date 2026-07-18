@@ -2,8 +2,9 @@
 
 Starter skill / rules files for the AI coding clients rigscore knows how
 to score. Each template is calibrated against rigscore's default profile,
-which concretely means: **zero CRITICAL findings, and `governance-docs`,
-`skill-files` and `coherence` all at 100** — not a high overall grade
+which concretely means: **zero CRITICAL findings, `governance-docs`,
+`skill-files` and `coherence` all at 100, and an AI-use-policy section so the
+`ai-disclosure` advisory passes** — not a high overall grade
 (see the caveat below on why a directory holding one config file cannot
 score above ~50). Copy the one for your client, drop it at the indicated
 path, then edit to match your project's real forbidden-actions, path
@@ -20,6 +21,12 @@ restrictions, and approval gates.
 | Continue | [`continue/.continuerules`](continue/.continuerules) | `<repo-root>/.continuerules` |
 | Windsurf | [`windsurf/.windsurfrules`](windsurf/.windsurfrules) | `<repo-root>/.windsurfrules` |
 | Aider | [`aider/.aider.conf.yml`](aider/.aider.conf.yml) | `<repo-root>/.aider.conf.yml` |
+| Gemini CLI | [`gemini/GEMINI.md`](gemini/GEMINI.md) | `<repo-root>/GEMINI.md` |
+| Qwen Code | [`qwen/QWEN.md`](qwen/QWEN.md) | `<repo-root>/QWEN.md` |
+| Crush | [`crush/CRUSH.md`](crush/CRUSH.md) | `<repo-root>/CRUSH.md` |
+| Goose | [`goose/.goosehints`](goose/.goosehints) | `<repo-root>/.goosehints` |
+| Roo Code | [`roo-code/.roorules`](roo-code/.roorules) | `<repo-root>/.roorules` |
+| JetBrains Junie | [`jetbrains-junie/.junie/guidelines.md`](jetbrains-junie/.junie/guidelines.md) | `<repo-root>/.junie/guidelines.md` |
 
 `AGENTS.md` is the cross-client instruction file several agents already
 read. If more than one agent works in your repo, write that one and let
@@ -57,7 +64,7 @@ After dropping a template in, run rigscore and check the governance +
 skill-files scores:
 
 ```bash
-npx github:Back-Road-Creative/rigscore --check claude-md
+npx github:Back-Road-Creative/rigscore --check governance-docs
 npx github:Back-Road-Creative/rigscore --check skill-files
 ```
 
