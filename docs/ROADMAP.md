@@ -1,16 +1,16 @@
-# rigscore Roadmap — competitor-driven capability gaps
+# rigscore Roadmap — capability gaps
 
 > **Candidate scope, not commitments.** These items were surfaced by the
-> 2026-07 competitor/completeness audit as capabilities that peer tools ship
-> and rigscore does not. They are recorded here so the gap is visible and
+> 2026-07 completeness audit as capabilities rigscore does not yet ship.
+> They are recorded here so the gap is visible and
 > prioritizable — nothing below is scheduled, and feature builds await
 > explicit prioritization. This file complements the shorter user-facing
 > [Roadmap section in the README](../README.md#roadmap); where they overlap
 > (the governance-prose LLM-judge), this file carries the detail.
 
-Each item lists: the **capability**, the **why** (competitor evidence + cited
-source), rigscore's **current gap**, and a suggested **priority**. Priorities
-mirror the audit severity tags and are relative to each other, not deadlines.
+Each item lists: the **capability**, rigscore's **current gap**, and a
+suggested **priority**. Priorities mirror the audit severity tags and are
+relative to each other, not deadlines.
 
 ---
 
@@ -22,10 +22,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
   server, fetches its `tools/list`, and auto-feeds the result into the
   existing hash + LLM-judge pipeline — instead of requiring the operator to
   pipe descriptions in by hand.
-- **Why:** Snyk Agent Scan "connects to servers and retrieves tool
-  descriptions" (<https://github.com/snyk/agent-scan>), and Cisco mcp-scanner
-  connects to running stdio/SSE servers while also offering an offline JSON
-  mode (<https://github.com/cisco-ai-defense/mcp-scanner>).
 - **Current gap:** rigscore is operator-pipe-only (THREAT-MODEL.md §3.2).
 - **Design note:** local stdio spawn stays local-first, behind an opt-in flag
   — no change to the offline, API-key-free default.
@@ -36,9 +32,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
 - **Capability:** Re-pin tool descriptions automatically between scans and
   surface a semantic diff, so description drift is caught without a manual
   re-pin step.
-- **Why:** Trail of Bits `mcp-context-protector` does TOFU pinning of server
-  instructions and tool descriptions with a semantic diff, Apache-2.0
-  (<https://github.com/trailofbits/mcp-context-protector>).
 - **Current gap:** `mcp-pin` requires a manual re-pin per THREAT-MODEL §3.2;
   drift is invisible between scans unless the operator re-pins by hand.
 - **Priority:** high
@@ -49,11 +42,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
   (CLAUDE.md and peers) that catches semantic-reversal weaknesses keyword
   checks cannot see. Today this is README-Roadmap-only; the `--semantic` /
   `claude -p` plumbing already exists for tool descriptions and can be reused.
-- **Why:** Cisco mcp-scanner and skill-scanner both include an "LLM-as-Judge"
-  analyzer; Trail of Bits' wrapper adds LLM-guardrail scanning; Anthropic
-  ships a semantic `/security-review`
-  (<https://github.com/anthropics/claude-code-security-review>). Competitors
-  already ship the pattern, validating the roadmap item.
 - **Current gap:** README Roadmap-only (README.md:696) — not implemented.
 - **Priority:** high
 
@@ -66,9 +54,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
 - **Capability:** Analyze pinned tool-description snapshots *across* servers to
   detect tool shadowing and toxic flows, not just per-server config in
   isolation.
-- **Why:** Snyk Agent Scan detects "tool poisoning, tool shadowing, toxic
-  flows" as first-class issue codes
-  (<https://github.com/snyk/agent-scan/blob/main/docs/issue-codes.md>).
 - **Current gap:** rigscore analyzes each server's config independently.
 - **Priority:** med
 
@@ -76,8 +61,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
 
 - **Capability:** Offline detection of binary / non-text files dropped into
   skill directories, plus an opt-in `--online` malware-hash lookup.
-- **Why:** Cisco skill-scanner does bytecode-integrity checks and VirusTotal
-  hash scanning (<https://github.com/cisco-ai-defense/skill-scanner>).
 - **Current gap:** rigscore admits binaries in `.claude/skills/` are "not
   inspected at all" (THREAT-MODEL §3.4).
 - **Priority:** med
@@ -86,9 +69,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
 
 - **Capability:** Static AST + dataflow (taint) analysis of executable code
   shipped inside skills, going beyond the current regex phrase catalogs.
-- **Why:** Cisco skill-scanner runs behavioral dataflow (AST analysis) and
-  pipeline-command taint analysis locally, Apache-2.0
-  (<https://github.com/cisco-ai-defense/skill-scanner>).
 - **Current gap:** rigscore's `skill-files` check is `[pattern]`-grade only.
 - **Priority:** med
 
@@ -102,8 +82,7 @@ mirror the audit severity tags and are relative to each other, not deadlines.
   (MITRE-ATT&CK-style, 80+ techniques) as a fifth compliance framework
   alongside the existing four (`src/constants.js` FRAMEWORKS).
 - **Why:** The OpenSSF AI/ML Security WG framework is in progress
-  (<https://github.com/ossf/ai-ml-security>); AgentAuditKit already markets
-  "13 frameworks" versus rigscore's 4.
+  (<https://github.com/ossf/ai-ml-security>).
 - **Current gap:** rigscore maps to 4 frameworks.
 - **Priority:** low
 
@@ -111,8 +90,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
 
 - **Capability:** Export the compliance report in auditor-ready PDF / HTML,
   not only text.
-- **Why:** AgentAuditKit ships "auditor-ready PDF compliance reports"
-  (<https://github.com/marketplace/actions/agentauditkit-mcp-security-scan>).
 - **Current gap:** `--report compliance` is text-only.
 - **Priority:** low
 
@@ -120,8 +97,6 @@ mirror the audit severity tags and are relative to each other, not deadlines.
 
 - **Capability:** A `--fix` lane that suggests rewrites to harden governance /
   system-prompt prose (rewrite-suggest), not just mechanical config edits.
-- **Why:** SplxAI Agentic Radar "scans and hardens system prompts"
-  (<https://github.com/splx-ai/agentic-radar>).
 - **Current gap:** `--fix` edits config only; no prose-hardening suggestions.
 - **Priority:** low
 
@@ -129,9 +104,50 @@ mirror the audit severity tags and are relative to each other, not deadlines.
 
 - **Capability:** An inspection surface for agent-to-agent (A2A)
   configuration. **Watch item only** — do not build yet; the space is
-  emerging and lacks a second corroborating competitor.
-- **Why:** Cisco's `a2a-scanner` exists
-  (<https://cisco-ai-defense.github.io/>); rigscore's ASI07 surface is only
-  the advisory network-exposure check.
+  emerging and lacks a second corroborating signal.
+- **Why:** rigscore's ASI07 surface is only the advisory network-exposure
+  check.
 - **Current gap:** no dedicated A2A inspection; advisory-only today.
+- **Priority:** low (watch)
+
+---
+
+## LLM / environment agnosticism
+
+These deferred items broaden rigscore past a single AI client or CI system.
+Each is on hold until the cross-vendor surface it depends on stabilizes.
+
+### 11. CI agent-capability check beyond GitHub Actions
+
+- **Capability:** Extend the `ci-agent-caps` check past `.github/workflows` to
+  other CI systems — at minimum GitLab CI — via a generic CI-recipe reader, so
+  agent-capability scanning is not GitHub-Actions-only.
+- **Current gap:** `ci-agent-caps` parses `.github/workflows` exclusively.
+- **Priority:** low
+
+### 12. Scored per-client settings-safety family
+
+- **Capability:** A scored settings-safety check family that pairs with the
+  existing `claude-settings` check, extending scored settings analysis to other
+  AI clients.
+- **Current gap:** only Claude settings are scored today; other clients get
+  advisory sandbox-posture output only.
+- **Priority:** low
+
+### 13. Registry-driven env-exposure client list
+
+- **Capability:** Derive the AI-client config-file list scanned by
+  `env-exposure` from the client registry (`src/clients.js`) rather than a
+  hardcoded list.
+- **Current gap:** `env-exposure`'s client-settings coverage is a hardcoded
+  list whose only client-settings entry is `.claude/settings.json`.
+- **Priority:** low
+
+### 14. Cross-vendor memory-hygiene conventions
+
+- **Capability:** Revisit `memory-hygiene` conventions once a cross-vendor
+  memory convention exists, so the check is not shaped around one vendor's
+  memory layout.
+- **Current gap:** `memory-hygiene` conventions are Claude-shaped by necessity
+  today; no cross-vendor memory convention exists yet.
 - **Priority:** low (watch)
