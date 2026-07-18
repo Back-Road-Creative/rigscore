@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, readJsonSafe, fileExists } from '../utils.js';
+import { readFileSafe, readJsonSafe, fileExists, relPosix } from '../utils.js';
 import { mcpConfigPaths, repoMcpPaths, mcpServersIn, skillDirsForBase } from '../clients.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
 
@@ -481,7 +481,7 @@ export default {
       const markerCount = countStageMarkers(content);
       if (markerCount >= 10) {
         overloadedPipelines++;
-        const relPath = path.relative(cwd, filePath);
+        const relPath = relPosix(cwd, filePath);
         findings.push({
           findingId: 'workflow-maturity/pipeline-step-overload',
           severity: 'info',
@@ -501,7 +501,7 @@ export default {
         const pyFiles = entries.filter(e => e.endsWith('.py') && !e.startsWith('_'));
         if (pyFiles.length >= 10) {
           overloadedPipelines++;
-          const relDir = path.relative(cwd, stageDir);
+          const relDir = relPosix(cwd, stageDir);
           findings.push({
             findingId: 'workflow-maturity/stage-dir-overload',
             severity: 'info',

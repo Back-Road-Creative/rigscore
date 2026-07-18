@@ -5,6 +5,7 @@ import { calculateOverallScore, calculatePracticeScore, scoreScan } from './scor
 import { NOT_APPLICABLE_SCORE } from './constants.js';
 import { loadConfig, resolveWeights } from './config.js';
 import { governanceFiles, repoMcpRelPaths } from './clients.js';
+import { relPosix } from './utils.js';
 import {
   deduplicateFindings,
   assignFindingIds,
@@ -225,7 +226,7 @@ export async function scanRecursive(options = {}) {
       batch.map(async (dir) => {
         const result = await scan({ ...options, cwd: dir });
         return {
-          path: path.relative(rootDir, dir) || path.basename(dir),
+          path: relPosix(rootDir, dir) || path.basename(dir),
           absolutePath: dir,
           score: result.numericScore ?? result.score,
           notApplicable: result.notApplicable,

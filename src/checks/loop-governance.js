@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, walkDirSafe } from '../utils.js';
+import { readFileSafe, walkDirSafe, relPosix } from '../utils.js';
 
 // `fixtures` is skipped for the same reason deep-secrets skips *.test.* files:
 // fixture trees hold deliberately-unsafe samples, not loops anyone runs.
@@ -346,7 +346,7 @@ export default {
         .split('\n')
         .map((l) => (/^\s*(?:#|\/\/)/.test(l) ? '' : l))
         .map((l) => (isMakefile(file) ? l.replace(/^\t[@+-]+/, '\t') : l));
-      docs.push({ file, rel: path.relative(context.cwd, file), lines, text: lines.join('\n') });
+      docs.push({ file, rel: relPosix(context.cwd, file), lines, text: lines.join('\n') });
       collectBodies(file, lines, raw, bodies, indirect);
     }
     resolveIndirection(bodies, indirect);

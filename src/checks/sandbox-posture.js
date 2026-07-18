@@ -2,7 +2,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { CLIENTS } from '../clients.js';
-import { readFileSafe, readJsonSafe, walkDirSafe } from '../utils.js';
+import { readFileSafe, readJsonSafe, walkDirSafe, relPosix, toPosix } from '../utils.js';
 
 const CODEX_DOCS = 'https://developers.openai.com/codex/config-reference';
 const CLAUDE_DOCS = 'https://docs.claude.com/en/docs/claude-code/settings';
@@ -354,7 +354,7 @@ export default {
     const findings = [];
     const postures = {};
     let surfacesScanned = 0;
-    const label = (f) => (f.startsWith(homedir) ? f.replace(homedir, '~') : path.relative(cwd, f));
+    const label = (f) => toPosix(f.startsWith(homedir) ? f.replace(homedir, '~') : path.relative(cwd, f));
 
     // The registry is the surface list. Each client's entries are read in declaration
     // order — $HOME first, then the project file, which wins. A client's entries share

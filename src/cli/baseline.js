@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { slugify, execSafe } from '../utils.js';
+import { slugify, execSafe, relPosix } from '../utils.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json');
@@ -98,7 +98,7 @@ async function readCommittedBaseline(baselinePath) {
   const abs = path.resolve(baselinePath);
   const top = await execSafe('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel']);
   if (top === null) return { inRepo: false }; // not a git repo (or git unavailable)
-  const rel = path.relative(top.trim(), abs);
+  const rel = relPosix(top.trim(), abs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) return { inRepo: true, status: 'absent' };
   const raw = await execSafe('git', ['-C', top.trim(), 'show', `HEAD:${rel}`]);
   if (raw === null) {

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
 import { skillDirsForBase } from '../clients.js';
-import { readFileSafe, statSafe, walkDirSafe } from '../utils.js';
+import { readFileSafe, statSafe, walkDirSafe, relPosix, toPosix } from '../utils.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
 
 // Per-file read cap — a skill INSTRUCTION file is never megabytes. A file this
@@ -642,9 +642,9 @@ export default {
         if (truncated || depthTruncated) skillWalkTruncated = true;
         for (const fullPath of files) {
           const entryRel = path.relative(dirPath, fullPath);
-          const relLabel = home
+          const relLabel = toPosix(home
             ? path.join('~', dir, entryRel)
-            : path.join(dir, entryRel);
+            : path.join(dir, entryRel));
           const fstat = await statSafe(fullPath);
           if (fstat && fstat.size > maxFileBytes) {
             oversizeFiles.push(relLabel);

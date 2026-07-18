@@ -183,7 +183,9 @@ describe('scanRecursive', () => {
 
       const deep = await scanRecursive({ cwd: root, depth: 2 });
       expect(deep.projects).toHaveLength(1);
-      expect(deep.projects[0].path).toBe(path.join('services', 'svc-nested'));
+      // A project's reported `path` is a rendered label, POSIX on every platform
+      // (see relPosix in src/utils.js) — path.join() would assert win32's `\` form.
+      expect(deep.projects[0].path).toBe('services/svc-nested');
     } finally {
       fs.rmSync(root, { recursive: true });
     }

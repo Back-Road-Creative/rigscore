@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { scanLineForSecrets, walkDirSafe } from '../utils.js';
+import { scanLineForSecrets, walkDirSafe, relPosix } from '../utils.js';
 
 // Directories skipped wholesale during deep scanning. Expanded beyond the
 // historical set so the removal of the blanket `startsWith('.')` guard below
@@ -298,7 +298,7 @@ export default {
       }
       if (stat.size > maxFileBytes) {
         oversizeCount++;
-        const streamFinding = await scanFileStreaming(filePath, path.relative(cwd, filePath));
+        const streamFinding = await scanFileStreaming(filePath, relPosix(cwd, filePath));
         if (streamFinding) {
           secretCount++;
           findings.push(streamFinding);
@@ -315,7 +315,7 @@ export default {
       }
 
       const lines = content.split('\n');
-      const relPath = path.relative(cwd, filePath);
+      const relPath = relPosix(cwd, filePath);
 
       // GCP service account dual-field detection
       if (filePath.endsWith('.json') &&

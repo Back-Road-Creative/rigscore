@@ -3,7 +3,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, readJsonSafe, walkDirSafe, fileExists } from '../utils.js';
+import { readFileSafe, readJsonSafe, walkDirSafe, fileExists, relPosix } from '../utils.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
 
 const DANGEROUS_HOOK_RE = [
@@ -404,7 +404,7 @@ export default {
         const pluginHooks = await readJsonSafe(hookFile);
         if (!pluginHooks) continue;
         foundAny = true;
-        await scanHooks(pluginHooks.hooks || pluginHooks, prefix + path.relative(root, hookFile), ctx);
+        await scanHooks(pluginHooks.hooks || pluginHooks, prefix + relPosix(root, hookFile), ctx);
       }
     }
 
@@ -426,7 +426,7 @@ export default {
           const fm = content ? readFrontmatterHooks(content) : null;
           if (!fm) continue;
           foundAny = true;
-          const rel = prefix + path.relative(root, mdFile);
+          const rel = prefix + relPosix(root, mdFile);
           if (fm.unparseable) {
             findings.push({
               findingId: 'claude-settings/frontmatter-hooks-unparseable',

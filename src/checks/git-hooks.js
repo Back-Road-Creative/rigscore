@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { fileExists, readJsonSafe, readFileSafe, statSafe } from '../utils.js';
+import { fileExists, readJsonSafe, readFileSafe, statSafe, relPosix } from '../utils.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
 
 /**
@@ -214,7 +214,7 @@ export default {
         findings.push({
           severity: 'pass',
           title: 'Claude Code hooks configured',
-          detail: `Hooks found in ${path.relative(cwd, settingsPath) || settingsPath}.`,
+          detail: `Hooks found in ${relPosix(cwd, settingsPath) || settingsPath}.`,
         });
         break;
       }

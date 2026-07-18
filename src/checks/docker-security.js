@@ -3,7 +3,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, KEY_PATTERNS } from '../constants.js';
-import { readFileSafe, readJsonSafe } from '../utils.js';
+import { readFileSafe, readJsonSafe, relPosix } from '../utils.js';
 import { writeMerged } from '../lib/config-merge.js';
 
 const SENSITIVE_MOUNTS = ['/', '/etc', '/root', '/home'];
@@ -422,7 +422,7 @@ async function scanK8sManifests(cwd, findings) {
 
         foundAny = true;
         const resourceName = parsed.metadata?.name || 'unnamed';
-        const relFile = path.relative(cwd, filePath) || file;
+        const relFile = relPosix(cwd, filePath) || file;
         const podSpec = extractPodSpec(parsed);
         analyzeK8sPodSpec(podSpec, resourceName, parsed.kind, relFile, findings);
       }

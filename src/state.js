@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readJsonSafe, execSafe } from './utils.js';
+import { readJsonSafe, execSafe, relPosix } from './utils.js';
 import { repoMcpPaths, mcpServersIn } from './clients.js';
 
 export const STATE_FILENAME = '.rigscore-state.json';
@@ -188,7 +188,7 @@ export async function readRepoServers(cwd) {
   const out = {};
   for (const configPath of repoMcpPaths(cwd)) {
     const servers = mcpServersIn(configPath, await readJsonSafe(configPath));
-    const config = path.relative(cwd, configPath);
+    const config = relPosix(cwd, configPath);
     for (const [name, server] of Object.entries(servers)) {
       const key = name in out ? `${name}@${config}` : name;
       out[key] = { hash: computeServerHash(server), shape: serverShape(server), config };
