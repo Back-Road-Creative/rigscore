@@ -26,8 +26,7 @@ next release; the maintainer folds the fragments in at release time.
   detection) and calibrate trust accordingly. `keyword`-graded checks are
   the most gameable surface — see [`THREAT-MODEL.md`](THREAT-MODEL.md) §3.1
   and [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) for
-  specifics. Classification rationale lives in
-  `.data/plans/enforcement-grade-classification.md`.
+  specifics and the per-grade classification rationale.
 - **Directory-form rule sets are now scanned by default.** `.cursor/rules/*.mdc`,
   `.windsurf/rules/`, `.clinerules/` (directory form), and
   `.github/instructions/*.instructions.md` are read with no `.rigscorerc.json`
