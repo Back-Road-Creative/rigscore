@@ -40,8 +40,13 @@ const warnedLegacyMatchers = new Set();
 // Core-module fixers (RS-26). These live here rather than in their check
 // modules because the check files are owned by other concerns; the matching is
 // by findingId (immune to title rewording), and every apply() is mechanical and
-// non-destructive — it either strips invisible bytes, flips an executable bit, or
-// scaffolds a NEW file it never overwrites.
+// non-destructive — it strips invisible bytes, flips an executable bit, or fills
+// a missing key into a file that ALREADY exists.
+//
+// Hard contract (test/fixer-pack-gate.test.js): `--fix` NEVER creates a file the
+// repo did not already have. Installing a governance baseline is a separate,
+// explicit consent — `--install-packs`. Every fixer below is therefore
+// edit-in-place only: an absent target is a no-op skip, never a scaffold.
 // ---------------------------------------------------------------------------
 
 // Invisible / control code points that carry steganographic payloads (NOT
@@ -58,19 +63,15 @@ const HIDDEN_UNICODE_RE = new RegExp(
     ? `\\u{${a.toString(16)}}`
     : `\\u{${a.toString(16)}}-\\u{${b.toString(16)}}`)).join('') + ']', 'gu');
 
-// Starter deny list scaffolded into a repo that has NO Claude settings at all.
-const CLAUDE_SETTINGS_DENY_SCAFFOLD = {
-  permissions: {
-    deny: [
-      'Bash(rm -rf*)',
-      'Bash(curl*)',
-      'Bash(wget*)',
-      'Read(.env)',
-      'Read(**/.env)',
-      'Read(**/secrets/**)',
-    ],
-  },
-};
+// Starter deny list filled into an EXISTING settings.json that declares none.
+const CLAUDE_SETTINGS_DENY_SCAFFOLD = [
+  'Bash(rm -rf*)',
+  'Bash(curl*)',
+  'Bash(wget*)',
+  'Read(.env)',
+  'Read(**/.env)',
+  'Read(**/secrets/**)',
+];
 
 /** Extract the env-var key from a credential-storage finding (`env.<KEY> …`). */
 function envKeyFromFinding(finding) {
@@ -134,43 +135,49 @@ const LOCAL_FIXERS = {
     },
   },
 
-  // Scaffold a starter permissions.deny list — ONLY when the repo has no Claude
-  // settings file at all. Never clobbers an existing one (governance is the
-  // operator's); an existing file is a no-op skip.
+  // Fill a starter permissions.deny list into a settings.json the repo ALREADY
+  // has and that declares no deny list. No settings file → no-op (creating one
+  // is a pack install, behind --install-packs). An existing deny list is the
+  // operator's governance and is never rewritten.
   'claude-settings-deny-scaffold': {
     id: 'claude-settings-deny-scaffold',
-    findingIds: ['claude-settings/no-settings-found'],
-    description: 'Scaffold .claude/settings.json with a starter permissions.deny list',
+    findingIds: ['infrastructure-security/no-deny-list'],
+    description: 'Add a starter permissions.deny list to an existing .claude/settings.json',
     async apply(cwd) {
-      const dir = path.join(cwd, '.claude');
-      const target = path.join(dir, 'settings.json');
-      try { await fs.promises.access(target); return false; } catch { /* absent — scaffold */ }
-      await fs.promises.mkdir(dir, { recursive: true });
-      await fs.promises.writeFile(target, JSON.stringify(CLAUDE_SETTINGS_DENY_SCAFFOLD, null, 2) + '\n');
+      const target = path.join(cwd, '.claude', 'settings.json');
+      let raw;
+      try { raw = await fs.promises.readFile(target, 'utf-8'); } catch { return false; }
+      let settings;
+      try { settings = JSON.parse(raw); } catch { return false; }
+      if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return false;
+      const existing = settings.permissions?.deny;
+      if (Array.isArray(existing) && existing.length > 0) return false;
+      settings.permissions = { ...(settings.permissions || {}), deny: [...CLAUDE_SETTINGS_DENY_SCAFFOLD] };
+      await fs.promises.writeFile(target, JSON.stringify(settings, null, 2) + '\n');
       return true;
     },
   },
 
-  // Scaffold a `.env.example` placeholder for a plaintext client-config credential
-  // so the operator can move the secret out and reference it as ${VAR}. Append-only;
-  // never rewrites the live (home) config, which would destroy the real secret.
+  // Append a `${VAR}` placeholder for a plaintext client-config credential to an
+  // `.env.example` the repo ALREADY has, so the operator can move the secret out.
+  // No `.env.example` → no-op (creating one is a new file). Append-only; never
+  // rewrites the live (home) config, which would destroy the real secret.
   'credential-storage-env-var-scaffold': {
     id: 'credential-storage-env-var-scaffold',
     findingIds: ['credential-storage/plaintext-credential-in-client-config'],
-    description: 'Scaffold a .env.example ${VAR} placeholder for a plaintext client credential',
+    description: 'Append a ${VAR} placeholder to an existing .env.example for a plaintext credential',
     async apply(cwd, _homedir, finding) {
       const key = envKeyFromFinding(finding);
       if (!key) return false;
       const varName = key.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
       if (!varName) return false;
       const target = path.join(cwd, '.env.example');
-      let content = '';
-      try { content = await fs.promises.readFile(target, 'utf-8'); } catch { /* absent */ }
+      let content;
+      try { content = await fs.promises.readFile(target, 'utf-8'); } catch { return false; }
       const declared = content.split('\n').some((l) => l.split('=')[0].trim() === varName);
       if (declared) return false;
-      const header = content ? '' : '# Move plaintext client-config credentials here and reference them as ${VAR}.\n';
       const newline = content && !content.endsWith('\n') ? '\n' : '';
-      await fs.promises.writeFile(target, content + newline + header + `${varName}=\n`);
+      await fs.promises.writeFile(target, content + newline + `${varName}=\n`);
       return true;
     },
   },

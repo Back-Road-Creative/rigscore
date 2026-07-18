@@ -55,31 +55,48 @@ describe('git-hooks executable-bit fixer (RS-26)', () => {
 });
 
 describe('claude-settings deny-list scaffold fixer (RS-26)', () => {
-  it('scaffolds .claude/settings.json with a permissions.deny list when absent', async () => {
-    expect(fixIdsFor('claude-settings/no-settings-found')).toContain('claude-settings-deny-scaffold');
+  const settingsPath = () => path.join(tmpDir, '.claude', 'settings.json');
+  const writeSettings = (obj) => {
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+    fs.writeFileSync(settingsPath(), JSON.stringify(obj));
+  };
+
+  it('fills a deny list into an existing settings.json that declares none', async () => {
+    expect(fixIdsFor('infrastructure-security/no-deny-list')).toContain('claude-settings-deny-scaffold');
+    writeSettings({ mine: true });
     const { applied } = await applyFixes(
       [{ id: 'claude-settings-deny-scaffold', description: 'scaffold' }], tmpDir, tmpDir);
     expect(applied.length).toBe(1);
-    const settings = JSON.parse(fs.readFileSync(path.join(tmpDir, '.claude', 'settings.json'), 'utf8'));
+    const settings = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
     expect(Array.isArray(settings.permissions.deny)).toBe(true);
     expect(settings.permissions.deny.length).toBeGreaterThan(0);
+    // unrelated operator keys survive
+    expect(settings.mine).toBe(true);
   });
 
-  it('never clobbers an existing settings.json', async () => {
-    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
-    const p = path.join(tmpDir, '.claude', 'settings.json');
-    fs.writeFileSync(p, '{"mine":true}');
+  // `--fix` remediates existing files; installing a governance baseline is the
+  // separate `--install-packs` consent (test/fixer-pack-gate.test.js).
+  it('creates no settings.json when the repo has none', async () => {
     const { applied, skipped } = await applyFixes(
       [{ id: 'claude-settings-deny-scaffold', description: 'scaffold' }], tmpDir, tmpDir);
     expect(applied.length).toBe(0);
     expect(skipped.length).toBe(1);
-    expect(JSON.parse(fs.readFileSync(p, 'utf8'))).toEqual({ mine: true });
+    expect(fs.existsSync(settingsPath())).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, '.claude'))).toBe(false);
+  });
+
+  it('never clobbers an existing deny list', async () => {
+    writeSettings({ permissions: { deny: ['Bash(mine*)'] } });
+    const { applied, skipped } = await applyFixes(
+      [{ id: 'claude-settings-deny-scaffold', description: 'scaffold' }], tmpDir, tmpDir);
+    expect(applied.length).toBe(0);
+    expect(skipped.length).toBe(1);
+    expect(JSON.parse(fs.readFileSync(settingsPath(), 'utf8')).permissions.deny).toEqual(['Bash(mine*)']);
   });
 });
 
 describe('credential-storage ${VAR} scaffold fixer (RS-26)', () => {
-  it('scaffolds a .env.example placeholder for the flagged credential key', async () => {
-    const results = [{
+  const credResults = () => ([{
       id: 'credential-storage',
       findings: [{
         findingId: 'credential-storage/plaintext-credential-in-client-config',
@@ -87,12 +104,26 @@ describe('credential-storage ${VAR} scaffold fixer (RS-26)', () => {
         title: 'Plaintext credential in Gemini CLI config (weather)',
         detail: 'env.API_KEY contains a plaintext secret. Credentials in config files are stored world-readable.',
       }],
-    }];
-    const fixes = findApplicableFixes(results);
-    expect(fixes.map((f) => f.id)).toContain('credential-storage-env-var-scaffold');
-    const { applied } = await applyFixes(fixes.filter((f) => f.id === 'credential-storage-env-var-scaffold'), tmpDir, tmpDir);
+    }]);
+  const credFixes = () =>
+    findApplicableFixes(credResults()).filter((f) => f.id === 'credential-storage-env-var-scaffold');
+  const envExample = () => path.join(tmpDir, '.env.example');
+
+  it('appends a ${VAR} placeholder to an existing .env.example', async () => {
+    expect(credFixes().length).toBe(1);
+    fs.writeFileSync(envExample(), 'EXISTING=\n');
+    const { applied } = await applyFixes(credFixes(), tmpDir, tmpDir);
     expect(applied.length).toBe(1);
-    const envExample = fs.readFileSync(path.join(tmpDir, '.env.example'), 'utf8');
-    expect(envExample).toMatch(/^API_KEY=$/m);
+    const out = fs.readFileSync(envExample(), 'utf8');
+    expect(out).toMatch(/^API_KEY=$/m);
+    expect(out).toMatch(/^EXISTING=$/m);
+  });
+
+  // `--fix` never creates a file the repo did not have (fixer-pack-gate contract).
+  it('creates no .env.example when the repo has none', async () => {
+    const { applied, skipped } = await applyFixes(credFixes(), tmpDir, tmpDir);
+    expect(applied.length).toBe(0);
+    expect(skipped.length).toBe(1);
+    expect(fs.existsSync(envExample())).toBe(false);
   });
 });
