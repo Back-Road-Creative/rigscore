@@ -8,7 +8,7 @@ import { listPacks, loadPack, installPack, formatInstallReport } from '../src/cl
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-packs-'));
 const pair = () => [tmp(), tmp()];
 const read = (dir, rel) => fs.readFileSync(path.join(dir, rel), 'utf-8');
-const OK = { name: 'demo', description: 'demo pack', checks: ['claude-md'], files: [{ src: 'AGENTS.md', dest: 'AGENTS.md' }] };
+const OK = { name: 'demo', description: 'demo pack', checks: ['governance-docs'], files: [{ src: 'AGENTS.md', dest: 'AGENTS.md' }] };
 
 /** Drop a pack into a templates/ dir — the same shape a sibling PR adds. */
 function dropPack(templates, name, manifest, files = { 'AGENTS.md': '# {{PROJECT_NAME}}\n' }) {
@@ -31,7 +31,7 @@ describe('packs', () => {
   const bad = {
     'name mismatch': { ...OK, name: 'wrong' },
     'missing description': { ...OK, description: '' },
-    'checks not an array': { ...OK, checks: 'claude-md' },
+    'checks not an array': { ...OK, checks: 'governance-docs' },
     'exec not a boolean': { ...OK, files: [{ src: 'AGENTS.md', dest: 'AGENTS.md', exec: 'yes' }] },
     'defaults not an object': { ...OK, defaults: 'x' },
     'defaults value not a string': { ...OK, defaults: { EGRESS_SUBNET: 5 } },
@@ -123,7 +123,7 @@ describe('packs', () => {
     dropPack(templates, 'demo', OK);
     const res = installPack('demo', target, { templatesDir: templates });
     expect(res.results).toEqual([{ dest: 'AGENTS.md', status: 'written' }]);
-    expect(res.pack.checks).toEqual(['claude-md']);
+    expect(res.pack.checks).toEqual(['governance-docs']);
     expect(read(target, 'AGENTS.md')).toBe(`# ${path.basename(target)}\n`);
   });
 

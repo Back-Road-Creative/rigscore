@@ -52,7 +52,7 @@ describe('calculateCheckScore', () => {
 describe('calculateOverallScore', () => {
   it('C6: scales by applicable-weight coverage when all 7 standard checks score 100', () => {
     const results = [
-      { id: 'claude-md', score: 100 },              // 10
+      { id: 'governance-docs', score: 100 },              // 10
       { id: 'mcp-config', score: 100 },             // 14
       { id: 'env-exposure', score: 100 },           // 8
       { id: 'docker-security', score: 100 },        // 6
@@ -67,7 +67,7 @@ describe('calculateOverallScore', () => {
 
   it('returns 0 when all checks score 0', () => {
     const results = [
-      { id: 'claude-md', score: 0 },
+      { id: 'governance-docs', score: 0 },
       { id: 'mcp-config', score: 0 },
       { id: 'env-exposure', score: 0 },
       { id: 'docker-security', score: 0 },
@@ -80,7 +80,7 @@ describe('calculateOverallScore', () => {
 
   it('calculates weighted sum correctly', () => {
     const results = [
-      { id: 'claude-md', score: 50 },              // 10
+      { id: 'governance-docs', score: 50 },              // 10
       { id: 'mcp-config', score: 80 },             // 14
       { id: 'env-exposure', score: 100 },           // 8
       { id: 'docker-security', score: 0 },          // 6
@@ -96,7 +96,7 @@ describe('calculateOverallScore', () => {
 
   it('rounds to integer', () => {
     const results = [
-      { id: 'claude-md', score: 33 },
+      { id: 'governance-docs', score: 33 },
       { id: 'mcp-config', score: 33 },
       { id: 'env-exposure', score: 33 },
       { id: 'docker-security', score: 33 },
@@ -111,11 +111,11 @@ describe('calculateOverallScore', () => {
 
   it('accepts custom weights parameter', () => {
     const customWeights = {
-      'claude-md': 50,
+      'governance-docs': 50,
       'mcp-config': 50,
     };
     const results = [
-      { id: 'claude-md', score: 100 },
+      { id: 'governance-docs', score: 100 },
       { id: 'mcp-config', score: 0 },
     ];
     // (100*50 + 0*50)/100 = 50

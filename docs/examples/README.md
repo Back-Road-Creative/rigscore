@@ -2,7 +2,7 @@
 
 Starter skill / rules files for the AI coding clients rigscore knows how
 to score. Each template is calibrated against rigscore's default profile,
-which concretely means: **zero CRITICAL findings, and `claude-md`,
+which concretely means: **zero CRITICAL findings, and `governance-docs`,
 `skill-files` and `coherence` all at 100** — not a high overall grade
 (see the caveat below on why a directory holding one config file cannot
 score above ~50). Copy the one for your client, drop it at the indicated

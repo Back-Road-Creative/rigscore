@@ -8,7 +8,7 @@ For the full reasoning and code pointers, see [`THREAT-MODEL.md`](../THREAT-MODE
 
 | If you need... | rigscore's limit | Reach for |
 |---|---|---|
-| Governance prose that means what it says (not just uses the right words) | [`claude-md`](../src/checks/claude-md.js) is keyword-presence + single-sentence negation. Multi-sentence "unless/except" reversals pass. | A human review gate or an LLM-judge advisory pass over the governance prose. |
+| Governance prose that means what it says (not just uses the right words) | [`governance-docs`](../src/checks/governance-docs.js) is keyword-presence + single-sentence negation. Multi-sentence "unless/except" reversals pass. | A human review gate or an LLM-judge advisory pass over the governance prose. |
 | Live MCP tool-description pinning (CVE-2025-54136 class, between scans) | rigscore stores the hash you hand it via `rigscore mcp-pin`. It does not spawn the MCP server and cannot detect drift you didn't re-pin for. | A live MCP introspection scanner that connects to running servers and retrieves their live tool descriptions. |
 | Install-time supply-chain integrity of your project's dependencies | rigscore does not inspect `node_modules`, `package.json` lifecycle scripts, or registry provenance of your deps. | A container/dependency vulnerability scanner (SBOM / registry-audit class). |
 | Binary / base64 / minified payloads in skill files | The base64 regex is anchored (contiguous ≥50 chars between whitespace) and raises only a warning. Hex, ROT13, binary dropped into `.claude/skills/`, and base64-in-prose all slip. | Manual review + entropy-based scanners (plus a custom `file --mime-type` sweep for non-text in skill dirs). |

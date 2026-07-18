@@ -13,7 +13,7 @@ const defaultConfig = { paths: { hookDirs: [] }, network: {} };
 describe('claude-md: .continuerules support', () => {
   let claudeMd;
   beforeAll(async () => {
-    claudeMd = (await import('../src/checks/claude-md.js')).default;
+    claudeMd = (await import('../src/checks/governance-docs.js')).default;
   });
 
   it('detects .continuerules as governance file', async () => {

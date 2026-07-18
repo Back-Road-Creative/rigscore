@@ -26,7 +26,7 @@ function dropPack(templates, name, manifest, files = { 'AGENTS.md': '# {{PROJECT
 const DEMO = {
   name: 'demo',
   description: 'demo pack',
-  checks: ['claude-md'],
+  checks: ['governance-docs'],
   files: [{ src: 'AGENTS.md', dest: 'AGENTS.md' }],
 };
 
@@ -34,15 +34,15 @@ describe('findApplicablePacks', () => {
   it('offers a pack whose checks name a red finding\'s check id', () => {
     const templates = tmp();
     dropPack(templates, 'demo', DEMO);
-    const packs = findApplicablePacks(red('claude-md'), templates);
+    const packs = findApplicablePacks(red('governance-docs'), templates);
     expect(packs.map((p) => p.name)).toEqual(['demo']);
-    expect(packs[0].targets).toEqual(['claude-md']);
+    expect(packs[0].targets).toEqual(['governance-docs']);
     expect(packs[0].description).toBe('demo pack');
   });
 
   it('offers a real shipped pack for a real red check id', () => {
     // Default templatesDir — templates/docs claims the claude-md check.
-    const packs = findApplicablePacks(red('claude-md'));
+    const packs = findApplicablePacks(red('governance-docs'));
     expect(packs.some((p) => p.name === 'docs')).toBe(true);
   });
 
@@ -55,16 +55,16 @@ describe('findApplicablePacks', () => {
   it('ignores info/pass findings — only critical and warning are red', () => {
     const templates = tmp();
     dropPack(templates, 'demo', DEMO);
-    expect(findApplicablePacks(red('claude-md', 'info'), templates)).toEqual([]);
-    expect(findApplicablePacks(red('claude-md', 'pass'), templates)).toEqual([]);
-    expect(findApplicablePacks(red('claude-md', 'warning'), templates).length).toBe(1);
+    expect(findApplicablePacks(red('governance-docs', 'info'), templates)).toEqual([]);
+    expect(findApplicablePacks(red('governance-docs', 'pass'), templates)).toEqual([]);
+    expect(findApplicablePacks(red('governance-docs', 'warning'), templates).length).toBe(1);
   });
 
   it('is inert (writes nothing) — the dry run is just this call', () => {
     const templates = tmp();
     const cwd = tmp();
     dropPack(templates, 'demo', DEMO);
-    const packs = findApplicablePacks(red('claude-md'), templates);
+    const packs = findApplicablePacks(red('governance-docs'), templates);
     expect(packs.length).toBe(1);
     expect(fs.readdirSync(cwd)).toEqual([]);
   });
@@ -75,7 +75,7 @@ describe('installPacks', () => {
     const templates = tmp();
     const cwd = tmp();
     dropPack(templates, 'demo', DEMO);
-    const packs = findApplicablePacks(red('claude-md'), templates);
+    const packs = findApplicablePacks(red('governance-docs'), templates);
     const { installed, skipped } = installPacks(packs, cwd, templates);
     expect(skipped).toEqual([]);
     expect(installed.length).toBe(1);
@@ -88,7 +88,7 @@ describe('installPacks', () => {
     dropPack(templates, 'demo', DEMO);
     const mine = '# my hand-written contract\n';
     fs.writeFileSync(path.join(cwd, 'AGENTS.md'), mine);
-    const packs = findApplicablePacks(red('claude-md'), templates);
+    const packs = findApplicablePacks(red('governance-docs'), templates);
     const { installed } = installPacks(packs, cwd, templates);
     expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(mine);
     expect(installed.join('\n')).toContain('skipped (exists)');

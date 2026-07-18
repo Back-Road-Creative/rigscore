@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import claudeMdCheck from '../src/checks/claude-md.js';
+import claudeMdCheck from '../src/checks/governance-docs.js';
 import mcpConfigCheck from '../src/checks/mcp-config.js';
 import skillFilesCheck from '../src/checks/skill-files.js';
 import coherenceCheck from '../src/checks/coherence.js';
@@ -46,7 +46,7 @@ describe('E1: vanilla-project fixtures (no AI tooling)', () => {
 
         // No finding on any of the above may be CRITICAL.
         for (const [name, result] of [
-          ['claude-md', claudeMd],
+          ['governance-docs', claudeMd],
           ['mcp-config', mcpConfig],
           ['skill-files', skillFiles],
           ['claude-settings', claudeSettings],

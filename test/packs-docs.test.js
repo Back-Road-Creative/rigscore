@@ -24,7 +24,7 @@ describe('docs pack manifest', () => {
     // red it measured 83 -> 83 (the pack fixes nothing it did not author), and it
     // is weight 0. skill-files / unicode-steganography / coherence only flip N/A
     // -> 100 because AGENTS.md lands in their scan set. See README.md.
-    expect(manifest.checks).toEqual(['claude-md']);
+    expect(manifest.checks).toEqual(['governance-docs']);
   });
 
   it('ships every file it declares, to a safe relative dest', () => {
@@ -56,7 +56,7 @@ describe('docs pack templates', () => {
   });
 
   it('AGENTS.md covers every category claude-md scores', () => {
-    // Mirrors QUALITY_CHECKS in src/checks/claude-md.js — carried by real rules,
+    // Mirrors QUALITY_CHECKS in src/checks/governance-docs.js — carried by real rules,
     // not keyword stuffing. Kept as a literal list so a reworded template that
     // silently drops a category fails here rather than at scan time.
     const categories = [

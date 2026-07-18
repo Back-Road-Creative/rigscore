@@ -71,6 +71,24 @@ ids** so the muting is visible in its own output — not only in a config diff:
 - **Check-level IDs** (the bare `<check-id>`, no slash) are also stable and
   usable with `--ignore` to silence an entire check.
 
+### Renamed IDs (working aliases)
+
+Old ID → current ID. The old ID keeps working as a `--ignore` / `suppress:` /
+`weights:` alias for at least one full major version (implemented in
+`src/findings.js::FINDING_ID_RENAMES`, consumed by `compileSuppressPattern` and
+`resolveWeights`; the current check-level rule also carries the old id as a
+SARIF `reportingDescriptor.deprecatedIds`):
+
+| Old ID | Current ID | Since |
+|---|---|---|
+| `claude-md` | `governance-docs` | v2.x |
+
+The flagship 10-point check scans the vendor-neutral governance-file superset
+(`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.windsurfrules`, …), so the
+Claude-only `claude-md` name was a misbrand. A rc keyed on `claude-md` — a
+suppression, a baseline, or a `weights: { "claude-md": N }` override — still
+resolves to `governance-docs`.
+
 ## Full enforcement (v2.x)
 
 As of v2.x the stability contract applies to **every** finding ID emitted by
@@ -87,8 +105,8 @@ Suppressing a finding via `--ignore <id>`, `suppress:` in
 `.rigscorerc.json`, or a baseline file is safe for any ID listed below.
 
 For IDs whose slug includes a dynamic fragment (e.g.
-`claude-md/actively-negates-<category>`,
-`claude-md/missing-<category>`,
+`governance-docs/actively-negates-<category>`,
+`governance-docs/missing-<category>`,
 `skill-files/escalation-<patternId>`,
 `documentation/docs-gate-<reason>`,
 `skill-coherence/constraint-unaware-<constraint-id>`) the dynamic
@@ -100,17 +118,17 @@ user-provided constraint ids respectively).
 
 Grouped by check. Each ID is stable within the current major.
 
-### claude-md
+### governance-docs
 
-- `claude-md/no-governance-file` (critical) — no CLAUDE.md or equivalent found.
-- `claude-md/governance-file-short` (warning) — governance file < 50 lines.
-- `claude-md/actively-negates-<category>` (critical) — negated governance keyword (category slugified from QUALITY_CHECKS name).
-- `claude-md/missing-<category>` (warning) — missing governance category.
-- `claude-md/governance-reversal-detected` (warning) — keyword-stuffed header dismantled in body (C7).
-- `claude-md/injection-pattern` (critical) — instruction-override pattern found in governance file.
-- `claude-md/governance-file-gitignored` (critical) — governance file listed in .gitignore.
-- `claude-md/governance-file-untracked` (warning) — governance file not tracked in git.
-- `claude-md/no-ai-tooling-detected` (info) — no AI-tooling surface found, so governance depth is not scored.
+- `governance-docs/no-governance-file` (critical) — no CLAUDE.md or equivalent found.
+- `governance-docs/governance-file-short` (warning) — governance file < 50 lines.
+- `governance-docs/actively-negates-<category>` (critical) — negated governance keyword (category slugified from QUALITY_CHECKS name).
+- `governance-docs/missing-<category>` (warning) — missing governance category.
+- `governance-docs/governance-reversal-detected` (warning) — keyword-stuffed header dismantled in body (C7).
+- `governance-docs/injection-pattern` (critical) — instruction-override pattern found in governance file.
+- `governance-docs/governance-file-gitignored` (critical) — governance file listed in .gitignore.
+- `governance-docs/governance-file-untracked` (warning) — governance file not tracked in git.
+- `governance-docs/no-ai-tooling-detected` (info) — no AI-tooling surface found, so governance depth is not scored.
 
 ### claude-settings
 
@@ -139,8 +157,8 @@ Grouped by check. Each ID is stable within the current major.
 - `coherence/shell-claim-vs-skill-shell-exec` (warning)
 - `coherence/anti-injection-claim-vs-skill-injection` (critical)
 - `coherence/exfiltration-plus-broad-filesystem` (critical)
-- `coherence/governance-gitignored-echo` (info) — echoed from claude-md.
-- `coherence/governance-untracked-echo` (info) — echoed from claude-md.
+- `coherence/governance-gitignored-echo` (info) — echoed from governance-docs.
+- `coherence/governance-untracked-echo` (info) — echoed from governance-docs.
 - `coherence/undeclared-mcp-server` (warning) — MCP server not mentioned in governance.
 - `coherence/no-approved-tools-declaration` (info) — broad-capability MCP server without an "Approved Tools" declaration.
 - `coherence/approval-claim-vs-bypass-no-hook` (warning) — bypassPermissions + approval-gate claim + no PreToolUse hook.
@@ -463,7 +481,7 @@ Grouped by check. Each ID is stable within the current major.
 Every check id in `src/checks/` is stable. These work in `--ignore` and
 `suppress:` as a coarse-grained mute:
 
-`agent-output-schemas`, `ai-disclosure`, `ci-agent-caps`, `claude-md`,
+`agent-output-schemas`, `ai-disclosure`, `ci-agent-caps`, `governance-docs`,
 `claude-settings`, `coherence`, `credential-storage`, `deep-secrets`,
 `docker-security`, `documentation`, `env-exposure`, `git-hooks`,
 `infrastructure-security`, `instruction-effectiveness`, `loop-governance`,

@@ -8,7 +8,7 @@ describe('N/A score weight redistribution', () => {
     // skill(10) + perms(4) + coherence(14) = 62. C6 scale = 0.62 →
     // round(100 * 0.62) = 62.
     const results = [
-      { id: 'claude-md', score: 100 },
+      { id: 'governance-docs', score: 100 },
       { id: 'mcp-config', score: 100 },
       { id: 'env-exposure', score: 100 },
       { id: 'coherence', score: 100 },
@@ -22,7 +22,7 @@ describe('N/A score weight redistribution', () => {
 
   it('returns 0 when all checks are N/A', () => {
     const results = [
-      { id: 'claude-md', score: NOT_APPLICABLE_SCORE },
+      { id: 'governance-docs', score: NOT_APPLICABLE_SCORE },
       { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
       { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
       { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
@@ -40,7 +40,7 @@ describe('N/A score weight redistribution', () => {
     // Internal = (50*10 + 100*8 + 100*4)/22 = (500+800+400)/22 = 1700/22 = 77.27 → 77
     // Coverage penalty: 77 * (22/100) = 16.94 → 17
     const results = [
-      { id: 'claude-md', score: 50 },
+      { id: 'governance-docs', score: 50 },
       { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
       { id: 'env-exposure', score: 100 },
       { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
@@ -55,7 +55,7 @@ describe('N/A score weight redistribution', () => {
     // claude-md (w10) + env-exposure (w8) + permissions (w4) = 22 applicable weight
     // Internal = 100, penalty: 100 * 0.22 = 22
     const results = [
-      { id: 'claude-md', score: 100 },
+      { id: 'governance-docs', score: 100 },
       { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
       { id: 'env-exposure', score: 100 },
       { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
@@ -68,7 +68,7 @@ describe('N/A score weight redistribution', () => {
 
   it('C6: 7-check subset (weight 54) with no N/A still scales continuously', () => {
     const results = [
-      { id: 'claude-md', score: 50 },
+      { id: 'governance-docs', score: 50 },
       { id: 'mcp-config', score: 80 },
       { id: 'env-exposure', score: 100 },
       { id: 'docker-security', score: 0 },

@@ -16,7 +16,7 @@ describe('coherence check', () => {
   it('returns N/A when governance is missing', async () => {
     const result = await check.run({
       priorResults: [
-        { id: 'claude-md', score: NOT_APPLICABLE_SCORE, findings: [] },
+        { id: 'governance-docs', score: NOT_APPLICABLE_SCORE, findings: [] },
         { id: 'mcp-config', score: 100, findings: [], data: { hasNetworkTransport: false, hasBroadFilesystemAccess: false } },
         { id: 'docker-security', score: 100, findings: [], data: { hasPrivilegedContainer: false } },
       ],
@@ -28,7 +28,7 @@ describe('coherence check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [],
           // A passing claude-md always exports governanceText (claude-md.js
@@ -61,7 +61,7 @@ describe('coherence check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [],
           data: { matchedPatterns: ['network restrictions'] },
@@ -89,7 +89,7 @@ describe('coherence check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [],
           data: { matchedPatterns: ['path restrictions'] },
@@ -116,7 +116,7 @@ describe('coherence check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [],
           data: { matchedPatterns: ['forbidden actions'] },
@@ -143,7 +143,7 @@ describe('coherence check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 0,
           findings: [
             { severity: 'critical', title: 'Governance file CLAUDE.md is in .gitignore' },
@@ -173,7 +173,7 @@ describe('coherence check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [],
           data: { matchedPatterns: ['shell restrictions'] },
@@ -207,7 +207,7 @@ describe('coherence check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [],
           data: { matchedPatterns: ['network restrictions', 'path restrictions', 'forbidden actions'] },

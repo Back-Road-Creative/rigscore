@@ -11,7 +11,7 @@ describe('coherence reverse check', () => {
   function makePriorResults({ serverNames = [], governanceText = '', extraPatterns = [] } = {}) {
     return [
       {
-        id: 'claude-md',
+        id: 'governance-docs',
         score: 100,
         findings: [],
         data: {
@@ -155,7 +155,7 @@ describe('coherence reverse check', () => {
     const result = await check.run({
       priorResults: [
         {
-          id: 'claude-md',
+          id: 'governance-docs',
           score: 100,
           findings: [],
           data: { matchedPatterns: ['forbidden actions'], governanceText: '' },

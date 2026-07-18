@@ -69,7 +69,7 @@ describe('CLI --help', () => {
     expect(stdout).toContain('--depth');
     expect(stdout).toContain('--json');
     expect(stdout).toContain('--check');
-    expect(stdout).toContain('claude-md');
+    expect(stdout).toContain('governance-docs');
     expect(stdout).toContain('docker-security');
     expect(stdout).toContain('permissions-hygiene');
   });

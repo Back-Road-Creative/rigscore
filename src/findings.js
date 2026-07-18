@@ -30,13 +30,20 @@ export { slugify };
  * least one major version, so a user's `.rigscorerc.json` `suppress:` (or a
  * baseline) does not silently dead-match on upgrade. This table is that
  * promise's implementation: `compileSuppressPattern` consults it so a pattern
- * naming an old id also mutes the renamed finding. Empty today — no rename has
- * shipped — but a future rename adds ONE entry here instead of quietly breaking
- * every downstream suppress config. Keys/values match case-insensitively.
+ * naming an old id also mutes the renamed finding, and `resolveWeights`
+ * (config.js) consults it so a weights/disabled rc keyed on an old id still
+ * scores the renamed check. A rename adds ONE entry here instead of quietly
+ * breaking every downstream suppress/weights config. Keys/values match
+ * case-insensitively.
+ *
+ *   claude-md → governance-docs: the flagship 10-point governance check scans
+ *   the vendor-neutral GOVERNANCE_FILES superset (AGENTS.md, .cursorrules,
+ *   .windsurfrules, …), so the Claude-only `claude-md` name misbranded it. The
+ *   old id stays a working suppress/weights alias per docs/FINDING_IDS.md.
  * @type {Record<string,string>}
  */
 export const FINDING_ID_RENAMES = {
-  // 'old-check-or-finding-id': 'current-check-or-finding-id',
+  'claude-md': 'governance-docs',
 };
 
 /**

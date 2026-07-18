@@ -7,7 +7,7 @@ import { NOT_APPLICABLE_SCORE, PRACTICE_WEIGHTS } from '../src/constants.js';
 // PRs, so a real scan cannot be used to exercise the Practice axis yet.
 const r = (id, score, weight = 0) => ({ id, name: id, weight, score, findings: [] });
 
-const securityResults = [r('claude-md', 40, 10), r('coherence', 100, 14), r('env-exposure', 100, 8)];
+const securityResults = [r('governance-docs', 40, 10), r('coherence', 100, 14), r('env-exposure', 100, 8)];
 
 const practiceResults = [
   r('loop-governance', 100),                    // practice weight 25
@@ -31,7 +31,7 @@ describe('Practice axis scoring', () => {
     const withBadSecurity = [
       ...practiceResults,
       { id: 'env-exposure', score: 0, findings: [] },
-      { id: 'claude-md', score: 0, findings: [] },
+      { id: 'governance-docs', score: 0, findings: [] },
     ];
     expect(calculatePracticeScore(withBadSecurity)).toBe(
       calculatePracticeScore(practiceResults),
@@ -110,7 +110,7 @@ describe('Practice axis reporting', () => {
 
 describe('reporter coverage line uses resolved weights', () => {
   const results = [
-    { id: 'claude-md', name: 'CLAUDE.md governance', weight: 10, score: 100, findings: [] },
+    { id: 'governance-docs', name: 'CLAUDE.md governance', weight: 10, score: 100, findings: [] },
     { id: 'docker-security', name: 'Docker security', weight: 6, score: 100, findings: [] },
     { id: 'mcp-config', name: 'MCP', weight: 14, score: NOT_APPLICABLE_SCORE, findings: [] },
   ];

@@ -1,9 +1,22 @@
 import { createRequire } from 'node:module';
 import { OWASP_AGENTIC_MAP } from './constants.js';
+import { FINDING_ID_RENAMES } from './findings.js';
 import { stripAnsi } from './reporter.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
+
+// Reverse of FINDING_ID_RENAMES: current check id → the deprecated ids that now
+// alias to it. Surfaced as SARIF `reportingDescriptor.deprecatedIds` (§3.49.4)
+// so a consumer keyed on an old ruleId (a baseline, a suppression) learns the
+// id was renamed instead of silently matching nothing.
+const DEPRECATED_IDS_BY_CURRENT = Object.entries(FINDING_ID_RENAMES).reduce(
+  (acc, [oldId, currentId]) => {
+    (acc[currentId] ||= []).push(oldId);
+    return acc;
+  },
+  Object.create(null),
+);
 
 function safeText(value) {
   if (value == null || typeof value !== 'string') return value;
@@ -102,13 +115,18 @@ export function formatSarif(result) {
   // the "anchor" rule so ruleIds of the form `<checkId>` (used as a fallback
   // when a finding has no findingId/title) still resolve. Per-finding rules
   // are added on demand below.
-  const rules = results.map((r) => ({
-    id: r.id,
-    shortDescription: { text: r.name },
-    defaultConfiguration: {
-      level: 'warning',
-    },
-  }));
+  const rules = results.map((r) => {
+    const rule = {
+      id: r.id,
+      shortDescription: { text: r.name },
+      defaultConfiguration: {
+        level: 'warning',
+      },
+    };
+    const deprecated = DEPRECATED_IDS_BY_CURRENT[r.id];
+    if (deprecated && deprecated.length > 0) rule.deprecatedIds = [...deprecated];
+    return rule;
+  });
   const knownRuleIds = new Set(rules.map((r) => r.id));
 
   // Build results from findings

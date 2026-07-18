@@ -97,7 +97,7 @@ describe('dynamic ids expand to their real value set (the missing-tdd bug class)
   // A real id vs. a fake one that shares its dynamic prefix. Prefix-matching alone
   // would pass every "fake" here — that is the hole these expanders close.
   it.each([
-    ['claude-md', 'missing-test-driven-development', 'missing-tdd'],
+    ['governance-docs', 'missing-test-driven-development', 'missing-tdd'],
     ['sandbox-posture', 'codex-no-sandbox', 'not-a-rule'],
     ['ci-agent-caps', 'agent-job-missing-turn-cap', 'agent-job-missing-everything'],
     ['skill-files', 'escalation-chmod-777', 'escalation-nope'],
