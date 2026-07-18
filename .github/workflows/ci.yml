@@ -13,7 +13,14 @@ jobs:
       fail-fast: false
       matrix:
         node-version: ['18.17', '20', '22']
-        os: [ubuntu-latest, macos-latest]
+        # windows-latest is a first-class leg: the product ships a
+        # `windows-security` check and win32-specific branches in several
+        # checks (permissions-hygiene, git-hooks, env-exposure) that no CI
+        # was executing. The suite is already Windows-portable — POSIX-only
+        # cases self-skip via capability detection (CAN_SYMLINK / PERMS_ENFORCED)
+        # and `process.platform` guards — so this leg exercises the win32 paths
+        # without spurious failures.
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -55,7 +62,15 @@ jobs:
       #
       # Raising this threshold needs a richer CI fixture or a profile that
       # exempts the N/A infra checks. Re-measure before changing it.
+      #
+      # Runs on ubuntu + macOS only: the self-scan is a scoring-reproducibility
+      # gate whose threshold is calibrated to a Linux runner's neutralised $HOME
+      # (see the baseline note above). The score derives from rigscore's own
+      # committed content, which is identical across OSes, so a windows leg adds
+      # no scoring signal — the win32 *code paths* are exercised by `npm test`
+      # above, which now runs on windows-latest.
       - name: Self-scan
+        if: runner.os != 'Windows'
         run: node bin/rigscore.js --no-cta --profile default --fail-under 30 .
 
   # Secret scanning — the ENFORCED gate.
