@@ -26,6 +26,10 @@ import path from 'node:path';
  *                 general.defaultApprovalMode), 'opencode' (opencode.json permission block),
  *                 'cursor' (.cursor/permissions.json terminal/mcp allowlists). Entries are
  *                 listed in precedence order — later files override/extend earlier ones.
+ *   skillDirs   — directories of slash-command / skill / prompt files the client reads,
+ *                 each { path, base: 'cwd'|'home' }. skill-files scans them for hijack/
+ *                 exfil/escalation patterns; the `base:'home'` entries are gated behind
+ *                 --include-home-skills (a home skill library is not the project's to fix).
  *
  * Paths for the three newest clients are from primary vendor docs:
  *   Codex CLI  developers.openai.com/codex/config-reference — ~/.codex/config.toml and project
@@ -52,7 +56,9 @@ export const CLIENTS = [
       { path: '.claude.json', base: 'home' }],
     credentials: [{ dir: '.', file: '.claude.json' }],
     sandbox: [{ path: '.claude/settings.json', base: 'cwd', format: 'json' },
-      { path: '.claude/settings.local.json', base: 'cwd', format: 'json' }] },
+      { path: '.claude/settings.local.json', base: 'cwd', format: 'json' }],
+    skillDirs: [{ path: '.claude/commands', base: 'cwd' }, { path: '.claude/skills', base: 'cwd' },
+      { path: '.claude/commands', base: 'home' }, { path: '.claude/skills', base: 'home' }] },
   { id: 'claude-desktop', name: 'Claude Desktop',
     mcp: [{ path: '.claude/claude_desktop_config.json', base: 'home' }],
     credentials: [{ dir: '.claude', file: 'claude_desktop_config.json' }] },
@@ -86,22 +92,32 @@ export const CLIENTS = [
   { id: 'copilot', name: 'GitHub Copilot',
     governance: ['copilot-instructions.md', '.github/copilot-instructions.md'],
     mcp: [{ path: '.vscode/mcp.json', base: 'cwd', key: ['servers', 'mcpServers'] }] },
+  // Custom prompts live ONLY in the Codex home dir ~/.codex/prompts (developers.openai.com/
+  // codex/custom-prompts — "not shared through your repository"), so skillDirs is home-only.
   { id: 'codex', name: 'Codex CLI', governance: ['AGENTS.md'],
     sandbox: [{ path: '.codex/config.toml', base: 'home', format: 'toml' },
-      { path: '.codex/config.toml', base: 'cwd', format: 'toml' }] },
+      { path: '.codex/config.toml', base: 'cwd', format: 'toml' }],
+    skillDirs: [{ path: '.codex/prompts', base: 'home' }] },
   { id: 'aider', name: 'Aider', governance: ['.aider.conf.yml'] },
   { id: 'gemini', name: 'Gemini CLI', governance: ['GEMINI.md'],
     mcp: [{ path: '.gemini/settings.json', base: 'cwd' },
       { path: '.gemini/settings.json', base: 'home' }],
     sandbox: [{ path: '.gemini/settings.json', base: 'home', format: 'gemini' },
       { path: '.gemini/settings.json', base: 'cwd', format: 'gemini' }],
-    credentials: [{ dir: '.gemini', file: 'settings.json' }] },
+    credentials: [{ dir: '.gemini', file: 'settings.json' }],
+    // Custom commands: project .gemini/commands + user ~/.gemini/commands
+    // (github.com/google-gemini/gemini-cli docs/cli/custom-commands.md).
+    skillDirs: [{ path: '.gemini/commands', base: 'cwd' }, { path: '.gemini/commands', base: 'home' }] },
   { id: 'opencode', name: 'opencode', governance: ['AGENTS.md'],
     mcp: [{ path: 'opencode.json', base: 'cwd', key: 'mcp' },
       { path: '.config/opencode/opencode.json', base: 'home', key: 'mcp' }],
     sandbox: [{ path: '.config/opencode/opencode.json', base: 'home', format: 'opencode' },
       { path: 'opencode.json', base: 'cwd', format: 'opencode' }],
-    credentials: [{ dir: '.config/opencode', file: 'opencode.json', envKey: 'environment' }] },
+    credentials: [{ dir: '.config/opencode', file: 'opencode.json', envKey: 'environment' }],
+    // Custom commands: project .opencode/commands + global ~/.config/opencode/commands
+    // (opencode.ai/docs/commands — plural "commands").
+    skillDirs: [{ path: '.opencode/commands', base: 'cwd' },
+      { path: '.config/opencode/commands', base: 'home' }] },
   { id: 'amp', name: 'Amp',
     mcp: [{ path: '.amp/mcp.json', base: 'home' }],
     credentials: [{ dir: '.amp', file: 'mcp.json' }] },
@@ -220,6 +236,19 @@ function mcpEntries() {
 /** Every governance/instruction file any known client reads, de-duplicated. */
 export function governanceFiles() {
   return [...new Set(CLIENTS.flatMap(c => c.governance || []))];
+}
+
+/**
+ * Relative skill/command/prompt directories every known client reads at `base`,
+ * de-duplicated. `base: 'cwd'` → project-level dirs (always scanned by skill-files);
+ * `base: 'home'` → $HOME dirs, scanned only under --include-home-skills. A client with
+ * no `skillDirs` surface contributes nothing. Order is CLIENTS declaration order and is
+ * STABLE, so the Claude defaults (`.claude/commands`, `.claude/skills`) come first.
+ */
+export function skillDirsForBase(base) {
+  return [...new Set(
+    CLIENTS.flatMap(c => (c.skillDirs || []).filter(d => d.base === base).map(d => d.path)),
+  )];
 }
 
 // Directory-form rule sets modern clients read by DEFAULT. Unlike the single-file

@@ -95,7 +95,9 @@ Options:
                      (semantic-tools check). Shells to your first-party
                      claude -p (Max-plan CLI, never an API key); skips
                      silently if claude is not on PATH
-  --include-home-skills  Also scan ~/.claude/skills and ~/.claude/commands
+  --include-home-skills  Also scan the HOME skill/command/prompt dirs of every
+                         registered client (~/.claude, ~/.codex/prompts,
+                         ~/.config/opencode/commands, ~/.gemini/commands, …)
                          (default: scan cwd only; home findings do not
                          affect project scores unless this flag is set)
   --fix              Show auto-fixable issues and installable packs (dry run)
