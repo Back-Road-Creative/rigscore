@@ -952,6 +952,22 @@ Plugins must export `id`, `name`, `category` (strings), and `run` (async functio
 
 ## CI Integration
 
+rigscore is **not GitHub-only** — any CI that can run Node (or a container) can
+gate on it. The CLI prints its results and exits with a stable code, so the
+runner needs nothing rigscore-specific: it branches on the exit code alone.
+`--ci` bundles the CI-friendly defaults (`--sarif --no-color --no-cta`); pair it
+with `--fail-under N` to set the gate threshold (default `70`).
+
+| Exit code | CI meaning |
+|---|---|
+| `0` | Score is at or above `--fail-under` — the job passes. |
+| `1` | Score is below `--fail-under` — fail the job. |
+| `2` | Config/usage error (bad flag, missing target dir, malformed `.rigscorerc.json`). |
+
+Branch score-gating on `0` vs `1` only, and treat every other non-zero as an
+error. The full table (including the baseline-mode and `mcp-verify` codes `3`
+and `4`) is under [Exit codes](#exit-codes) above.
+
 ### GitHub Actions
 
 Use the rigscore GitHub Action:
@@ -968,6 +984,26 @@ Or run directly:
 ```yaml
 - run: npx github:Back-Road-Creative/rigscore --ci --fail-under 70
 ```
+
+### GitLab CI
+
+No plugin needed — call the CLI from a `.gitlab-ci.yml` job. The exit code drives
+pass/fail, and the SARIF stream can be captured as an artifact:
+
+```yaml
+rigscore:
+  image: node:20
+  script:
+    - npx -y github:Back-Road-Creative/rigscore --ci --fail-under 70 > rigscore.sarif
+  artifacts:
+    when: always
+    paths:
+      - rigscore.sarif
+```
+
+Swap `image: node:20` for `ghcr.io/back-road-creative/rigscore:<tag>` to skip the
+`npx` fetch. The same shape works on any other CI platform (CircleCI, Jenkins,
+Bitbucket Pipelines, Woodpecker): run the CLI, let its exit code gate the job.
 
 ### SARIF
 
