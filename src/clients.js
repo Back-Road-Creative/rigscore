@@ -57,11 +57,21 @@ export const CLIENTS = [
     credentials: [{ dir: '.', file: '.claude.json' }],
     sandbox: [{ path: '.claude/settings.json', base: 'cwd', format: 'json' },
       { path: '.claude/settings.local.json', base: 'cwd', format: 'json' }],
+    // `.claude/agents` holds subagent prompt files — the SAME hijack/exfil/escalation surface as
+    // skills/commands, so skill-files must scan them too. The home entry is gated behind
+    // --include-home-skills like the other home skillDirs.
     skillDirs: [{ path: '.claude/commands', base: 'cwd' }, { path: '.claude/skills', base: 'cwd' },
-      { path: '.claude/commands', base: 'home' }, { path: '.claude/skills', base: 'home' }] },
+      { path: '.claude/agents', base: 'cwd' },
+      { path: '.claude/commands', base: 'home' }, { path: '.claude/skills', base: 'home' },
+      { path: '.claude/agents', base: 'home' }] },
+  // Claude Desktop's config is ~/.config/Claude/claude_desktop_config.json on Linux (XDG) and
+  // Windows (%APPDATA%\Claude\); macOS uses ~/Library/Application Support/Claude/, which no single
+  // home-relative path can express — the Linux/XDG form is registered. The old
+  // `.claude/claude_desktop_config.json` pointed at Claude CODE's dir, not Desktop's, so it
+  // scanned nothing on any OS.
   { id: 'claude-desktop', name: 'Claude Desktop',
-    mcp: [{ path: '.claude/claude_desktop_config.json', base: 'home' }],
-    credentials: [{ dir: '.claude', file: 'claude_desktop_config.json' }] },
+    mcp: [{ path: '.config/Claude/claude_desktop_config.json', base: 'home' }],
+    credentials: [{ dir: '.config/Claude', file: 'claude_desktop_config.json' }] },
   // Cursor reads a COMMITTED, project-level .cursor/mcp.json (it wins over the ~/.cursor/mcp.json
   // global) — cursor.com/docs/mcp. That committed file is a rug-pull surface, so it needs a
   // base:'cwd' entry too. Windsurf (~/.codeium/windsurf/mcp_config.json) and Cline
@@ -76,11 +86,14 @@ export const CLIENTS = [
       { path: '.cursor/permissions.json', base: 'cwd', format: 'cursor' }],
     credentials: [{ dir: '.cursor', file: 'mcp.json' }] },
   { id: 'windsurf', name: 'Windsurf', governance: ['.windsurfrules'],
-    mcp: [{ path: '.windsurf/mcp.json', base: 'home' }],
-    credentials: [{ dir: '.windsurf', file: 'mcp.json' }] },
+    mcp: [{ path: '.codeium/windsurf/mcp_config.json', base: 'home' }],
+    credentials: [{ dir: '.codeium/windsurf', file: 'mcp_config.json' }],
+    // Workflows are committed .windsurf/workflows/*.md slash-commands invoked as /<name>
+    // (docs.windsurf.com/plugins/cascade/workflows) — project-scoped prompt files skill-files scans.
+    skillDirs: [{ path: '.windsurf/workflows', base: 'cwd' }] },
   { id: 'cline', name: 'Cline', governance: ['.clinerules'],
-    mcp: [{ path: '.cline/mcp_settings.json', base: 'home' }],
-    credentials: [{ dir: '.cline', file: 'mcp_settings.json' }] },
+    mcp: [{ path: '.cline/data/settings/cline_mcp_settings.json', base: 'home' }],
+    credentials: [{ dir: '.cline/data/settings', file: 'cline_mcp_settings.json' }] },
   { id: 'continue', name: 'Continue', governance: ['.continuerules'],
     mcp: [{ path: '.continue/config.json', base: 'home' }],
     credentials: [{ dir: '.continue', file: 'config.json' }] },
@@ -89,16 +102,24 @@ export const CLIENTS = [
   // default key made every real VS Code config scan as empty. `mcpServers` stays as a
   // second key: it is the alias people paste in from other clients, and a server sitting
   // in a committed file must never be a scanning or pinning blind spot either way.
+  // Two MCP surfaces: the IDE's committed .vscode/mcp.json (`servers`) and the Copilot CLI's
+  // ~/.copilot/mcp-config.json (`mcpServers` — a DIFFERENT top-level key; docs.github.com/en/
+  // copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers). COPILOT_HOME can relocate the
+  // CLI file, but ~/.copilot is the default; its per-server env maps hold credentials.
   { id: 'copilot', name: 'GitHub Copilot',
     governance: ['copilot-instructions.md', '.github/copilot-instructions.md'],
-    mcp: [{ path: '.vscode/mcp.json', base: 'cwd', key: ['servers', 'mcpServers'] }] },
+    mcp: [{ path: '.vscode/mcp.json', base: 'cwd', key: ['servers', 'mcpServers'] },
+      { path: '.copilot/mcp-config.json', base: 'home' }],
+    credentials: [{ dir: '.copilot', file: 'mcp-config.json' }] },
   // Custom prompts live ONLY in the Codex home dir ~/.codex/prompts (developers.openai.com/
   // codex/custom-prompts — "not shared through your repository"), so skillDirs is home-only.
   { id: 'codex', name: 'Codex CLI', governance: ['AGENTS.md'],
     sandbox: [{ path: '.codex/config.toml', base: 'home', format: 'toml' },
       { path: '.codex/config.toml', base: 'cwd', format: 'toml' }],
     skillDirs: [{ path: '.codex/prompts', base: 'home' }] },
-  { id: 'aider', name: 'Aider', governance: ['.aider.conf.yml'] },
+  // Aider also reads a repo-root CONVENTIONS.md as coding-convention context
+  // (aider.chat/docs/usage/conventions.html), in addition to its .aider.conf.yml.
+  { id: 'aider', name: 'Aider', governance: ['.aider.conf.yml', 'CONVENTIONS.md'] },
   { id: 'gemini', name: 'Gemini CLI', governance: ['GEMINI.md'],
     mcp: [{ path: '.gemini/settings.json', base: 'cwd' },
       { path: '.gemini/settings.json', base: 'home' }],
@@ -190,11 +211,13 @@ export const CLIENTS = [
   //   qwenlm.github.io/qwen-code-docs/en/users/configuration/settings — committed project
   //   .qwen/settings.json (base:cwd) plus user scope ~/.qwen/settings.json (base:home), whose env
   //   maps hold credentials. Reads QWEN.md for hierarchical context (`context.fileName`). Its
-  //   approval boundary is `tools.approvalMode` (NOT Gemini's general.defaultApprovalMode), so
-  //   the `gemini` sandbox reader cannot grade it — no sandbox entry is declared.
+  //   approval boundary is `tools.approvalMode` (NOT Gemini's general.defaultApprovalMode), graded
+  //   by the dedicated `qwen` sandbox reader (yolo → unrestricted, plan → restricted).
   { id: 'qwen-code', name: 'Qwen Code', governance: ['QWEN.md'],
     mcp: [{ path: '.qwen/settings.json', base: 'cwd' },
       { path: '.qwen/settings.json', base: 'home' }],
+    sandbox: [{ path: '.qwen/settings.json', base: 'home', format: 'qwen' },
+      { path: '.qwen/settings.json', base: 'cwd', format: 'qwen' }],
     credentials: [{ dir: '.qwen', file: 'settings.json' }] },
   // Crush (Charm's terminal coding agent). Like opencode, it nests servers under `mcp`:
   //   github.com/charmbracelet/crush — committed project config, read as .crush.json then
@@ -224,6 +247,28 @@ export const CLIENTS = [
   { id: 'antigravity', name: 'Antigravity', governance: ['AGENTS.md'],
     mcp: [{ path: '.gemini/antigravity/mcp_config.json', base: 'home' }],
     credentials: [{ dir: '.gemini/antigravity', file: 'mcp_config.json' }] },
+  // OpenHands (All-Hands-AI). Repository-wide agent instructions live in the committed
+  // .openhands/microagents/repo.md (docs.all-hands.dev — repo microagent). Its MCP servers live in
+  // a TOML config.toml ([mcp]); the JSON MCP readers can't parse it, so (like Codex/Goose) no mcp
+  // entry is declared.
+  { id: 'openhands', name: 'OpenHands', governance: ['.openhands/microagents/repo.md'] },
+  // Kilo Code (Kilo-Org; a Cline/Roo-family VS Code agent). Project MCP is the COMMITTED
+  // .kilocode/mcp.json under `mcpServers` (kilo.ai/docs/automate/mcp/using-in-kilo-code) — a
+  // rug-pull surface. The global config lives in VS Code global storage (no stable ~/ path), so it
+  // and its credentials surface are omitted (same stance as Roo Code).
+  { id: 'kilo-code', name: 'Kilo Code',
+    mcp: [{ path: '.kilocode/mcp.json', base: 'cwd' }] },
+  // Trae (ByteDance's agentic IDE). Project rules are the committed .trae/rules/project_rules.md
+  // (docs.trae.ai/ide/rules). MCP servers are configured in-app with no committed file, so none
+  // is declared.
+  { id: 'trae', name: 'Trae', governance: ['.trae/rules/project_rules.md'] },
+  // Augment Code. Workspace Guidelines live in the committed .augment-guidelines file; Workspace
+  // Rules live in the .augment/rules/ DIRECTORY (docs.augmentcode.com/setup-augment/guidelines) —
+  // governed as a directory-form rule set (see DEFAULT_GOVERNANCE_DIRS).
+  { id: 'augment', name: 'Augment Code', governance: ['.augment-guidelines'] },
+  // Replit Agent reads a repo-root replit.md as its project context/governance file
+  // (docs.replit.com — replit.md).
+  { id: 'replit', name: 'Replit', governance: ['replit.md'] },
 ];
 
 const DEFAULT_MCP_KEY = 'mcpServers';
@@ -265,6 +310,11 @@ const DEFAULT_GOVERNANCE_DIRS = [
   { dir: '.github/instructions', ext: '.instructions.md' },
   { dir: '.amazonq/rules', ext: '.md' },
   { dir: '.kiro/steering', ext: '.md' },
+  // JetBrains AI Assistant (distinct from Junie): project rules are .aiassistant/rules/*.md.
+  { dir: '.aiassistant/rules', ext: '.md' },
+  // Augment Code Workspace Rules: .augment/rules/*.md (its single-file .augment-guidelines is
+  // declared on the `augment` client entry).
+  { dir: '.augment/rules', ext: '.md' },
 ];
 
 /** Built-in directory-form governance rule sets, scanned by default (dir names). */

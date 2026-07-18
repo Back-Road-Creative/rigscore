@@ -50,14 +50,22 @@ describe('skillDirsForBase — dirs derived from the client registry', () => {
     const cwd = skillDirsForBase('cwd');
     const home = skillDirsForBase('home');
     const all = [...cwd, ...home];
-    // Cursor/Windsurf/Aider declare governance/mcp only — no skillDirs surface.
-    for (const c of ['cursor', 'windsurf', 'aider']) {
+    // Cursor/Aider declare governance/mcp only — no skillDirs surface.
+    for (const c of ['cursor', 'aider']) {
       expect(CLIENTS.find((x) => x.id === c)?.skillDirs).toBeUndefined();
     }
     // So none of their config dirs leak into the scanned skill dirs.
-    for (const stray of ['.cursor', '.windsurf', '.aider']) {
+    for (const stray of ['.cursor', '.aider']) {
       expect(all.some((d) => d.startsWith(stray))).toBe(false);
     }
+  });
+
+  it('Windsurf contributes exactly its .windsurf/workflows dir (RS-21) — not .windsurf/rules etc', () => {
+    const cwd = skillDirsForBase('cwd');
+    expect(CLIENTS.find((x) => x.id === 'windsurf').skillDirs).toBeTruthy();
+    expect(cwd).toContain('.windsurf/workflows');
+    // The governance-rules dir (.windsurf/rules) is NOT a skill dir — it stays governance-only.
+    expect(cwd).not.toContain('.windsurf/rules');
   });
 });
 
