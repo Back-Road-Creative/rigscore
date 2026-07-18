@@ -1,0 +1,17 @@
+# Least-privilege Codex CLI baseline (rigscore codex-guards pack).
+# Config reference: https://developers.openai.com/codex/config-reference
+#
+# approval_policy = "untrusted": Codex prompts before running anything that is
+#   not a known-safe read-only command — nothing executes unattended. ("never"
+#   would drop the prompt entirely.)
+# sandbox_mode = "workspace-write": edits are confined to this workspace; the
+#   rest of the filesystem stays read-only. ("danger-full-access" removes the
+#   filesystem and network boundary altogether.)
+# [sandbox_workspace_write] network_access = false: no outbound network from
+#   inside the sandbox. Off is the safe default — turn it on per-task only when
+#   a job genuinely needs the network.
+approval_policy = "untrusted"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false

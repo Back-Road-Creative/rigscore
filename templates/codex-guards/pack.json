@@ -1,0 +1,8 @@
+{
+  "name": "codex-guards",
+  "description": "Least-privilege Codex CLI baseline: approval_policy that always prompts, a workspace-write sandbox, and network access off — nothing runs unprompted or reaches the network by default",
+  "checks": ["sandbox-posture"],
+  "files": [
+    { "src": "config.toml", "dest": ".codex/config.toml" }
+  ]
+}

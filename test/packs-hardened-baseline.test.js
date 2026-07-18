@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { listPacks, loadPack, installPack } from '../src/cli/packs.js';
-import sandboxPosture from '../src/checks/sandbox-posture.js';
+import sandboxPosture, { readCodexKeys } from '../src/checks/sandbox-posture.js';
 import { CLIENTS } from '../src/clients.js';
 
 // The real templates/ dir — these packs are auto-discovered, no registry edit.
@@ -25,6 +25,7 @@ const CASES = [
   { pack: 'cursor-guards', clientId: 'cursor', dest: '.cursor/permissions.json', posture: 'partial' },
   { pack: 'opencode-guards', clientId: 'opencode', dest: 'opencode.json', posture: 'partial' },
   { pack: 'gemini-guards', clientId: 'gemini', dest: '.gemini/settings.json', posture: 'partial' },
+  { pack: 'codex-guards', clientId: 'codex', dest: '.codex/config.toml', posture: 'partial' },
 ];
 
 describe('hardened-baseline packs (non-Claude clients)', () => {
@@ -57,7 +58,10 @@ describe('hardened-baseline packs (non-Claude clients)', () => {
     expect(res.results).toEqual([{ dest, status: 'written' }]);
     expect(res.unresolved).toEqual([]); // no unresolved {{VAR}} — fully generic
     const body = fs.readFileSync(path.join(target, dest), 'utf-8');
-    expect(() => JSON.parse(body)).not.toThrow();
+    // JSON packs must parse as JSON; the TOML pack (codex) just must be non-empty
+    // (its keys are validated precisely in the codex-guards block below).
+    if (dest.endsWith('.json')) expect(() => JSON.parse(body)).not.toThrow();
+    else expect(body.trim().length).toBeGreaterThan(0);
   });
 
   it.each(CASES)('installing $pack turns the client\'s sandbox-posture GREEN', async ({ pack, clientId, posture }) => {
@@ -70,5 +74,21 @@ describe('hardened-baseline packs (non-Claude clients)', () => {
     // The installed file is the ONLY sandbox surface, graded to a bounded posture.
     expect(r.data.surfacesScanned).toBe(1);
     expect(r.data.postures[clientId]).toBe(posture);
+  });
+});
+
+// A positive fixture for the one TOML pack: the shipped config.toml must set the
+// exact keys sandbox-posture reads, at least-privilege values — a workspace-write
+// sandbox, network off, and a prompting approval policy (never "never", which the
+// check flags). The install→posture case above proves it grades GREEN; this proves
+// WHY, against the shipped file itself.
+describe('codex-guards ships a least-privilege config.toml', () => {
+  it('sets a workspace-write sandbox, network off, and a prompting approval policy', () => {
+    const toml = fs.readFileSync(path.join(TEMPLATES, 'codex-guards', 'config.toml'), 'utf-8');
+    const keys = readCodexKeys(toml);
+    expect(keys.sandbox_mode).toBe('workspace-write');
+    expect(keys.network_access).toBe(false);
+    expect(['untrusted', 'on-request']).toContain(keys.approval_policy);
+    expect(keys.approval_policy).not.toBe('never');
   });
 });
