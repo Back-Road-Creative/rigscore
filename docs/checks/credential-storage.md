@@ -49,7 +49,7 @@ Client → config path mapping:
 | Zed | `.config/zed/settings.json` | `context_servers` | `env` |
 | opencode | `.config/opencode/opencode.json` | `mcp` | `environment` |
 
-The table above is a hand-maintained excerpt — it is **not** auto-generated. The authoritative, complete set is whatever `credentialClients()` in `src/clients.js` returns (currently 17 credential clients, more than the 10 shown here); add a client there and treat this table as illustrative, not exhaustive.
+The table above is a hand-maintained excerpt — it is **not** auto-generated. The authoritative, complete set is whatever `credentialClients()` in `src/clients.js` returns (currently 19 credential-file entries, more than the 10 shown here); add a client there and treat this table as illustrative, not exhaustive.
 
 ## Example
 
@@ -78,3 +78,10 @@ Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat
 - **Example-file-passthrough** — users who copy `.env.example` into a real MCP client config verbatim keep `xxx`/`changeme` placeholders; these correctly downgrade to INFO (`credential-storage/example-credential-in-client-config`). If you're seeing many example-credential INFOs, the config was never filled in — remove or replace the server entry.
 - **N/A on headless / CI workspaces** — when `~/.cursor/mcp.json` etc. don't exist (fresh container, CI runner), the check returns N/A and contributes nothing to score. Expected, but can surprise users who assume "no findings" = "passed".
 - **Path-mapping lookup requires the docs table** — SARIF `physicalLocation` does NOT resolve the per-client config path automatically (finding titles name the client, not the file). Until `src/sarif.js` gains an explicit `locations[]` emit from this check, SARIF consumers must cross-reference the client→path table above manually. Tracked as backlog 3.4.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Agentic ASI03 — Identity & Privilege Abuse](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026) — plaintext credentials in world-adjacent client configs.
+- [CWE-312 — Cleartext Storage of Sensitive Information](https://cwe.mitre.org/data/definitions/312.html) — the weakness this check detects at rest.

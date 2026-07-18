@@ -70,3 +70,9 @@ No `fixes` export. `--fix --yes` is a no-op.
 - Concurrency: exposed-path probes run with a fan-out of 5 per site. Header, PII, and SSL probes are sequential.
 - HTML PII scan is regex-based and bounded by what the server returns on GET `/` — it does not crawl.
 - SSL probe uses a direct TCP-connect to port 443; hosts behind clients or HTTP-only sites are skipped silently.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Secure Headers Project](https://owasp.org/www-project-secure-headers/) — the response-header baseline the online probes check.

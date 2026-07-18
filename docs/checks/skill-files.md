@@ -54,7 +54,7 @@ The escalation ruleId carries the id of the pattern that matched (`` skill-files
 
 Weight 10 — the lower of the two "moat" governance-surface checks. Tied with `governance-docs` because a skill file and CLAUDE.md are functionally equivalent attack surfaces: both inject text straight into the agent's context window with high authority, and an attacker who can write to `.claude/commands/pwn.md` has the same leverage as one who can write to `CLAUDE.md`. The pair is weighted below `mcp-config` and `coherence` (both 14) because governance-level goal hijack is recoverable with a better file, while an active supply-chain compromise (mcp-config) or an enforced-contradiction compromise (coherence) has already acted. It sits above hygiene-tier checks like `claude-settings` (8) and `permissions-hygiene` (4) because these files are written by humans and committed to git — they are where intent is encoded, so malicious intent hides there best.
 
-Skill-files and claude-md are both 10 rather than one being higher because the check surfaces differ: `skill-files` sees the long tail (many files, Unicode attacks, persistence/exfiltration) while `governance-docs` sees the quality of the ONE file; each protects a flank the other doesn't.
+Skill-files and governance-docs are both 10 rather than one being higher because the check surfaces differ: `skill-files` sees the long tail (many files, Unicode attacks, persistence/exfiltration) while `governance-docs` sees the quality of the ONE file; each protects a flank the other doesn't.
 
 ## Fix semantics
 
@@ -123,3 +123,10 @@ Allowlist matching is keyed by directory name alone — an attacker-planted skil
 - **`skill-files/escalation-sudo` on operator skills** — legitimate sudo in `sops-status`, `drive-resume`, `skill-manager`. Use the allowlist above rather than a bulk suppress entry.
 - **`skill-files/shell-exec` on `execute bash` in defensive rules** — the defensive-phrase detector catches most ("do not execute bash") but weak phrasings ("be careful when you execute bash") miss. Rephrase to use `STRONG_DEFENSIVE_RE` trigger terms ("never", "forbidden", "refuse") or allowlist the skill.
 - **`skill-files/https-urls` INFO flood on skills with learn-more links** — fires for every HTTPS URL in skill docs. No security signal; filter via suppress `"skill-files/https-urls"` if you don't review these.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Top 10 for LLM Applications — LLM01 Prompt Injection](https://genai.owasp.org/llm-top-10/) — instruction-override and exfiltration lures embedded in skill files.
+- [Trojan Source: Invisible Vulnerabilities (Boucher & Anderson)](https://trojansource.codes/) — the homoglyph / bidi / zero-width evasion class the Unicode pass covers.
