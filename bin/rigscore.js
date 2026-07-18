@@ -93,8 +93,10 @@ Options:
                           (implies --online; bypasses the 24h TTL)
   --semantic         Enable the opt-in semantic MCP tool-description judge
                      (semantic-tools check). Shells to your first-party
-                     claude -p (Max-plan CLI, never an API key); skips
-                     silently if claude is not on PATH
+                     agent CLI (claude -p, gemini, codex exec, …; never an
+                     API key), configurable via semantic.command in
+                     .rigscorerc.json (default ["claude","-p"]); skips
+                     silently if that binary is not on PATH
   --include-home-skills  Also scan ~/.claude/skills and ~/.claude/commands
                          (default: scan cwd only; home findings do not
                          affect project scores unless this flag is set)
