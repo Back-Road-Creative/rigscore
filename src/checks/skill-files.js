@@ -4,6 +4,13 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
 import { skillDirsForBase } from '../clients.js';
 import { readFileSafe, statSafe, walkDirSafe } from '../utils.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
+
+// Per-file read cap — a skill INSTRUCTION file is never megabytes. A file this
+// large in a skill dir is mis-placed data or a scan-evasion attempt; skip it
+// (disclosed, never silently) rather than read it whole (the walker had
+// maxFiles:Infinity and no size ceiling). Same knob deep-secrets reads.
+const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
 
 // Skill file paths = governance files minus CLAUDE.md (handled by claude-md check)
 const SKILL_FILE_PATHS = GOVERNANCE_FILES.filter((f) => f !== 'CLAUDE.md');
@@ -232,6 +239,18 @@ const ZERO_WIDTH_RE = /[\u200B-\u200D\u2060\uFEFF]/;
 // LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI
 const BIDI_OVERRIDE_RE = /[\u202A-\u202E\u2066-\u2069]/;
 
+// Unicode tag characters (U+E0001, U+E0020\u2013U+E007F). Invisible; a documented
+// steganographic channel for smuggling hidden instructions past human review.
+// unicode-steganography flags these in MCP/settings configs but never walked
+// skill dirs; skill-files had no tag-char regex \u2014 this closes that blind spot.
+const TAG_CHARS_RE = /[\u{E0001}\u{E0020}-\u{E007F}]/u;
+
+// Non-text sniff: a NUL or the Unicode replacement char (U+FFFD, produced when
+// readFileSafe decodes invalid UTF-8 bytes) means this is a binary/non-text file.
+// The walker has no extension filter, so binaries land here and get regex-scanned
+// as mojibake \u2014 noise, not signal. Flag them and skip the pattern scans instead.
+const NON_TEXT_RE = /[\u0000\uFFFD]/;
+
 function normalizeText(text) {
   return text
     .normalize('NFKC')
@@ -264,6 +283,15 @@ function hasZeroWidthChars(text) {
 
 function hasBidiOverrides(text) {
   return BIDI_OVERRIDE_RE.test(text);
+}
+
+function hasTagChars(text) {
+  return TAG_CHARS_RE.test(text);
+}
+
+/** True when content looks binary/non-text (NUL or Unicode replacement char). */
+export function isNonTextContent(text) {
+  return NON_TEXT_RE.test(text);
 }
 
 export const fixes = [
@@ -434,6 +462,17 @@ export function checkUnicode(file) {
     });
   }
 
+  if (hasTagChars(file.content)) {
+    findings.push({
+      findingId: 'skill-files/tag-chars',
+      severity: 'critical',
+      title: `Unicode tag characters in ${file.path}`,
+      detail: 'File contains Unicode tag characters (U+E0001, U+E0020-U+E007F) — an invisible steganographic channel that can smuggle hidden instructions past human review.',
+      remediation: 'Remove all Unicode tag characters from the file.',
+      context: { file: file.path },
+    });
+  }
+
   if (hasZeroWidthChars(file.content)) {
     findings.push({
       findingId: 'skill-files/zero-width',
@@ -549,7 +588,7 @@ export default {
   category: 'supply-chain',
 
   async run(context) {
-    const { cwd, homedir, config, includeHomeSkills } = context;
+    const { cwd, homedir, config } = context;
     const findings = [];
     const filesToScan = [];
 
@@ -576,13 +615,17 @@ export default {
     // Default: cwd only (home-level skills belong to the home profile, not the project).
     // --include-home-skills opts in to scanning the HOME dirs of every registered client too.
     const searchRoots = [{ root: cwd, dirs: SKILL_DIRS, home: false }];
-    if (includeHomeSkills && homedir && homedir !== cwd) {
+    if (homeScopeEnabled(context)) {
       searchRoots.push({ root: homedir, dirs: HOME_SKILL_DIRS, home: true });
     }
 
     // A4: symlink-loop-safe walk (was readdir({recursive:true}) which follows
     // symlinks and recurses forever on `ln -s . self`).
     const maxDepth = config?.limits?.maxWalkDepth || 50;
+    // Per-file size cap — a skill file over this is skipped (disclosed below),
+    // not read whole. Reuses the same knob deep-secrets streams on.
+    const maxFileBytes = config?.limits?.maxFileBytes || DEFAULT_MAX_FILE_BYTES;
+    const oversizeFiles = [];
     let skillLoopDetected = false;
     let skillWalkTruncated = false;
     for (const { root, dirs, home } of searchRoots) {
@@ -599,15 +642,31 @@ export default {
         if (truncated || depthTruncated) skillWalkTruncated = true;
         for (const fullPath of files) {
           const entryRel = path.relative(dirPath, fullPath);
+          const relLabel = home
+            ? path.join('~', dir, entryRel)
+            : path.join(dir, entryRel);
+          const fstat = await statSafe(fullPath);
+          if (fstat && fstat.size > maxFileBytes) {
+            oversizeFiles.push(relLabel);
+            continue;
+          }
           const content = await readFileSafe(fullPath);
           if (content) {
-            const relLabel = home
-              ? path.join('~', dir, entryRel)
-              : path.join(dir, entryRel);
             filesToScan.push({ path: relLabel, fullPath, content });
           }
         }
       }
+    }
+    if (oversizeFiles.length > 0) {
+      findings.push({
+        findingId: 'skill-files/file-too-large',
+        severity: 'warning',
+        title: `Skill file(s) over the ${maxFileBytes}-byte scan cap were not read`,
+        detail: `${oversizeFiles.length} file(s) in the skill directories exceed the per-file size cap and were NOT scanned for injection / exfiltration / escalation patterns: ${oversizeFiles.slice(0, 5).join(', ')}${oversizeFiles.length > 5 ? ', …' : ''}. A skill instruction file is never this large — an over-cap file here is mis-placed data or a scan-evasion attempt.`,
+        evidence: oversizeFiles.slice(0, 5).join(', '),
+        remediation: 'Move large data files out of the skill directories, or raise `limits.maxFileBytes` in `.rigscorerc.json` if the file is a legitimate skill.',
+        context: { count: oversizeFiles.length, maxFileBytes },
+      });
     }
     if (skillLoopDetected) {
       findings.push({
@@ -649,6 +708,23 @@ export default {
     const allowlist = config?.skillFiles?.allowlist || [];
 
     for (const file of filesToScan) {
+      // Non-text sniff (RS-7): a binary/mojibake file is not a skill instruction
+      // file. Flag it and skip the pattern scans — regex-matching binary bytes as
+      // text is noise, and a NUL/replacement char is the tell the walker's missing
+      // extension filter would otherwise miss.
+      if (isNonTextContent(file.content)) {
+        findings.push({
+          findingId: 'skill-files/non-text-file',
+          severity: 'warning',
+          title: `Non-text file in skill directory: ${file.path}`,
+          detail: `${file.path} contains NUL or Unicode replacement characters — it is a binary / non-text file, not a skill instruction file. Its bytes are NOT scanned for injection or exfiltration patterns (regex-scanning binary as text produces noise, not signal), so it is a blind spot until removed.`,
+          evidence: `${file.path} (non-text / binary content)`,
+          remediation: 'Remove the binary file from the skill directory, or move it outside the scanned skill tree.',
+          context: { file: file.path },
+        });
+        continue;
+      }
+
       // Per-pattern-family helpers extracted in Wave 12 Phase 2. The per-
       // file body used to be ~300 lines of inline scanning; these calls
       // preserve the exact behavior (same severities, evidence, context).
