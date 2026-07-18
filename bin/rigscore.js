@@ -209,7 +209,14 @@ Examples:
   rigscore . -r --depth 2           Scan monorepo (2 levels deep)
   rigscore --check docker-security  Run only Docker/K8s check
   npx -y <pkg> | rigscore mcp-hash | xargs rigscore mcp-pin <server>\n`);
-  process.exit(0);
+  // Deliberately NOT process.exit(0): the help text is ~9KB, and exiting
+  // immediately after writing it truncates stdout when stdout is a pipe —
+  // console.log is async on a pipe, and process.exit() drops whatever has not
+  // flushed. Observed on macOS/node 18-20 in CI, where `rigscore --help`
+  // captured via spawnSync lost everything after the options list (so
+  // `rigscore --help | less` was silently truncated for real users too).
+  // Setting exitCode lets Node drain stdout and exit 0 on its own.
+  process.exitCode = 0;
+} else {
+  run(args).catch(handleFatalTopLevel);
 }
-
-run(args).catch(handleFatalTopLevel);
