@@ -42,7 +42,11 @@ export async function loadChecks(options = {}) {
       .sort();
 
     for (const file of checkFiles) {
-      const mod = await import(path.join(dir, file));
+      // pathToFileURL, not a bare path: on win32 an absolute path ("C:\...")
+      // is not a valid import specifier and ESM rejects it with
+      // "Only URLs with a scheme in: file, data ...", which aborted the whole
+      // scan on Windows.
+      const mod = await import(pathToFileURL(path.join(dir, file)).href);
       checks.push(mod.default);
 
       // Collect self-registered fixes. A fixer must declare EITHER a `match`
@@ -209,7 +213,8 @@ export async function discoverPlugins(cwd) {
         if (seenPaths.has(resolved)) continue;
         seenPaths.add(resolved);
 
-        const mod = await import(pluginPath);
+        // Same win32 constraint as the built-in check loader above.
+        const mod = await import(pathToFileURL(resolved).href);
         const plugin = mod.default || mod;
 
         if (!validatePlugin(plugin, dir.name)) continue;
