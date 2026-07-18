@@ -9,25 +9,44 @@ export const STATE_VERSION = 1;
 
 /**
  * Normalize an MCP server entry to the *shape* rigscore pins:
- *   { command, args, envKeys }
+ *   { command, args, envKeys, url, headerKeys }
  *
  * Env VALUES are intentionally excluded — state file gets committed to git,
  * and hashing values would leak secrets. Env KEYS are sorted for stability.
  * Args preserve order (reorder is a meaningful change).
  *
+ * `url` + `headerKeys` cover REMOTE MCP servers (sse/http transports declare a
+ * `url` and an optional `headers` map, not `command`/`args`). Without them a
+ * url-only server hashed to the SAME digest as any other url-only server, so a
+ * URL swap between scans never drifted — the exact CVE-2025-54136 rug-pull the
+ * pin exists to catch, but for remote servers. Header VALUES are excluded for
+ * the same secret-leak reason as env values; only the key set is pinned.
+ *
+ * `url`/`headerKeys` are added ONLY when present, so a plain stdio server
+ * ({command,args,env}) hashes EXACTLY as before — existing committed pins stay
+ * valid across this upgrade; only remote servers gain the new, distinguishing bytes.
+ *
  * Split out of computeServerHash (payload unchanged) so verifyState() can
  * print the exact shape that was hashed. One normalization, one hash — a gate
  * that hashed differently from the pin would manufacture phantom drift.
  *
- * @param {{command?: string, args?: any[], env?: Record<string, any>}} server
- * @returns {{command: string, args: string[], envKeys: string[]}}
+ * @param {{command?: string, args?: any[], env?: Record<string, any>,
+ *   url?: string, headers?: Record<string, any>}} server
+ * @returns {{command: string, args: string[], envKeys: string[],
+ *   url?: string, headerKeys?: string[]}}
  */
 export function serverShape(server) {
-  return {
+  const shape = {
     command: typeof server?.command === 'string' ? server.command : '',
     args: Array.isArray(server?.args) ? server.args.map((a) => String(a)) : [],
     envKeys: server?.env && typeof server.env === 'object' ? Object.keys(server.env).sort() : [],
   };
+  if (typeof server?.url === 'string' && server.url) shape.url = server.url;
+  if (server?.headers && typeof server.headers === 'object') {
+    const headerKeys = Object.keys(server.headers).sort();
+    if (headerKeys.length > 0) shape.headerKeys = headerKeys;
+  }
+  return shape;
 }
 
 /** SHA-256 hex digest of an MCP server's shape. @param {object} server */
@@ -66,6 +85,22 @@ function parseState(raw) {
 }
 
 /**
+ * True when `startDir` — or any ancestor — carries a `.git` marker (a directory
+ * for a normal clone, a plain file for a worktree/submodule). Cheap, synchronous,
+ * and independent of the git binary, so it distinguishes "this is a git repo whose
+ * git binary we cannot run" from "this is simply not a git repo".
+ */
+function hasGitDir(startDir) {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    if (fs.existsSync(path.join(dir, '.git'))) return true;
+    const parent = path.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+/**
  * Load the pin from the COMMITTED tree — `git show HEAD:<prefix>/.rigscore-state.json`.
  *
  * Provenance is the entire value of a pin: it is evidence only if a human committed
@@ -76,16 +111,28 @@ function parseState(raw) {
  * green on a compromised repo. Reading HEAD makes that structurally impossible.
  *
  * `cwd` may be a SUBDIRECTORY of the repo, so the pin path is resolved through
- * `rev-parse --show-prefix`. Returns `null` when `cwd` is not inside a git repo (or
- * git is unavailable): there is no commit provenance to read, and the supply-chain
- * threat this gate answers is a git-hosted PR — so the caller falls back to the
- * working tree.
+ * `rev-parse --show-prefix`. Return values:
+ *   - `null`                     — `cwd` is NOT inside a git repo: no commit
+ *                                  provenance exists, so the caller falls back to
+ *                                  the working tree (unchanged behavior).
+ *   - `{ gitUnavailable: true }` — `cwd` IS inside a git repo (`.git` present) but
+ *                                  the git BINARY could not run. Falling back to the
+ *                                  working-tree pin here would launder exactly the
+ *                                  unreviewed pin the HEAD-read prevents, so the
+ *                                  caller must fail closed rather than "verify".
+ *   - `{state, corrupt, present}` — the committed pin (or its absence at HEAD).
  *
- * @returns {Promise<{state: object|null, corrupt: boolean, present: boolean}|null>}
+ * @returns {Promise<{state: object|null, corrupt: boolean, present: boolean}
+ *   | {gitUnavailable: true} | null>}
  */
 export async function loadCommittedState(cwd) {
   const prefix = await execSafe('git', ['rev-parse', '--show-prefix'], { cwd });
-  if (prefix === null) return null;
+  if (prefix === null) {
+    // git gave no answer. If a `.git` marker is on disk this IS a git repo whose
+    // binary we cannot run — fail closed. Otherwise it is genuinely not a repo.
+    if (hasGitDir(cwd)) return { gitUnavailable: true };
+    return null;
+  }
   const raw = await execSafe('git', ['show', `HEAD:${prefix.trim()}${STATE_FILENAME}`], { cwd });
   if (raw === null) return { state: null, corrupt: false, present: false };
   return { ...parseState(raw), present: true };
@@ -172,6 +219,13 @@ export async function verifyState(cwd) {
   const committed = await loadCommittedState(cwd);
   const working = await loadState(cwd);
 
+  // Inside a git repo whose git binary we could not run: the HEAD-committed pin —
+  // the only laundering-proof provenance this gate trusts — is unreadable. Refuse
+  // (2) rather than silently fall back to the working-tree pin.
+  if (committed && committed.gitUnavailable) {
+    return { changed: [], added: [], removed: [], matched: [], status: 'git-unavailable', exitCode: 2 };
+  }
+
   // A pin the working tree carries but HEAD does not is exactly the pin a scan mints
   // (or an attacker plants). Nobody reviewed it, so it verifies nothing — refuse (2)
   // rather than "verify" the attacker's own config against itself.
@@ -217,6 +271,7 @@ const UNVERIFIABLE_REASON = {
   corrupt: `${STATE_FILENAME} is unreadable or not version ${STATE_VERSION} — re-pin with \`rigscore .\` and commit it.`,
   unpinned: `This repo's committed MCP config(s) declare servers but ${STATE_FILENAME} pins none — nothing is being verified. Pin with \`rigscore .\` and commit it.`,
   uncommitted: `${STATE_FILENAME} exists in the working tree but is not committed at HEAD — an uncommitted pin proves nothing. A scan mints one from whatever MCP config is sitting there, so verifying against it would just check the current config against itself. Review this repo's committed MCP config(s), then commit ${STATE_FILENAME}.`,
+  'git-unavailable': `This is a git repo (a .git marker is present) but the git binary could not be run, so the HEAD-committed pin — the only provenance this gate trusts — is unreadable. Falling back to the working-tree pin would verify an unreviewed config against itself. Install/repair git on this machine (CI runner included), then re-run \`rigscore --verify-state\`.`,
   'not-applicable': 'No repo-level MCP servers and no pin — nothing to verify.',
 };
 
@@ -235,6 +290,7 @@ export function formatVerifyStateReport(r, cwd) {
       `                declared in: ${config}`,
       `                pinned  sha256:${pinnedHash.slice(0, 16)}   current sha256:${currentHash.slice(0, 16)}`,
       `                current command: ${shape.command}   args: ${JSON.stringify(shape.args)}   envKeys: ${JSON.stringify(shape.envKeys)}`,
+      `                current url: ${shape.url || '(none)'}   headerKeys: ${JSON.stringify(shape.headerKeys || [])}`,
       `                Old shape is not stored (hash only) — diff ${path.join(cwd, config)} against version control.`,
     );
   }
@@ -246,5 +302,84 @@ export function formatVerifyStateReport(r, cwd) {
   if (r.exitCode === 1) lines.push(`FAIL: ${r.changed.length} pinned MCP server(s) changed shape. Review the diff before trusting this repo.`);
   else if (r.exitCode === 2) lines.push('FAIL: cannot verify — see above. This gate refuses to report success on a repo whose pin it cannot trust.');
   else lines.push(`PASS: ${r.matched.length} pinned MCP server(s) verified.`);
+  return lines.join('\n');
+}
+
+// ── Score history / trend ───────────────────────────────────────────────────
+// Recorded in a SEPARATE file from the MCP pin: the pin is rewritten wholesale
+// by checks/mcp-config.js on every drift (which would clobber history), and many
+// state tests assert the pin file's exact shape. A dedicated history file keeps
+// both concerns independent. Opt-in write (`--record-score`) so a default scan
+// still writes exactly one file (the pin) and never dirties a repo unasked.
+export const HISTORY_FILENAME = '.rigscore-history.json';
+export const MAX_HISTORY_ENTRIES = 100;
+
+/** Load the recorded score history array (oldest → newest). Empty on missing/corrupt. */
+export async function loadScoreHistory(cwd) {
+  let raw;
+  try {
+    raw = await fs.promises.readFile(path.join(cwd, HISTORY_FILENAME), 'utf-8');
+  } catch {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed?.history) ? parsed.history : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Append one `{date, score, grade?}` entry to the score history and persist it
+ * (atomic tmp+rename, capped at MAX_HISTORY_ENTRIES). Returns the trimmed history.
+ */
+export async function recordScoreHistory(cwd, entry) {
+  const history = await loadScoreHistory(cwd);
+  history.push({
+    date: entry.date || new Date().toISOString(),
+    score: entry.score,
+    ...(entry.grade ? { grade: entry.grade } : {}),
+  });
+  const trimmed = history.slice(-MAX_HISTORY_ENTRIES);
+  const p = path.join(cwd, HISTORY_FILENAME);
+  const body = JSON.stringify({ version: STATE_VERSION, history: trimmed }, null, 2) + '\n';
+  const rand = crypto.randomBytes(6).toString('hex');
+  const tmp = `${p}.${process.pid}.${rand}.tmp`;
+  try {
+    await fs.promises.writeFile(tmp, body, { encoding: 'utf-8', mode: 0o600 });
+    await fs.promises.rename(tmp, p);
+  } catch (err) {
+    try { await fs.promises.unlink(tmp); } catch { /* tmp may not exist */ }
+    throw err;
+  }
+  return trimmed;
+}
+
+/** Render a compact, CI-log-friendly score trend with per-step and net deltas. */
+export function formatTrend(history, { limit = 10 } = {}) {
+  if (!history || history.length === 0) {
+    return `rigscore score history (${HISTORY_FILENAME}) — no scores recorded yet.\n`
+      + 'Run `rigscore . --record-score` to start a trend.';
+  }
+  const recent = history.slice(-limit);
+  const lines = [`rigscore score history (${HISTORY_FILENAME}) — last ${recent.length} of ${history.length}:`, ''];
+  let prev = null;
+  for (const e of recent) {
+    const score = typeof e.score === 'number' ? e.score : null;
+    let delta = '';
+    if (prev !== null && score !== null) {
+      const d = score - prev;
+      delta = d === 0 ? '  (=)' : d > 0 ? `  (up +${d})` : `  (down ${d})`;
+    }
+    const scoreStr = score === null ? 'n/a' : `${score}/100`;
+    lines.push(`  ${e.date}   ${scoreStr}${delta}`);
+    if (score !== null) prev = score;
+  }
+  const nums = recent.filter((e) => typeof e.score === 'number').map((e) => e.score);
+  if (nums.length >= 2) {
+    const net = nums[nums.length - 1] - nums[0];
+    lines.push('', `  Net change over window: ${net >= 0 ? '+' : ''}${net}`);
+  }
   return lines.join('\n');
 }

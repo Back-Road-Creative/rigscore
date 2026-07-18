@@ -107,3 +107,9 @@ infrastructure-security ............. 40/100  (weight 6)
 - Deny-list match is substring on the joined list — order-independent but not regex-aware.
 - Sandbox gate detection is a naive substring search for `sandbox-gate` in the JSON-serialized `hooks` block of `settings.json` / `settings.local.json`; renaming the gate defeats detection.
 - `lsattr` unavailability is treated as INFO, not a failure, so containers without e2fsprogs don't false-positive.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [CIS Benchmarks](https://www.cisecurity.org/cis-benchmarks) — the host/infra hardening baselines these opt-in paths map to.

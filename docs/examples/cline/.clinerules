@@ -57,3 +57,10 @@
 ## Definition of done
 - Run tests. Run the linter. Fix failures before handing back.
 - A task is not complete until both pass.
+
+## AI-use policy
+- AI-assisted contributions are permitted and must be disclosed: the pull
+  request declares that generative AI was used and that a human reviewed the
+  diff before it merges.
+- A human stays accountable for every change; machine-generated output is
+  never presented as reviewed when it is not.

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalCheckId } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -27,7 +28,11 @@ export async function runExplainSubcommand(args) {
   }
 
   const target = args[0];
-  const [checkId, ...slugParts] = target.split('/');
+  const [rawCheckId, ...slugParts] = target.split('/');
+  // Canonicalize through the shipped rename table (the same helper weights/
+  // suppression use) so `explain claude-md` resolves to governance-docs' doc
+  // instead of erroring "no docs found for claude-md".
+  const checkId = canonicalCheckId(rawCheckId);
   const slug = slugParts.join('/');
 
   const docsDir = path.join(REPO_ROOT, 'docs', 'checks');

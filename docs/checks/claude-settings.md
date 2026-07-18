@@ -143,3 +143,9 @@ Frontmatter that declares a `hooks:` key but does not parse as an event → hand
 - Every hook source Claude Code executes is now read: settings files, plugin `hooks/hooks.json`, **and** hooks declared in skill/agent YAML frontmatter (see *Skill / agent frontmatter hooks*). What is still **not** read: hooks a skill *body* merely describes in prose rather than declaring in frontmatter, and the contents of any script a hook shells out to — the hook's own command string is scanned, but the scan does not follow it into the target file.
 - Lifecycle coverage is scored as **at most one INFO**, whatever the shape of adoption: no hooks at all → one rollup INFO; some-but-not-all of the four tracked events → one rollup INFO naming the uncovered ones; all four → none. The score is therefore monotone in adoption — configuring a hook can raise the check score (98 → 100 at full coverage) and can never lower it. A per-missing-hook deduction previously scored one hook (94) *below* zero hooks (98), which paid out only at four and punished the first step toward coverage; `test/claude-settings.test.js` pins the property directly.
 - Only the four tracked events count toward coverage. Claude Code defines many more (`SessionStart`, `SubagentStop`, `PreCompact`, …); hooking those is neither credited nor penalized.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Claude Code — settings & permissions](https://code.claude.com/docs/en/settings) — the allow/deny + hook schema this check validates.

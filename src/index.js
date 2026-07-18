@@ -2,9 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { scan, scanRecursive, suppressFindings } from './scanner.js';
 import { scoreScan } from './scoring.js';
-import { resolveWeights } from './config.js';
+import { resolveWeights, canonicalCheckId } from './config.js';
 import { NOT_APPLICABLE_SCORE } from './constants.js';
-import { formatTerminal, formatTerminalRecursive, formatJson, formatBadge } from './reporter.js';
+import {
+  formatTerminal, formatTerminalRecursive, formatJson, formatBadge,
+  formatJUnit, formatCodeClimate,
+} from './reporter.js';
 import { formatSarif, formatSarifMulti } from './sarif.js';
 import { formatCycloneDx } from './cyclonedx.js';
 import { findApplicableFixes, applyFixes, findApplicablePacks, installPacks } from './fixer.js';
@@ -33,8 +36,14 @@ export function parseArgs(args) {
   const options = {
     json: false,
     badge: false,
+    badgeFormat: 'markdown',
     sarif: false,
     cyclonedx: false,
+    junit: false,
+    codeQuality: false,
+    quiet: false,
+    trend: false,
+    recordScore: false,
     fix: false,
     yes: false,
     installPacks: false,
@@ -121,12 +130,19 @@ const FLAG_DEFS = (() => {
   const recursive = { handler: setTrue('recursive') };
   const yes = { handler: setTrue('yes') };
 
+  const quiet = { handler: setTrue('quiet') };
+
   return {
     // Plain booleans
     '--json':                 { handler: setTrue('json') },
     '--badge':                { handler: setTrue('badge') },
     '--cyclonedx':            { handler: setTrue('cyclonedx') },
     '--sarif':                { handler: setTrue('sarif') },
+    '--junit':                { handler: setTrue('junit') },
+    '--code-quality':         { handler: setTrue('codeQuality') },
+    '--quiet': quiet, '-q': quiet,
+    '--trend':                { handler: setTrue('trend') },
+    '--record-score':         { handler: setTrue('recordScore') },
     '--no-color':             { handler: setTrue('noColor') },
     '--no-cta':               { handler: setTrue('noCta') },
     '--cta':                  { handler: (o) => { o.noCta = false; } },
@@ -152,20 +168,53 @@ const FLAG_DEFS = (() => {
     '--ci':                   { handler: (o) => { o.sarif = true; o.noColor = true; o.noCta = true; } },
 
     // String-value flags
-    '--check':                { takesValue: true, handler: setStr('checkFilter') },
+    // --check accepts a single id OR a comma list (like --ignore). Each entry is
+    // canonicalized through the shipped rename table, so `--check claude-md`
+    // resolves to `governance-docs` instead of matching nothing (0/100 exit 1).
+    // A single-entry list stays a string so scanner.js's pass-2 `c.id ===` filter
+    // (coherence/network-exposure/skill-coherence) keeps working unchanged.
+    '--check':                { takesValue: true, handler: (o, v) => {
+      const ids = v.split(',').map((s) => canonicalCheckId(s.trim())).filter(Boolean);
+      o.checkFilter = ids.length === 1 ? ids[0] : ids;
+    } },
     '--profile':              { takesValue: true, handler: setStr('profile') },
     '--baseline':             { takesValue: true, handler: setStr('baseline') },
     '--report':               { takesValue: true, handler: setStr('report') },
+    '--badge-format':         { takesValue: true, handler: setStr('badgeFormat') },
     '--ignore':               { takesValue: true, handler: (o, v) => {
       o.ignore = v.split(',').map((s) => s.trim()).filter(Boolean);
     } },
     '--depth':                { takesValue: true, handler: (o, v) => {
-      o.depth = parseInt(v, 10) || 1;
+      // A malformed --depth is a misuse of a scope flag: refusing (exit 2) beats
+      // both silently coercing to 1 AND — the worse bug — flipping recursive=true,
+      // which turned an intended single-project scan into a recursive one.
+      const parsed = parseInt(v, 10);
+      if (Number.isNaN(parsed)) {
+        o.argError = `--depth requires a numeric value, got "${v}"`;
+        return;
+      }
+      if (parsed < 1) {
+        o.warnings.push(`--depth ${parsed} is invalid (must be >= 1); using 1`);
+        o.depth = 1;
+      } else {
+        o.depth = parsed;
+      }
       o.recursive = true; // --depth implies --recursive
     } },
     '--fail-under':           { takesValue: true, handler: (o, v) => {
+      // A non-numeric threshold is a fatal misuse of the gate — silently gating at
+      // the default 70 turned an intended gate into a surprise. An out-of-range
+      // numeric value is clamped, but NOT silently: `--fail-under 150` clamps to
+      // 100, which (score>=100) fails almost every scan forever, so it must warn.
       const parsed = parseInt(v, 10);
-      o.failUnder = Math.max(0, Math.min(100, Number.isNaN(parsed) ? 70 : parsed));
+      if (Number.isNaN(parsed)) {
+        o.argError = `--fail-under requires a numeric value (0-100), got "${v}"`;
+        return;
+      }
+      if (parsed < 0 || parsed > 100) {
+        o.warnings.push(`--fail-under ${parsed} is out of range (0-100); clamping to ${Math.max(0, Math.min(100, parsed))}`);
+      }
+      o.failUnder = Math.max(0, Math.min(100, parsed));
     } },
   };
 })();
@@ -196,10 +245,17 @@ export function suppressAndRescore(unit, ignore, checkFilter) {
   // Keep the serialized shape stable ({count, ids}); `unmatched` is a warn-only
   // signal to stderr — it never enters JSON/SARIF output.
   unit.suppressed = { count: summary.count, ids: summary.ids };
-  if (summary.unmatched.length > 0) {
+  // Scope the "matched nothing" warning to PROJECT-level patterns + CLI --ignore.
+  // A personal ~/.rigscorerc.json suppression is cross-project by design, so a
+  // dead one must not warn on every unrelated repo it is inert against — only a
+  // stale project-scoped or per-run pattern is worth flagging. `projectSuppress`
+  // is the project layer's contribution (config.js); everything else is home-scoped.
+  const warnable = new Set([...(unit.config?.projectSuppress || []), ...(ignore || [])]);
+  const unmatchedWarn = summary.unmatched.filter((p) => warnable.has(p));
+  if (unmatchedWarn.length > 0) {
     process.stderr.write(
-      `rigscore: ${summary.unmatched.length} suppress pattern(s) matched no findings: `
-      + `${summary.unmatched.join(', ')} — a typo, or stale after a check/finding rename? `
+      `rigscore: ${unmatchedWarn.length} suppress pattern(s) matched no findings: `
+      + `${unmatchedWarn.join(', ')} — a typo, or stale after a check/finding rename? `
       + 'See docs/FINDING_IDS.md.\n',
     );
   }
@@ -247,6 +303,25 @@ export async function run(args) {
     process.exit(2);
   }
 
+  // Diagnose mutually-exclusive output formats. The emitter chain picks ONE by
+  // precedence and silently dropped the rest (`--report compliance --json` lost
+  // the report; `--sarif --cyclonedx` lost the BOM). Warn, naming the winner, so
+  // a mis-set CI flag is visible instead of a quietly wrong artifact.
+  const formatFlags = [];
+  if (options.sarif) formatFlags.push('--sarif');
+  if (options.cyclonedx) formatFlags.push('--cyclonedx');
+  if (options.junit) formatFlags.push('--junit');
+  if (options.codeQuality) formatFlags.push('--code-quality');
+  if (options.json) formatFlags.push('--json');
+  if (options.badge) formatFlags.push('--badge');
+  if (options.report) formatFlags.push(`--report ${options.report}`);
+  if (formatFlags.length > 1) {
+    process.stderr.write(
+      `rigscore: warning: multiple output formats requested (${formatFlags.join(', ')}); `
+      + `emitting ${formatFlags[0]}, ignoring the rest.\n`,
+    );
+  }
+
   const cwd = options.cwd || process.cwd();
 
   // Validate directory exists. Exit 2 (config error), not 1 — README's exit-code
@@ -261,6 +336,40 @@ export async function run(args) {
   } catch {
     process.stderr.write(`Error: ${cwd} is not a valid directory\n`);
     process.exit(2);
+  }
+
+  // Validate --check ids against the DISCOVERED check set (built-ins + npm +
+  // local-path plugins for this cwd). An id that resolves to nothing used to
+  // scan zero checks and report 0/100 exit 1 with no diagnostic; name it and the
+  // valid ids instead. Loading here (checks are loaded again by scan) is the only
+  // way to include plugin ids, which are absent from the static WEIGHTS registry.
+  if (options.checkFilter) {
+    const { loadChecks } = await import('./checks/index.js');
+    const allChecks = await loadChecks({ cwd });
+    const validIds = new Set(allChecks.map((c) => c?.id).filter(Boolean));
+    const wanted = Array.isArray(options.checkFilter) ? options.checkFilter : [options.checkFilter];
+    const unknown = wanted.filter((id) => !validIds.has(id));
+    if (unknown.length > 0) {
+      process.stderr.write(
+        `rigscore: unknown check id${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — `
+        + `stale after a check/finding rename? valid ids: ${[...validIds].sort().join(', ')}. `
+        + 'See docs/FINDING_IDS.md.\n',
+      );
+      process.exit(2);
+    }
+    // A comma list selects pass-1 checks only: the pass-2 filter (coherence,
+    // network-exposure, skill-coherence) matches a single id. Warn rather than
+    // silently drop a pass-2 check named inside a multi-check list.
+    if (Array.isArray(options.checkFilter)) {
+      const pass2Ids = new Set(allChecks.filter((c) => c?.pass === 2).map((c) => c.id));
+      const dropped = wanted.filter((id) => pass2Ids.has(id));
+      if (dropped.length > 0) {
+        process.stderr.write(
+          `rigscore: warning: ${dropped.join(', ')} cannot be combined in a --check list; `
+          + `run each on its own (e.g. --check ${dropped[0]}).\n`,
+        );
+      }
+    }
   }
 
   // Apply profile hints (recursive / depth defaults from `monorepo` etc.)
@@ -287,6 +396,16 @@ export async function run(args) {
     const report = await verifyState(cwd);
     process.stdout.write(formatVerifyStateReport(report, cwd) + '\n');
     process.exitCode = report.exitCode;
+    return;
+  }
+
+  // --trend: read-only print of the recorded score history (--record-score writes
+  // it). Short-circuits before scan() — it reports what past scans recorded, and
+  // running a scan here would neither add nor need a fresh entry.
+  if (options.trend) {
+    const { loadScoreHistory, formatTrend } = await import('./state.js');
+    const history = await loadScoreHistory(cwd);
+    process.stdout.write(formatTrend(history) + '\n');
     return;
   }
 
@@ -349,14 +468,17 @@ export async function run(args) {
   if (options.recursive) {
     // Reject flag combinations that don't have a clean semantic in recursive
     // mode. Per-project --fix output is noisy; --baseline writes a single
-    // file that can't represent N projects; --badge of an aggregate has no
-    // meaningful score. Fail loud rather than silently no-op. --cyclonedx is
-    // single-project by construction: a BOM has exactly one metadata.component.
+    // file that can't represent N projects. Fail loud rather than silently
+    // no-op. --cyclonedx is single-project by construction: a BOM has exactly
+    // one metadata.component. --junit/--code-quality are per-file test/issue
+    // formats keyed to one project's findings — kept single-project for now.
+    // --badge IS supported here: it renders the monorepo AVERAGE score.
     const unsupportedRecursiveFlags = [];
     if (options.cyclonedx) unsupportedRecursiveFlags.push('--cyclonedx');
+    if (options.junit) unsupportedRecursiveFlags.push('--junit');
+    if (options.codeQuality) unsupportedRecursiveFlags.push('--code-quality');
     if (options.fix) unsupportedRecursiveFlags.push('--fix');
     if (options.baseline) unsupportedRecursiveFlags.push('--baseline');
-    if (options.badge) unsupportedRecursiveFlags.push('--badge');
     if (unsupportedRecursiveFlags.length > 0) {
       process.stderr.write(`rigscore: ${unsupportedRecursiveFlags.join(', ')} not supported in --recursive mode\n`);
       process.exit(2);
@@ -403,6 +525,9 @@ export async function run(args) {
       process.stdout.write(JSON.stringify(formatSarifMulti(result.projects), null, 2) + '\n');
     } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
+    } else if (options.badge) {
+      // Badge of the monorepo AVERAGE score.
+      process.stdout.write(formatBadge(result, { format: options.badgeFormat }) + '\n');
     } else {
       process.stdout.write(formatTerminalRecursive(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
     }
@@ -427,20 +552,34 @@ export async function run(args) {
     // branch uses, so the two paths cannot drift apart again.
     suppressAndRescore(result, options.ignore, options.checkFilter);
 
+    // --record-score: append the FINAL score (post-suppression) to the history
+    // file so `--trend` can chart it. Opt-in — a default scan still writes only
+    // the MCP pin. Skipped under --no-state-write and when there is nothing to score.
+    if (options.recordScore && !options.noStateWrite && !result.notApplicable
+        && typeof result.score === 'number') {
+      const { recordScoreHistory } = await import('./state.js');
+      const { getGrade } = await import('./reporter.js');
+      await recordScoreHistory(cwd, { score: result.score, grade: getGrade(result.score) });
+    }
+
     if (options.sarif) {
       process.stdout.write(JSON.stringify(formatSarif(result), null, 2) + '\n');
     } else if (options.cyclonedx) {
       const bom = await formatCycloneDx(result, { cwd });
       process.stdout.write(JSON.stringify(bom, null, 2) + '\n');
+    } else if (options.junit) {
+      process.stdout.write(formatJUnit(result) + '\n');
+    } else if (options.codeQuality) {
+      process.stdout.write(formatCodeClimate(result) + '\n');
     } else if (options.json) {
       process.stdout.write(formatJson(result) + '\n');
     } else if (options.badge) {
-      process.stdout.write(formatBadge(result) + '\n');
+      process.stdout.write(formatBadge(result, { format: options.badgeFormat }) + '\n');
     } else if (options.report === 'compliance') {
       const { formatCompliance } = await import('./compliance.js');
       process.stdout.write(formatCompliance(result) + '\n');
     } else {
-      process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose }) + '\n');
+      process.stdout.write(formatTerminal(result, cwd, { noCta: options.noCta, verbose: options.verbose, quiet: options.quiet }) + '\n');
     }
 
     // --fix mode: find and apply safe auto-remediations. Two distinct sources \u2014
