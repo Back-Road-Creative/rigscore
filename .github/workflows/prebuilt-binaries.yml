@@ -1,0 +1,91 @@
+name: Prebuilt archives
+
+# Attach self-contained, no-registry rigscore archives to every GitHub release.
+#
+# rigscore is a pure-JS CLI (deps: chalk + yaml, no native addons), so one build
+# produces a portable app tree — bin/src/templates/docs + production node_modules
+# + a launcher — that runs on any OS with a system Node >= 18.17, without npm,
+# npx, or network access to a registry. This broadens distribution beyond
+# `npx github:` for offline / air-gapped / no-npm security teams.
+#
+# (A true zero-Node single binary would require the scanner to read its embedded
+# docs/templates via Node's SEA asset API — a src-side change tracked separately.)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build archives for (e.g. v2.1.0)'
+        required: true
+
+permissions:
+  contents: write   # upload assets to the release
+
+jobs:
+  build:
+    name: Build and attach archives
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target tag
+        id: tag
+        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+
+      - name: Assemble the self-contained app tree
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          STAGE="dist/rigscore-${VERSION}"
+          # Production deps only (chalk + yaml — pure JS, identical on every OS).
+          # --ignore-scripts skips the repo's husky `prepare` hook.
+          npm ci --omit=dev --ignore-scripts
+          mkdir -p "${STAGE}/docs"
+          cp -r bin src templates package.json package-lock.json LICENSE README.md node_modules "${STAGE}/"
+          cp -r docs/checks "${STAGE}/docs/checks"
+          # Launchers (written with printf so the shebang lands at byte 0).
+          printf '#!/usr/bin/env sh\nhere=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec node "$here/bin/rigscore.js" "$@"\n' > "${STAGE}/rigscore"
+          chmod +x "${STAGE}/rigscore"
+          printf '@echo off\r\nnode "%%~dp0bin\\rigscore.js" %%*\r\n' > "${STAGE}/rigscore.cmd"
+
+      - name: Smoke test the assembled app
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          out="$("dist/rigscore-${VERSION}/rigscore" --version)"
+          echo "$out"
+          case "$out" in *"${VERSION}"*) ;; *) echo "::error::assembled launcher did not report version ${VERSION}"; exit 1 ;; esac
+
+      - name: Package archives + checksums
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          cd dist
+          tar -czf "rigscore-${VERSION}-node.tar.gz" "rigscore-${VERSION}"
+          ( cd "rigscore-${VERSION}" && zip -qr "../rigscore-${VERSION}-node.zip" . )
+          sha256sum "rigscore-${VERSION}-node.tar.gz" "rigscore-${VERSION}-node.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Attach archives to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          gh release upload "$TAG" \
+            "dist/rigscore-${VERSION}-node.tar.gz" \
+            "dist/rigscore-${VERSION}-node.zip" \
+            "dist/SHA256SUMS.txt" \
+            --repo "${{ github.repository }}" --clobber

@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 # rigscore pre-commit — OPTIONAL local secret pre-check.
 #
+# Wiring: this hook is installed automatically by husky. `npm install` (or
+# `npm ci`) runs the `prepare` script, which points git's core.hooksPath at
+# `.husky/` — so a normal clone gets the hook with no manual `git config`.
+#
 # The enforced gate is CI: the `secret-scan` job in .github/workflows/ci.yml
 # scans every push and pull request with gitleaks, and needs no local setup.
 #

@@ -1,0 +1,47 @@
+# rigscore — GitLab CI/CD component.
+#
+# A reusable, parameterized job that runs the rigscore configuration-hygiene
+# scan in a GitLab pipeline. The exit code gates the pipeline (non-zero when the
+# score is below `fail-under`), and the SARIF stream is kept as an artifact.
+#
+# Use it (from a GitLab-hosted mirror, catalog form):
+#
+#   include:
+#     - component: $CI_SERVER_FQDN/<your-mirror>/rigscore/rigscore@<version>
+#
+# Or, pulling this file straight from GitHub without a GitLab mirror:
+#
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/Back-Road-Creative/rigscore/v2.1.0/templates/gitlab/rigscore.gitlab-ci.yml'
+#
+# See templates/gitlab/README.md for input details and SARIF handling.
+
+spec:
+  inputs:
+    stage:
+      default: test
+      description: 'Pipeline stage the rigscore job runs in.'
+    fail-under:
+      default: '70'
+      description: 'Minimum score; the job (and pipeline) fails below it.'
+    profile:
+      default: default
+      description: 'Scoring profile (default, minimal, ci, home, monorepo).'
+    image:
+      default: node:20
+      description: 'Container image. Swap for ghcr.io/back-road-creative/rigscore:<tag> to skip the npx fetch.'
+    ref:
+      default: v2.1.0
+      description: 'rigscore tag to run (pinned for supply-chain stability).'
+---
+rigscore:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  script:
+    - npx -y "github:Back-Road-Creative/rigscore#$[[ inputs.ref ]]" --ci --fail-under "$[[ inputs.fail-under ]]" --profile "$[[ inputs.profile ]]" > rigscore.sarif
+  artifacts:
+    # `when: always` keeps the SARIF even when the job fails the gate, so a
+    # failing scan is still inspectable / downloadable.
+    when: always
+    paths:
+      - rigscore.sarif

@@ -9,6 +9,10 @@ branding:
   color: 'green'
 
 inputs:
+  path:
+    description: 'Directory to scan (the scan root)'
+    required: false
+    default: '.'
   fail-under:
     description: 'Minimum score threshold (exit 1 if below)'
     required: false
@@ -17,6 +21,10 @@ inputs:
     description: 'Scoring profile (default, minimal, ci, home, monorepo)'
     required: false
     default: 'default'
+  check:
+    description: 'Limit the scan to a single check id (e.g. mcp-config). Empty = all checks.'
+    required: false
+    default: ''
   recursive:
     description: 'Enable recursive scanning for monorepos'
     required: false
@@ -29,10 +37,33 @@ inputs:
     description: 'Enable deep source secret scanning'
     required: false
     default: 'false'
+  online:
+    description: 'Allow the online MCP-registry refresh (default is fully offline)'
+    required: false
+    default: 'false'
+  ignore:
+    description: 'Comma-separated finding ids / patterns to suppress (same as --ignore)'
+    required: false
+    default: ''
+  baseline:
+    description: 'Path to a baseline file: gate on findings NEW since the baseline (same as --baseline)'
+    required: false
+    default: ''
   upload-sarif:
     description: 'Upload SARIF results to GitHub Advanced Security'
     required: false
     default: 'false'
+
+outputs:
+  score:
+    description: 'Overall hygiene score (0-100). Empty in --recursive mode when there is no single aggregate score.'
+    value: ${{ steps.scan.outputs.score }}
+  grade:
+    description: 'Letter grade derived from the score (A>=90, B>=75, C>=60, D>=40, else F); see src/reporter.js getGrade.'
+    value: ${{ steps.scan.outputs.grade }}
+  sarif-file:
+    description: 'Absolute path to the emitted SARIF file. Produced only when upload-sarif is true.'
+    value: ${{ steps.sarif.outputs.sarif-file }}
 
 runs:
   using: 'composite'
@@ -79,30 +110,80 @@ runs:
       working-directory: .rigscore-action-src
       run: npm ci --no-audit --no-fund
 
-    # rigscore --ci emits SARIF on stdout and exits non-zero when findings
-    # breach --fail-under. This step is allowed to fail with a non-zero
-    # exit so SARIF still uploads for failing scans — the separate
-    # "Check threshold" step below re-runs rigscore and is the single
-    # source of truth for the job's exit status. Unlike the previous
-    # `2>/dev/null || true`, we no longer silently discard stderr or
-    # swallow hard crashes outside the scanner's expected exit codes:
-    # actions/runner surfaces any non-zero exit as a step failure that
-    # propagates via the final gating step.
+    # ONE scan. rigscore emits its score in --json and exits non-zero when the
+    # score breaches --fail-under; we capture that exit code and REUSE it as the
+    # job gate (the "Enforce threshold" step below), instead of running the whole
+    # scan a second time just to re-derive an exit code we already had. Inputs are
+    # passed through env (not `${{ }}` interpolated into the script) so a value
+    # with shell metacharacters cannot execute in the runner.
     - name: Run rigscore
-      shell: bash
       id: scan
-      continue-on-error: true
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        FAIL_UNDER: ${{ inputs.fail-under }}
+        PROFILE: ${{ inputs.profile }}
+        CHECK: ${{ inputs.check }}
+        RECURSIVE: ${{ inputs.recursive }}
+        DEPTH: ${{ inputs.depth }}
+        DEEP: ${{ inputs.deep }}
+        ONLINE: ${{ inputs.online }}
+        IGNORE: ${{ inputs.ignore }}
+        BASELINE: ${{ inputs.baseline }}
       run: |
-        set -eo pipefail
-        ARGS="--ci --fail-under ${{ inputs.fail-under }} --profile ${{ inputs.profile }}"
-        if [ "${{ inputs.recursive }}" = "true" ]; then
-          ARGS="$ARGS --recursive --depth ${{ inputs.depth }}"
+        set -uo pipefail
+        ARGS=(--fail-under "$FAIL_UNDER" --profile "$PROFILE")
+        [ "$RECURSIVE" = "true" ] && ARGS+=(--recursive --depth "$DEPTH")
+        [ "$DEEP" = "true" ] && ARGS+=(--deep)
+        [ "$ONLINE" = "true" ] && ARGS+=(--online)
+        [ -n "$CHECK" ] && ARGS+=(--check "$CHECK")
+        [ -n "$IGNORE" ] && ARGS+=(--ignore "$IGNORE")
+        [ -n "$BASELINE" ] && ARGS+=(--baseline "$BASELINE")
+        # Persist the arg vector so the optional SARIF emit reuses it verbatim.
+        printf '%s\n' "${ARGS[@]}" > "$RUNNER_TEMP/rigscore-args"
+        set +e
+        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" "${ARGS[@]}" --json "$SCAN_PATH" > "$RUNNER_TEMP/rigscore.json"
+        code=$?
+        set -e
+        # Parse the score and derive the grade (thresholds mirror src/reporter.js
+        # getGrade). A crash leaves the JSON unparseable → empty score/grade; the
+        # captured exit code still gates.
+        parsed=$(node -e '
+          const fs = require("fs");
+          let d = {};
+          try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
+          const s = typeof d.score === "number" ? d.score : null;
+          const g = s === null ? "" : s >= 90 ? "A" : s >= 75 ? "B" : s >= 60 ? "C" : s >= 40 ? "D" : "F";
+          process.stdout.write((s === null ? "" : s) + "\t" + g);
+        ' "$RUNNER_TEMP/rigscore.json")
+        score=${parsed%%$'\t'*}
+        grade=${parsed##*$'\t'}
+        {
+          echo "score=$score"
+          echo "grade=$grade"
+          echo "exit-code=$code"
+        } >> "$GITHUB_OUTPUT"
+        if [ "$code" -ge 2 ]; then
+          echo "::error::rigscore scan did not complete (exit $code)"
+          head -c 2000 "$RUNNER_TEMP/rigscore.json" >&2 || true
         fi
-        if [ "${{ inputs.deep }}" = "true" ]; then
-          ARGS="$ARGS --deep"
-        fi
-        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" $ARGS . > rigscore-results.sarif
-        cat rigscore-results.sarif
+        echo "rigscore: score ${score:-n/a} (grade ${grade:-n/a}), threshold ${FAIL_UNDER}, exit ${code}"
+
+    # SARIF is a distinct artifact (a different output format), emitted only when
+    # a consumer actually wants to upload it — so the default path stays a single
+    # scan. It reuses the exact arg vector from the scan step above.
+    - name: Emit SARIF
+      id: sarif
+      if: inputs.upload-sarif == 'true'
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+      run: |
+        set -uo pipefail
+        mapfile -t ARGS < "$RUNNER_TEMP/rigscore-args"
+        SARIF="$GITHUB_WORKSPACE/rigscore-results.sarif"
+        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" "${ARGS[@]}" --ci "$SCAN_PATH" > "$SARIF" || true
+        echo "sarif-file=$SARIF" >> "$GITHUB_OUTPUT"
 
     - name: Upload SARIF
       if: inputs.upload-sarif == 'true'
@@ -110,14 +191,9 @@ runs:
       with:
         sarif_file: rigscore-results.sarif
 
-    - name: Check threshold
+    # Gate on the SINGLE scan's exit code — no second full scan.
+    - name: Enforce threshold
       shell: bash
       run: |
-        ARGS="--no-cta --fail-under ${{ inputs.fail-under }} --profile ${{ inputs.profile }}"
-        if [ "${{ inputs.recursive }}" = "true" ]; then
-          ARGS="$ARGS --recursive --depth ${{ inputs.depth }}"
-        fi
-        if [ "${{ inputs.deep }}" = "true" ]; then
-          ARGS="$ARGS --deep"
-        fi
-        node "$GITHUB_WORKSPACE/.rigscore-action-src/bin/rigscore.js" $ARGS .
+        code="${{ steps.scan.outputs.exit-code }}"
+        exit "${code:-2}"
