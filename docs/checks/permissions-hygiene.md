@@ -65,3 +65,9 @@ permissions-hygiene ................. 66/100  (weight 4)
 - Glob matching is a hand-rolled matcher that only understands `*.ext`, `*foo*`, and exact matches (sufficient for the current `SENSITIVE_PATTERNS`). Adding `?` or `**` patterns would require swapping in `minimatch`.
 - Ownership-consistency check only flags > 1 distinct uid across the `AI_CONFIG_FILES` set; it does not tell you which file is the outlier.
 - No network, no deep file content reading — purely `stat(2)` and `readdir(2)`.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [CWE-732 — Incorrect Permission Assignment for Critical Resource](https://cwe.mitre.org/data/definitions/732.html) — world-writable governance files as the weakness this check flags.

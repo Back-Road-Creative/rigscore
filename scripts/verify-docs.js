@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import {
   verifyCheckDocs,
   formatVerifyResult,
+  verifyExternalDocs,
+  formatExternalDocsResult,
   TEMPLATE_RELATIVE,
 } from '../src/lib/verify-docs.js';
 
@@ -17,7 +19,10 @@ const HELP = `verify-docs — docs-first gate for rigscore checks
 
 Usage:
   node scripts/verify-docs.js            Verify every src/checks/*.js has a
-                                         complete doc page at docs/checks/<id>.md.
+                                         complete doc page at docs/checks/<id>.md,
+                                         then link-check THREAT-MODEL.md +
+                                         docs/known-limits.md and guard the
+                                         registry counts against src/clients.js.
   node scripts/verify-docs.js --stub <id>
                                          Create docs/checks/<id>.md from the
                                          canonical template (idempotent).
@@ -81,7 +86,19 @@ async function runVerify(repoRoot) {
     // hundreds of lines, and process.exit() truncates an in-flight async write
     // when stdout is a pipe (i.e. every CI log).
     process.stdout.write(`${output}\n`);
-    process.exitCode = result.ok ? 0 : 1;
+
+    // Second axis: narrative-doc link + registry-count drift (THREAT-MODEL.md,
+    // known-limits.md, credential-storage.md). Derived from src/clients.js so a
+    // rename or a new client can't silently rot the prose docs.
+    const ext = await verifyExternalDocs({ root: repoRoot });
+    if (!ext.ok) {
+      process.stdout.write(`${formatExternalDocsResult(ext)}\n`);
+      process.stdout.write(
+        `docs-gate: ${ext.linkOffenders.length} dead link(s), ${ext.countOffenders.length} registry-count drift(s) in narrative docs\n`,
+      );
+    }
+
+    process.exitCode = result.ok && ext.ok ? 0 : 1;
   } catch (err) {
     process.stderr.write(`verify-docs: error: ${err && err.message ? err.message : err}\n`);
     process.exit(2);

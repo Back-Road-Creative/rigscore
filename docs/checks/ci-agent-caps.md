@@ -155,3 +155,10 @@ decision with its evidence attached; do not re-litigate those without new upstre
   trade is the reason.
 - Local *composite actions* (`steps.<id>.uses: ./.github/actions/foo`) are not followed: an agent inside a
   composite action's `action.yml` is invisible. Same shape as the gap above, one surface over.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [GitHub Actions — automatic token authentication (GITHUB_TOKEN permissions)](https://docs.github.com/en/actions/security-guides/automatic-token-authentication) — the workflow token-permission surface this check grades.
+- [OWASP Top 10 CI/CD Security Risks](https://owasp.org/www-project-top-10-ci-cd-security-risks/) — over-privileged pipeline agents as a recognized risk class.

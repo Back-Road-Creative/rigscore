@@ -56,3 +56,9 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 - Safe-host list is overridable via `config.network.safeHosts`; default is `['127.0.0.1', 'localhost', '::1']`.
 - Live-listener probe requires `ss` (Linux) or `lsof` (macOS) in PATH. On Windows or in minimal containers without either tool, this surface silently degrades to no findings.
 - The check never touches the network itself; "online" is not required. It reads only local config plus local TCP listener state.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Agentic ASI07 — Insecure Agent Communication](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026) — locally-bound AI services and MCP SSE ports as exposure surfaces.

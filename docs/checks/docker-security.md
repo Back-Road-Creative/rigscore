@@ -107,3 +107,10 @@ docker-security ..................... 55/100  (weight 6)
 - No platform gate — runs on Linux, macOS, Windows. Returns N/A if no container config is found.
 - No network calls; image digests are not verified against a registry. Use `--online` mode + a registry-aware check for digest verification (not implemented by this check).
 - Dockerfile RUN analysis joins backslash-continuation lines before pattern matching. Patterns are regex-based — obfuscated shell (e.g. `$( echo c url )`) can evade detection.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Docker — Engine security](https://docs.docker.com/engine/security/) — privileged mode, socket mounts, and capability defaults.
+- [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) — the hardening baseline these findings map to.

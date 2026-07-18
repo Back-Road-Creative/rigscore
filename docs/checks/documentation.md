@@ -65,3 +65,9 @@ Advisory — weight 0. This check's signal is only meaningful when scanning rigs
 - Does not validate prose quality. Only presence of required H2 sections and that the documented weight (or the literal word "advisory" for weight 0) appears somewhere in the `Weight rationale` section.
 - Does not enforce section ordering. Sections can appear in any order as long as all required H2 sections are present and non-empty.
 - Does not recurse into subdirectories of `docs/checks/` or `src/checks/`. Flat layout only, matching the current convention.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [rigscore docs-first gate (`docs/checks/_template.md` + `npm run verify:docs`)](https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/_template.md) — the per-check documentation contract this meta-check enforces.

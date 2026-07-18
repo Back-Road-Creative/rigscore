@@ -58,3 +58,9 @@ No `fixes` export. `--fix --yes` is a no-op.
 - **Directory-form governance is read by default.** The governance corpus for constraint matching also includes the built-in directory-form rule sets — `.cursor/rules/*.mdc`, `.windsurf/rules/`, `.clinerules/`, and `.github/instructions/*.instructions.md` — via the shared `collectGovernanceDirFiles` helper (the same one `governance-docs`, `unicode-steganography`, and `instruction-effectiveness` use). So a repo governed **only** by directory-form rules still exercises constraint awareness; before, this check saw no governance text unless a `.rigscorerc.json` set `governanceDirs`. Per-directory extension policy is vendor-exact and lives in the shared helper. Files returned by both sources are read once (deduped by absolute path).
 - Skill discovery scans `.claude/skills/*/SKILL.md` and `.claude/commands/*/SKILL.md` under both cwd and homedir. Project-specific conventions (directory names, governance vocabulary) are **not** baked into this check — everything comes from user config.
 - Skills whose content doesn't match `appliesTo` are not evaluated against that constraint. One constraint can therefore apply to a subset of skills.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026) — skills that contradict declared governance as an agentic risk.

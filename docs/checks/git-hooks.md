@@ -76,3 +76,10 @@ git-hooks ........................... 85/100  (weight 2)
 - Secret-scan detection only reads `.git/hooks/pre-commit`, `.git/hooks/pre-push`, and `.husky/pre-commit`. Scanners invoked from lefthook configs, Claude Code hooks, or `lint-staged` chains are **not** discovered and will produce a false-positive WARNING.
 - Non-executable hooks on POSIX are INFO, not WARNING — git silently ignores them but the check surfaces the drift without failing hard.
 - No platform gate beyond the executable-bit check being POSIX-only.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Git — githooks](https://git-scm.com/docs/githooks) — the hook mechanism this check inspects for presence and substance.
+- [pre-commit](https://pre-commit.com/) — the framework rigscore recognizes as substantive hook integration.

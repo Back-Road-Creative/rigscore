@@ -79,3 +79,9 @@ Tuned so that a **false "your loop is uncapped" is worse than a miss** — every
 - **A crontab is scanned only where it is committed.** The real one lives in `crontab -e` / `/etc/cron.d`, off the repo — a filesystem-only scanner cannot see it, and the check makes no claim about what is actually scheduled on the machine.
 - **Loop bodies are matched textually, not parsed.** A `done` inside a heredoc or a quoted string can close a block early. A Python loop body is delimited by indentation alone, so a deeper-indented line inside a triple-quoted string reads as part of the block; a JS body is delimited by counting braces, so a `}` inside a string or a regex literal can close it early, and a brace-less single-statement `for (;;) run();` is not a block at all and is missed. Nested loops report once per file.
 - **`fixtures` dirs are skipped** (with `node_modules`, `.git`, `.venv`, `venv`, `__pycache__`, `dist`, `build`, `coverage`) — as `deep-secrets` skips `*.test.*`: fixture trees hold deliberately-unsafe samples, not loops anyone runs. A real agent loop parked under `fixtures/` is a blind spot. Symlink loops and runaway depth are handled by the shared `walkDirSafe` walker; the walk stops after 2000 candidate files. Filesystem reads only — no network, no execution, no shell-out, per rigscore's offline contract.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Top 10 for LLM Applications — LLM06 Excessive Agency](https://genai.owasp.org/llm-top-10/) — ungoverned autonomous loops as an excessive-agency risk.

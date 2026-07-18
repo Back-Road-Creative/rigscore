@@ -72,3 +72,10 @@ Out of scope for `--fix --yes`: removing hardcoded keys from config files, redac
 - Gitignore detection uses `git check-ignore --no-index` and recognizes dangerous negation (`!.env`) and un-ignore-safe negation (`!.env.example|sample|template`). When git is unavailable the check falls back to an exact-string match against a small set of `.env` patterns and may miss path-prefixed entries (`apps/backend/.env`).
 - Shell-history scan caps at 3 hits and reads only the last 500 lines; full history forensics is out of scope.
 - POSIX permission check short-circuits on Windows with a SKIPPED finding.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [CWE-538 — Insertion of Sensitive Information into Externally-Accessible File](https://cwe.mitre.org/data/definitions/538.html) — committed or world-readable `.env` as an exposure class.
+- [The Twelve-Factor App — Config](https://12factor.net/config) — why secrets belong in the environment, not committed files.

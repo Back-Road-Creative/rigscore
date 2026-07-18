@@ -96,3 +96,9 @@ No `fixes` export. `--fix --yes` is a no-op.
 - **`instruction-effectiveness/dead-file-reference` across skill `SKILL.md` files** — skills often reference report output paths like `./skill-audit-report.md` that don't exist until the skill runs. These remain flagged. Add the relative form (or a glob) to `crossRepoRefs` if intentional.
 - **`Redundant instruction` cross-skill** — sibling skills (e.g. `workflow-maturity` + `instruction-audit`) that share a prelude (`detect project`, `parse the json output`) produce INFO noise proportional to how many skills share prose. Advisory only; consider consolidating into a shared include.
 - **`Possible contradiction` from memory file titles** — memory file titles that embed keywords ("Always cache, never recall when rate-limited") match the contradiction regex against themselves. Jaccard threshold catches most of these but a same-line always/never trips the current detector.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [AGENTS.md](https://agents.md/) — the instruction-file convention whose dead-reference drift this check catches.

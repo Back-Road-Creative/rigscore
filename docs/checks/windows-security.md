@@ -66,3 +66,9 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 - A container running on the WSL2 kernel matches the guest marker (it shares that kernel). This is intended, and harmless: the interop arm still only speaks if a `wsl.conf` is actually present in that filesystem.
 - Defender check shells out to `powershell.exe Get-MpPreference` with a 5s timeout, **from the Windows host only** — `powershell.exe` is reachable from a WSL guest over interop, but the guest deliberately does not cross that boundary to query the host's posture. On systems without PowerShell in PATH, or where Defender is managed by a third party, it silently degrades.
 - The NTFS permissions row is an advisory reminder that always fires on a Windows host (never on the guest, whose rootfs is ext4) — it's a prompt, not a detected weakness.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Microsoft — about Execution Policies (PowerShell)](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies) — the Windows execution-policy and ACL surface this platform-gated check reads.

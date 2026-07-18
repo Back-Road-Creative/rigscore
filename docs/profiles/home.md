@@ -10,7 +10,7 @@ allowed to drag the score down or inflate the coverage-penalty denominator.
 | --- | --- | --- |
 | mcp-config | 20 | MCP server configuration matters most on a user's box |
 | skill-files | 20 | Personal skills are the main governance surface |
-| claude-md | 20 | Global CLAUDE.md drives every session |
+| governance-docs | 20 | Global CLAUDE.md drives every session |
 | coherence | 15 | Cross-config drift is still critical |
 | claude-settings | 10 | Allow/deny hygiene |
 | deep-secrets | 5 | Opt-in via `--deep` |

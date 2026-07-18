@@ -25,12 +25,12 @@ A typical failure: CLAUDE.md says "no external network access" but `.mcp.json` h
 | Broad-capability server (filesystem/browser/shell/database/code/exec/terminal) + no approved-tools section | INFO | `coherence/no-approved-tools-declaration` | Add "Approved Tools" section to governance |
 | `bypassPermissions` + approval-gates claim + no `PreToolUse` hook | WARNING | `coherence/approval-claim-vs-bypass-no-hook` | Add `PreToolUse` hook or change `defaultMode` |
 | Allow-list entry matches repo-specific forbidden pattern (`config.coherence.allowGovernanceContradictions`) | WARNING | `coherence/allow-list-contradicts-governance` (default; a pairing may override via its own `findingId`) | Remove entry or update governance |
-| Insufficient data (no governance, or no config/skill data) | SKIPPED (score = N/A) | — | Ensure claude-md and at least one config check ran |
+| Insufficient data (no governance, or no config/skill data) | SKIPPED (score = N/A) | — | Ensure governance-docs and at least one config check ran |
 | All checks coherent | PASS | — | — |
 
 ## Weight rationale
 
-Weight 14 — tied with `mcp-config` as the highest-weight check, and the ONLY cross-check that compounds penalties across other check results. The high weight is deliberate: every individual check (claude-md, mcp-config, docker, skill-files) can pass in isolation while the system as a whole is compromised, because the attack surface in agentic systems is the contradiction itself. `coherence` is the check that catches "governance says X, reality permits not-X" — a class of failure that no single-file linter can see. It stays equal to `mcp-config` rather than higher because it piggybacks on those upstream data exports (`matchedPatterns`, `serverNames`, `hasNetworkTransport`, etc.) and would produce zero findings if those checks didn't run first. It's higher than `skill-files` and `governance-docs` (both 10) because hijack through contradiction is strictly more dangerous than hijack through weak prose: weak prose gives the agent no rule; contradiction actively misleads human reviewers.
+Weight 14 — tied with `mcp-config` as the highest-weight check, and the ONLY cross-check that compounds penalties across other check results. The high weight is deliberate: every individual check (governance-docs, mcp-config, docker, skill-files) can pass in isolation while the system as a whole is compromised, because the attack surface in agentic systems is the contradiction itself. `coherence` is the check that catches "governance says X, reality permits not-X" — a class of failure that no single-file linter can see. It stays equal to `mcp-config` rather than higher because it piggybacks on those upstream data exports (`matchedPatterns`, `serverNames`, `hasNetworkTransport`, etc.) and would produce zero findings if those checks didn't run first. It's higher than `skill-files` and `governance-docs` (both 10) because hijack through contradiction is strictly more dangerous than hijack through weak prose: weak prose gives the agent no rule; contradiction actively misleads human reviewers.
 
 ## Fix semantics
 
@@ -83,3 +83,9 @@ Documented false-positive / low-signal modes surfaced during the 2026-04-20 Moat
 - **`coherence/no-approved-tools-declaration` INFO** — fires whenever any broad-capability server (filesystem / browser / shell / database) exists without a dedicated approved-tools block. Pairs with `coherence/undeclared-mcp-server` — solving the latter usually silences this too.
 - **`coherence/network-claim-vs-mcp-transport` on governance using `"no external network"` loosely** — phrase matching is regex-driven (`matchedPatterns` from `governance-docs`). Governance that says "no external network except MCP transports" still trips because the regex only matches the first half. Reword governance to explicitly allowlist MCP transports, or add a `coherence.allowGovernanceContradictions` entry.
 - **Inapplicable on single-check scans** — `--check=coherence` alone returns N/A because the check consumes `priorResults` from other checks. Not a bug; document via `rigscore --help`.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026) — governance that contradicts configuration is the systemic failure class this pass targets.

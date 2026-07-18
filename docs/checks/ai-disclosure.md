@@ -61,3 +61,10 @@ This is the first slice of the check, held to the repo's ≤300-line PR cap. The
 - **Wiki-hosted policies.** MicroPython's policy *text* lives in its GitHub wiki; only the template declaration is in-tree. rigscore is offline and static, so a wiki-only policy reads as absent and no in-repo signal can distinguish it.
 - **No "AI manifest" standard.** No ratified machine-readable AI-manifest format (an `ai.txt`-style well-known descriptor) could be confirmed as an adopted convention, so none is matched. If one emerges, add it to `POLICY_FILENAMES`.
 - **Per-PR compliance.** The check now reports whether an *enforcement mechanism exists* (`disclosure-not-enforced`), but it still cannot confirm that any particular merged PR actually carried a disclosure — that needs the GitHub API to enumerate merged PRs and read their bodies, out of scope for an offline scanner. A repo whose gate is committed but disabled, or bypassed by admin merge, reads as enforced.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [GitHub — Creating a pull request template](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository) — the PR-template surface this check reads for a disclosure gate.
+- [pip — Generative AI policy](https://pip.pypa.io/en/stable/development/contributing/#generative-ai) — a primary-source AI-contribution policy the check is calibrated against.

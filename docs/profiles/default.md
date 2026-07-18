@@ -12,7 +12,7 @@ cross-config coherence, skill files, CLAUDE.md governance) carry 48 of the
 | mcp-config | 14 | supply-chain |
 | coherence | 14 | governance |
 | skill-files | 10 | supply-chain |
-| claude-md | 10 | governance |
+| governance-docs | 10 | governance |
 | claude-settings | 8 | governance |
 | deep-secrets | 8 | secrets |
 | env-exposure | 8 | secrets |
