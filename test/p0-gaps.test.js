@@ -252,12 +252,13 @@ describe('permissions-hygiene platform transparency', () => {
 // Gap 2: MCP config — additional client paths
 // ---------------------------------------------------------------------------
 describe('mcp-config multi-client paths', () => {
-  it('checks .cline/mcp_settings.json for MCP servers', async () => {
+  it('checks ~/.cline/data/settings/cline_mcp_settings.json for MCP servers', async () => {
     const check = (await import('../src/checks/mcp-config.js')).default;
     const tmpHome = makeTmpDir();
-    const clineDir = path.join(tmpHome, '.cline');
+    // RS-9: Cline's real MCP config path (was the vendor-wrong ~/.cline/mcp_settings.json).
+    const clineDir = path.join(tmpHome, '.cline', 'data', 'settings');
     fs.mkdirSync(clineDir, { recursive: true });
-    fs.writeFileSync(path.join(clineDir, 'mcp_settings.json'), JSON.stringify({
+    fs.writeFileSync(path.join(clineDir, 'cline_mcp_settings.json'), JSON.stringify({
       mcpServers: {
         'risky-server': {
           transport: 'sse',

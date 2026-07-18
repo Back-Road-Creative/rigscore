@@ -7,6 +7,7 @@ import { readFileSafe, readJsonSafe, walkDirSafe } from '../utils.js';
 const CODEX_DOCS = 'https://developers.openai.com/codex/config-reference';
 const CLAUDE_DOCS = 'https://docs.claude.com/en/docs/claude-code/settings';
 const GEMINI_DOCS = 'https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/settings.md';
+const QWEN_DOCS = 'https://qwenlm.github.io/qwen-code-docs/en/users/features/approval-mode/';
 const OPENCODE_DOCS = 'https://opencode.ai/docs/permissions/';
 const CURSOR_DOCS = 'https://cursor.com/docs/reference/permissions';
 const DEVCONTAINER_DOCS = 'https://containers.dev/implementors/json_reference/';
@@ -198,6 +199,36 @@ const GEMINI_RULES = [
 ];
 
 /**
+ * Qwen Code's posture surface: `.qwen/settings.json`, key `tools.approvalMode` (a Gemini-CLI
+ * fork that MOVED the knob off Gemini's `general.defaultApprovalMode`, so the gemini reader can't
+ * grade it). Values: "plan" is read-only, "default" prompts on every call, "auto-edit" auto-approves
+ * edits, "auto" is an LLM classifier, "yolo" auto-approves everything. Anything else → undefined
+ * (unknown, never dangerous). See the docs page.
+ */
+export function readQwenKeys(settings) {
+  const mode = settings?.tools?.approvalMode;
+  return { approvalMode: typeof mode === 'string' ? mode : undefined };
+}
+
+/** Read-only "plan" is the sandbox; "yolo" drops the approval prompt entirely. */
+function qwenPosture(k) {
+  if (k.approvalMode === 'plan') return 'restricted';
+  if (k.approvalMode === 'yolo') return 'unrestricted';
+  return 'partial'; // "default"/"auto-edit"/"auto"/absent: at least some tools still prompt
+}
+
+const QWEN_RULES = [
+  { id: 'qwen-yolo-approval', severity: 'warning', verb: 'auto-approves every tool call',
+    when: (k) => k.approvalMode === 'yolo',
+    detail: () => 'tools.approvalMode = "yolo" grants Qwen Code the highest permissions — every tool call, including shell commands, is auto-approved with no prompt.',
+    remediation: 'Set tools.approvalMode = "default" (or "plan") in .qwen/settings.json.' },
+  { id: 'qwen-auto-edit', severity: 'warning', verb: 'auto-approves file edits without prompting',
+    when: (k) => k.approvalMode === 'auto-edit',
+    detail: () => 'tools.approvalMode = "auto-edit" auto-approves file edits without asking; only shell commands still prompt.',
+    remediation: 'Set tools.approvalMode = "default" to prompt on every tool call in .qwen/settings.json.' },
+];
+
+/**
  * opencode's posture surface: `opencode.json`, the `permission` block. Each tool (`bash`,
  * `edit`, …) or the `*` catch-all maps to "allow" | "ask" | "deny"; a value may be a string
  * or a `{ pattern: verdict }` object. This resolves the COARSE verdict for the highest-risk
@@ -282,6 +313,14 @@ const FORMATS = {
     },
     merge: (a, b) => ({ defaultApprovalMode: b.defaultApprovalMode ?? a.defaultApprovalMode }),
     posture: geminiPosture, rules: GEMINI_RULES, docs: GEMINI_DOCS,
+  },
+  qwen: {
+    read: async (file) => {
+      const settings = await readJsonSafe(file);
+      return settings === null ? null : readQwenKeys(settings);
+    },
+    merge: (a, b) => ({ approvalMode: b.approvalMode ?? a.approvalMode }),
+    posture: qwenPosture, rules: QWEN_RULES, docs: QWEN_DOCS,
   },
   opencode: {
     read: async (file) => {
