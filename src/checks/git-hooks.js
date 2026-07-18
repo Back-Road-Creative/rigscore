@@ -2,6 +2,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { fileExists, readJsonSafe, readFileSafe, statSafe } from '../utils.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 /**
  * Detect no-op hooks: after stripping shebang, comments, blank lines,
@@ -25,6 +26,10 @@ function isNoOpHook(content) {
  * indicate the hook does real work (linting, secret scanning, testing, etc.)
  */
 function hasSubstance(content) {
+  // Substance = evidence of REAL work (a linter, a scanner, a test runner, a
+  // grep-based check). `exit 1` and a bare `if…then` are pure control flow that
+  // any script has — they were treated as substantive, so a hook that only does
+  // `exit 1` graded PASS. Dropped: they are necessary but never sufficient.
   const substantivePatterns = [
     /\bgrep\b/,
     /\blint/i,
@@ -35,8 +40,6 @@ function hasSubstance(content) {
     /\bvitest\b/,
     /\bjest\b/,
     /\bpre-commit\b/,
-    /\bexit\s+1/,
-    /\bif\b.*\bthen\b/,
     /\bgitleaks\b/,
     /\btrufflehog\b/,
     /\bdetect-secrets\b/,
@@ -197,11 +200,13 @@ export default {
       }
     }
 
-    // Check Claude Code hooks in settings
-    const claudeSettingsPaths = [
-      path.join(homedir, '.claude', 'settings.json'),
-      path.join(cwd, '.claude', 'settings.json'),
-    ];
+    // Check Claude Code hooks in settings. The HOME settings file is the operator's,
+    // not the project's — counting its hooks would let a hookless project "pass" purely
+    // because the operator has home hooks, so it is gated behind --include-home-skills.
+    const claudeSettingsPaths = [path.join(cwd, '.claude', 'settings.json')];
+    if (homeScopeEnabled(context)) {
+      claudeSettingsPaths.unshift(path.join(homedir, '.claude', 'settings.json'));
+    }
     for (const settingsPath of claudeSettingsPaths) {
       const settings = await readJsonSafe(settingsPath);
       if (settings?.hooks) {
