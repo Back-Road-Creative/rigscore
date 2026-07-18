@@ -65,3 +65,10 @@ unicode-steganography ............... 70/100  (weight 4)
 - Non-malicious uses of the flagged ranges (scientific notation using U+1D4…, CJK fullwidth) will trigger warnings — by design, since governance text should be plain ASCII.
 - No platform gate; runs on all OSes.
 - If none of the scanned files exist, the check returns N/A with one INFO finding and does not affect the score.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Trojan Source: Invisible Vulnerabilities (Boucher & Anderson)](https://trojansource.codes/) — bidi-override and invisible-codepoint attacks.
+- [Unicode Technical Standard #55 / Tag characters (U+E0000–U+E007F)](https://www.unicode.org/reports/tr55/) — the tag-character and zero-width classes this check scans for.

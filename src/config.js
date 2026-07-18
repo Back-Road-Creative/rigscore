@@ -6,7 +6,10 @@ import { FINDING_ID_RENAMES } from './findings.js';
 // Map a rc-supplied check id through any shipped rename so a weights/disabled
 // entry keyed on a deprecated id (e.g. `claude-md`) still lands on the renamed
 // check (`governance-docs`) — the alias promise in docs/FINDING_IDS.md.
-const canonicalCheckId = (id) => FINDING_ID_RENAMES[String(id).toLowerCase()] || id;
+// Exported so the SINGLE alias helper also canonicalizes the `--check` CLI
+// entry point (src/index.js) and `explain` (src/cli/explain.js) — the two
+// alias-less paths — instead of each growing its own second rename map.
+export const canonicalCheckId = (id) => FINDING_ID_RENAMES[String(id).toLowerCase()] || id;
 
 const DEFAULTS = {
   paths: {
@@ -97,6 +100,11 @@ const DEFAULTS = {
     // non-string entry) is ignored and this default stands.
     command: ['claude', '-p'],
   },
+  // Local-path check plugins (`plugins: ["./checks/foo.js"]`). Each entry is a
+  // path to an ES module exporting a check ({id,name,category,run}), resolved
+  // relative to the project root. Complements npm `rigscore-check-*` discovery —
+  // a repo can ship a bespoke check without publishing it. See src/checks/index.js.
+  plugins: [],
 };
 
 export const PROFILES = {
@@ -227,9 +235,17 @@ export async function loadConfig(cwd, homedir) {
   if (homeConfig) {
     merged = await applyConfigWithExtends(homeConfig, merged, homedir, new Set([homePath]));
   }
+  // Suppress patterns known after the HOME layer (and its `extends` bases) but
+  // before the project layer. Their provenance is "personal / cross-project", so
+  // a dead one must NOT warn on every unrelated repo — only project-scoped and
+  // CLI `--ignore` patterns earn the "matched nothing" warning (src/index.js).
+  const homeSuppress = new Set(merged.suppress || []);
   if (cwdConfig) {
     merged = await applyConfigWithExtends(cwdConfig, merged, cwd, new Set([cwdPath]));
   }
+  // Project-scoped suppressions = everything the project layer added on top of
+  // the home layer. Recorded so the caller can scope the dead-pattern warning.
+  merged.projectSuppress = (merged.suppress || []).filter((p) => !homeSuppress.has(p));
   return merged;
 }
 
@@ -343,6 +359,11 @@ function mergeConfig(userConfig, baseline) {
   if (Array.isArray(userConfig.suppress)) {
     // Concat & dedupe — personal suppressions stack with project suppressions
     result.suppress = [...new Set([...(result.suppress || []), ...userConfig.suppress])];
+  }
+
+  if (Array.isArray(userConfig.plugins)) {
+    // Concat & dedupe local-path check plugins.
+    result.plugins = [...new Set([...(result.plugins || []), ...userConfig.plugins])];
   }
 
   if (Array.isArray(userConfig.sites)) {

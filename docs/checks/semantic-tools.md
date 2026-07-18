@@ -49,3 +49,9 @@ No auto-fix. `--fix --yes` does nothing for this check: a suspicious tool descri
 - First-party only: the judge shells out to a first-party agent CLI (`claude -p` by default; `semantic.command` in `.rigscorerc.json` points it at `gemini`, `codex exec`, … — never an API key). If that binary is not on PATH — or the call errors/times out — the tool is skipped gracefully (no finding, no crash).
 - Descriptions come from `tools/list` snapshot JSON files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` (the same JSON piped into `rigscore mcp-hash`). rigscore never executes an MCP server; the state file pins only a hash of that snapshot, not the raw text, so the operator supplies the raw descriptions out-of-band.
 - Adversarial input: each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [Invariant Labs — MCP tool-poisoning attacks](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks) — malicious tool descriptions as the surface the `--semantic` judge inspects.

@@ -108,6 +108,21 @@ export const OWASP_MCP_MAP = {
   'coherence': 'MCP09',              // a configured server undeclared in governance IS a shadow server
 };
 
+// OWASP Agentic Skills Top 10 (AST01–AST10) — OWASP GenAI Security Project,
+// currently an INCUBATOR effort (owasp.org/www-project-agentic-skills-top-10).
+// The list and its "Universal Skill Format" are still draft, so this mapping is
+// surfaced ONLY as advisory SARIF tags (`owasp-agentic-skills:ASTxx`) — never in
+// the compliance report, which is reserved for settled/beta frameworks with a
+// stable control catalog. Provisional: verify against upstream before citing to
+// an auditor. Scoped to checks that inspect the agent-SKILLS surface; a check
+// with no skill nexus is deliberately left unmapped.
+export const AGENTIC_SKILLS_MAP = {
+  'skill-files': 'AST01',            // malicious / poisoned skill content
+  'unicode-steganography': 'AST02',  // hidden (bidi/tag-char) instructions in skills
+  'skill-coherence': 'AST03',        // skill ↔ governance contradiction
+  'workflow-maturity': 'AST04',      // ungraduated / unevaluated skill artefacts
+};
+
 // NIST AI RMF 1.0 (NIST AI 100-1, Jan 2023). Subcategory IDs are space-separated.
 export const NIST_AI_RMF_MAP = {
   'mcp-config': 'MANAGE 3.1',   // third-party resources monitored, controls applied

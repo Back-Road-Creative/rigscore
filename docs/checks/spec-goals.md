@@ -104,3 +104,9 @@ No auto-fix. The module exports no `fixes` array, so `--fix --yes` is a no-op fo
 - **EARS parsing is line-based, and Kiro-only.** Kiro writes one acceptance criterion per bullet, so a line is the unit; a requirement hard-wrapped across two source lines reads as a stray. Spec Kit and OpenSpec mandate no requirement grammar, so their specs are never held to one. The match is deliberately lenient — any `THE … SHALL …` clause counts, whatever the clause order — because a false "your requirements are prose" is worse than missing a malformed one.
 - **The domain-spec skeleton is OpenSpec's documented shape, not a validator's schema.** `## Purpose` appears in OpenSpec's own spec example and the requirement→scenario rule is stated outright in its authoring guide, but neither is published as a hard error code, so a team that keeps its living specs deliberately lean will be flagged — suppress `spec-goals/domain-spec-incomplete` in `.rigscorerc.json`.
 - **OpenSpec `project.md` is not a real path.** It appears in secondhand write-ups but in no primary source — OpenSpec's own repo and docs use `openspec/config.yaml`. Noted so the Kiro/OpenSpec follow-up does not encode it by mistake.
+
+## Sources
+
+Primary sources this check is grounded in (evidence-backed, not best-practice vibes):
+
+- [AGENTS.md](https://agents.md/) — spec/goal declarations in the instruction surface this practice check reads.

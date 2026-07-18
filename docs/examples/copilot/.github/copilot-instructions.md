@@ -65,3 +65,11 @@ Adjust the paths, gates, and commands to match your project.
   docs describing the changed behavior are updated, and the diff contains
   nothing the task did not ask for.
 - Work on a feature branch; open the PR with `gh pr create`.
+
+## AI-use policy
+
+- AI-assisted contributions are permitted and must be disclosed: the pull
+  request declares that generative AI was used and that a human has reviewed
+  the diff before it merges.
+- A human stays accountable for every change; machine-generated output is
+  never presented as reviewed when it is not.

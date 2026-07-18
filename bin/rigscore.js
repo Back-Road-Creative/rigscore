@@ -74,9 +74,15 @@ Usage:
 Options:
   --json             Output results as JSON
   --sarif            Output SARIF v2.1.0 for GitHub Advanced Security
-  --badge            Generate a markdown badge
+  --badge            Generate a score badge (see --badge-format)
+  --badge-format <f> Badge format: markdown (default, shields.io image snippet),
+                     endpoint (shields.io Endpoint Badge JSON for auto-updating
+                     READMEs), or svg (self-contained, no network). Works in
+                     --recursive mode (badges the monorepo average score)
   --cyclonedx        Output a CycloneDX 1.6 AI-BOM (JSON) of the MCP servers,
                      AI client configs and governance files found (docs/cyclonedx.md)
+  --junit            Output JUnit XML (one testcase per check; Jenkins/Azure/GitLab)
+  --code-quality     Output a GitLab Code Quality report (CodeClimate JSON)
   --ci               CI mode (--sarif --no-color --no-cta)
   --fail-under <N>   Exit code 1 if score < N (default: 70)
   --profile <name>   Scoring profile (default, minimal, ci, home, monorepo)
@@ -84,7 +90,8 @@ Options:
   --cta              Show the promotional call-to-action (off by default)
   --no-cta           Deprecated alias — CTA is already off by default; kept
                      for back-compat with pre-commit hooks and CI configs
-  --check <id>       Run a single check by ID
+  --check <id[,id]>  Run only the named check(s) — a single id or a comma list.
+                     Deprecated ids are aliased (e.g. claude-md -> governance-docs)
   --recursive, -r    Scan subdirectories as separate projects
   --depth <N>        Recursion depth (default: 1, implies --recursive)
   --deep             Enable deep source secret scanning
@@ -125,6 +132,10 @@ Options:
                      do not .gitignore it (it stores hashes, never env values)
   --verbose, -v      Also show passing checks (info and skipped findings are
                      already shown by default)
+  --quiet, -q        Summary-only output (score/grade/posture + finding counts) —
+                     for pre-commit hooks and terse CI logs
+  --record-score     Append this scan's score to .rigscore-history.json (opt-in)
+  --trend            Print the recorded score history + deltas and exit (read-only)
   --ignore <list>    Suppress findings matching patterns (comma-separated)
   --init-hook        Install a pre-commit hook that runs rigscore
   --baseline <path>  Baseline mode. On first run writes findings to <path>;
@@ -185,6 +196,9 @@ Subcommands (scaffolders):
                                    hygiene issues (useful for CI smoke tests)
   init --list-packs                List the starter packs in templates/
   init --<pack> [dir]              Install a starter pack (e.g. init --docs)
+  init --<pack> --merge            Harden an EXISTING config in place: merge the
+                                   pack's keys into the current json/yaml config
+                                   (additive; your values win). Alias: --harden
   init --force / -f                Overwrite pre-existing files
 
 Examples:
@@ -195,7 +209,14 @@ Examples:
   rigscore . -r --depth 2           Scan monorepo (2 levels deep)
   rigscore --check docker-security  Run only Docker/K8s check
   npx -y <pkg> | rigscore mcp-hash | xargs rigscore mcp-pin <server>\n`);
-  process.exit(0);
+  // Deliberately NOT process.exit(0): the help text is ~9KB, and exiting
+  // immediately after writing it truncates stdout when stdout is a pipe —
+  // console.log is async on a pipe, and process.exit() drops whatever has not
+  // flushed. Observed on macOS/node 18-20 in CI, where `rigscore --help`
+  // captured via spawnSync lost everything after the options list (so
+  // `rigscore --help | less` was silently truncated for real users too).
+  // Setting exitCode lets Node drain stdout and exit 0 on its own.
+  process.exitCode = 0;
+} else {
+  run(args).catch(handleFatalTopLevel);
 }
-
-run(args).catch(handleFatalTopLevel);

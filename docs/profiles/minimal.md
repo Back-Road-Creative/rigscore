@@ -12,7 +12,7 @@ don't want secrets, Docker, or infra findings moving the number.
 | mcp-config | 30 | supply-chain |
 | coherence | 30 | governance |
 | skill-files | 20 | supply-chain |
-| claude-md | 20 | governance |
+| governance-docs | 20 | governance |
 | all other checks | 0 | off / advisory |
 
 Weights sum to **100**. Every check not listed (including `deep-secrets`,

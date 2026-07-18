@@ -19,7 +19,7 @@ All checks are pure functions of the local filesystem. Default mode makes zero n
 | MCP server tool-description pins (CVE-2025-54136 class) | [`src/checks/mcp-config.js`](src/checks/mcp-config.js) + `rigscore mcp-pin` / `rigscore mcp-verify` | User pipes `tools/list` JSON into `rigscore mcp-hash`; rigscore stores the hash. rigscore does **not** spawn the MCP server. |
 | Docker privileges (`--privileged`, socket mounts, `host` network, `run --user root`) | [`src/checks/docker-security.js`](src/checks/docker-security.js) | Regex scan of `Dockerfile`, `docker-compose*.yml`, `.github/workflows/*.yml`. |
 | Governance coherence (config claims match CLAUDE.md statements) | [`src/checks/coherence.js`](src/checks/coherence.js) | Substring / regex match of governance text against discovered MCP server names and capability keywords. |
-| CLAUDE.md quality signals (forbidden-action phrasing, approval gates, path restrictions, anti-injection, TDD, DoD) | [`src/checks/claude-md.js`](src/checks/claude-md.js) | Keyword-presence regex with per-signal negation detection (e.g. "we do **not** restrict paths" flips a pass into a CRITICAL). |
+| Governance-doc quality signals (forbidden-action phrasing, approval gates, path restrictions, anti-injection, TDD, DoD) | [`src/checks/governance-docs.js`](src/checks/governance-docs.js) | Keyword-presence regex with per-signal negation detection (e.g. "we do **not** restrict paths" flips a pass into a CRITICAL). |
 | Skill-file prompt injection, shell-exec lures, broad-tool auto-approval language, base64 payloads, homoglyph / zero-width evasion | [`src/checks/skill-files.js`](src/checks/skill-files.js) | Regex catalog + Unicode normalization pass. |
 | Claude Code `settings.json` (shell allowlists, hook coverage, dangerous flags) | [`src/checks/claude-settings.js`](src/checks/claude-settings.js) | JSON parse + rule table. |
 | Secret exposure in source, env files, credential stores | [`src/checks/deep-secrets.js`](src/checks/deep-secrets.js), [`src/checks/env-exposure.js`](src/checks/env-exposure.js), [`src/checks/credential-storage.js`](src/checks/credential-storage.js) | High-entropy regex + known-provider prefix patterns. |
@@ -31,7 +31,7 @@ Advisory-weight (scored 0, surfaced only): `windows-security`, `network-exposure
 
 ## 2. Trust boundaries
 
-- **Local filesystem only** in default mode. rigscore reads files under the scan target and, across a registry of 22 known agent clients (19 with MCP config paths, 16 holding 17 credential files), the corresponding `$HOME` paths (e.g. `~/.claude/settings.json`, `~/.claude/skills/`). It writes `.rigscore-state.json` into the scan target.
+- **Local filesystem only** in default mode. rigscore reads files under the scan target and, across a registry of 29 known agent clients (22 with MCP config paths, 19 holding 20 credential files), the corresponding `$HOME` paths (e.g. `~/.claude/settings.json`, `~/.claude/skills/`). It writes `.rigscore-state.json` into the scan target.
 - **No network unless `--online`.** The online opt-in reaches the npm registry and the MCP registry for typosquat augmentation, plus — if `sites` is configured — HTTP(S) probes of those user-listed hosts via [`site-security`](src/checks/site-security.js). It does not spawn MCP servers and does not exfiltrate.
 - **No LLM calls unless `--semantic`.** Default mode calls no LLM API. The `--semantic` opt-in shells out to a local `claude -p` process (see [`src/checks/semantic-tools.js:97`](src/checks/semantic-tools.js)) to run an LLM judge over MCP tool descriptions; it uses the operator's own installed Claude CLI, not a rigscore-hosted endpoint.
 - **Assumes a user-controlled machine.** rigscore does not sandbox the files it reads. A maliciously crafted `package.json` that triggers a parser exploit in `JSON.parse` is on Node, not on rigscore.
@@ -42,17 +42,17 @@ Advisory-weight (scored 0, surfaced only): `windows-security`, `network-exposure
 
 Each item below names a real gap, grounds it in the check module that would "own" the gap if we filled it, and links to a characterization test if one exists. Items marked `# TODO(stream-E): characterization test needed` are real but unverified-in-test; Stream E of the verifiability campaign will add fixtures.
 
-**Enforcement-grade note.** Every check now carries an `enforcementGrade` label (`mechanical`, `pattern`, `keyword`) surfaced in reporter and SARIF output. The gaps in this section correlate strongly with checks graded `keyword` — those four checks (`coherence`, `claude-md`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`) decide pass/fail by substring / phrase presence against governance prose, which is precisely the surface an adversarial author can pad with the right words while reversing intent in the surrounding context. `mechanical`-graded checks (parsed state compared to known-bad constants) are not in-scope for the gaps below; they either fire or they don't, deterministically. `pattern`-graded checks sit in the middle — they catch canonical signatures but can be evaded by novel obfuscation (see §3.4 and §3.6). Treat `keyword` grades as advisory signal when auditing a repository you didn't author; treat `mechanical` grades as load-bearing.
+**Enforcement-grade note.** Every check now carries an `enforcementGrade` label (`mechanical`, `pattern`, `keyword`) surfaced in reporter and SARIF output. The gaps in this section correlate strongly with checks graded `keyword` — those four checks (`coherence`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`) decide pass/fail by substring / phrase presence against governance prose, which is precisely the surface an adversarial author can pad with the right words while reversing intent in the surrounding context. `mechanical`-graded checks (parsed state compared to known-bad constants) are not in-scope for the gaps below; they either fire or they don't, deterministically. `pattern`-graded checks sit in the middle — they catch canonical signatures but can be evaded by novel obfuscation (see §3.4 and §3.6). Treat `keyword` grades as advisory signal when auditing a repository you didn't author; treat `mechanical` grades as load-bearing.
 
 ### 3.1 Semantic reversal in governance prose
 
-CLAUDE.md that names the right safety words ("never," "approval gate," "path restrictions") but dismantles them in the surrounding paragraph — e.g. *"Never delete production data, unless the model believes it is stale"* — scores **the same as** a strict version that lacks the escape clause. The [`claude-md`](src/checks/claude-md.js) check is keyword-presence with single-sentence negation detection (`/\bwe do not restrict paths\b/` style). It does not parse semantics. An adversarial author who keeps the trigger words and adds an "except when..." weakens the governance invisibly.
+CLAUDE.md that names the right safety words ("never," "approval gate," "path restrictions") but dismantles them in the surrounding paragraph — e.g. *"Never delete production data, unless the model believes it is stale"* — scores **the same as** a strict version that lacks the escape clause. The [`governance-docs`](src/checks/governance-docs.js) check matches keyword presence with single-sentence negation detection (`/\bwe do not restrict paths\b/` style). It does not parse semantics. An adversarial author who keeps the trigger words and adds an "except when..." weakens the governance invisibly.
 
 **Partial test coverage:** [`test/keyword-gaming.test.js`](test/keyword-gaming.test.js) covers the single-sentence negation case (`"we do not restrict paths"` → CRITICAL). It does **not** cover multi-sentence reversal or "unless/except" clauses. `# TODO(stream-E): characterization test needed` for multi-sentence semantic reversal.
 
 ### 3.2 Runtime MCP tool-description drift
 
-rigscore's tool-hash pinning is a **print-and-paste** workflow: the user runs the MCP server, pipes `tools/list` JSON into `rigscore mcp-hash`, and rigscore stores the hash. See [`src/checks/mcp-config.js:712`](src/checks/mcp-config.js) — the `remediation` field literally reads *"rigscore does NOT execute the server — user must pipe tools/list JSON into stdin."* If the user never pins, drift is invisible. If the user pins once and never re-verifies, a CVE-2025-54136-class tool-description swap between pin and scan is invisible. rigscore hashes what it is given; it does not probe live servers.
+rigscore's tool-hash pinning is a **print-and-paste** workflow: the user runs the MCP server, pipes `tools/list` JSON into `rigscore mcp-hash`, and rigscore stores the hash. See [`src/checks/mcp-config.js:685`](src/checks/mcp-config.js) — the `detail` field literally reads *"rigscore does NOT execute the server — user must pipe tools/list JSON into stdin."* If the user never pins, drift is invisible. If the user pins once and never re-verifies, a CVE-2025-54136-class tool-description swap between pin and scan is invisible. rigscore hashes what it is given; it does not probe live servers.
 
 **Test coverage:** [`test/mcp-runtime-hash.test.js`](test/mcp-runtime-hash.test.js) covers the pin/verify round-trip when the user supplies input. It does not (and cannot) cover live-drift-between-scans — that is a design limit, not a bug.
 
@@ -66,19 +66,19 @@ Mitigation path is Stream A of the verifiability campaign: signed releases, SBOM
 
 ### 3.4 Binary / base64 / minified payloads inside skill files
 
-[`src/checks/skill-files.js:98`](src/checks/skill-files.js) defines `BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m` — anchored, requires whitespace boundary, raises a **warning** (not critical) with no decode step. This means:
+[`src/checks/skill-files.js:118`](src/checks/skill-files.js) defines `BASE64_PATTERN = /(?:^|\s)[A-Za-z0-9+/]{50,}={0,2}(?:\s|$)/m` — anchored, requires whitespace boundary, raises a **warning** (not critical) with no decode step. This means:
 
 - Contiguous base64 blobs ≥50 chars surrounded by whitespace: flagged (warning).
 - Base64 split across lines with non-whitespace separators, or embedded mid-sentence: not flagged.
 - Minified JavaScript pasted as "config": not flagged (looks like prose to the regex).
-- Binary files dropped into `.claude/skills/` (e.g. `payload.bin`): rigscore's skill-file walker is scoped to text extensions; binaries are not inspected at all.
+- Binary files dropped into `.claude/skills/` (e.g. `payload.bin`): the skill-file walker has **no** extension filter ([`skill-files.js`](src/checks/skill-files.js) includes every non-dotfile), so a binary IS read and regex-scanned — but only after a hardcoded UTF-8 decode, so a non-text payload arrives as mojibake and slips the entire pattern catalog while the file still counts as "scanned" (a false sense of coverage, not a skipped file). There is no NUL/replacement-char sniff to flag it as non-text.
 - Hex-encoded or ROT13-encoded payloads: not flagged.
 
 **Test coverage:** [`test/injection-evasion.test.js`](test/injection-evasion.test.js) covers Unicode homoglyph and zero-width evasion of *injection phrases*, not encoded *payloads*. `# TODO(stream-E): characterization test needed` for base64-embedded-in-prose, hex, and binary-file-in-skill-dir cases.
 
 ### 3.5 Obfuscated bash in git hooks
 
-[`src/checks/git-hooks.js`](src/checks/git-hooks.js) decides whether a hook "has substance" by regex-matching keywords like `lint`, `test`, and secret-scan / shell-lint tokens. A hook built from base64-decoded shell (`eval "$(echo <b64> | base64 -d)"`), from positional-parameter tricks (`${!1}`), or from a wrapper that `source`s a separate file in `.git/hooks/`, will pass the substance filter if the wrapper happens to contain any keyword — or fail with only a low-severity info finding if it contains none. rigscore does not tokenize bash, does not trace `source`/`.` directives, and does not flag entropy anomalies in hook content.
+[`src/checks/git-hooks.js`](src/checks/git-hooks.js) decides whether a hook "has substance" by regex-matching keywords like `lint`, `test`, and secret-scan / shell-lint tokens. The substance list is broader — and weaker — than "does security work": it also accepts generic shell control-flow such as `if…then` (`git-hooks.js` `hasSubstance`), so nearly any non-trivial hook clears the bar regardless of whether it does anything security-relevant. A hook built from base64-decoded shell (`eval "$(echo <b64> | base64 -d)"`), from positional-parameter tricks (`${!1}`), or from a wrapper that `source`s a separate file in `.git/hooks/`, will pass the substance filter if the wrapper happens to contain any such token — or fail with only a low-severity info finding if it contains none. rigscore does not tokenize bash, does not trace `source`/`.` directives, and does not flag entropy anomalies in hook content.
 
 **Test coverage:** no characterization test exists for obfuscated-but-keyword-present hooks. `# TODO(stream-E): characterization test needed`.
 
@@ -98,10 +98,10 @@ No test covers this — it is a design property, not a check.
 
 | Gap | Evidence | Characterization test | Stream E action |
 |---|---|---|---|
-| Semantic reversal in governance | [`claude-md.js`](src/checks/claude-md.js) keyword-only | [`keyword-gaming.test.js`](test/keyword-gaming.test.js) partial | extend: multi-sentence reversal |
+| Semantic reversal in governance | [`governance-docs.js`](src/checks/governance-docs.js) keyword-only | [`keyword-gaming.test.js`](test/keyword-gaming.test.js) partial | extend: multi-sentence reversal |
 | Runtime MCP tool-description drift | [`mcp-config.js:712`](src/checks/mcp-config.js) design note | [`mcp-runtime-hash.test.js`](test/mcp-runtime-hash.test.js) pin workflow | N/A — design limit |
 | Install-time supply-chain compromise | no module inspects `node_modules` / lifecycle scripts | none | add: hostile-postinstall fixture |
-| Binary / base64 / minified in skill files | [`skill-files.js:98`](src/checks/skill-files.js) anchored regex, warning severity | [`injection-evasion.test.js`](test/injection-evasion.test.js) covers phrases, not payloads | add: inline-base64, hex, `.bin` fixtures |
+| Binary / base64 / minified in skill files | [`skill-files.js:118`](src/checks/skill-files.js) anchored regex, warning severity | [`injection-evasion.test.js`](test/injection-evasion.test.js) covers phrases, not payloads | add: inline-base64, hex, `.bin` fixtures |
 | Obfuscated bash in git hooks | [`git-hooks.js`](src/checks/git-hooks.js) keyword substance filter | none | add: `eval $(base64 -d)` fixture |
 | Novel LLM prompt injection | [`skill-files.js`](src/checks/skill-files.js) fixed phrase list | [`injection-evasion.test.js`](test/injection-evasion.test.js) canonical phrases only | design: Stream E `--llm-review` advisory |
 | Post-scan activity | design: point-in-time scanner | none | N/A — out of scope |
@@ -118,4 +118,4 @@ rigscore is complementary to these tools. It closes the "did you configure it sa
 
 ---
 
-*Last updated: 2026-07-15. Source of truth lives in the check modules under [`src/checks/`](src/checks/) — if this document disagrees with the code, the code wins. File an issue.*
+*Last updated: 2026-07-18. Source of truth lives in the check modules under [`src/checks/`](src/checks/) — if this document disagrees with the code, the code wins. File an issue.*
