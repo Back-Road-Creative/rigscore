@@ -302,6 +302,42 @@ describe('loadConfig', () => {
     }
   });
 
+  it('semantic.command defaults to ["claude", "-p"]', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const config = await loadConfig(tmpDir, tmpDir);
+      expect(config.semantic.command).toEqual(['claude', '-p']);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('semantic.command REPLACES (never concatenates) the default from .rigscorerc.json', async () => {
+    const tmpDir = makeTmpDir();
+    // An argv is an ordered whole — concatenating ["claude","-p"] with a user's
+    // ["gemini"] would produce nonsense (["claude","-p","gemini"]). It replaces.
+    const rc = { semantic: { command: ['gemini'] } };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      expect(config.semantic.command).toEqual(['gemini']);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('ignores an invalid semantic.command (empty / non-string), keeping the default', async () => {
+    const tmpDir = makeTmpDir();
+    const rc = { semantic: { command: [] } };
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    try {
+      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      expect(config.semantic.command).toEqual(['claude', '-p']);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('ignores unknown keys gracefully', async () => {
     const tmpDir = makeTmpDir();
     const rc = { paths: { claudeMd: ['/a'], unknownKey: 'value' }, extra: true };

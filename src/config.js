@@ -81,6 +81,16 @@ const DEFAULTS = {
     //   reason  — human-readable justification (surfaced in suppressed output)
     allowlist: [],
   },
+  semantic: {
+    // argv the opt-in `--semantic` tool-description judge shells out to — the
+    // ONLY configurable LLM invocation in rigscore. Default is the first-party
+    // `claude -p` (Max-plan CLI). Point it at any first-party agent CLI
+    // (`gemini`, `codex exec`, …) — NEVER an API key or SDK client. The judge
+    // prompt is appended as the final argument at call time, so the value here
+    // is the binary + its flags only. An invalid value (non-array, empty, or a
+    // non-string entry) is ignored and this default stands.
+    command: ['claude', '-p'],
+  },
 };
 
 export const PROFILES = {
@@ -428,6 +438,17 @@ function mergeConfig(userConfig, baseline) {
         merged.push(entry);
       }
       result.skillFiles.allowlist = merged;
+    }
+  }
+
+  if (userConfig.semantic && typeof userConfig.semantic === 'object') {
+    // `semantic.command` is an ordered argv, not an additive list — it REPLACES
+    // the default rather than concatenating (["claude","-p"] + ["gemini"] would
+    // be nonsense). Accept only a non-empty array of non-empty strings; anything
+    // else is dropped and the ["claude", "-p"] default stands.
+    const cmd = userConfig.semantic.command;
+    if (Array.isArray(cmd) && cmd.length > 0 && cmd.every((s) => typeof s === 'string' && s.length > 0)) {
+      result.semantic.command = [...cmd];
     }
   }
 
