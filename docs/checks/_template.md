@@ -22,7 +22,7 @@ Table of finding conditions and severities. One row per distinct finding the che
 
 Why this weight vs. its siblings in the same category. If advisory, say "advisory — weight 0" and justify why it isn't scored (e.g. false-positive rate, site-specific signal, informational only).
 
-Example: "Weight 8 — mid-tier hygiene. Higher than `docker-security` (6) because `.env` leaks are historically the single most common credential-exposure vector in AI dev repos; lower than `claude-md` (10) because the moat-first scoring reserves top weights for AI-specific governance."
+Example: "Weight 8 — mid-tier hygiene. Higher than `docker-security` (6) because `.env` leaks are historically the single most common credential-exposure vector in AI dev repos; lower than `governance-docs` (10) because the moat-first scoring reserves top weights for AI-specific governance."
 
 ## Fix semantics
 

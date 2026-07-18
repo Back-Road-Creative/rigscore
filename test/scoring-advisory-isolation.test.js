@@ -20,7 +20,7 @@ import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 describe('advisory-check isolation (coverage-scaling regression fix)', () => {
   it('adding a weight-0 check scoring 100 does not change the overall score', () => {
     const base = [
-      { id: 'claude-md', score: 100 },
+      { id: 'governance-docs', score: 100 },
       { id: 'mcp-config', score: 100 },
       { id: 'coherence', score: 100 },
       { id: 'env-exposure', score: 100 },
@@ -39,7 +39,7 @@ describe('advisory-check isolation (coverage-scaling regression fix)', () => {
 
   it('adding a weight-0 check scoring 0 does not change the overall score', () => {
     const base = [
-      { id: 'claude-md', score: 100 },
+      { id: 'governance-docs', score: 100 },
       { id: 'mcp-config', score: 100 },
       { id: 'coherence', score: 100 },
     ];
@@ -55,7 +55,7 @@ describe('advisory-check isolation (coverage-scaling regression fix)', () => {
 
   it('a weight-0 check going from N/A to applicable does not reduce the score', () => {
     const results = [
-      { id: 'claude-md', score: 100 },
+      { id: 'governance-docs', score: 100 },
       { id: 'env-exposure', score: 100 },
       { id: 'permissions-hygiene', score: 100 },
     ];
@@ -69,7 +69,7 @@ describe('advisory-check isolation (coverage-scaling regression fix)', () => {
 
   it('a project with ONLY weight-0 applicable checks scores 0', () => {
     const results = [
-      { id: 'claude-md', score: NOT_APPLICABLE_SCORE },
+      { id: 'governance-docs', score: NOT_APPLICABLE_SCORE },
       { id: 'documentation', score: 100 },
       { id: 'workflow-maturity', score: 50 },
     ];
@@ -82,7 +82,7 @@ describe('advisory-check isolation (coverage-scaling regression fix)', () => {
     // permissions-hygiene(4, 100), unicode-steganography(4, 100) +
     // advisories that must not perturb the score.
     const results = [
-      { id: 'claude-md', score: 100 },
+      { id: 'governance-docs', score: 100 },
       { id: 'claude-settings', score: 96 },
       { id: 'env-exposure', score: 100 },
       { id: 'git-hooks', score: 85 },

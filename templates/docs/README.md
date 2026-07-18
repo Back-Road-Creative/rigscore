@@ -14,20 +14,20 @@ Two fixtures, installed by hand, scanned before and after. **Bare repo** (`packa
 
 | check | before | after |
 | --- | --- | --- |
-| `claude-md` | N/A (no AI tooling detected) | 100 |
+| `governance-docs` | N/A (no AI tooling detected) | 100 |
 | **overall** | **12** | **50** |
 
 **AI-tooled but ungoverned** (a `.claude/skills/` file, no governance file):
 
 | check | before | after |
 | --- | --- | --- |
-| `claude-md` | **0 — CRITICAL, `no-governance-file`** | **100** |
+| `governance-docs` | **0 — CRITICAL, `no-governance-file`** | **100** |
 | `instruction-effectiveness` | 83 | 83 |
 | `skill-files` | 100 | 100 |
 | `coherence` | 100 | 100 |
 | **overall** | **36** | **50** |
 
-`pack.json.checks` claims `claude-md` and nothing else.
+`pack.json.checks` claims `governance-docs` and nothing else.
 
 ## Why nothing else is claimed
 
@@ -52,7 +52,7 @@ check docs, no skills or pipelines, and changes no filesystem modes.
 
 ## The content is earned, not keyword-stuffed
 
-`claude-md` scores nine governance categories by regex, which makes it trivially gameable — and
+`governance-docs` scores nine governance categories by regex, which makes it trivially gameable — and
 rigscore's own docs name keyword-gaming as a known bypass. Every category here is carried by a rule
 a human would want in the file anyway; delete the scoring and the document still stands up. Two
 traps these templates are written around, both learned the hard way:

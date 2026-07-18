@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import claudeMdCheck from '../src/checks/claude-md.js';
+import claudeMdCheck from '../src/checks/governance-docs.js';
 import skillFilesCheck from '../src/checks/skill-files.js';
 import mcpConfigCheck from '../src/checks/mcp-config.js';
 import { NOT_APPLICABLE_SCORE } from '../src/constants.js';

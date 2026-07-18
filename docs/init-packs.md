@@ -89,7 +89,7 @@ directory in and it appears in `--list-packs` and `init --<name>`. There is no l
 {
   "name": "docs",
   "description": "one line, shown in the pack list",
-  "checks": ["claude-md"],
+  "checks": ["governance-docs"],
   "files": [{ "src": "AGENTS.md", "dest": "AGENTS.md", "exec": false }],
   "vars": { "PROJECT_NAME": "the target repository's directory name" },
   "defaults": { "EGRESS_SUBNET": "172.30.0.0/16" }

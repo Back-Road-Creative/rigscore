@@ -43,7 +43,7 @@ function writeSettings(dir, data) {
 function makePriorResults(governanceText) {
   return [
     {
-      id: 'claude-md',
+      id: 'governance-docs',
       score: 100,
       findings: [],
       data: { matchedPatterns: [], governanceText },

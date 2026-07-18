@@ -247,7 +247,7 @@ export default {
       : [];
 
     // Get governance text from claude-md check
-    const claudeMdResult = priorResults?.find(r => r.id === 'claude-md');
+    const claudeMdResult = priorResults?.find(r => r.id === 'governance-docs');
     const governanceText = claudeMdResult?.data?.governanceText || '';
 
     // Assemble the extended governance text from two additive sources, deduped

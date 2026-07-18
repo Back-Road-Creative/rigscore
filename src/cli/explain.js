@@ -21,7 +21,7 @@ export async function runExplainSubcommand(args) {
   if (args.length === 0) {
     process.stderr.write(
       'Error: rigscore explain <findingId>\n' +
-      '  e.g. rigscore explain claude-md/missing-claude-md\n',
+      '  e.g. rigscore explain governance-docs/missing-claude-md\n',
     );
     process.exit(2);
   }

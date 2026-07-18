@@ -5,7 +5,7 @@ const mockResult = {
   score: 54,
   results: [
     {
-      id: 'claude-md',
+      id: 'governance-docs',
       name: 'CLAUDE.md governance',
       weight: 20,
       score: 60,

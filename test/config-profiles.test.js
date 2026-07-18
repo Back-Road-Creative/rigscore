@@ -26,7 +26,7 @@ describe('scoring profiles', () => {
   it('home profile emphasizes governance / skill-files / MCP, disables infra', () => {
     const { home } = PROFILES;
     expect(home).toBeDefined();
-    expect(home['claude-md']).toBeGreaterThan(0);
+    expect(home['governance-docs']).toBeGreaterThan(0);
     expect(home['skill-files']).toBeGreaterThan(0);
     expect(home['mcp-config']).toBeGreaterThan(0);
     expect(home['docker-security']).toBe(0);
@@ -65,7 +65,7 @@ describe('resolveWeights', () => {
       weights: { 'mcp-config': 25 },
     });
     expect(weights['mcp-config']).toBe(25);
-    expect(weights['claude-md']).toBe(WEIGHTS['claude-md']); // unchanged
+    expect(weights['governance-docs']).toBe(WEIGHTS['governance-docs']); // unchanged
   });
 
   it('zeros disabled checks', () => {

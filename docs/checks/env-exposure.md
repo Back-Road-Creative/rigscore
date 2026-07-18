@@ -25,7 +25,7 @@ Catches the single most common credential-leak vector in AI dev repos: `.env` fi
 
 ## Weight rationale
 
-Weight 8 — tied with `claude-settings` and `deep-secrets`. Higher than `docker-security` (6) because `.env` leaks are historically the single most common credential-exposure vector in AI dev repos and agents read config/skill files as part of normal operation, so the blast radius compounds. Lower than `claude-md` (10) because moat-first scoring reserves top weights for AI-specific governance primitives rather than hygiene checks that overlap with generic secret scanners.
+Weight 8 — tied with `claude-settings` and `deep-secrets`. Higher than `docker-security` (6) because `.env` leaks are historically the single most common credential-exposure vector in AI dev repos and agents read config/skill files as part of normal operation, so the blast radius compounds. Lower than `governance-docs` (10) because moat-first scoring reserves top weights for AI-specific governance primitives rather than hygiene checks that overlap with generic secret scanners.
 
 ## Fix semantics
 

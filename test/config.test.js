@@ -274,10 +274,10 @@ describe('loadConfig', () => {
   });
 
   it('resolveWeights accepts valid numeric weights', () => {
-    const config = { weights: { 'mcp-config': 25, 'claude-md': 15 } };
+    const config = { weights: { 'mcp-config': 25, 'governance-docs': 15 } };
     const resolved = resolveWeights(config);
     expect(resolved['mcp-config']).toBe(25);
-    expect(resolved['claude-md']).toBe(15);
+    expect(resolved['governance-docs']).toBe(15);
   });
 
   it('loads suppress array from config', async () => {

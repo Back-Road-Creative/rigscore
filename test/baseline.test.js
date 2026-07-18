@@ -31,9 +31,9 @@ describe('baseline helpers', () => {
   it('flattenFindings excludes skipped and pass, keeps warnings/info/critical', () => {
     const results = [
       {
-        id: 'claude-md',
+        id: 'governance-docs',
         findings: [
-          { severity: 'warning', title: 'A', findingId: 'claude-md/a' },
+          { severity: 'warning', title: 'A', findingId: 'governance-docs/a' },
           { severity: 'skipped', title: 'B' },
           { severity: 'pass', title: 'C' },
         ],
@@ -48,7 +48,7 @@ describe('baseline helpers', () => {
     ];
     const flat = flattenFindings(results);
     expect(flat.length).toBe(3);
-    expect(flat[0].findingId).toBe('claude-md/a');
+    expect(flat[0].findingId).toBe('governance-docs/a');
     expect(flat[2].findingId).toBe('mcp-config/e');
   });
 

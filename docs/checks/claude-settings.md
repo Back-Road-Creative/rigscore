@@ -28,7 +28,7 @@ Scans `.claude/settings.json` and `.claude/settings.local.json` (both project-lo
 
 ## Weight rationale
 
-Weight 8 — mid-tier, tied with `deep-secrets` and `env-exposure`. Higher than `credential-storage` (6) because a single malicious `ANTHROPIC_BASE_URL` override exfiltrates every API request for the life of the session, and `enableAllProjectMcpServers` silently grants untrusted MCP servers full tool authority at project switch. Lower than `claude-md` (10) because moat-first scoring reserves top weights for the governance primitives themselves (CLAUDE.md, skills, coherence); settings are a runtime multiplier on those primitives, not the primitives.
+Weight 8 — mid-tier, tied with `deep-secrets` and `env-exposure`. Higher than `credential-storage` (6) because a single malicious `ANTHROPIC_BASE_URL` override exfiltrates every API request for the life of the session, and `enableAllProjectMcpServers` silently grants untrusted MCP servers full tool authority at project switch. Lower than `governance-docs` (10) because moat-first scoring reserves top weights for the governance primitives themselves (CLAUDE.md, skills, coherence); settings are a runtime multiplier on those primitives, not the primitives.
 
 ## Fix semantics
 

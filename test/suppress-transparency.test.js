@@ -59,7 +59,7 @@ describe('suppressFindings return value', () => {
 describe('human report surfaces suppression', () => {
   const baseResult = () => ({
     score: 80,
-    results: [{ id: 'claude-md', name: 'CLAUDE.md governance', weight: 20, score: 100, findings: [{ severity: 'pass', title: 'ok' }] }],
+    results: [{ id: 'governance-docs', name: 'CLAUDE.md governance', weight: 20, score: 100, findings: [{ severity: 'pass', title: 'ok' }] }],
   });
 
   it('prints a "Suppressed N" line with ids when suppressions apply', () => {

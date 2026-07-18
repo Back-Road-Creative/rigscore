@@ -184,10 +184,10 @@ const region = (src, start, end, i = src.indexOf(start), j = src.indexOf(end, i)
  * Value sets for interpolated ids, read back out of the module that builds them.
  * Without these, `sandbox-posture/${rule.id}` reduces to the BARE prefix
  * `sandbox-posture/` and EVERY token on that page passes vacuously. Expanding matches
- * ids exactly, so `claude-md/missing-tdd` is caught despite sharing a real prefix.
+ * ids exactly, so `governance-docs/missing-tdd` is caught despite sharing a real prefix.
  */
 export const EXPANDERS = {
-  'claude-md': (s) => grab(region(s, 'const QUALITY_CHECKS', '\n];'), /name:\s*'([^']+)'/g).map(slugify),
+  'governance-docs': (s) => grab(region(s, 'const QUALITY_CHECKS', '\n];'), /name:\s*'([^']+)'/g).map(slugify),
   'sandbox-posture': (s) =>
     grab(region(s, 'const CODEX_RULES', '\n];') + region(s, 'const DENY_RULES', '\n];')
       + region(s, 'const GEMINI_RULES', '\n];') + region(s, 'const OPENCODE_RULES', '\n];')

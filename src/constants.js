@@ -21,7 +21,7 @@ export const WEIGHTS = {
   'mcp-config': 14,
   'coherence': 14,
   'skill-files': 10,
-  'claude-md': 10,
+  'governance-docs': 10,
   'claude-settings': 8,
   'deep-secrets': 8,
   'env-exposure': 8,
@@ -62,7 +62,7 @@ export const OWASP_AGENTIC_MAP = {
   'mcp-config': 'ASI04',       // Agentic Supply Chain
   'coherence': 'ASI01',        // Agent Goal Hijack
   'skill-files': 'ASI01',      // Agent Goal Hijack
-  'claude-md': 'ASI01',        // Agent Goal Hijack
+  'governance-docs': 'ASI01',        // Agent Goal Hijack
   'claude-settings': 'ASI02',  // Tool Misuse & Exploitation
   'deep-secrets': 'ASI03',     // Identity & Privilege Abuse
   'env-exposure': 'ASI03',     // Identity & Privilege Abuse
@@ -91,7 +91,7 @@ const byControl = (control, ids) => Object.fromEntries(ids.map((id) => [id, cont
 // move, which is why the framework's `status` says so and the report prints it.
 // Deliberately sparse: this list is scoped to MCP servers and the protocol, so a rigscore
 // check earns a row here only when it inspects an MCP surface. Checks that scan agent prose
-// with no MCP nexus — `claude-md`, `skill-files`, `git-hooks` — are left UNMAPPED rather than
+// with no MCP nexus — `governance-docs`, `skill-files`, `git-hooks` — are left UNMAPPED rather than
 // padded in, as are the containment checks (`docker-security`, `infrastructure-security`):
 // see MCP05 below.
 export const OWASP_MCP_MAP = {
@@ -111,7 +111,7 @@ export const OWASP_MCP_MAP = {
 // NIST AI RMF 1.0 (NIST AI 100-1, Jan 2023). Subcategory IDs are space-separated.
 export const NIST_AI_RMF_MAP = {
   'mcp-config': 'MANAGE 3.1',   // third-party resources monitored, controls applied
-  ...byControl('GOVERN 1.2', ['coherence', 'skill-files', 'claude-md',
+  ...byControl('GOVERN 1.2', ['coherence', 'skill-files', 'governance-docs',
     'instruction-effectiveness', 'skill-coherence', 'workflow-maturity']),
   ...byControl('MAP 4.2', ['documentation', 'agent-output-schemas']),
   ...byControl('MEASURE 2.7', ['claude-settings', 'deep-secrets', 'env-exposure',
@@ -123,7 +123,7 @@ export const NIST_AI_RMF_MAP = {
 export const EU_AI_ACT_MAP = {
   'claude-settings': 'Article 14', // auto-approve/bypass removes the human from the loop
   'documentation': 'Article 11',   // technical documentation (Annex IV)
-  ...byControl('Article 15', ['mcp-config', 'coherence', 'skill-files', 'claude-md',
+  ...byControl('Article 15', ['mcp-config', 'coherence', 'skill-files', 'governance-docs',
     'deep-secrets', 'env-exposure', 'credential-storage', 'docker-security',
     'infrastructure-security', 'unicode-steganography', 'git-hooks',
     'permissions-hygiene', 'network-exposure', 'instruction-effectiveness',

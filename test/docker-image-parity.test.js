@@ -105,10 +105,10 @@ describe('docker image parity — the image contains what the shipped code reads
     expect(isIgnored('docs/init-packs.md', rules)).toBe(true);   // dir rule takes the subtree
     expect(isIgnored('src/x.md', rules)).toBe(true);             // **/*.md is repo-wide
     expect(isIgnored('README.md', rules)).toBe(false);           // negation below it wins
-    expect(isIgnored('docs/checks/claude-md.md', rules)).toBe(false);
+    expect(isIgnored('docs/checks/governance-docs.md', rules)).toBe(false);
     expect(isIgnored('src/index.js', rules)).toBe(false);
     // Order is load-bearing: the same negation ABOVE the rule is inert.
-    expect(isIgnored('docs/checks/claude-md.md', parseIgnoreRules('!docs/checks\ndocs\n'))).toBe(true);
+    expect(isIgnored('docs/checks/governance-docs.md', parseIgnoreRules('!docs/checks\ndocs\n'))).toBe(true);
 
     // The one a naive matcher gets wrong. Both were confirmed against a real
     // `docker build`: nothing excludes the templates/ DIR, so a bare

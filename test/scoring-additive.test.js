@@ -84,7 +84,7 @@ describe('additive scoring model', () => {
       // Under C6, coverage scaling is always applied. Summed weights here
       // equal 54, so `scale = 0.54` and `round(100 * 0.54) = 54`.
       const results = [
-        { id: 'claude-md', score: 100 },
+        { id: 'governance-docs', score: 100 },
         { id: 'mcp-config', score: 100 },
         { id: 'env-exposure', score: 100 },
         { id: 'docker-security', score: 100 },
@@ -99,7 +99,7 @@ describe('additive scoring model', () => {
       // Only claude-md (10) + env-exposure (8) = 18 applicable weight
       // Internal = 100, penalty: 100 * 0.18 = 18
       const results = [
-        { id: 'claude-md', score: 100 },
+        { id: 'governance-docs', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
         { id: 'env-exposure', score: 100 },
         { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
@@ -114,7 +114,7 @@ describe('additive scoring model', () => {
       // Only claude-md (10) applicable = weight 10
       // Internal = 100, penalty: 100 * 0.10 = 10
       const results = [
-        { id: 'claude-md', score: 100 },
+        { id: 'governance-docs', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
         { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
         { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
@@ -129,7 +129,7 @@ describe('additive scoring model', () => {
       // claude-md:10 + docker:6 + git-hooks:2 + permissions:4 = 22
       // Internal = 100, penalty: 100 * 0.22 = 22
       const results = [
-        { id: 'claude-md', score: 100 },
+        { id: 'governance-docs', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
         { id: 'env-exposure', score: NOT_APPLICABLE_SCORE },
         { id: 'docker-security', score: 100 },
@@ -144,7 +144,7 @@ describe('additive scoring model', () => {
       // claude-md:10 + mcp-config:14 + env-exposure:8 + skill-files:10 +
       // deep-secrets:8 = 50. Under C6, scale = 0.50 → final = 50.
       const results = [
-        { id: 'claude-md', score: 100 },
+        { id: 'governance-docs', score: 100 },
         { id: 'mcp-config', score: 100 },
         { id: 'env-exposure', score: 100 },
         { id: 'docker-security', score: NOT_APPLICABLE_SCORE },
@@ -161,7 +161,7 @@ describe('additive scoring model', () => {
       // claude-md:10 + env:8 + docker:6 + permissions:4 = 28
       // Internal = 100, penalty: 100 * 0.28 = 28
       const results = [
-        { id: 'claude-md', score: 100 },
+        { id: 'governance-docs', score: 100 },
         { id: 'mcp-config', score: NOT_APPLICABLE_SCORE },
         { id: 'env-exposure', score: 100 },
         { id: 'docker-security', score: 100 },

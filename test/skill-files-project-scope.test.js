@@ -103,7 +103,7 @@ describe('skill-files scope — project-only by default', () => {
   });
 
   it('6. regression: other checks that consult homedir still work (claude-md reads ~/CLAUDE.md)', async () => {
-    const claudeMdCheck = (await import('../src/checks/claude-md.js')).default;
+    const claudeMdCheck = (await import('../src/checks/governance-docs.js')).default;
     const cwd = makeTmpDir('rigscore-cmd-cwd-');
     const homeDir = makeTmpDir('rigscore-cmd-home-');
     // Create a ~/CLAUDE.md with a detectable pattern. claude-md must still find it.

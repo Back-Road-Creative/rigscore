@@ -47,7 +47,7 @@ A failure typically means an MCP server was added without reviewing its args, a 
 
 ## Weight rationale
 
-Weight 14 — tied with `coherence` as the highest-weight check. MCP is the primary agentic supply-chain surface for AI dev: a compromised MCP server runs with the agent's full tool budget, has no sandbox of its own, and can re-define tool semantics after approval. The weight is equal to `coherence` because they protect complementary failure modes — `mcp-config` catches the raw misconfiguration; `coherence` catches the governance-vs-reality contradiction — and neither subsumes the other. It is higher than `skill-files` and `claude-md` (both 10) because supply-chain compromise cannot be recovered from by better governance prose: once a malicious `@modlecontextprotocol/filesystem` typosquat runs with `/` access, the damage is done before any CLAUDE.md rule fires.
+Weight 14 — tied with `coherence` as the highest-weight check. MCP is the primary agentic supply-chain surface for AI dev: a compromised MCP server runs with the agent's full tool budget, has no sandbox of its own, and can re-define tool semantics after approval. The weight is equal to `coherence` because they protect complementary failure modes — `mcp-config` catches the raw misconfiguration; `coherence` catches the governance-vs-reality contradiction — and neither subsumes the other. It is higher than `skill-files` and `governance-docs` (both 10) because supply-chain compromise cannot be recovered from by better governance prose: once a malicious `@modlecontextprotocol/filesystem` typosquat runs with `/` access, the damage is done before any CLAUDE.md rule fires.
 
 ## Fix semantics
 

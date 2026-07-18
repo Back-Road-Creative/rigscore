@@ -45,7 +45,7 @@ Release and Pilot Testing"). IDs and rankings may still change, so its `status` 
 and the report prints that status on every run — it must never read to an auditor as settled.
 
 Coverage is **partial by design**. The list is scoped to MCP servers and the protocol, so a check
-earns a row only where it inspects an MCP surface. `claude-md`, `skill-files` and `git-hooks` scan
+earns a row only where it inspects an MCP surface. `governance-docs`, `skill-files` and `git-hooks` scan
 agent prose and commit gates with no MCP nexus — they are left `UNMAPPED` rather than padded in to
 make the table look full, as are the containment checks `docker-security` and
 `infrastructure-security` (see `MCP05` below).
