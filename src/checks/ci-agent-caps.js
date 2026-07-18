@@ -123,6 +123,81 @@ async function loadWorkflows(cwd) {
   }
   return out;
 }
+
+// GitLab CI and CircleCI configs (RS-30). GitHub's reusable-workflow call graph is
+// GitHub-specific, so these are scanned the standalone way: a raw-content bypass
+// scan plus a per-job command scan for uncapped agent invocations.
+const CI_PROVIDER_FILES = [
+  { kind: 'gitlab', rel: '.gitlab-ci.yml' },
+  { kind: 'gitlab', rel: '.gitlab-ci.yaml' },
+  { kind: 'circle', rel: '.circleci/config.yml' },
+  { kind: 'circle', rel: '.circleci/config.yaml' },
+];
+async function loadCIConfigs(cwd) {
+  const out = [];
+  for (const { kind, rel } of CI_PROVIDER_FILES) {
+    const content = await readFileSafe(path.join(cwd, rel));
+    if (content) out.push({ file: rel, kind, content });
+  }
+  return out;
+}
+
+// GitLab job = any top-level mapping with a `script` (before/after_script pulled in
+// too). Reserved globals (variables/default/workflow/...) have no `script` key.
+function gitlabJobs(doc) {
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return [];
+  const out = [];
+  for (const [name, val] of Object.entries(doc)) {
+    if (!val || typeof val !== 'object' || Array.isArray(val)) continue;
+    if (name.startsWith('.') || !('script' in val)) continue; // hidden template / not a job
+    const lines = [];
+    for (const key of ['before_script', 'script', 'after_script']) {
+      const s = val[key];
+      if (typeof s === 'string') lines.push(s);
+      else if (Array.isArray(s)) for (const l of s) if (typeof l === 'string') lines.push(l);
+    }
+    if (lines.length) out.push({ name, lines });
+  }
+  return out;
+}
+
+// CircleCI job/command = `steps: [{ run: "cmd" | { command: "cmd" } }, ...]`.
+function circleJobs(doc) {
+  if (!doc || typeof doc !== 'object') return [];
+  const out = [];
+  for (const container of [doc.jobs, doc.commands]) {
+    if (!container || typeof container !== 'object') continue;
+    for (const [name, job] of Object.entries(container)) {
+      const steps = Array.isArray(job?.steps) ? job.steps : [];
+      const lines = [];
+      for (const step of steps) {
+        if (!step || typeof step !== 'object') continue; // e.g. the string "checkout"
+        const run = step.run;
+        if (typeof run === 'string') lines.push(run);
+        else if (run && typeof run === 'object' && typeof run.command === 'string') lines.push(run.command);
+      }
+      if (lines.length) out.push({ name, lines });
+    }
+  }
+  return out;
+}
+
+// CLI agent invocations found in a list of shell-command strings, with declared caps
+// (true = declared, false = supported but missing, null = the tool has no such flag).
+// The same per-line CLIS matching agentInvocations() uses for GitHub `run:` steps.
+function cliInvocationsInLines(cmdStrings) {
+  const found = [];
+  for (const raw of cmdStrings) {
+    for (const line of String(raw).replace(/\\\s*\n\s*/g, ' ').split('\n')) {
+      for (const [tool, invoke, cap, scope] of CLIS) {
+        if (!invoke.test(line)) continue;
+        found.push({ tool: `${tool} CLI`,
+          turnCap: cap ? cap.test(line) : null, toolScope: scope ? scope.test(line) : null });
+      }
+    }
+  }
+  return found;
+}
 // Every AI-agent invocation in one job, with its declared caps:
 // true = declared, false = supported but missing, null = the tool has no such flag.
 function agentInvocations(job) {
@@ -224,6 +299,39 @@ export default {
         }
       }
     }
+    // GitLab CI / CircleCI (RS-30). Standalone scan: raw-content bypass detection
+    // plus a per-job command scan for uncapped agent invocations. The GitHub-only
+    // reusable-workflow graph and job-timeout default do not apply here.
+    for (const cfg of await loadCIConfigs(context.cwd)) {
+      for (const re of BYPASS) {
+        const m = cfg.content.match(re);
+        if (!m) continue;
+        add('agent-permission-bypass', 'critical', `${cfg.file}: agent permission ceiling removed (${m[0]})`,
+          `${m[0]} lets an unattended CI agent run every tool call with no approval and no sandbox — on a runner holding repo write credentials.`,
+          `Remove ${m[0]} and scope the agent instead (allowed/disallowed tools, or a sandbox + approval policy).`,
+          { evidence: m[0] });
+      }
+      let doc;
+      try { doc = YAML.parse(cfg.content); } catch {
+        add('failed-to-parse-workflow', 'info', `Failed to parse ${cfg.file}`,
+          'Invalid YAML — this config could not be analyzed for agent jobs.');
+        continue;
+      }
+      const jobs = cfg.kind === 'gitlab' ? gitlabJobs(doc) : circleJobs(doc);
+      for (const { name, lines } of jobs) {
+        const invocations = cliInvocationsInLines(lines);
+        if (invocations.length === 0) continue;
+        agentJobKeys.add(`${cfg.file} ${name}`);
+        const where = `${cfg.file} job "${name}"`;
+        for (const inv of invocations) {
+          for (const [signal, id, phrase, detail, fix] of GAPS) {
+            if (inv[signal] === null || inv[signal]) continue;
+            add(id, 'warning', `${where} runs ${inv.tool} ${phrase}`, detail, fix);
+          }
+        }
+      }
+    }
+
     const agentJobs = agentJobKeys.size;
     // Most repos run no agent in CI at all — that is N/A, not a zero.
     if (agentJobs === 0 && !findings.some((f) => f.severity === 'critical')) {

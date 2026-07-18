@@ -329,8 +329,8 @@ describe('H2: deduplicateFindings recalculates scores', () => {
 describe('H4: op:// and ${VAR} not flagged as plaintext credentials', () => {
   it('T3.10: op:// reference does NOT emit a CRITICAL plaintext finding', async () => {
     const homedir = makeTmpDir('rigscore-op-');
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'my-server': {
           command: 'node',
@@ -350,10 +350,10 @@ describe('H4: op:// and ${VAR} not flagged as plaintext credentials', () => {
 
   it('T3.11: real plaintext Anthropic key still emits CRITICAL (regression guard)', async () => {
     const homedir = makeTmpDir('rigscore-regress-');
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
     // Build fake Anthropic key dynamically
     const fakeKey = 'sk-ant-api03-' + 'x'.repeat(40);
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'my-server': {
           command: 'node',
@@ -363,7 +363,8 @@ describe('H4: op:// and ${VAR} not flagged as plaintext credentials', () => {
       },
     }));
     try {
-      const result = await credentialStorage.run({ homedir });
+      // credential-storage scans $HOME only under --include-home-skills (RS-10).
+      const result = await credentialStorage.run({ homedir, includeHomeSkills: true });
       const critical = result.findings.find(f => f.severity === 'critical' && f.title.includes('Plaintext'));
       expect(critical).toBeDefined();
     } finally {
@@ -373,8 +374,8 @@ describe('H4: op:// and ${VAR} not flagged as plaintext credentials', () => {
 
   it('T3.12: ${VAR} shell template reference does NOT emit a finding', async () => {
     const homedir = makeTmpDir('rigscore-shellvar-');
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'my-server': {
           command: 'node',

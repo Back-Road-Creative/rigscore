@@ -12,6 +12,9 @@ function makeTmpDir() {
 const fakeStripeKey = ['sk', 'live', 'abcdefghijklmnopqrstuvwx'].join('_');
 const fakeGhToken = 'ghp_' + 'a'.repeat(36);
 
+// credential-storage scans only $HOME client configs, so it is gated behind
+// --include-home-skills (RS-10 home decoupling). These unit tests opt in via
+// `includeHomeSkills: true`; the default (no flag) is exercised in home-scope.test.js.
 describe('credential-storage check', () => {
   it('has required shape', () => {
     expect(check.id).toBe('credential-storage');
@@ -20,14 +23,14 @@ describe('credential-storage check', () => {
 
   it('CRITICAL for plaintext key in claude_desktop_config.json', async () => {
     const homedir = makeTmpDir();
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'my-server': { command: 'node', args: ['s.js'], env: { STRIPE_KEY: fakeStripeKey } },
       },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Plaintext'));
       expect(finding).toBeDefined();
       expect(result.data.secretsFound).toBeGreaterThanOrEqual(1);
@@ -45,7 +48,7 @@ describe('credential-storage check', () => {
       },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Cursor'));
       expect(finding).toBeDefined();
     } finally {
@@ -55,14 +58,14 @@ describe('credential-storage check', () => {
 
   it('INFO for example/placeholder credentials', async () => {
     const homedir = makeTmpDir();
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'test-server': { command: 'node', args: [], env: { KEY: fakeStripeKey + ' example placeholder' } },
       },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       // The value contains "example placeholder" so should downgrade
       const critical = result.findings.find(f => f.severity === 'critical');
       expect(critical).toBeUndefined();
@@ -83,7 +86,7 @@ describe('credential-storage check', () => {
       },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Zed'));
       expect(finding).toBeDefined();
       expect(result.data.secretsFound).toBe(1);
@@ -99,7 +102,7 @@ describe('credential-storage check', () => {
       mcpServers: { decoy: { command: 'node', env: { GH_TOKEN: fakeGhToken } } },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       expect(result.data.filesScanned).toBe(1);
       expect(result.data.secretsFound).toBe(0);
     } finally {
@@ -116,7 +119,7 @@ describe('credential-storage check', () => {
       },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('opencode'));
       expect(finding).toBeDefined();
       expect(result.data.secretsFound).toBe(1);
@@ -134,7 +137,7 @@ describe('credential-storage check', () => {
       mcpServers: { db: { command: 'npx', args: ['s'], env: { API_KEY: fakeStripeKey } } },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Claude Code'));
       expect(finding).toBeDefined();
       expect(result.data.secretsFound).toBeGreaterThanOrEqual(1);
@@ -150,7 +153,7 @@ describe('credential-storage check', () => {
       projects: { [cwd]: { mcpServers: { proj: { command: 'npx', env: { GH_TOKEN: fakeGhToken } } } } },
     }));
     try {
-      const result = await check.run({ homedir, cwd });
+      const result = await check.run({ homedir, cwd, includeHomeSkills: true });
       const finding = result.findings.find(f => f.severity === 'critical' && f.title.includes('Claude Code'));
       expect(finding).toBeDefined();
       expect(result.data.secretsFound).toBe(1);
@@ -162,7 +165,7 @@ describe('credential-storage check', () => {
   it('N/A when no AI client configs found', async () => {
     const homedir = makeTmpDir();
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       expect(result.score).toBe(-1);
       expect(result.data.filesScanned).toBe(0);
     } finally {
@@ -172,14 +175,14 @@ describe('credential-storage check', () => {
 
   it('PASS when configs exist but no secrets', async () => {
     const homedir = makeTmpDir();
-    fs.mkdirSync(path.join(homedir, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(homedir, '.claude', 'claude_desktop_config.json'), JSON.stringify({
+    fs.mkdirSync(path.join(homedir, '.config', 'Claude'), { recursive: true });
+    fs.writeFileSync(path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json'), JSON.stringify({
       mcpServers: {
         'clean-server': { command: 'node', args: ['s.js'], env: { NODE_ENV: 'production' } },
       },
     }));
     try {
-      const result = await check.run({ homedir });
+      const result = await check.run({ homedir, includeHomeSkills: true });
       const pass = result.findings.find(f => f.severity === 'pass');
       expect(pass).toBeDefined();
       expect(result.data.secretsFound).toBe(0);
