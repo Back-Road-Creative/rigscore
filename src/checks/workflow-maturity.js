@@ -3,7 +3,8 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe, readJsonSafe, fileExists } from '../utils.js';
-import { mcpConfigPaths, mcpServersIn } from '../clients.js';
+import { mcpConfigPaths, repoMcpPaths, mcpServersIn, skillDirsForBase } from '../clients.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 // Directories excluded from recursive pipeline scans
 const SKIP_DIRS = new Set(['node_modules', '.venv', '__pycache__', '.git']);
@@ -30,21 +31,16 @@ const STAGE_PATTERNS = [
 const DEFAULT_STAGE_DIR_NAMES = ['stages', 'phases'];
 
 /**
- * Discover all skill directories under .claude/skills and .claude/commands
- * for both cwd and homedir. Returns array of { name, dir } objects.
+ * Discover all skill directories a known client reads. Dirs come from the client
+ * registry (src/clients.js) rather than a hardcoded `.claude/skills`+`.claude/commands`
+ * pair, so codex/gemini/opencode command dirs (and any future client's) are covered —
+ * and `.claude/agents`, once the registry lists it, flows through here for free.
+ * Home dirs belong to the operator's profile and are scanned only under
+ * --include-home-skills. Returns array of { name, dir } objects.
  */
-async function discoverSkillDirs(cwd, homedir) {
-  const skillDirs = [
-    path.join(cwd, '.claude', 'skills'),
-    path.join(cwd, '.claude', 'commands'),
-  ];
-
-  if (homedir && homedir !== cwd) {
-    skillDirs.push(
-      path.join(homedir, '.claude', 'skills'),
-      path.join(homedir, '.claude', 'commands'),
-    );
-  }
+async function discoverSkillDirs(cwd, homedir, includeHome) {
+  const skillDirs = skillDirsForBase('cwd').map(d => path.join(cwd, d));
+  if (includeHome) skillDirs.push(...skillDirsForBase('home').map(d => path.join(homedir, d)));
 
   const results = [];
   for (const dir of skillDirs) {
@@ -63,8 +59,8 @@ async function discoverSkillDirs(cwd, homedir) {
  * Discover all SKILL.md files and return their content alongside skill name.
  * Returns array of { name, content, skillPath }.
  */
-async function discoverSkillsWithContent(cwd, homedir) {
-  const skillDirs = await discoverSkillDirs(cwd, homedir);
+async function discoverSkillsWithContent(cwd, homedir, includeHome) {
+  const skillDirs = await discoverSkillDirs(cwd, homedir, includeHome);
   const skills = [];
   for (const { name, dir } of skillDirs) {
     const skillPath = path.join(dir, 'SKILL.md');
@@ -145,12 +141,16 @@ function countTriggerKeywords(content) {
  * `context_servers`). `mcpServersIn()` resolves the right key for each path and
  * falls back to `mcpServers` for paths no client claims.
  */
-async function discoverMcpServers(cwd, homedir) {
+async function discoverMcpServers(cwd, homedir, includeHome) {
   const serverNames = new Set();
 
-  const configPaths = mcpConfigPaths(cwd, homedir);
+  // Project MCP configs only by default (repoMcpPaths = every base:'cwd' entry);
+  // the full set (which also resolves home client configs) is used only under
+  // --include-home-skills, so an operator's home MCP servers can't change a
+  // project's mcp-single-consumer findings.
+  const configPaths = includeHome ? mcpConfigPaths(cwd, homedir) : repoMcpPaths(cwd);
   configPaths.push(path.join(cwd, '.claude', 'settings.json'));
-  if (homedir && homedir !== cwd) {
+  if (includeHome) {
     configPaths.push(path.join(homedir, '.mcp.json'));
     configPaths.push(path.join(homedir, '.claude', 'settings.json'));
   }
@@ -262,11 +262,12 @@ async function hasEvalOrTest(skillName, cwd) {
  * Glob for memory .md files across all project memory directories and cwd memory.
  * Returns array of { dir, files: string[] } grouped by directory.
  */
-async function discoverMemoryDirs(cwd, homedir) {
+async function discoverMemoryDirs(cwd, homedir, includeHome) {
   const dirs = new Map(); // dirPath → Set of basename
 
-  // ~/.claude/projects/*/memory/*.md
-  if (homedir) {
+  // ~/.claude/projects/*/memory/*.md — the operator's own memory, gated behind
+  // --include-home-skills so their personal memory orphans don't ding a project.
+  if (includeHome && homedir) {
     const projectsRoot = path.join(homedir, '.claude', 'projects');
     try {
       const projectDirs = await fs.promises.readdir(projectsRoot, { withFileTypes: true });
@@ -333,9 +334,10 @@ export default {
       ? config.workflowMaturity.stageDirs
       : DEFAULT_STAGE_DIR_NAMES;
     const stageDirNames = new Set(configuredStageDirs);
+    const includeHome = homeScopeEnabled(context);
 
     // Shared: discover skills once for checks 1, 2, 3
-    const skills = await discoverSkillsWithContent(cwd, homedir);
+    const skills = await discoverSkillsWithContent(cwd, homedir, includeHome);
 
     // -----------------------------------------------------------------------
     // Check 1 — eval-coverage
@@ -387,7 +389,7 @@ export default {
     // -----------------------------------------------------------------------
     // Check 3 — mcp-single-consumer
     // -----------------------------------------------------------------------
-    const mcpServers = await discoverMcpServers(cwd, homedir);
+    const mcpServers = await discoverMcpServers(cwd, homedir, includeHome);
     let mcpServersChecked = mcpServers.length;
     let mcpSingleConsumer = 0;
 
@@ -421,7 +423,7 @@ export default {
     // Check 4 — memory-orphan
     // -----------------------------------------------------------------------
     let orphanMemoryFiles = 0;
-    const memoryDirs = await discoverMemoryDirs(cwd, homedir);
+    const memoryDirs = await discoverMemoryDirs(cwd, homedir, includeHome);
 
     for (const [memDir, fileSet] of memoryDirs) {
       const indexPath = path.join(memDir, 'MEMORY.md');

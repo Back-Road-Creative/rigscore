@@ -3,6 +3,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { readFileSafe } from '../utils.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 // Heuristic phrases that mark an agent as a JSON-emitting fan-out target.
 // Either phrase puts the agent under the schema-declaration contract; non-matching
@@ -14,16 +15,17 @@ const JSON_CLAIM_PATTERNS = [
 
 const FENCE_RE = /```json\s*\n([\s\S]*?)\n\s*```/g;
 
-async function discoverAgentDirs(cwd, homedir) {
+function discoverAgentDirs(cwd, includeHome, homedir) {
   const dirs = [path.join(cwd, '.claude', 'agents')];
-  if (homedir && homedir !== cwd) {
-    dirs.push(path.join(homedir, '.claude', 'agents'));
-  }
+  // The HOME agents dir is the operator's, not the project's — gated behind
+  // --include-home-skills so an operator's global subagents don't change a
+  // project's schema findings (same gate skill-files uses for home skill dirs).
+  if (includeHome) dirs.push(path.join(homedir, '.claude', 'agents'));
   return dirs;
 }
 
-async function discoverAgentFiles(cwd, homedir) {
-  const dirs = await discoverAgentDirs(cwd, homedir);
+async function discoverAgentFiles(cwd, includeHome, homedir) {
+  const dirs = discoverAgentDirs(cwd, includeHome, homedir);
   const agents = [];
   for (const dir of dirs) {
     let entries;
@@ -72,7 +74,7 @@ export default {
   async run(context) {
     const { cwd, homedir } = context;
     const findings = [];
-    const agents = await discoverAgentFiles(cwd, homedir);
+    const agents = await discoverAgentFiles(cwd, homeScopeEnabled(context), homedir);
 
     if (agents.length === 0) {
       return { score: NOT_APPLICABLE_SCORE, findings: [], data: {} };

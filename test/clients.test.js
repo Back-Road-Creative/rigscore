@@ -9,21 +9,25 @@ const CWD = '/proj';
 const HOME = '/home/u';
 
 // The literals the four consumers hardcoded before the registry existed. Every one MUST
-// still be produced — the registry is a superset of the old lists, never a subset.
+// still be produced — the registry is a superset of the old lists, never a subset. EXCEPTION:
+// three of the old paths (Windsurf/Cline/claude-desktop MCP + creds) were vendor-WRONG — they
+// scanned a location no real install writes to, a silent no-op the registry's own comment already
+// documented. RS-9 corrected them to the vendor-documented locations, so the baseline here is the
+// corrected path, not the old dead one.
 const LEGACY_GOVERNANCE = [
   'CLAUDE.md', '.cursorrules', '.windsurfrules', '.clinerules', '.continuerules',
   'copilot-instructions.md', '.github/copilot-instructions.md', 'AGENTS.md', '.aider.conf.yml',
 ];
 const LEGACY_MCP = [
   [CWD, '.mcp.json'], [CWD, '.vscode/mcp.json'],
-  [HOME, '.claude/claude_desktop_config.json'], [HOME, '.cursor/mcp.json'],
-  [HOME, '.cline/mcp_settings.json'], [HOME, '.continue/config.json'],
-  [HOME, '.windsurf/mcp.json'], [HOME, '.config/zed/settings.json'], [HOME, '.amp/mcp.json'],
+  [HOME, '.config/Claude/claude_desktop_config.json'], [HOME, '.cursor/mcp.json'],
+  [HOME, '.cline/data/settings/cline_mcp_settings.json'], [HOME, '.continue/config.json'],
+  [HOME, '.codeium/windsurf/mcp_config.json'], [HOME, '.config/zed/settings.json'], [HOME, '.amp/mcp.json'],
 ];
 const LEGACY_CREDENTIALS = [
-  ['.claude', 'claude_desktop_config.json'], ['.cursor', 'mcp.json'],
-  ['.cline', 'mcp_settings.json'], ['.continue', 'config.json'],
-  ['.windsurf', 'mcp.json'], ['.amp', 'mcp.json'],
+  ['.config/Claude', 'claude_desktop_config.json'], ['.cursor', 'mcp.json'],
+  ['.cline/data/settings', 'cline_mcp_settings.json'], ['.continue', 'config.json'],
+  ['.codeium/windsurf', 'mcp_config.json'], ['.amp', 'mcp.json'],
 ];
 
 describe('client registry invariants', () => {
