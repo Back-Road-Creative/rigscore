@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
+const isWindows = process.platform === 'win32';
+
 export default defineConfig({
   test: {
     // Exclude vitest defaults plus agent worktrees. Parallel-agent runs
@@ -23,7 +25,26 @@ export default defineConfig({
     // generous headroom while still flagging genuine hangs.
     // Per-test override example:
     //   it('long-running case', { timeout: 30000 }, async () => { ... })
-    testTimeout: 10000,
+    //
+    // WINDOWS gets 3x. That headroom note was written when the matrix was
+    // ubuntu + macOS; process spawn on the windows runners is several times
+    // slower, and the tests that spawn hardest (baseline, order-determinism,
+    // spec-goals — all of which fork `git` and the CLI repeatedly) are the
+    // three slowest files in the suite on a HEALTHY windows run: 25.5s / 11.3s
+    // / 10.7s per file against a 10s PER-TEST limit. A routine runner slowdown
+    // therefore times them out with no code change — measured on main @1c8cb5e,
+    // where those exact three files failed on 6 timeouts (zero assertion
+    // failures) and a plain re-run of the same commit went green.
+    //
+    // The windows legs are BLOCKING as of the ci.yml change, so a flaky red
+    // there costs a --force on every merge, which is what that change removed.
+    // Scaling only the windows number keeps genuine hangs failing fast on the
+    // platforms where 10s is honest.
+    testTimeout: isWindows ? 30000 : 10000,
+    // Same reasoning: two of the six timeouts on that run were `Hook timed out
+    // in 10000ms` (vitest's default), not test bodies — the beforeEach hooks in
+    // those files mint git fixtures.
+    hookTimeout: isWindows ? 30000 : 10000,
     coverage: {
       provider: 'v8',
       // 75% line coverage floor. Actual coverage at the time of writing is
