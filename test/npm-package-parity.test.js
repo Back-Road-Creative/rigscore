@@ -35,10 +35,19 @@ function packedFilePaths() {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
+    // On Windows `npm` is npm.cmd, and since the CVE-2024-27980 fix Node refuses
+    // to spawn a .cmd/.bat without a shell — the process never starts, so `status`
+    // comes back null and `stderr` undefined. Every argument here is a literal, so
+    // the shell has nothing to interpolate.
+    shell: process.platform === 'win32',
   });
 
   if (res.status !== 0) {
-    throw new Error(`npm pack --dry-run failed (status ${res.status}):\n${res.stderr}`);
+    // res.error carries the spawn failure; stderr is only populated once the
+    // process actually ran. Report both, so "status null" is never a dead end.
+    throw new Error(
+      `npm pack --dry-run failed (status ${res.status}): ${res.error?.message ?? ''}\n${res.stderr ?? ''}`,
+    );
   }
 
   // npm may interleave notices with the JSON payload; slice from the first `[`.

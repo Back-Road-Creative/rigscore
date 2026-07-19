@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { GOVERNANCE_FILES } from './constants.js';
-import { readFileSafe, readJsonSafe, collectGovernanceDirFiles } from './utils.js';
+import { readFileSafe, readJsonSafe, collectGovernanceDirFiles, toPosix } from './utils.js';
 import { mcpServersIn, repoMcpRelPaths } from './clients.js';
 import { computeServerHash, loadState } from './state.js';
 import { argHasStableVersionPin, checkClaudeSettings, extractPackageName, findPackagePositionArg } from './checks/mcp-config.js';
@@ -148,7 +148,10 @@ export async function formatCycloneDx(result, options = {}) {
     try { subs = await fs.promises.readdir(path.join(cwd, dir), { withFileTypes: true }); } catch { continue; }
     for (const sub of subs) {
       if (!sub.isDirectory() || sub.name.startsWith('.')) continue;
-      await addFile(path.join(dir, sub.name, 'SKILL.md'), 'skill');
+      // `bom-ref` is a serialized identifier consumed by other tools, so it is
+      // `/`-shaped on every OS — path.join() alone shipped `file:.claude\skills\…`
+      // from a Windows run and the same repo produced two different BOMs.
+      await addFile(toPosix(path.join(dir, sub.name, 'SKILL.md')), 'skill');
     }
   }
   for (const { rel } of await collectGovernanceDirFiles(cwd)) await addFile(rel, 'rule');

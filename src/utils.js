@@ -18,22 +18,33 @@ const execFileAsync = promisify(execFile);
  *     on purpose: text scanners (skill-files, unicode-steganography) still see and
  *     flag it as an invisible character; JSON readers strip it themselves before
  *     JSON.parse (see stripLeadingBom). So ASCII/utf-8 reads are unchanged.
+ *
+ * Line endings are normalised to LF at this one decode chokepoint. A CRLF file is
+ * what a Windows contributor commits, and a `$`-anchored line regex silently stops
+ * matching against one (`.` never matches `\r`, so `$` is unreachable) — the check
+ * goes blind rather than reporting. Several checks had each grown their own
+ * `\r?\n` split; this makes the ones that hadn't correct too.
  */
 export function decodeBuffer(buf) {
-  if (!Buffer.isBuffer(buf)) return String(buf);
+  if (!Buffer.isBuffer(buf)) return normalizeEol(String(buf));
   if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
-    return buf.subarray(2).toString('utf16le');
+    return normalizeEol(buf.subarray(2).toString('utf16le'));
   }
   if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) {
     const body = buf.subarray(2);
     if (body.length % 2 === 0) {
       const swapped = Buffer.from(body);
       swapped.swap16();
-      return swapped.toString('utf16le');
+      return normalizeEol(swapped.toString('utf16le'));
     }
-    return body.toString('utf16le');
+    return normalizeEol(body.toString('utf16le'));
   }
-  return buf.toString('utf8');
+  return normalizeEol(buf.toString('utf8'));
+}
+
+/** CRLF / lone-CR -> LF. See decodeBuffer. */
+export function normalizeEol(text) {
+  return text.includes('\r') ? text.replace(/\r\n?/g, '\n') : text;
 }
 
 /** Strip a single leading UTF-8 BOM. Only the JSON readers do this — a leading

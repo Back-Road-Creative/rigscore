@@ -44,7 +44,12 @@ export default {
     // Two arms, two platforms. The interop arm parses /etc/wsl.conf, a LINUX-guest
     // file that never exists on the Windows host — gating it on win32 made it
     // unreachable. The .wslconfig / Defender / NTFS arms are genuinely host-side.
-    const onWindowsHost = process.platform === 'win32';
+    // Injectable for the same reason wslConfPath/wslOsReleasePath are: this arm's
+    // answer must come from the scan context, not from whichever OS happens to be
+    // running the suite. Without the seam the guest-arm assertions below silently
+    // inverted on a Windows runner (and the host arm was unreachable everywhere
+    // else), so the tests asserted the machine rather than the check.
+    const onWindowsHost = (context.platform ?? process.platform) === 'win32';
     const onWslGuest = !onWindowsHost && (await isWslGuest(context));
 
     if (!onWindowsHost && !onWslGuest) {

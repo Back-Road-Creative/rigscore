@@ -26,6 +26,10 @@ const MAX_GOVERNANCE_BYTES = 1_048_576;
 const INDEX_BASENAME = 'MEMORY.md';
 const MD_LINK_RE = /\[[^\]]*\]\(([^)\s]+)\)/g;
 const URI_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+// `C:\notes\deploy.md` satisfies URI_SCHEME_RE — a one-letter "scheme" — so a
+// Windows absolute path in an index was dropped as an external URL and the whole
+// containment rule went silent on it. Real schemes are never a single letter.
+const WIN_DRIVE_RE = /^[a-z]:[\\/]/i;
 const MAX_INDEX_FINDINGS = 10;
 
 // Governance lives outside the root set too: a monorepo states package-local
@@ -92,7 +96,7 @@ function indexEntries(content) {
     if (inFence) continue;
     for (const [, href] of raw.matchAll(MD_LINK_RE)) {
       const target = href.trim().replace(/#.*$/, '');
-      if (!target || URI_SCHEME_RE.test(target)) continue;
+      if (!target || (URI_SCHEME_RE.test(target) && !WIN_DRIVE_RE.test(target))) continue;
       if (target.toLowerCase().endsWith('.md')) targets.push(target);
     }
   }

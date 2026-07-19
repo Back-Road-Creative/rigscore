@@ -186,6 +186,29 @@ describe('runBaselineMode — committed baseline is the authority', () => {
     expect(runBin(['--baseline', BASE, '.'], { cwd: dir }).status).toBe(1);
   });
 
+  // The gate relates the baseline path to `git rev-parse --show-toplevel`. git
+  // answers with the OS's REAL path; the caller's is whatever they typed. When those
+  // spell one directory two ways — a symlinked temp root here, a Windows 8.3 short
+  // name on a runner — path.relative() reads `../../..`, the gate calls the baseline
+  // "never tracked", and falls back to the copy the attacker just deleted.
+  it('resolves the baseline against the repo root even when the path is spelled differently', () => {
+    const link = path.join(os.tmpdir(), `rigscore-baseline-link-${process.pid}-${Date.now()}`);
+    try {
+      fs.symlinkSync(dir, link, 'junction');
+    } catch {
+      return; // unprivileged Windows / no symlink support — nothing to assert
+    }
+    try {
+      inject();
+      fs.rmSync(path.join(dir, BASE));
+      // Same file, reached through the alias. HEAD still holds the authority.
+      const res = runBin(['--baseline', path.join(link, BASE), '.'], { cwd: dir });
+      expect(res.status).toBe(1);
+    } finally {
+      fs.rmSync(link, { recursive: true, force: true });
+    }
+  });
+
   it('attacker CORRUPTS the working-tree baseline + adds a finding → exit 1 (ignores junk)', () => {
     inject();
     fs.writeFileSync(path.join(dir, BASE), '{ not json');
