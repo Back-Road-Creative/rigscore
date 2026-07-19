@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import * as YAML from 'yaml';
+import { readFragments, renderRelease } from '../scripts/assemble-changelog.js';
 
 // Guards the meta / CI / packaging wave: windows CI leg, action.yml outputs +
 // inputs + single-scan gate, changelog backfill/renumber, GitLab component,
@@ -50,17 +51,40 @@ describe('action.yml — outputs, inputs, single scan (RS-24)', () => {
   });
 });
 
-describe('changelog backfill + renumber (RS-4)', () => {
-  const files = readdirSync(join(repoRoot, 'changelog.d'));
-  it('backfills the post-2.1.0 user-visible PRs', () => {
-    for (const id of ['326', '327', '328', '329', '353']) {
-      expect(files.some((f) => f.startsWith(`${id}.`)), `missing changelog.d/${id}.*`).toBe(true);
+describe('changelog can fold (RS-4 follow-up)', () => {
+  // This block used to pin specific fragment FILES by id (backfilled PRs
+  // 326/327/328/329/353, and 347 renumbered to 354) — a one-time migration
+  // check. Those assertions were self-defeating: `assemble-changelog --release`
+  // deletes the fragments as it folds them into CHANGELOG.md, so the assertions
+  // could only ever hold until the FIRST real release, then failed forever. That
+  // silently made the repo unable to cut a release with folded notes without
+  // reddening CI (the fragments piled up unfolded instead). Replaced with a test
+  // of the property that actually matters and can't rot: that the current
+  // changelog.d folds cleanly.
+  it('renderRelease folds every changelog.d fragment without error', () => {
+    const changelog = read('CHANGELOG.md');
+    const fragments = readFragments(join(repoRoot, 'changelog.d'));
+    // Pure function: returns the folded text, writes/deletes nothing — robust by
+    // construction (no network, no filesystem mutation). Fails only if folding is
+    // genuinely broken.
+    const folded = renderRelease(changelog, fragments, '0.0.0-fold-check', '2026-01-01');
+    expect(folded).toContain('## [0.0.0-fold-check] - 2026-01-01');
+    // A fresh empty Unreleased section must remain for the next cycle.
+    expect(folded).toContain('## [Unreleased]');
+    // Every fragment's first content line must survive into the folded output —
+    // proves fragments are folded IN, not dropped.
+    for (const f of fragments) {
+      const firstLine = f.body.split('\n').find((l) => l.trim());
+      if (firstLine) expect(folded, `fragment ${f.file} dropped`).toContain(firstLine.trim());
     }
   });
-  it('renumbers the mislabeled 347 fragment to 354 (its real PR)', () => {
-    expect(files).toContain('354.added.md');
-    expect(files).not.toContain('347.added.md');
-  });
+
+  // There is intentionally NO "every fragment id maps to a real PR" assertion.
+  // That needs the GitHub API (network → a flaky unit test) and even then cannot
+  // catch the real RS-4 defect: a fragment numbered for a REAL but WRONG PR. The
+  // structural guard is `assemble-changelog --check` (names/types/bodies);
+  // correct PR attribution is a human-review property, not a static one.
+
   it('CHANGELOG no longer points at the deleted enforcement-grade plan', () => {
     expect(read('CHANGELOG.md')).not.toContain('enforcement-grade-classification.md');
   });
