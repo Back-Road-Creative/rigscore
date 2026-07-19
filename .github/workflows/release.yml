@@ -27,6 +27,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # `actions: write` is what lets the "Trigger tag-scoped workflows" step
+      # below call the workflow-dispatch API. Without it that step 403s with
+      # "Resource not accessible by integration" — `contents: write` does NOT
+      # cover dispatching a workflow.
+      #
+      # This was latent from the day the step was written: it is guarded by
+      # `if: steps.check.outputs.exists == 'false'`, so every earlier release
+      # run SKIPPED it (they were re-triggers against an already-existing
+      # release) and the gap never surfaced. It first executed on v2.2.0 and
+      # failed, leaving the release and tag published but no container image
+      # built and no provenance attested. That is also why GHCR `:latest` went
+      # stale: the automated path has never once published an image, so every
+      # image in the registry came from a manual dispatch.
+      actions: write
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
