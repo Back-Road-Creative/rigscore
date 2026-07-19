@@ -89,9 +89,17 @@ jobs:
         # even though the release itself already exists.
         if: steps.check.outputs.exists == 'false' || inputs.force_site_post
         id: changelog
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
+          # Prefer the curated `## [<version>]` section the maintainer folded into
+          # CHANGELOG.md in the version-bump PR (assemble-changelog --release). Fall
+          # back to the raw git log only when that section is absent — zero regression.
+          NOTES="$(node scripts/assemble-changelog.js --notes "$VERSION")"
+          if [ -n "$NOTES" ]; then
+            LOG="$NOTES"
+          elif [ -n "$PREV_TAG" ]; then
             LOG=$(git log --oneline "${PREV_TAG}..HEAD" --no-merges)
           else
             LOG=$(git log --oneline --no-merges | head -20)
