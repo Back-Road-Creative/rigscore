@@ -8,6 +8,7 @@
  *   node scripts/assemble-changelog.js            # preview the Unreleased section
  *   node scripts/assemble-changelog.js --check    # validate fragment names/bodies
  *   node scripts/assemble-changelog.js --release 2.1.0 [--date YYYY-MM-DD]
+ *   node scripts/assemble-changelog.js --notes 2.1.0   # print the folded release notes
  */
 import { readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -96,11 +97,47 @@ export function renderRelease(changelog, fragments, version, date) {
   return assembled.replace(UNRELEASED, `## [${version}] - ${date}`).replace(`## [${version}]`, `${UNRELEASED}\n\n## [${version}]`);
 }
 
+/**
+ * Return the trimmed body of the `## [<version>]` section (matched regardless of
+ * the ` - <date>` suffix), stopping at the next `## [` header. '' when absent —
+ * so a caller can detect "no folded section" and fall back.
+ */
+export function extractReleaseNotes(changelog, version) {
+  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const header = new RegExp(`^## \\[${escaped}\\]`);
+  const lines = changelog.split('\n');
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (header.test(lines[i])) { start = i + 1; break; }
+  }
+  if (start === -1) return '';
+  const body = [];
+  for (let i = start; i < lines.length; i++) {
+    if (/^## \[/.test(lines[i])) break;
+    body.push(lines[i]);
+  }
+  return body.join('\n').trim();
+}
+
 function main() {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
   const dir = join(repoRoot, 'changelog.d');
   const changelogPath = join(repoRoot, 'CHANGELOG.md');
   const args = process.argv.slice(2);
+
+  // Print the folded release notes for a version (release.yml reads this; empty
+  // stdout means "no folded section" and the workflow falls back to git log).
+  const notesIdx = args.indexOf('--notes');
+  if (notesIdx !== -1) {
+    const version = args[notesIdx + 1];
+    if (!version || version.startsWith('--')) {
+      console.error('changelog: --notes needs a version (e.g. --notes 2.1.0)');
+      process.exit(1);
+    }
+    const notes = extractReleaseNotes(readFileSync(changelogPath, 'utf8'), version);
+    if (notes) console.log(notes);
+    return;
+  }
 
   let fragments;
   try {

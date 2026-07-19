@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFragmentName, assembleUnreleased, renderRelease, FRAGMENT_TYPES } from '../scripts/assemble-changelog.js';
+import { parseFragmentName, assembleUnreleased, renderRelease, extractReleaseNotes, FRAGMENT_TYPES } from '../scripts/assemble-changelog.js';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const fragmentDir = join(repoRoot, 'changelog.d');
+const scriptPath = join(repoRoot, 'scripts', 'assemble-changelog.js');
 
 const BASE = `# Changelog
 
@@ -98,6 +100,60 @@ describe('renderRelease', () => {
 
   it('preserves prior releases', () => {
     expect(out).toContain('## [2.0.0] - 2026-04-20');
+  });
+});
+
+describe('extractReleaseNotes', () => {
+  const RELEASED = `# Changelog
+
+## [Unreleased]
+
+## [2.1.0] - 2026-07-15
+
+### Added
+- **thing**: a released feature.
+
+### Fixed
+- **bug**: squashed.
+
+## [2.0.0] - 2026-04-20
+
+### Added
+- **old**: a prior release.
+`;
+
+  it('returns the folded body for the matching version', () => {
+    const notes = extractReleaseNotes(RELEASED, '2.1.0');
+    expect(notes).toContain('### Added');
+    expect(notes).toContain('- **thing**: a released feature.');
+    expect(notes).toContain('- **bug**: squashed.');
+  });
+
+  it('matches the version regardless of the " - <date>" suffix', () => {
+    expect(extractReleaseNotes(RELEASED, '2.1.0').startsWith('### Added')).toBe(true);
+  });
+
+  it('stops at the next release header — does not bleed the following section', () => {
+    const notes = extractReleaseNotes(RELEASED, '2.1.0');
+    expect(notes).not.toContain('- **old**: a prior release.');
+    expect(notes).not.toContain('## [2.0.0]');
+  });
+
+  it('returns "" when the version has no section (so the workflow can fall back)', () => {
+    expect(extractReleaseNotes(RELEASED, '9.9.9')).toBe('');
+  });
+});
+
+describe('assemble-changelog --notes (CLI)', () => {
+  it('prints the folded 2.1.0 section from the repo CHANGELOG', () => {
+    const out = execFileSync('node', [scriptPath, '--notes', '2.1.0'], { encoding: 'utf8' });
+    expect(out).toContain('### Added');
+    expect(out.trim().length).toBeGreaterThan(0);
+  });
+
+  it('prints nothing for an absent version', () => {
+    const out = execFileSync('node', [scriptPath, '--notes', '99.99.99'], { encoding: 'utf8' });
+    expect(out.trim()).toBe('');
   });
 });
 
