@@ -196,12 +196,15 @@ The report prints the pinned hash, the current hash, and the **current** shape. 
   knobs, and YAML by the `yaml` dependency the project already ships. Registering a non-JSON
   path *without* declaring its format is the bug the seam prevents: every consumer would parse
   it as JSON, get `null`, and emit a false `mcp-config/config-unparseable` about a valid file.
-- **Codex's COMMITTED `.codex/config.toml` is not yet scanned or pinned.** Only the `$HOME`
-  copy is registered. A `base: 'cwd'` entry would enter `repoMcpRelPaths()`, whose contract is
-  "exactly the set the CVE-2025-54136 rug-pull pin covers" — but that pin is minted in
-  `src/state.js` (`readRepoServers`) by a JSON-only read, so the path would be listed as pinned
-  while nothing pinned it. Closing this needs that one read to go through `readMcpConfig()`;
-  until then the blind spot is declared rather than papered over.
+- **Codex's COMMITTED `.codex/config.toml` is scanned and pinned**, alongside the `$HOME` copy.
+  Both scopes are registered, so a `[mcp_servers.<name>]` table added or mutated in the
+  committed file drifts under `--verify-state` like any other repo-level server, reaches the
+  CycloneDX AI-BOM, and has its `env` values scanned for plaintext credentials. This holds
+  because every repo-level consumer — `readRepoServers` (`src/state.js`, the pin-minting *and*
+  gate path), `src/cyclonedx.js`, and `repoMcpEnvValues` — reads through `readMcpConfig()`,
+  which dispatches on the registry's declared `format`. That is what keeps `repoMcpRelPaths()`
+  honest: its contract is "exactly the set the CVE-2025-54136 rug-pull pin covers", so a path
+  may only be listed there once a format-aware read can actually cover it.
 - **Goose's `cmd` is not normalized to `command`.** Goose extensions name their executable
   `cmd` and their environment `envs`. `envs` is declared via the registry's `envKey`, so
   credential scanning is exact; `cmd` has no such hook, so the command-shaped rules

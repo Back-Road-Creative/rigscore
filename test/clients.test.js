@@ -65,12 +65,15 @@ describe('client registry invariants', () => {
     expect(paths).toContain(path.join(HOME, '.config/opencode/opencode.json'));
     const codex = CLIENTS.find(c => c.id === 'codex');
     expect(codex.sandbox.some(s => s.path === '.codex/config.toml' && s.format === 'toml')).toBe(true);
-    // Codex keeps its MCP servers in that SAME TOML, under `[mcp_servers.<name>]`. Home
-    // scope only: a base:'cwd' entry would enter repoMcpRelPaths(), whose contract is
-    // "exactly what the rug-pull pin covers", and src/state.js still mints that pin with a
-    // JSON-only read — so the committed half waits on that read becoming format-aware.
-    expect(codex.mcp).toEqual([{ path: '.codex/config.toml', base: 'home', key: 'mcp_servers', format: 'toml' }]);
-    expect(repoMcpRelPaths()).not.toContain('.codex/config.toml');
+    // Codex keeps its MCP servers in that SAME TOML, under `[mcp_servers.<name>]`, in BOTH
+    // scopes. The committed copy is registered too: it is a repo file an attacker can mutate,
+    // so omitting it left the rug-pull pin blind to it. Its entry is safe to declare because
+    // every repo-level consumer now reads through readMcpConfig(), which dispatches on
+    // `format` — so repoMcpRelPaths() still means "exactly what the pin covers".
+    expect(codex.mcp).toEqual([
+      { path: '.codex/config.toml', base: 'home', key: 'mcp_servers', format: 'toml' },
+      { path: '.codex/config.toml', base: 'cwd', key: 'mcp_servers', format: 'toml' }]);
+    expect(repoMcpRelPaths()).toContain('.codex/config.toml');
     expect(paths).toContain(path.join(HOME, '.codex/config.toml'));
   });
 });

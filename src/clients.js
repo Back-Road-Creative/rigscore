@@ -123,14 +123,15 @@ export const CLIENTS = [
   // codex/custom-prompts — "not shared through your repository"), so skillDirs is home-only.
   // MCP servers live in the SAME config.toml, under `[mcp_servers.<name>]`
   // (developers.openai.com/codex/config-reference § mcp_servers) — command/args/env, the
-  // ordinary server shape, just in TOML. Home scope only for now: a `base:'cwd'` entry would
-  // enter repoMcpRelPaths(), whose contract is "exactly what the CVE-2025-54136 rug-pull pin
-  // covers", and the pin is minted in src/state.js by a JSON-only read. Registering the
-  // committed file before that read is format-aware would put a path in the pin's SSOT that
-  // the pin cannot actually cover — a worse lie than the current blind spot. See the
-  // follow-up noted in docs/checks/mcp-config.md.
+  // ordinary server shape, just in TOML. BOTH scopes are registered: the committed copy is a
+  // reviewable repo file an attacker can mutate, so leaving it off made it a rug-pull blind
+  // spot. Its `base:'cwd'` entry enters repoMcpRelPaths(), whose contract is "exactly what
+  // the CVE-2025-54136 pin covers" — and that contract holds because every repo-level
+  // consumer (state.js readRepoServers, cyclonedx.js, repoMcpEnvValues) now reads through
+  // readMcpConfig(), which dispatches on this declared `format`.
   { id: 'codex', name: 'Codex CLI', governance: ['AGENTS.md'],
-    mcp: [{ path: '.codex/config.toml', base: 'home', key: 'mcp_servers', format: 'toml' }],
+    mcp: [{ path: '.codex/config.toml', base: 'home', key: 'mcp_servers', format: 'toml' },
+      { path: '.codex/config.toml', base: 'cwd', key: 'mcp_servers', format: 'toml' }],
     sandbox: [{ path: '.codex/config.toml', base: 'home', format: 'toml' },
       { path: '.codex/config.toml', base: 'cwd', format: 'toml' }],
     credentials: [{ dir: '.codex', file: 'config.toml', format: 'toml' }],
@@ -385,19 +386,21 @@ export function repoMcpPaths(cwd) {
  * Env-map string values from every committed repo-level MCP config, grouped by
  * relative path. Each config's servers are resolved with mcpServersIn() (its own
  * key — `.vscode/mcp.json` reads `servers`, opencode reads `mcp`) and each server's
- * env map is read from `env` or, for opencode, `environment`. `readJson` is injected
- * (async path -> parsed object | null) so this module needs no filesystem or
- * child_process import. Paths in `skip` are omitted — env-exposure passes its raw-
- * scanned config list so a config covered there is not double-reported.
- * Consolidating the read here keeps MCP-server data out of any child_process-capable
- * module (see test/mcp-runtime-hash.test.js).
+ * env map is read from `env` or, for opencode, `environment`. Both READERS are injected
+ * (`readJson`, `readText` — same pair readMcpConfig takes) so this module needs no
+ * filesystem or child_process import, and so a non-JSON repo surface (Codex's committed
+ * `.codex/config.toml`) is parsed by its declared format instead of silently scanning as
+ * empty — a credential in a TOML env table is a credential. Paths in `skip` are omitted —
+ * env-exposure passes its raw-scanned config list so a config covered there is not
+ * double-reported. Consolidating the read here keeps MCP-server data out of any
+ * child_process-capable module (see test/mcp-runtime-hash.test.js).
  */
-export async function repoMcpEnvValues(cwd, readJson, skip = []) {
+export async function repoMcpEnvValues(cwd, readers, skip = []) {
   const skipSet = new Set(skip);
   const out = [];
   for (const relPath of repoMcpRelPaths()) {
     if (skipSet.has(relPath)) continue;
-    const config = await readJson(path.join(cwd, relPath));
+    const config = await readMcpConfig(path.join(cwd, relPath), readers);
     if (!config) continue;
     const values = [];
     for (const server of Object.values(mcpServersIn(relPath, config))) {

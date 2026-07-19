@@ -43,7 +43,8 @@ describe('rug-pull pin covers every committed repo-level MCP config', () => {
     // comparison that must be portable. relPosix (src/utils.js) normalizes here so
     // the expected list is one POSIX literal set rather than a per-platform fork.
     expect(repoMcpPaths('/repo').map(p => relPosix('/repo', p)))
-      .toEqual(['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.gemini/settings.json', 'opencode.json',
+      .toEqual(['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.codex/config.toml',
+        '.gemini/settings.json', 'opencode.json',
         '.amazonq/mcp.json', '.amazonq/default.json', '.roo/mcp.json', '.vscode/settings.json',
         '.junie/mcp/mcp.json', '.warp/.mcp.json', '.kiro/settings/mcp.json', '.qwen/settings.json',
         '.crush.json', 'crush.json', '.kilocode/mcp.json']);

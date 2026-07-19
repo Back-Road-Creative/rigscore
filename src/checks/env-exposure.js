@@ -347,7 +347,8 @@ export default {
     // handles raw server objects; it only pattern-scans the returned env strings.
     // Configs already in AI_CONFIG_FILES are covered by the raw scan above and passed
     // as the skip set so they are not double-reported.
-    for (const { relPath, values } of await repoMcpEnvValues(cwd, readJsonSafe, AI_CONFIG_FILES)) {
+    const mcpReaders = { readJson: readJsonSafe, readText: readFileSafe };
+    for (const { relPath, values } of await repoMcpEnvValues(cwd, mcpReaders, AI_CONFIG_FILES)) {
       let worstFinding = null;
       let worstRank = 0;
       for (const value of values) {

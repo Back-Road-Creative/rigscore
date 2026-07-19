@@ -464,10 +464,11 @@ export async function collectGovernanceDirFiles(cwd, dirs = governanceDirDefault
 }
 
 /**
- * Committed (in-repo) JSON config files a scan should codepoint-inspect for hidden
+ * Committed (in-repo) config files a scan should codepoint-inspect for hidden
  * payloads or plaintext secrets: EVERY repo-level MCP config the client registry
  * knows (repoMcpRelPaths — the root MCP config, `.gemini/settings.json`,
- * `opencode.json`, `.cursor/mcp.json`, …) plus committed JSON sandbox settings (Claude Code's
+ * `opencode.json`, `.cursor/mcp.json`, Codex's TOML `.codex/config.toml`, …) plus
+ * committed JSON sandbox settings (Claude Code's
  * `.claude/settings.json` / `.claude/settings.local.json`). Derived from the
  * registry (RS-8) so a payload in any registered config is scanned, not just a
  * hardcoded handful, and so a newly-registered client is covered automatically.
