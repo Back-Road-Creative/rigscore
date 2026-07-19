@@ -8,6 +8,19 @@ function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-perf-'));
 }
 
+// Windows CI runners spawn processes and touch the filesystem several times
+// slower than ubuntu/macOS — the same asymmetry vitest.config.js scales test
+// and hook timeouts 3x for (#371). These are wall-clock perf gates, so runner
+// slowness lands directly on the assertion: a 20-project scan that finishes
+// well under 15s on a healthy runner crossed it on a loaded windows leg
+// (measured — the suite ran 1.6x slow), reddening a now-BLOCKING leg on a PR
+// that changed no scanner code. Scale the tight budgets by the same 3x so the
+// gate keeps catching a real algorithmic regression (which is multiplicative)
+// without flaking on ordinary runner variance. Only the tight budgets need it;
+// the 30s skill-file budget is already generous enough to never bind.
+const WIN = process.platform === 'win32';
+const perf = (ms) => (WIN ? ms * 3 : ms);
+
 describe('performance', () => {
   it('scans project with 100+ YAML files under 5s', async () => {
     const tmpDir = makeTmpDir();
@@ -39,7 +52,7 @@ spec:
       const result = await scan({ cwd: tmpDir, homedir: '/tmp/nonexistent' });
       const elapsed = Date.now() - start;
 
-      expect(elapsed).toBeLessThan(5000);
+      expect(elapsed).toBeLessThan(perf(5000));
       expect(result.score).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
@@ -72,11 +85,12 @@ spec:
     }
   });
 
-  // Explicit 30s per-test timeout (below): without it the test inherits vitest's
-  // 10s default, which is BELOW this test's own 15s assertion ceiling — so under
-  // load vitest aborts at 10s before `elapsed < 15000` can ever be evaluated,
-  // turning a real perf regression signal into a load-sensitive flake. The 30s
-  // ceiling keeps the 15s assertion the actual gate.
+  // Explicit per-test timeout (below): without it the test inherits vitest's
+  // default, which is BELOW this test's own assertion ceiling — so under load
+  // vitest aborts before `elapsed < perf(15000)` can ever be evaluated, turning
+  // a real perf regression signal into a load-sensitive flake. The timeout is
+  // set to twice the scaled assertion budget on every platform, so the framework
+  // can never fire before the assertion does — the assertion stays the gate.
   it('recursive scan with 20 projects under 15s', async () => {
     const tmpDir = makeTmpDir();
     try {
@@ -91,11 +105,11 @@ spec:
       const result = await scanRecursive({ cwd: tmpDir, depth: 1 });
       const elapsed = Date.now() - start;
 
-      expect(elapsed).toBeLessThan(15000);
+      expect(elapsed).toBeLessThan(perf(15000));
       expect(result.projects).toHaveLength(20);
       expect(result.score).toBeDefined();
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
-  }, 30000);
+  }, perf(15000) * 2);
 });
