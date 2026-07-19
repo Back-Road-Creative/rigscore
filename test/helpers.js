@@ -8,12 +8,17 @@ import os from 'node:os';
  */
 export async function withTmpDir(callback) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-test-'));
+  const entryCwd = process.cwd();
   try {
     await callback(tmpDir);
   } finally {
-    // Windows cannot remove a directory while any handle under it is open, and a
-    // just-exited `node bin/rigscore.js` child holds one for a few milliseconds
-    // after the test's last statement — EBUSY on rmdir. On POSIX the first try wins.
+    // Step out before removing: Windows locks a process's own cwd, permanently, so
+    // no retry helps. Callers that chdir() into tmpDir restore it in afterEach —
+    // which runs AFTER this teardown. maxRetries covers the other Windows lock: a
+    // just-exited child still holding a handle under the tree for a few ms.
+    try {
+      if (process.cwd() !== entryCwd) process.chdir(entryCwd);
+    } catch { /* cwd already gone — best-effort */ }
     fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 }
