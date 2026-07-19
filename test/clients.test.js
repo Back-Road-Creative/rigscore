@@ -65,6 +65,13 @@ describe('client registry invariants', () => {
     expect(paths).toContain(path.join(HOME, '.config/opencode/opencode.json'));
     const codex = CLIENTS.find(c => c.id === 'codex');
     expect(codex.sandbox.some(s => s.path === '.codex/config.toml' && s.format === 'toml')).toBe(true);
+    // Codex keeps its MCP servers in that SAME TOML, under `[mcp_servers.<name>]`. Home
+    // scope only: a base:'cwd' entry would enter repoMcpRelPaths(), whose contract is
+    // "exactly what the rug-pull pin covers", and src/state.js still mints that pin with a
+    // JSON-only read — so the committed half waits on that read becoming format-aware.
+    expect(codex.mcp).toEqual([{ path: '.codex/config.toml', base: 'home', key: 'mcp_servers', format: 'toml' }]);
+    expect(repoMcpRelPaths()).not.toContain('.codex/config.toml');
+    expect(paths).toContain(path.join(HOME, '.codex/config.toml'));
   });
 });
 
@@ -195,13 +202,16 @@ describe('batch-2 client additions (JetBrains Junie, Goose, Warp)', () => {
     expect(credentialClients().some(c => c.dir === '.junie/mcp' && c.file === 'mcp.json' && c.name)).toBe(true);
   });
 
-  it('Goose: governance-only (.goosehints); YAML config/secrets are not JSON-reader surfaces', () => {
+  it('Goose: .goosehints plus YAML extension + secrets surfaces, each declaring format', () => {
     expect(governanceFiles()).toContain('.goosehints');
     const goose = CLIENTS.find(c => c.id === 'goose');
-    // config.yaml / secrets.yaml are YAML — the JSON MCP/credential readers can't parse them,
-    // so (like Codex's TOML) Goose declares no mcp/credentials surface.
-    expect(goose.mcp).toBeUndefined();
-    expect(goose.credentials).toBeUndefined();
+    // config.yaml / secrets.yaml are YAML. They are readable now that each MCP/credential
+    // surface DECLARES its on-disk format and one loader dispatches on it (readMcpConfig);
+    // a format-less entry here would make the JSON reader emit a false `config-unparseable`.
+    expect(goose.mcp).toEqual([{ path: '.config/goose/config.yaml', base: 'home', key: 'extensions', format: 'yaml' }]);
+    expect(goose.credentials.every(c => c.format === 'yaml')).toBe(true);
+    // Home only — Goose documents no committed project MCP file, so nothing enters the pin.
+    expect(repoMcpRelPaths()).not.toContain('.config/goose/config.yaml');
   });
 
   it('Warp: committed .warp/.mcp.json, global ~/.warp/.mcp.json, and credentials', () => {

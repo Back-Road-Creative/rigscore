@@ -7,7 +7,11 @@ import { readJsonSafe, readFileSafe, fileExists, relPosix } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { readRepoServers, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
-import { mcpConfigPaths, mcpServersIn, repoMcpRelPaths } from '../clients.js';
+import { mcpConfigPaths, mcpServersIn, repoMcpRelPaths, readMcpConfig, mcpConfigFormat } from '../clients.js';
+
+// Injected readers for the registry-driven config loader (src/clients.js readMcpConfig):
+// JSONC-tolerant JSON for the default format, raw text for TOML/YAML surfaces.
+const READERS = { readJson: readJsonSafe, readText: readFileSafe };
 
 const SENSITIVE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -993,9 +997,13 @@ export default {
     );
 
     for (const configPath of configPaths) {
-      const mcpConfig = await readJsonSafe(configPath);
+      // Format-aware: a Codex `.codex/config.toml` or Goose `config.yaml` is parsed by its
+      // DECLARED reader. Reading every surface as JSON is what made those clients
+      // unregisterable — a TOML path would have parsed as null and been reported below as
+      // `config-unparseable`, a false warning about a perfectly valid file.
+      const mcpConfig = await readMcpConfig(configPath, READERS);
       if (!mcpConfig) {
-        // readJsonSafe returns null for BOTH "absent" and "present but unparseable".
+        // The reader returns null for BOTH "absent" and "present but unparseable".
         // Skipping on that alone let a config that IS on disk — and whose servers can
         // therefore be neither scanned nor hash-pinned — be reported as "No MCP
         // configuration found", a false statement about the repo. An ABSENT file stays a
@@ -1003,12 +1011,16 @@ export default {
         // check applicable. Mirrors claude-settings/settings-unparseable.
         if (await fileExists(configPath)) {
           const relPath = relPosix(cwd, configPath) || configPath;
+          // Name the format the registry DECLARES for this path, never a blanket "JSON" —
+          // telling an operator their valid config.toml "does not parse as JSON" sends them
+          // to fix a file that was never broken.
+          const lang = mcpConfigFormat(configPath).toUpperCase();
           findings.push({
             findingId: 'mcp-config/config-unparseable',
             severity: 'warning',
             title: `Unparseable MCP configuration in ${relPath}`,
-            detail: `${relPath} exists but does not parse as JSON, so the MCP servers it declares cannot be inspected — and, for a committed repo-level config, cannot be hash-pinned either, leaving rug-pull detection (CVE-2025-54136) off for them.`,
-            remediation: 'Fix the JSON syntax — rigscore already tolerates comments and trailing commas, so this file is genuinely broken (unresolved merge-conflict markers, an unterminated string, a truncated write). Repair it or remove it; leaving it in place means its servers are never scanned or pinned.',
+            detail: `${relPath} exists but does not parse as ${lang}, so the MCP servers it declares cannot be inspected — and, for a committed repo-level config, cannot be hash-pinned either, leaving rug-pull detection (CVE-2025-54136) off for them.`,
+            remediation: `Fix the ${lang} syntax — for JSON, rigscore already tolerates comments and trailing commas, so this file is genuinely broken (unresolved merge-conflict markers, an unterminated string, a truncated write). Repair it or remove it; leaving it in place means its servers are never scanned or pinned.`,
           });
           foundAny = true;
         }
