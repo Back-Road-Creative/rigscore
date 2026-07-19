@@ -1,0 +1,12 @@
+# LF in the WORKING TREE on every platform. The GitHub windows runner images ship
+# `core.autocrlf=true`, and a CRLF checkout broke two things that have nothing to
+# do with Windows:
+#   1. vite-node strips a hashbang with /^#!.*\n/, and JS `.` does not match `\r`.
+#      A CRLF shebang never matched, so the generated ESM preamble was spliced in
+#      AHEAD of the `#!` — moving it off byte 0, which V8 rejects. Every test that
+#      statically imports scripts/*.js died at load with an opaque SyntaxError.
+#   2. Line regexes anchored with `$` (systemd `ExecStart=`) stopped matching,
+#      because the `\r` sits between the last character and end-of-line.
+# The product normalises CRLF at read time too (utils.decodeBuffer) for SCANNED
+# repos; this file is about rigscore's own sources being identical on every runner.
+* text=auto eol=lf

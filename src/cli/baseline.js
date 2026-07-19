@@ -7,6 +7,19 @@ const require = createRequire(import.meta.url);
 const pkg = require('../../package.json');
 
 /**
+ * The OS's own spelling of a path — 8.3 short names expanded, symlinks followed.
+ * Falls back to the input when the path cannot be resolved, so a caller never
+ * loses a usable path to a probe.
+ */
+function realpathSafe(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
+/**
  * Flatten all findings across check results into a single list.
  * Only actionable severities are baselined (skipped/pass are excluded).
  */
@@ -95,10 +108,19 @@ function classifyBaseline(raw) {
  * @returns {Promise<object>}
  */
 async function readCommittedBaseline(baselinePath) {
-  const abs = path.resolve(baselinePath);
+  // Canonicalise both sides before relating them. `git rev-parse` answers with the
+  // OS's real path; `path.resolve` keeps whatever the caller typed. When the two
+  // spell one directory differently — a Windows 8.3 short name (`C:\Users\RUNNER~1`
+  // vs `C:\Users\runneradmin`), a symlinked temp root — `path.relative` returns a
+  // bogus `../../..`, the guard below reads "outside the repo", and the gate answers
+  // `absent`: it falls back to the working-tree baseline an attacker controls.
+  // Failing OPEN on the exact comparison this function exists to make.
+  const requested = path.resolve(baselinePath);
+  // realpath the DIRECTORY: on the deletion path the baseline file is gone.
+  const abs = path.join(realpathSafe(path.dirname(requested)), path.basename(requested));
   const top = await execSafe('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel']);
   if (top === null) return { inRepo: false }; // not a git repo (or git unavailable)
-  const rel = relPosix(top.trim(), abs);
+  const rel = relPosix(realpathSafe(top.trim()), abs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) return { inRepo: true, status: 'absent' };
   const raw = await execSafe('git', ['-C', top.trim(), 'show', `HEAD:${rel}`]);
   if (raw === null) {

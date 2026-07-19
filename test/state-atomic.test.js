@@ -45,6 +45,51 @@ describe('saveState atomicity (A2)', () => {
     });
   });
 
+  it('retries a rename the OS transiently refuses, instead of losing the write', async () => {
+    // Windows fails rename-onto-an-open-file with EPERM rather than swapping the
+    // directory entry, so a reader holding the state open for a few microseconds
+    // used to turn a routine save into a thrown error and a dropped pin. The
+    // failure is transient by nature; the fix is to retry it.
+    await withTmpDir(async (tmpDir) => {
+      const realRename = fs.promises.rename;
+      let calls = 0;
+      fs.promises.rename = async (from, to) => {
+        if (++calls <= 2) {
+          const err = new Error('EPERM: operation not permitted, rename');
+          err.code = 'EPERM';
+          throw err;
+        }
+        return realRename(from, to);
+      };
+      try {
+        await saveState(tmpDir, { version: 1, pins: { server: 'survived' } });
+      } finally {
+        fs.promises.rename = realRename;
+      }
+      expect(calls).toBe(3);
+      const raw = fs.readFileSync(path.join(tmpDir, STATE_FILENAME), 'utf8');
+      expect(JSON.parse(raw).pins.server).toBe('survived');
+      expect(fs.readdirSync(tmpDir).filter((e) => e.includes('.tmp'))).toHaveLength(0);
+    });
+  });
+
+  it('still surfaces a non-transient rename failure, and cleans up the tmp file', async () => {
+    await withTmpDir(async (tmpDir) => {
+      const realRename = fs.promises.rename;
+      fs.promises.rename = async () => {
+        const err = new Error('ENOSPC: no space left on device, rename');
+        err.code = 'ENOSPC';
+        throw err;
+      };
+      try {
+        await expect(saveState(tmpDir, { version: 1, pins: {} })).rejects.toThrow(/ENOSPC/);
+      } finally {
+        fs.promises.rename = realRename;
+      }
+      expect(fs.readdirSync(tmpDir).filter((e) => e.includes('.tmp'))).toHaveLength(0);
+    });
+  });
+
   it('does not leave stray .tmp files after successful writes', async () => {
     await withTmpDir(async (tmpDir) => {
       for (let i = 0; i < 10; i++) {

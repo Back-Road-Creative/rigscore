@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { listPacks, loadPack, installPack, formatInstallReport } from '../src/cli/packs.js';
+import { supportsExecBit } from './helpers.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-packs-'));
 const pair = () => [tmp(), tmp()];
@@ -139,7 +140,10 @@ describe('packs', () => {
     expect(read(target, 'AGENTS.md')).toBe('# fresh\n');
   });
   // A hook without +x is inert, yet a presence-based check still scores it green.
-  it('sets the exec bit on hook dests and on exec:true entries', () => {
+  // Nothing to observe on a filesystem with no exec bit (NTFS): chmod there
+  // reports success and stat reports 0, so the assertion would describe the
+  // filesystem, not installPack. The install itself is covered by the tests above.
+  it.skipIf(!supportsExecBit())('sets the exec bit on hook dests and on exec:true entries', () => {
     const [templates, target] = pair();
     const f = (dest, exec) => ({ src: 'AGENTS.md', dest, ...(exec ? { exec } : {}) });
     dropPack(templates, 'demo', { ...OK, files: [f('.git/hooks/pre-commit'), f('run.sh', true), f('AGENTS.md')] });
