@@ -29,3 +29,8 @@ fresh `## [Unreleased]`, and deletes the fragments:
 ```bash
 node scripts/assemble-changelog.js --release 2.1.0
 ```
+
+The published GitHub release notes are sourced from this folded `## [<version>]`
+section (`release.yml` reads it via `assemble-changelog --notes <version>`), so
+the maintainer must run `--release <version>` in the version-bump PR **before**
+tagging; the workflow falls back to the raw git log only when the section is absent.
