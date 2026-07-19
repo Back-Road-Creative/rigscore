@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Validation } from '@cyclonedx/cyclonedx-library';
 import { formatCycloneDx } from '../src/cyclonedx.js';
-import { repoMcpRelPaths } from '../src/clients.js';
+import { repoMcpRelPaths, mcpConfigFormat } from '../src/clients.js';
 import { parseArgs } from '../src/index.js';
 import { withTmpDir } from './helpers.js';
 
@@ -152,7 +152,12 @@ describe('CycloneDX 1.6 AI-BOM export', () => {
           const key = ['opencode.json', '.crush.json', 'crush.json'].includes(rel) ? 'mcp'
             : rel === '.vscode/settings.json' ? 'cody.mcpServers' : 'mcpServers';
           fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true });
-          fs.writeFileSync(path.join(tmp, rel), JSON.stringify({ [key]: { [name]: { command: 'npx', args: ['-y', `p@1.0.${i}`] } } }));
+          // ...and each is written in its DECLARED format: Codex's committed config is TOML,
+          // so a JSON body here would test nothing but our own fixture.
+          const body = mcpConfigFormat(rel) === 'toml'
+            ? `[mcp_servers.${name}]\ncommand = "npx"\nargs = ["-y", "p@1.0.${i}"]\n`
+            : JSON.stringify({ [key]: { [name]: { command: 'npx', args: ['-y', `p@1.0.${i}`] } } });
+          fs.writeFileSync(path.join(tmp, rel), body);
         }
 
         const bom = await formatCycloneDx({ score: 90 }, { cwd: tmp });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { GOVERNANCE_FILES } from './constants.js';
 import { readFileSafe, readJsonSafe, collectGovernanceDirFiles, toPosix } from './utils.js';
-import { mcpServersIn, repoMcpRelPaths } from './clients.js';
+import { mcpServersIn, repoMcpRelPaths, readMcpConfig } from './clients.js';
 import { computeServerHash, loadState } from './state.js';
 import { argHasStableVersionPin, checkClaudeSettings, extractPackageName, findPackagePositionArg } from './checks/mcp-config.js';
 
@@ -113,7 +113,9 @@ export async function formatCycloneDx(result, options = {}) {
 
   const seen = new Set();
   for (const relPath of MCP_CONFIG_FILES) {
-    const config = await readJsonSafe(path.join(cwd, relPath));
+    // Format-dispatching read: a TOML/YAML repo surface must not scan as empty and drop
+    // its servers from the BOM — the BOM's set is repoMcpRelPaths(), the pin's own SSOT.
+    const config = await readMcpConfig(path.join(cwd, relPath), { readJson: readJsonSafe, readText: readFileSafe });
     const servers = mcpServersIn(relPath, config);
     for (const [name, server] of Object.entries(servers)) {
       if (!server || typeof server !== 'object' || seen.has(name)) continue;

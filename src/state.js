@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readJsonSafe, execSafe, relPosix } from './utils.js';
-import { repoMcpPaths, mcpServersIn } from './clients.js';
+import { readJsonSafe, readFileSafe, execSafe, relPosix } from './utils.js';
+import { repoMcpPaths, mcpServersIn, readMcpConfig } from './clients.js';
 
 export const STATE_FILENAME = '.rigscore-state.json';
 export const STATE_VERSION = 1;
@@ -206,7 +206,11 @@ export async function saveState(cwd, state) {
 export async function readRepoServers(cwd) {
   const out = {};
   for (const configPath of repoMcpPaths(cwd)) {
-    const servers = mcpServersIn(configPath, await readJsonSafe(configPath));
+    // Read through the format-dispatching seam, never readJsonSafe: a registered TOML or
+    // YAML surface (Codex's committed .codex/config.toml) would otherwise parse as null and
+    // be pinned as nothing — a path listed in the pin's SSOT that the pin does not cover.
+    const parsed = await readMcpConfig(configPath, { readJson: readJsonSafe, readText: readFileSafe });
+    const servers = mcpServersIn(configPath, parsed);
     const config = relPosix(cwd, configPath);
     for (const [name, server] of Object.entries(servers)) {
       const key = name in out ? `${name}@${config}` : name;
