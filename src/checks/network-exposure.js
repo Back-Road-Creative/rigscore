@@ -3,7 +3,11 @@ import YAML from 'yaml';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, AI_SERVICE_PORTS, MCP_SSE_PORT_RANGE } from '../constants.js';
 import { readFileSafe, readJsonSafe, execSafe, relPosix } from '../utils.js';
-import { networkMcpPaths, mcpServersForConfig } from '../clients.js';
+import { networkMcpPaths, mcpServersForConfig, readMcpConfig } from '../clients.js';
+
+// Registry-driven readers — a Codex TOML / Goose YAML surface parses through its declared
+// reader, so a remote MCP endpoint declared there is graded like any other.
+const MCP_READERS = { readJson: readJsonSafe, readText: readFileSafe };
 
 const DEFAULT_SAFE_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 
@@ -59,7 +63,7 @@ async function checkMcpConfigUrls(context) {
   }
 
   for (const configPath of configPaths) {
-    const mcpConfig = await readJsonSafe(configPath);
+    const mcpConfig = await readMcpConfig(configPath, MCP_READERS);
     if (!mcpConfig) continue;
 
     const servers = mcpServersForConfig(configPath, mcpConfig, cwd);

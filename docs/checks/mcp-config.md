@@ -188,6 +188,25 @@ The report prints the pinned hash, the current hash, and the **current** shape. 
 - Rug-pull detection requires at least one prior scan to have written `.rigscore-state.json`. First scan records hashes silently.
 - Runtime tool pin status is opt-out via `.rigscorerc.json` key `mcpConfig.surfaceRuntimeHashStatus: false`.
 - Additional config paths can be registered via `.rigscorerc.json` key `paths.mcpConfig`.
+- **Non-JSON MCP surfaces.** Each `mcp` / `credentials` entry in the client registry declares
+  its on-disk `format` — `json` (the default), `toml` (Codex CLI's `~/.codex/config.toml`,
+  servers under `[mcp_servers.<name>]`) or `yaml` (Goose's `~/.config/goose/config.yaml`,
+  extensions under `extensions`). One loader, `readMcpConfig()` in `src/clients.js`, dispatches
+  on that declaration; TOML is read by the same minimal reader that grades Codex's sandbox
+  knobs, and YAML by the `yaml` dependency the project already ships. Registering a non-JSON
+  path *without* declaring its format is the bug the seam prevents: every consumer would parse
+  it as JSON, get `null`, and emit a false `mcp-config/config-unparseable` about a valid file.
+- **Codex's COMMITTED `.codex/config.toml` is not yet scanned or pinned.** Only the `$HOME`
+  copy is registered. A `base: 'cwd'` entry would enter `repoMcpRelPaths()`, whose contract is
+  "exactly the set the CVE-2025-54136 rug-pull pin covers" — but that pin is minted in
+  `src/state.js` (`readRepoServers`) by a JSON-only read, so the path would be listed as pinned
+  while nothing pinned it. Closing this needs that one read to go through `readMcpConfig()`;
+  until then the blind spot is declared rather than papered over.
+- **Goose's `cmd` is not normalized to `command`.** Goose extensions name their executable
+  `cmd` and their environment `envs`. `envs` is declared via the registry's `envKey`, so
+  credential scanning is exact; `cmd` has no such hook, so the command-shaped rules
+  (`unpinned-npx-package`, `inline-credentials`) do not fire on Goose extensions. Argument- and
+  env-shaped rules do.
 - **Zed server key — verified 2026-07-12.** Zed stores MCP servers under `context_servers` (not `mcpServers`) in `~/.config/zed/settings.json`, which is the path on **both** Linux and macOS. Local servers use the same `command` / `args` / `env` shape every other client uses; remote servers use `url` + optional `headers`. Zed's project-level `.zed/settings.json` is documented as editor/language options only, so it holds no servers and is not scanned. Sources: <https://github.com/zed-industries/zed/blob/main/docs/src/ai/mcp.md> (rendered at <https://zed.dev/docs/ai/mcp>) and `docs/src/configuring-zed.md`. Windows (`%APPDATA%\Zed\settings.json`) is not yet scanned.
 
 ## Known noise modes
