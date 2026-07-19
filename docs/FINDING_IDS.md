@@ -405,6 +405,7 @@ Grouped by check. Each ID is stable within the current major.
 
 - `workflow-maturity/skill-no-eval` (info)
 - `workflow-maturity/skill-compound-responsibility` (info)
+- `workflow-maturity/graduated-script-missing` (warning)
 - `workflow-maturity/mcp-single-consumer` (warning)
 - `workflow-maturity/memory-orphan` (warning)
 - `workflow-maturity/pipeline-step-overload` (info)
