@@ -17,12 +17,16 @@ async function runCheck(context) {
   return mod.default.run(context);
 }
 
-function contextFor(tmpDir, { osrelease, wslConf } = {}) {
+function contextFor(tmpDir, { osrelease, wslConf, platform = 'linux' } = {}) {
   const wslOsReleasePath = path.join(tmpDir, 'osrelease');
   const wslConfPath = path.join(tmpDir, 'wsl.conf');
   if (osrelease !== undefined) fs.writeFileSync(wslOsReleasePath, osrelease);
   if (wslConf !== undefined) fs.writeFileSync(wslConfPath, wslConf);
-  return { cwd: tmpDir, homedir: tmpDir, wslOsReleasePath, wslConfPath };
+  // `platform` is pinned for the same reason the two paths above are: which ARM of
+  // the check runs must come from the context, not the OS running the suite. Left
+  // to process.platform the guest-arm cases inverted on a Windows runner — a test
+  // named "returns N/A on non-Windows platforms" executing ON Windows.
+  return { cwd: tmpDir, homedir: tmpDir, platform, wslOsReleasePath, wslConfPath };
 }
 
 const idsOf = (result) => result.findings.map((f) => f.findingId);
@@ -110,6 +114,20 @@ describe('windows-security check', () => {
         wslConf: '[interop]\nenabled=true\nappendWindowsPath=true\n',
       }));
       expect(idsOf(result)).not.toContain('windows-security/ntfs-permissions-advisory');
+    });
+  });
+
+  it('emits the NTFS advisory on a Windows host, and no guest interop finding', async () => {
+    // The host arm, now reachable from every runner. /etc/wsl.conf is a GUEST
+    // file — a Windows host must not read one even when it is sitting right there.
+    await withTmpDir(async (tmp) => {
+      const result = await runCheck(contextFor(tmp, {
+        platform: 'win32',
+        wslConf: '[interop]\nenabled=true\nappendWindowsPath=true\n',
+      }));
+      expect(idsOf(result)).toContain('windows-security/ntfs-permissions-advisory');
+      expect(idsOf(result)).not.toContain('windows-security/wsl-interop-exposes-path');
+      expect(result.score).not.toBe(-1);
     });
   });
 

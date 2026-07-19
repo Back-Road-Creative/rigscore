@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { enforcesDirWritePerms } from './helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.resolve(__dirname, '..', 'bin', 'rigscore.js');
@@ -16,13 +17,14 @@ function runCli(args, opts = {}) {
   });
 }
 
-// Skip these tests when running as root (CI containers, devcontainer-root):
-// chmod 555 doesn't prevent root from writing, so the EACCES path can't
-// be exercised.
-const isRoot = process.getuid && process.getuid() === 0;
-const describeUnlessRoot = isRoot ? describe.skip : describe;
+// These assert what the CLI prints when the filesystem REFUSES a write, so they
+// need a filesystem that refuses. It doesn't as root (CI containers,
+// devcontainer-root) and it doesn't on NTFS, where chmod 555 returns success and
+// changes nothing. One empirical probe covers both, and any future filesystem
+// with the same property, instead of a growing list of platform names.
+const describeIfEnforced = enforcesDirWritePerms() ? describe : describe.skip;
 
-describeUnlessRoot('CLI fs error handling (Wave 4)', () => {
+describeIfEnforced('CLI fs error handling (Wave 4)', () => {
   let tmp;
 
   beforeAll(() => {

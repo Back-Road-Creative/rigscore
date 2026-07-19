@@ -138,6 +138,25 @@ export async function loadCommittedState(cwd) {
   return { ...parseState(raw), present: true };
 }
 
+// Windows has no POSIX rename(2): renaming ONTO a path any process still holds
+// open fails with EPERM/EACCES/EBUSY instead of swapping the entry — and something
+// always holds it open (a concurrent scanner, an editor, a virus scanner sampling
+// the file microseconds after it appears). The window is short, so bounded backoff
+// turns a lost write into a retry. On POSIX these never fire for this reason.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_RETRY_DELAYS = [5, 10, 20, 40, 80, 160, 320];
+
+async function renameWithRetry(from, to) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fs.promises.rename(from, to);
+    } catch (err) {
+      if (!RENAME_RETRY_CODES.has(err.code) || attempt >= RENAME_RETRY_DELAYS.length) throw err;
+      await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_DELAYS[attempt]));
+    }
+  }
+}
+
 /**
  * Write state to <cwd>/.rigscore-state.json atomically.
  *
@@ -159,7 +178,7 @@ export async function saveState(cwd, state) {
   const tmp = `${p}.${process.pid}.${rand}.tmp`;
   try {
     await fs.promises.writeFile(tmp, body, { encoding: 'utf-8', mode: 0o600 });
-    await fs.promises.rename(tmp, p);
+    await renameWithRetry(tmp, p);
   } catch (err) {
     try { await fs.promises.unlink(tmp); } catch { /* tmp may not exist */ }
     throw err;
@@ -348,7 +367,7 @@ export async function recordScoreHistory(cwd, entry) {
   const tmp = `${p}.${process.pid}.${rand}.tmp`;
   try {
     await fs.promises.writeFile(tmp, body, { encoding: 'utf-8', mode: 0o600 });
-    await fs.promises.rename(tmp, p);
+    await renameWithRetry(tmp, p);
   } catch (err) {
     try { await fs.promises.unlink(tmp); } catch { /* tmp may not exist */ }
     throw err;

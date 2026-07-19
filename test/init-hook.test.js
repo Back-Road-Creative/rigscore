@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { withTmpDir } from './helpers.js';
+import { withTmpDir, supportsExecBit } from './helpers.js';
 import { parseArgs, run } from '../src/index.js';
 
 const require = createRequire(import.meta.url);
@@ -37,9 +37,13 @@ describe('--init-hook', () => {
       expect(content).toContain('rigscore');
       expect(content).toContain('--fail-under 70');
 
-      // Check executable
-      const stat = fs.statSync(hookPath);
-      expect(stat.mode & 0o111).not.toBe(0);
+      // Check executable. Only where an exec bit exists: on NTFS chmod reports
+      // success and stat reports 0, so this would assert the filesystem rather
+      // than the installer. Everything above still runs on every platform.
+      if (supportsExecBit()) {
+        const stat = fs.statSync(hookPath);
+        expect(stat.mode & 0o111).not.toBe(0);
+      }
     });
   });
 

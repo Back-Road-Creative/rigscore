@@ -206,6 +206,12 @@ async function discoverFiles(cwd, homedir, config, includeHomeSkills) {
   const seen = new Set();
 
   async function addFile(fullPath, relPath, category) {
+    // Normalised once here, not at each of the nine call sites — several build the
+    // label with path.join(), which on win32 yields `.claude\commands\x.md`. relPath
+    // is not merely displayed: the skip rules below match `/`-shaped patterns
+    // against it, so a native separator made them miss and the check reported dead
+    // references in the very directories it exempts.
+    relPath = toPosix(relPath);
     if (seen.has(fullPath)) return;
     // RS-16: skip agent-worktree clones. A parallel-agent run leaves transient
     // full-project copies under `.claude/worktrees/**` that the harness never
