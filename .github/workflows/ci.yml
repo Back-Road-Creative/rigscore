@@ -9,8 +9,6 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-    # windows-latest is ADVISORY (non-blocking) for now — see the matrix note.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -20,18 +18,18 @@ jobs:
         # checks (permissions-hygiene, git-hooks, env-exposure) that no CI
         # was executing.
         #
-        # It runs ADVISORY, not required, because adding it surfaced real
-        # pre-existing Windows breakage that is NOT this workflow's to fix:
-        #   - the scan itself aborts on win32 ("Only URLs with a scheme in:
-        #     file, data ..."), i.e. a dynamic import of an absolute path
-        #     that needs pathToFileURL();
-        #   - findings render native separators ("apps\api\.env",
-        #     ".specify\memory\constitution.md") where tests and output
-        #     contracts assume POSIX "/";
-        #   - a couple of counts differ under those two effects.
-        # Flipping this leg to required is the acceptance test for a
-        # follow-up "Windows path handling" PR. Do not silence it — the red
-        # signal here is the tracking issue.
+        # It ran ADVISORY (continue-on-error) while the pre-existing Windows
+        # breakage it surfaced was worked off: the dynamic import of an
+        # absolute path that needed pathToFileURL(), findings rendering
+        # native separators where the output contracts assume POSIX "/",
+        # non-atomic state writes, and CRLF mangling the ESM preamble
+        # (windows runners set core.autocrlf=true; the repo had no
+        # .gitattributes).
+        #
+        # All three legs now pass on their own, so the leg is BLOCKING —
+        # that was the stated acceptance test. Do not reintroduce
+        # continue-on-error: a red windows leg is a real regression, and
+        # silencing it also forces every merge through --force.
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
