@@ -386,6 +386,140 @@ describe('workflow-maturity check', () => {
     });
   });
 
+  // ---- graduated-script-missing ----
+
+  describe('graduated-script-missing', () => {
+    const GRADUATED_FM = ['---', 'name: s', 'version: 2.0.0', 'status: graduated-code', '---'];
+
+    function gradFindings(result) {
+      return result.findings.filter(
+        f => f.findingId === 'workflow-maturity/graduated-script-missing',
+      );
+    }
+
+    it('flags a graduated skill whose script does not exist', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      const missing = path.join(cwd, 'bin', 'ws-status.sh');
+      writeSkill(cwd, 'status', [
+        ...GRADUATED_FM, '# Status', '```bash', `bash ${missing}`, '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      const found = gradFindings(result);
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe('warning');
+      expect(found[0].context.scriptPath).toBe(missing);
+      expect(found[0].context.skill).toBe('status');
+      expect(result.data.graduatedScriptsMissing).toBe(1);
+    });
+
+    it('does not flag a graduated skill whose script exists', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      const script = path.join(cwd, 'bin', 'real.sh');
+      writeFile(script, '#!/usr/bin/env bash\n');
+      writeSkill(cwd, 'real', [
+        ...GRADUATED_FM, '```bash', `bash ${script}`, '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(gradFindings(result)).toHaveLength(0);
+    });
+
+    it('does not flag a non-graduated (v1.x) skill with a missing script', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeSkill(cwd, 'llmdriven', [
+        '---', 'name: llmdriven', 'version: 1.4.0', '---',
+        '```bash', `bash ${path.join(cwd, 'bin', 'nope.sh')}`, '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(gradFindings(result)).toHaveLength(0);
+    });
+
+    it('does not flag placeholder or interpolated paths', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeSkill(cwd, 'placeholders', [
+        ...GRADUATED_FM,
+        '```bash',
+        'bash <path>',
+        'bash $SOMEVAR/x.sh',
+        'bash ${ROOT}/y.sh',
+        'bash {{ script }}',
+        'python3 $1',
+        '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(gradFindings(result)).toHaveLength(0);
+    });
+
+    it('does not flag relative paths (unresolvable from an arbitrary scan cwd)', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeSkill(cwd, 'relative', [
+        ...GRADUATED_FM, '```bash', 'bash bin/nope.sh', 'sh ./also-nope.sh', '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(gradFindings(result)).toHaveLength(0);
+    });
+
+    it('does not flag a commented-out script path', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeSkill(cwd, 'commented', [
+        ...GRADUATED_FM, '```bash', `# bash ${path.join(cwd, 'bin', 'old.sh')}`, '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(gradFindings(result)).toHaveLength(0);
+    });
+
+    it('expands ~ and $HOME before testing existence', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeFile(path.join(home, 'bin', 'tilde.sh'), '#!/bin/sh\n');
+      writeFile(path.join(home, 'bin', 'envvar.sh'), '#!/bin/sh\n');
+      writeSkill(cwd, 'expands', [
+        ...GRADUATED_FM, '```bash', 'bash ~/bin/tilde.sh', 'bash $HOME/bin/envvar.sh', '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(gradFindings(result)).toHaveLength(0);
+    });
+
+    it('flags a missing ~-relative script (expansion resolves, file absent)', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeSkill(cwd, 'tildemissing', [
+        ...GRADUATED_FM, '```bash', 'bash ~/bin/gone.sh', '```',
+      ].join('\n'));
+
+      const result = await check.run({ cwd, homedir: home });
+      const found = gradFindings(result);
+      expect(found).toHaveLength(1);
+      expect(found[0].context.scriptPath).toBe(path.join(home, 'bin', 'gone.sh'));
+    });
+
+    it('does not scan home skills unless --include-home-skills is set', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      writeSkill(home, 'homegrad', [
+        ...GRADUATED_FM, '```bash', `bash ${path.join(home, 'bin', 'gone.sh')}`, '```',
+      ].join('\n'));
+
+      const off = await check.run({ cwd, homedir: home });
+      expect(gradFindings(off)).toHaveLength(0);
+
+      const on = await check.run({ cwd, homedir: home, includeHomeSkills: true });
+      expect(gradFindings(on)).toHaveLength(1);
+    });
+  });
+
   // ---- memory-orphan ----
 
   describe('memory-orphan', () => {

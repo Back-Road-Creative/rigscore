@@ -255,6 +255,72 @@ async function hasEvalOrTest(skillName, cwd) {
 }
 
 // ---------------------------------------------------------------------------
+// Check: graduated-script-missing helpers
+// ---------------------------------------------------------------------------
+
+// Interpreters whose first argument is the script being invoked.
+const SCRIPT_INVOCATION_RE = /(?:^|[`\s;|&(])(?:bash|sh|python3?|node)\s+([^\s`'"<>]+)/g;
+
+// A token is a placeholder — not a real path — if it carries any interpolation
+// or template syntax. Flagging these is the check crying wolf: `bash <path>` in
+// a usage example was never meant to resolve to a file on disk.
+const PLACEHOLDER_RE = /[<>]|\{\{|\}\}|\$\{(?!HOME\})|\$(?!HOME\b)/;
+
+/**
+ * True when a skill's frontmatter asserts it has been promoted from
+ * LLM-interpreted instructions to a deterministic script (`status: graduated-code`).
+ * v1.x LLM-driven skills legitimately have no script and must never be flagged.
+ */
+function isGraduated(content) {
+  const fm = extractFrontmatter(content);
+  if (!fm) return false;
+  return /^status\s*:\s*["']?graduated-code["']?\s*$/im.test(fm);
+}
+
+/**
+ * Extract absolute script paths invoked by a SKILL.md body.
+ *
+ * Skipped by design (each is a false-positive source, not a defect):
+ *  - placeholder / interpolated tokens (see PLACEHOLDER_RE);
+ *  - comment lines — a commented-out invocation is documentation, not a call path;
+ *  - RELATIVE paths. A relative path resolves against the shell's cwd at
+ *    invocation time, which a static scan cannot know (it is not the scan cwd,
+ *    the skill dir, or the repo root reliably). Resolving it against a guess
+ *    would manufacture misses and false hits, so relative invocations are
+ *    reported as out of scope rather than guessed at.
+ *
+ * `~` and `$HOME` are expanded against the scan's homedir before the existence
+ * test. Returns a de-duplicated array of absolute paths.
+ */
+function extractInvokedScriptPaths(content, homedir) {
+  const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');
+  const paths = new Set();
+
+  for (const rawLine of body.split('\n')) {
+    const line = rawLine.trim();
+    if (line.startsWith('#')) continue; // comment line
+    SCRIPT_INVOCATION_RE.lastIndex = 0;
+    let match;
+    while ((match = SCRIPT_INVOCATION_RE.exec(line)) !== null) {
+      const token = match[1].replace(/[`,;)]+$/, '');
+      if (!token || PLACEHOLDER_RE.test(token)) continue;
+
+      let resolved = token;
+      if (homedir) {
+        if (resolved === '~' || resolved.startsWith('~/')) {
+          resolved = path.join(homedir, resolved.slice(1));
+        } else if (resolved.startsWith('$HOME/') || resolved.startsWith('${HOME}/')) {
+          resolved = path.join(homedir, resolved.replace(/^\$\{?HOME\}?\//, ''));
+        }
+      }
+      if (!path.isAbsolute(resolved)) continue; // relative — unresolvable, see above
+      paths.add(resolved);
+    }
+  }
+  return [...paths];
+}
+
+// ---------------------------------------------------------------------------
 // Check 4: memory-orphan helpers
 // ---------------------------------------------------------------------------
 
@@ -382,6 +448,36 @@ export default {
           detail: `Skill \`${skill.name}\` description suggests compound responsibility — consider splitting or scoping more narrowly. (${reasons.join('; ')})`,
           remediation: `Review \`${skill.name}\` and split into focused skills if it handles multiple distinct concerns.`,
           context: { skill: skill.name, triggerCount },
+        });
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Check 2b — graduated-script-missing
+    //
+    // A skill marked `status: graduated-code` asserts it is a thin wrapper over
+    // a deterministic script. When that script is absent, the skill is not a
+    // maturity smell — it is NON-FUNCTIONAL, failing `exit 127` on every single
+    // invocation, while its version bump advertises the opposite. Severity is
+    // WARNING: the highest this advisory, weight-0 check emits. CRITICAL is
+    // reserved across rigscore for security findings (it also zeroes the check),
+    // and a broken wrapper is a correctness defect, not a vulnerability —
+    // conflating the two is exactly what this check's weight rationale forbids.
+    // -----------------------------------------------------------------------
+    let graduatedScriptsMissing = 0;
+
+    for (const skill of skills) {
+      if (!isGraduated(skill.content)) continue;
+      for (const scriptPath of extractInvokedScriptPaths(skill.content, homedir)) {
+        if (await fileExists(scriptPath)) continue;
+        graduatedScriptsMissing++;
+        findings.push({
+          findingId: 'workflow-maturity/graduated-script-missing',
+          severity: 'warning',
+          title: `Graduated skill \`${skill.name}\` invokes a script that does not exist`,
+          detail: `Skill \`${skill.name}\` declares \`status: graduated-code\` but invokes \`${scriptPath}\`, which is not on disk — every invocation fails with exit 127. The graduation was asserted by a version bump that nothing verified.`,
+          remediation: `Create \`${scriptPath}\`, correct the path in \`${skill.skillPath}\`, or revert the skill to \`status: llm-driven\` until the script exists.`,
+          context: { skill: skill.name, scriptPath, skillPath: skill.skillPath },
         });
       }
     }
@@ -543,6 +639,7 @@ export default {
         skillsChecked,
         skillsWithoutEvals,
         compoundSkills,
+        graduatedScriptsMissing,
         mcpServersChecked,
         mcpSingleConsumer,
         orphanMemoryFiles,
