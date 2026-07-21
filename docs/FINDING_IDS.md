@@ -480,6 +480,10 @@ Grouped by check. Each ID is stable within the current major.
 
 - `semantic-tools/suspicious-tool-description` (warning) — the opt-in `--semantic` first-party `claude -p` judge classified an MCP tool description as possible tool-poisoning (obfuscated instruction-injection / data-exfiltration phrasing). Advisory, weight 0.
 
+### staged-copy-drift
+
+- `staged-copy-drift/content-drift` (warning) — a tracked copy and its deployed twin under the operator's home config dir have different sha256 contents. Only emitted under `--include-home-skills`. Advisory, weight 0.
+
 ### Stable check-level IDs
 
 Every check id in `src/checks/` is stable. These work in `--ignore` and
@@ -491,7 +495,8 @@ Every check id in `src/checks/` is stable. These work in `--ignore` and
 `infrastructure-security`, `instruction-effectiveness`, `loop-governance`,
 `mcp-config`, `memory-hygiene`, `network-exposure`, `permissions-hygiene`,
 `sandbox-posture`, `semantic-tools`, `site-security`, `skill-coherence`,
-`skill-files`, `spec-goals`, `unicode-steganography`, `windows-security`,
+`skill-files`, `spec-goals`, `staged-copy-drift`, `unicode-steganography`,
+`windows-security`,
 `workflow-maturity`.
 
 ## How to discover IDs you're seeing right now
