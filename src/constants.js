@@ -51,6 +51,9 @@ export const WEIGHTS = {
   'memory-hygiene': 0,
   'ai-disclosure': 0,
   'sandbox-posture': 0,
+  // Tracked-vs-deployed copy drift — advisory: the live side is the operator's
+  // $HOME, so it only ever runs under --include-home-skills.
+  'staged-copy-drift': 0,
   // Opt-in `--semantic` tool-description judge — advisory, never moves the
   // Security score (it only runs when the operator asks for the external call).
   'semantic-tools': 0,
