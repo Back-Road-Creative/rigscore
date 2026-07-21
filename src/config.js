@@ -54,6 +54,12 @@ const DEFAULTS = {
   workflowMaturity: {
     stageDirs: ['stages', 'phases'],
   },
+  // Directories this repo tracks a COPY of, whose live original is deployed under the
+  // operator's home config dir. Row: { tracked: "<project-relative dir>", deployed:
+  // "<homedir-relative dir>", exclude?: ["<glob>"] }. Ships empty, and the check that
+  // reads it is inert unless --include-home-skills is set (the live side is
+  // machine-specific). See docs/checks/staged-copy-drift.md.
+  stagedCopies: [],
   mcpConfig: {
     // Default-on INFO finding per repo-level MCP server in .mcp.json that
     // reports runtime tool-hash pin status (see `rigscore mcp-hash` subcommand).
@@ -408,6 +414,18 @@ function mergeConfig(userConfig, baseline) {
           ...userConfig.workflowMaturity.stageDirs,
         ]),
       ];
+    }
+  }
+
+  if (Array.isArray(userConfig.stagedCopies)) {
+    // Rows are objects — concat & dedupe on (tracked, deployed), the same shape
+    // policy skillFiles.allowlist uses, so a home config composes with a project one.
+    const seen = new Set((result.stagedCopies || []).map((r) => `${r?.tracked}::${r?.deployed}`));
+    for (const row of userConfig.stagedCopies) {
+      const key = `${row?.tracked}::${row?.deployed}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.stagedCopies.push(row);
     }
   }
 

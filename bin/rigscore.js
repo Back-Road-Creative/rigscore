@@ -178,6 +178,7 @@ Checks (moat-heavy weighting):
   ai-disclosure           AI-use disclosure policy present (advisory)
   sandbox-posture         Agent approval/sandbox posture (advisory)
   semantic-tools          Semantic MCP tool-description judge (--semantic, advisory)
+  staged-copy-drift       Tracked copies vs deployed originals (--include-home-skills, advisory)
 
 Subcommands:
   init [--profile <name>]          Write a commented .rigscorerc.json starter
