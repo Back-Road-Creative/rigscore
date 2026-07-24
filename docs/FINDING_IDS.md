@@ -446,6 +446,8 @@ Grouped by check. Each ID is stable within the current major.
 - `memory-hygiene/bundle-over-budget` (warning) — the auto-loaded memory bundle exceeds its per-turn byte budget.
 - `memory-hygiene/stale-memory-file` (warning/info) — an empty (warning) or stub (info) memory file is loaded every session but teaches nothing.
 - `memory-hygiene/unresolvable-index-entry` (warning/info) — a `MEMORY.md` index entry points at a missing file (warning) or one outside every memory dir (info).
+- `memory-hygiene/dangling-wikilink` (warning) — a `[[wikilink]]` names a memory with no matching file (warn-only, only once the set uses wikilinks).
+- `memory-hygiene/orphan-memory` (warning) — a memory file has no inbound `[[wikilink]]` from any other memory (wikilink-graph orphan; warn-only).
 - `memory-hygiene/duplicate-rule` (info) — a rule stated in both a governance file and a memory file has two homes.
 - `memory-hygiene/governance-file-cap-reached` (info) — the nested-governance walk hit its file cap or its depth cap (`limits.maxWalkDepth`), so duplicate-rule coverage is incomplete.
 
