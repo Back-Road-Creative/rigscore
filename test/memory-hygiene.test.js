@@ -437,3 +437,39 @@ describe('memory-hygiene: unresolvable index entries', () => {
     }
   });
 });
+
+describe('memory-hygiene: [[wikilink]] reconciliation (warn-only)', () => {
+  const dangling = (r) => r.findings.filter((f) => f.findingId === 'memory-hygiene/dangling-wikilink');
+  const orphans = (r) => r.findings.filter((f) => f.findingId === 'memory-hygiene/orphan-memory');
+
+  it('surfaces exactly the dangling link and the orphan memory, both warn-only', async () => {
+    const dir = tmpMemoryDir();
+    const m = (rel, body) => fs.writeFileSync(path.join(dir, '.claude/memory', rel), body);
+    // Index links every topic file with markdown links (the TOC convention).
+    m('MEMORY.md', '# Index\n- [Deploy](deploy.md)\n- [Rollback](rollback.md)\n- [Solo](solo.md)\n');
+    // deploy ↔ rollback cross-cite via wikilinks; deploy also names a memory not written.
+    m('deploy.md', '# Deploy\n\nStaging first; see [[rollback]] and [[ghost_note]] for the drill.\n');
+    m('rollback.md', '# Rollback\n\nRoll back with the previous tag; the plan lives in [[deploy]].\n');
+    // solo is indexed but no [[wikilink]] anywhere points at it — a graph orphan.
+    m('solo.md', '# Solo\n\nA note nothing in the wikilink graph reaches from elsewhere.\n');
+    try {
+      const r = await run(dir);
+      expect(dangling(r).map((f) => f.title).join('|')).toMatch(/ghost_note/);
+      expect(dangling(r)).toHaveLength(1);
+      expect(orphans(r).map((f) => f.title).join('|')).toMatch(/solo\.md/);
+      expect(orphans(r)).toHaveLength(1);
+      expect([...dangling(r), ...orphans(r)].every((f) => f.severity === 'warning')).toBe(true);
+      expect(r.data.danglingWikilinks).toBe(1);
+      expect(r.data.orphanMemories).toBe(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays silent on a memory set that does not use the [[wikilink]] convention', async () => {
+    const r = await run(fixture('memory-clean'));
+    expect(dangling(r)).toHaveLength(0);
+    expect(orphans(r)).toHaveLength(0);
+    expect(r.findings.map((f) => f.severity)).toEqual(['pass']);
+  });
+});
