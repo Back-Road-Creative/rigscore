@@ -32,6 +32,13 @@ const URI_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 const WIN_DRIVE_RE = /^[a-z]:[\\/]/i;
 const MAX_INDEX_FINDINGS = 10;
 
+// `[[wikilink]]` cross-references between memory files. Reconciled warn-only: a
+// dangling link (points at a memory with no file) and an orphan memory (no inbound
+// link) are surfaced for the operator, never gated — the whole check is advisory,
+// and a forward-reference to a not-yet-written memory is a legitimate convention.
+const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
+const MAX_WIKILINK_FINDINGS = 10;
+
 // Governance lives outside the root set too: a monorepo states package-local
 // rules in `packages/<pkg>/CLAUDE.md`, and a user states machine-wide ones in
 // `~/.claude/CLAUDE.md`. Both are loaded alongside memory, so both can be a
@@ -98,6 +105,26 @@ function indexEntries(content) {
       const target = href.trim().replace(/#.*$/, '');
       if (!target || (URI_SCHEME_RE.test(target) && !WIN_DRIVE_RE.test(target))) continue;
       if (target.toLowerCase().endsWith('.md')) targets.push(target);
+    }
+  }
+  return targets;
+}
+
+/**
+ * `[[wikilink]]` targets in a memory file, outside fenced code, as bare stems —
+ * any `|alias`, `#anchor`, and `.md` suffix trimmed, then reduced to the basename
+ * (a wikilink names a memory by stem). A link inside a fence is a sample, not a
+ * reference. Case is preserved to match the filesystem exactly.
+ */
+function wikilinkTargets(content) {
+  const targets = [];
+  let inFence = false;
+  for (const raw of content.split(/\r?\n/)) {
+    if (/^(```|~~~)/.test(raw.trim())) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    for (const [, inner] of raw.matchAll(WIKILINK_RE)) {
+      const target = inner.split('|')[0].replace(/#.*$/, '').trim();
+      if (target) targets.push(path.basename(target.replace(/\.md$/i, '')));
     }
   }
   return targets;
@@ -247,6 +274,7 @@ export default {
     const data = {
       memoryFiles: memFiles.length, totalBytes, budgetBytes,
       emptyFiles: 0, stubFiles: 0, duplicateRules: 0, unresolvableIndexEntries: 0,
+      danglingWikilinks: 0, orphanMemories: 0,
       homeScanned: Boolean(includeHomeSkills),
     };
 
@@ -366,6 +394,54 @@ export default {
           remediation: missing
             ? `Write ${target}, or drop its entry from ${file.rel}.`
             : `Move the file into the memory directory the index lives in, or drop its entry from ${file.rel}.`,
+        });
+      }
+    }
+
+    // 5. `[[wikilink]]` graph — WARN-ONLY reconciliation. This runs only once the memory
+    // set actually adopts wikilinks (a markdown-link-TOC repo gets nothing new), and it
+    // never blocks: the check is advisory, so a dangling forward-reference is surfaced for
+    // the operator to reconcile, not gated. Distinct from `workflow-maturity/memory-orphan`,
+    // which reconciles the INDEX; this is the cross-reference graph, so a file can be
+    // indexed yet still have no inbound wikilink.
+    const stems = new Set(memFiles.map((f) => path.basename(f.full, '.md')));
+    const cited = new Set(); // stems a [[wikilink]] in a *different* file points at
+    const dangling = new Set();
+    let wikilinkCount = 0;
+    for (const file of memFiles) {
+      const self = path.basename(file.full, '.md');
+      for (const target of wikilinkTargets(file.content)) {
+        wikilinkCount++;
+        if (target !== self) cited.add(target);
+        if (!stems.has(target)) dangling.add(target);
+      }
+    }
+    if (wikilinkCount > 0) {
+      for (const target of dangling) {
+        data.danglingWikilinks++;
+        if (data.danglingWikilinks > MAX_WIKILINK_FINDINGS) continue;
+        findings.push({
+          findingId: 'memory-hygiene/dangling-wikilink',
+          severity: 'warning',
+          title: `Dangling [[wikilink]]: [[${target}]] resolves to no memory file`,
+          detail: `A memory file links [[${target}]], but no memory file named ${target}.md exists in scope. Either the memory was never written or the link is a typo — the cross-reference silently reaches nothing.`,
+          evidence: `[[${target}]] → (no ${target}.md)`,
+          remediation: `Write ${target}.md, or fix / drop the [[${target}]] reference.`,
+        });
+      }
+      for (const file of memFiles) {
+        if (path.basename(file.full) === INDEX_BASENAME) continue;
+        const self = path.basename(file.full, '.md');
+        if (cited.has(self)) continue;
+        data.orphanMemories++;
+        if (data.orphanMemories > MAX_WIKILINK_FINDINGS) continue;
+        findings.push({
+          findingId: 'memory-hygiene/orphan-memory',
+          severity: 'warning',
+          title: `Orphan memory: ${file.rel} has no inbound [[wikilink]]`,
+          detail: `${file.rel} is never named by a [[wikilink]] from any other memory file, so nothing in the cross-reference graph reaches it. It may be dead weight, or it may simply need wiring into a related note.`,
+          evidence: `${file.rel} (in-degree 0 in the [[wikilink]] graph)`,
+          remediation: `Link to [[${self}]] from a related memory, or delete ${file.rel} if it is dead.`,
         });
       }
     }
