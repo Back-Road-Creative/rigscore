@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # The merge queue runs required checks on merge_group events; without this
+  # trigger every queued PR waits forever on its required contexts.
+  merge_group:
 
 # Cancel only PR runs when superseded by a newer push on the same PR; a
 # push-to-main run always completes so main's history keeps a full result.
