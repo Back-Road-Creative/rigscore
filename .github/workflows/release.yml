@@ -92,7 +92,14 @@ jobs:
         env:
           VERSION: ${{ steps.pkg.outputs.version }}
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          # --exclude the version being released. On a normal run its tag does
+          # not exist yet, so a bare `describe` correctly returns the previous
+          # release. On a `force_site_post` re-run the tag DOES already exist,
+          # so a bare `describe` returns the current version and the range
+          # collapses to "vX..vX" — an empty changelog. That produced a
+          # 70-word, table-less v2.2.0 site post that the release-post
+          # validator rejected (headlessmode#173, 2026-07-27).
+          PREV_TAG=$(git describe --tags --abbrev=0 --exclude "v${VERSION}" 2>/dev/null || echo "")
           # Prefer the curated `## [<version>]` section the maintainer folded into
           # CHANGELOG.md in the version-bump PR (assemble-changelog --release). Fall
           # back to the raw git log only when that section is absent — zero regression.
