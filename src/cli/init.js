@@ -7,7 +7,9 @@ import { listPacks, loadPack, installPack, formatInstallReport } from './packs.j
  * `rigscore init` — writes a commented .rigscorerc.json starter into the
  * current directory. With `--example`, scaffolds a small demo project with
  * intentional hygiene issues so contributors can run `rigscore` against it
- * and see findings in every category.
+ * and see findings in every category. `--example` REFUSES to write into a
+ * directory that already holds a real project (see REAL_PROJECT_MARKERS) —
+ * those files are deliberately vulnerable and must not land in real code.
  *
  * Usage:
  *   rigscore init                      → writes default-profile starter
@@ -255,12 +257,64 @@ function writeFileSafe(dir, relPath, contents, { overwrite }) {
   return { path: target, status: 'written' };
 }
 
+// Files that mean "a real project already lives here". The example scaffold is
+// DELIBERATELY vulnerable — an MCP filesystem server scoped to /, a privileged
+// compose file, a root Dockerfile, a prompt-injection skill — so the one
+// directory it must never land in is one that already holds real code.
+// Refusing is tier-1: the demo cannot create the hazard, rather than the hazard
+// being cleaned up afterwards. (2026-07-31: it was run once inside a live
+// service directory and those files sat there untracked for a week — invisible
+// to review and CI because .gitignore hid them — with the skill auto-loading
+// into unrelated sessions' skill lists.)
+const REAL_PROJECT_MARKERS = [
+  '.git',
+  'package.json',
+  'pyproject.toml',
+  'go.mod',
+  'Cargo.toml',
+  'pom.xml',
+  'Gemfile',
+  'CLAUDE.md',
+];
+
+/**
+ * Markers present in `dir`; empty means the directory is safe to scaffold into.
+ *
+ * Markers the scaffold writes itself are excluded — otherwise scaffolding twice
+ * into the same directory would refuse the second run, since the demo ships its
+ * own `CLAUDE.md`. Deriving the exclusion from EXAMPLE_FILES rather than hard-
+ * coding it keeps the two lists from drifting apart when either grows.
+ */
+export function detectRealProject(dir) {
+  const ownFiles = new Set(Object.keys(EXAMPLE_FILES));
+  return REAL_PROJECT_MARKERS.filter(
+    (m) => !ownFiles.has(m) && fs.existsSync(path.join(dir, m)),
+  );
+}
+
 /**
  * `rigscore init --example` — scaffold a demo project into `dir`.
- * Fails softly on pre-existing files unless `force` is passed. Also writes
- * a starter `.rigscorerc.json` (commented JSONC, optionally profile-pinned).
+ * REFUSES when `dir` already holds a real project (see REAL_PROJECT_MARKERS)
+ * unless `force` is passed. Fails softly on pre-existing files unless `force`.
+ * Also writes a starter `.rigscorerc.json` (commented JSONC, optionally
+ * profile-pinned).
  */
 export function scaffoldExample(dir, { force = false, profile = null } = {}) {
+  const found = force ? [] : detectRealProject(dir);
+  if (found.length > 0) {
+    process.stderr.write(
+      `rigscore: refusing to scaffold the example into ${dir}\n` +
+        `  found: ${found.join(', ')}\n` +
+        '  The example is deliberately vulnerable (privileged compose, root Dockerfile,\n' +
+        '  an MCP filesystem server scoped to /, a prompt-injection skill). Writing it\n' +
+        '  into a real project leaves those files in your tree — usually untracked, so\n' +
+        '  neither review nor CI will show them to you.\n' +
+        '  Use an empty directory:  mkdir demo && rigscore init --example demo\n' +
+        '  Or pass --force if you genuinely mean to scaffold here.\n',
+    );
+    return 2;
+  }
+
   const results = [];
   for (const [rel, contents] of Object.entries(EXAMPLE_FILES)) {
     const res = writeFileSafe(dir, rel, contents, { overwrite: force });
