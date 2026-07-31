@@ -137,3 +137,27 @@ describe('community health + disclosure (RS-44, SECURITY)', () => {
     expect(read('SECURITY.md')).toMatch(/[\w.]+@[\w.]+/);
   });
 });
+
+// force_site_post exists so a failed cross-repo post can be re-run. The first
+// attempt leaves `rigscore-release/v<version>` behind on headlessmode, so every
+// later re-dispatch built a fresh branch of the same name and died
+// non-fast-forward — the feature could only ever work once. Observed 2026-07-28
+// on v2.2.0 (run 30389926406): the post regenerated correctly (3 files, +72/-10)
+// and then could not land.
+describe('release — a forced re-post can run twice (v2.2.0 regression)', () => {
+  const post = parse('.github/workflows/release.yml')
+    .jobs['headlessmode-post'].steps
+    .find((s) => s.name?.startsWith('Generate headlessmode release post'));
+
+  it('reuses the release branch instead of demanding a fresh one', () => {
+    expect(post.run).not.toMatch(/git checkout -b "\$\{BRANCH\}"/);
+  });
+
+  it('publishes in a form that survives an existing remote branch', () => {
+    expect(post.run).toMatch(/git push --force[^\n]*"\$\{BRANCH\}"/);
+  });
+
+  it('does not fail the job when the release PR is already open', () => {
+    expect(post.run).toMatch(/gh pr view/);
+  });
+});
