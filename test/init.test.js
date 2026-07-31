@@ -180,6 +180,39 @@ describe('rigscore init --example', () => {
     });
   });
 
+  it('refuses to scaffold into a directory that already holds a real project', async () => {
+    // 2026-07-31 incident: this scaffold was run once inside a live service
+    // directory and left .mcp.json (an MCP filesystem server scoped to /), a
+    // privileged docker-compose, a root Dockerfile and a prompt-injection skill
+    // sitting in it — untracked, so no review or CI ever saw them. The demo is
+    // deliberately vulnerable, so real code is the one place it must not land.
+    for (const marker of ['.git', 'package.json', 'pyproject.toml', 'go.mod']) {
+      await withTmpDir(async (dir) => {
+        if (marker === '.git') fs.mkdirSync(path.join(dir, marker));
+        else fs.writeFileSync(path.join(dir, marker), '{}\n', 'utf-8');
+
+        const code = scaffoldExample(dir, { force: false });
+
+        expect(code).not.toBe(0);
+        // A refused run must leave nothing vulnerable behind.
+        expect(fs.existsSync(path.join(dir, 'docker-compose.yml'))).toBe(false);
+        expect(fs.existsSync(path.join(dir, '.mcp.json'))).toBe(false);
+        expect(
+          fs.existsSync(path.join(dir, '.claude/skills/demo-skill/SKILL.md')),
+        ).toBe(false);
+      });
+    }
+  });
+
+  it('--force still scaffolds into a real project, for the deliberate case', async () => {
+    await withTmpDir(async (dir) => {
+      fs.writeFileSync(path.join(dir, 'package.json'), '{}\n', 'utf-8');
+      const code = scaffoldExample(dir, { force: true });
+      expect(code).toBe(0);
+      expect(fs.existsSync(path.join(dir, 'docker-compose.yml'))).toBe(true);
+    });
+  });
+
   it('scaffoldExample is directly callable with a dir argument', async () => {
     await withTmpDir(async (dir) => {
       const code = scaffoldExample(dir, { force: false });
