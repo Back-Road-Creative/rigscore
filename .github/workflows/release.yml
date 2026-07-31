@@ -313,17 +313,35 @@ jobs:
           BRANCH="rigscore-release/v${VERSION}"
           git config user.name "rigscore-bot"
           git config user.email "rigscore-bot@headlessmode.com"
-          git checkout -b "${BRANCH}"
+          # -B, not -b: a re-dispatch must not die because the local branch name
+          # is taken. The remote side is handled at the push below.
+          git checkout -B "${BRANCH}"
           git add content/releases/ content/docs.md data/rigscore.json
           git commit -m "release: rigscore v${VERSION} — facts data + release post + docs date"
-          git push origin "${BRANCH}"
 
-          gh pr create \
-            --repo Back-Road-Creative/headlessmode \
-            --title "release: rigscore v${VERSION}" \
-            --body "Auto-generated release post for rigscore v${VERSION}. Includes release post and docs page version bump. Created by rigscore release workflow." \
-            --head "${BRANCH}" \
-            --base master
+          # force_site_post exists to RE-run a post that failed. The first attempt
+          # leaves ${BRANCH} on headlessmode, so a plain push from a freshly-built
+          # branch is non-fast-forward and the job dies — the re-run flag could
+          # only ever work once. Force is correct rather than merely convenient:
+          # every byte of this branch is derived from the released tag and the
+          # facts generator, so the regenerated commit is by definition the
+          # authoritative one. No lease — we just cloned, so a lease would be
+          # taken against our own fetch and would protect nothing.
+          git push --force origin "${BRANCH}"
+
+          # The PR outlives a failed run too, and `gh pr create` errors on a
+          # duplicate. The force-push above already updated an open PR in place.
+          if gh pr view "${BRANCH}" --repo Back-Road-Creative/headlessmode \
+               --json state --jq '.state' 2>/dev/null | grep -qx OPEN; then
+            echo "PR for ${BRANCH} is already open — the force-push updated it in place."
+          else
+            gh pr create \
+              --repo Back-Road-Creative/headlessmode \
+              --title "release: rigscore v${VERSION}" \
+              --body "Auto-generated release post for rigscore v${VERSION}. Includes release post and docs page version bump. Created by rigscore release workflow." \
+              --head "${BRANCH}" \
+              --base master
+          fi
 
       # Mirrors the headlessmode site deploy job's alerting: if any step above
       # failed (dead PAT, patch-script drift, PR-create error), open a tracking
