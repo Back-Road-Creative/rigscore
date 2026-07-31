@@ -117,6 +117,27 @@ describe('rigscore init (base)', () => {
 describe('rigscore init --example', () => {
   let originalCwd;
 
+  it('scaffolds into a positional target dir, not the cwd', async () => {
+    // --example ignored its positional argument and always used process.cwd(),
+    // while `init --<pack> [dir]` on the line above honoured it. So
+    // `rigscore init --example demo` scaffolded the deliberately-vulnerable demo
+    // into the CURRENT directory — the opposite of what the operator asked for,
+    // and the exact move the refusal guard tells people to make. Only the CLI
+    // wiring was wrong; every unit test called scaffoldExample(dir) directly and
+    // so could not see it.
+    await withTmpDir(async (outer) => {
+      const target = path.join(outer, 'demo');
+      fs.mkdirSync(target);
+      originalCwd = process.cwd();
+      process.chdir(outer);
+
+      await runInitSubcommand(['--example', 'demo']);
+
+      expect(fs.existsSync(path.join(target, 'docker-compose.yml'))).toBe(true);
+      expect(fs.existsSync(path.join(outer, 'docker-compose.yml'))).toBe(false);
+    });
+  });
+
   afterEach(() => {
     if (originalCwd) process.chdir(originalCwd);
     originalCwd = undefined;
