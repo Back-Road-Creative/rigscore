@@ -61,7 +61,12 @@ export async function runInitSubcommand(args) {
   if (packs.length > 0) return installPacks(packs, positional[0] || process.cwd(), { force, merge });
 
   if (example) {
-    return scaffoldExample(process.cwd(), { force, profile });
+    // Honour a positional target, exactly as the pack install above does. This
+    // read `process.cwd()` unconditionally, so `init --example demo` scaffolded
+    // the deliberately-vulnerable demo into the CURRENT directory instead of
+    // `demo` — and that is precisely the command the real-project refusal tells
+    // the operator to run.
+    return scaffoldExample(positional[0] || process.cwd(), { force, profile });
   }
 
   const target = path.join(process.cwd(), '.rigscorerc.json');
