@@ -1254,3 +1254,39 @@ MIT
 ## Author
 
 Built by [Joe Petrucelli](https://headlessmode.com) — technologist, AI agent security, 25 years building and securing enterprise systems.
+
+---
+
+# Project governance
+
+The workspace this repo is developed in checks every project README for the four
+sections below, so they stay together at the end rather than interrupting the
+product documentation above.
+
+## Purpose
+
+Score the configuration hygiene of an AI development environment and say where it
+stands before something breaks. rigscore is moat-first: MCP supply chain,
+governance coherence, and prompt injection, rather than generic linting. It reads
+only local files, and outputs a Security score and a Practice score out of 100.
+
+## Owner
+
+Back Road Creative ([@joepetjr](https://github.com/joepetjr))
+
+## Status
+
+Active — v2.2.0. 28 checks ship (13 scored, 15 advisory), distributed via GitHub
+only (`npx github:Back-Road-Creative/rigscore`; npm was intentionally dropped).
+Default mode makes no network or LLM calls — `--online` opts into supply-chain
+lookups and `--semantic` shells out to `claude -p`. Known capability gaps are
+tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md) and are candidates, not
+commitments.
+
+## Exit Condition
+
+Archive when configuration-hygiene scanning is absorbed into a tool that also
+observes the running agent — the limit rigscore states plainly in
+[`THREAT-MODEL.md`](THREAT-MODEL.md) — or when the governance file formats it
+reads (`CLAUDE.md`, MCP configs, skill files, `.claude/settings.json`) are no
+longer what agent environments are configured with.
