@@ -24,3 +24,13 @@ updates:
       # >=22, trim the CI matrix, then delete this stanza.
       - dependency-name: chalk
         versions: [">=6.0.0"]
+      # vitest 4 declares engines.node ^20.0.0 || ^22.0.0 || >=24.0.0, and its
+      # bundled rolldown imports styleText from node:util — added in Node
+      # 20.12. The 18.17 leg therefore dies at startup, before a single test
+      # runs: "The requested module 'node:util' does not provide an export
+      # named 'styleText'". Same exit condition as chalk above: raise the Node
+      # floor, then drop this entry and take the major.
+      - dependency-name: vitest
+        versions: [">=4.0.0"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: [">=4.0.0"]
