@@ -14,3 +14,13 @@ updates:
     groups:
       npm-deps:
         patterns: ["*"]
+    ignore:
+      # chalk 6 requires Node >=22, but package.json declares engines.node
+      # >=18.17.0 and CI runs a 18.17 / 20 / 22 matrix. Every grouped bump
+      # carrying chalk 6 therefore fails EBADENGINE on the 18.17 and 20 legs
+      # before a single test runs, which reds the whole group and hides any
+      # genuine update travelling with it (that is what happened to #386).
+      # Hold at 5.x until Node 18/20 support drops — raise engines.node to
+      # >=22, trim the CI matrix, then delete this stanza.
+      - dependency-name: chalk
+        versions: [">=6.0.0"]
