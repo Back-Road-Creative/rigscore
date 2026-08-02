@@ -145,6 +145,84 @@ export function getRegisteredFixes() {
 }
 
 /**
+ * Pick an entry-point specifier out of a package.json "exports" value.
+ * Handles the shapes a plugin realistically ships: a bare string, a subpath
+ * map with ".", a conditions map, arrays of fallbacks, and nesting of those.
+ * Conditions are tried import -> node -> default, which is the order Node
+ * itself applies for an ESM import in a Node runtime.
+ */
+function pickExportsEntry(exp) {
+  if (typeof exp === 'string') return exp;
+  if (Array.isArray(exp)) {
+    for (const candidate of exp) {
+      const hit = pickExportsEntry(candidate);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!exp || typeof exp !== 'object') return null;
+  // A subpath map ({"./x": ...}) only concerns us via its root entry.
+  if (Object.prototype.hasOwnProperty.call(exp, '.')) return pickExportsEntry(exp['.']);
+  // Any key starting with "." is a subpath we do not import; skip the map.
+  if (Object.keys(exp).some((k) => k.startsWith('.'))) return null;
+  for (const condition of ['import', 'node', 'default']) {
+    if (Object.prototype.hasOwnProperty.call(exp, condition)) {
+      const hit = pickExportsEntry(exp[condition]);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve a plugin package directory to the FILE Node should import.
+ *
+ * Node's ESM loader has no directory resolution: `import('file:///…/pkg')` is
+ * ERR_UNSUPPORTED_DIR_IMPORT, so importing the package folder never worked in
+ * a real `node` process. It only appeared to work under a bundler-backed test
+ * runner, whose resolver quietly substituted the package entry point. Read the
+ * manifest and resolve the entry ourselves so both agree.
+ *
+ * Returns null when nothing importable is found, so the caller reports the
+ * package rather than importing something outside it.
+ */
+function resolvePluginEntry(pluginDir) {
+  let manifest = {};
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(pluginDir, 'package.json'), 'utf8'));
+  } catch {
+    // No/!parseable manifest — the implicit index.js is still worth a try.
+  }
+
+  const candidates = [];
+  const fromExports = pickExportsEntry(manifest.exports);
+  if (fromExports) candidates.push(fromExports);
+  if (typeof manifest.main === 'string' && manifest.main) candidates.push(manifest.main);
+  candidates.push('index.js');
+
+  for (const rel of candidates) {
+    const abs = path.resolve(pluginDir, rel);
+    // A manifest is untrusted input: never follow "main": "../../etc/passwd"
+    // out of the package it belongs to.
+    const contained = abs === pluginDir || abs.startsWith(pluginDir + path.sep);
+    if (!contained) continue;
+    try {
+      if (fs.statSync(abs).isFile()) return abs;
+    } catch {
+      continue;
+    }
+    // A directory entry ("main": "lib") means lib/index.js, same as CommonJS.
+    try {
+      const nested = path.join(abs, 'index.js');
+      if (fs.statSync(nested).isFile()) return nested;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/**
  * Scan node_modules for rigscore-check-* packages.
  * Each plugin must export { id, name, category, run(context) }.
  */
@@ -213,8 +291,17 @@ export async function discoverPlugins(cwd) {
         if (seenPaths.has(resolved)) continue;
         seenPaths.add(resolved);
 
+        const entry = resolvePluginEntry(resolved);
+        if (!entry) {
+          process.stderr.write(
+            `rigscore: failed to load plugin "${dir.name}": no importable entry point ` +
+            `(checked package.json "exports"/"main", then index.js)\n`,
+          );
+          continue;
+        }
+
         // Same win32 constraint as the built-in check loader above.
-        const mod = await import(pathToFileURL(resolved).href);
+        const mod = await import(pathToFileURL(entry).href);
         const plugin = mod.default || mod;
 
         if (!validatePlugin(plugin, dir.name)) continue;

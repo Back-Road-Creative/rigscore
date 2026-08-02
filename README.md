@@ -935,6 +935,8 @@ export default {
 
 Plugins must export `id`, `name`, `category` (strings), and `run` (async function). Invalid plugins produce a warning to stderr but don't crash the scan. Scoped packages (`@org/rigscore-check-*`) are also discovered.
 
+**Entry point:** rigscore imports the file your `package.json` declares — `exports` (the `.` subpath, honouring the `import`/`node`/`default` conditions) first, then `main`, falling back to `index.js`. A package whose declared entry is missing, or which points outside its own directory, is reported to stderr and skipped rather than loaded. Plugins are ES modules: set `"type": "module"` (or ship a `.mjs` entry).
+
 ## CI Integration
 
 rigscore is **not GitHub-only** — any CI that can run Node (or a container) can
