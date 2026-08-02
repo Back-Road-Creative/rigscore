@@ -1,0 +1,16 @@
+# Canonical author identity.
+#
+# git reads this for `shortlog`, `log`, `blame` and `check-mailmap`, so one
+# person committing under several name/email pairs is reported once instead of
+# fragmenting the contributor list. It rewrites nothing: the commit objects and
+# their signatures are untouched, only how git *displays* them.
+#
+# Mapping by commit email (the trailing `<...>`) collapses every name spelling
+# that used that address, so `JP <joepetjr@gmail.com>` and
+# `Joe Petrucelli <joepetjr@gmail.com>` both resolve without a line each.
+#
+# Bot identities (dependabot[bot], buddy-prod) are deliberately left alone —
+# they are not this person and should stay distinct in the log.
+
+Joe Petrucelli <backroadcreativeco@gmail.com> <joepetjr@gmail.com>
+Joe Petrucelli <backroadcreativeco@gmail.com> <joepetjr@users.noreply.github.com>

@@ -13,7 +13,7 @@ a security report.
 
 - Preferred: open a private advisory via GitHub's **Security → Report a vulnerability**
   tab on this repository (Private Vulnerability Reporting).
-- Fallback (if that tab is unavailable to you): email **joepetjr@gmail.com** with
+- Fallback (if that tab is unavailable to you): email **backroadcreativeco@gmail.com** with
   `rigscore security` in the subject. Encrypted mail is welcome — ask for a key
   in a first, contentless message if you need one.
 
