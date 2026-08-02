@@ -14,3 +14,23 @@ updates:
     groups:
       npm-deps:
         patterns: ["*"]
+    ignore:
+      # chalk 6 requires Node >=22, but package.json declares engines.node
+      # >=18.17.0 and CI runs a 18.17 / 20 / 22 matrix. Every grouped bump
+      # carrying chalk 6 therefore fails EBADENGINE on the 18.17 and 20 legs
+      # before a single test runs, which reds the whole group and hides any
+      # genuine update travelling with it (that is what happened to #386).
+      # Hold at 5.x until Node 18/20 support drops — raise engines.node to
+      # >=22, trim the CI matrix, then delete this stanza.
+      - dependency-name: chalk
+        versions: [">=6.0.0"]
+      # vitest 4 declares engines.node ^20.0.0 || ^22.0.0 || >=24.0.0, and its
+      # bundled rolldown imports styleText from node:util — added in Node
+      # 20.12. The 18.17 leg therefore dies at startup, before a single test
+      # runs: "The requested module 'node:util' does not provide an export
+      # named 'styleText'". Same exit condition as chalk above: raise the Node
+      # floor, then drop this entry and take the major.
+      - dependency-name: vitest
+        versions: [">=4.0.0"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: [">=4.0.0"]
