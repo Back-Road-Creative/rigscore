@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, readJsonSafe, fileExists, relPosix } from '../utils.js';
+import { readFileSafe, readJsonSafe, fileExists, relPosix, statSafe } from '../utils.js';
 import { mcpConfigPaths, repoMcpPaths, mcpServersIn, skillDirsForBase } from '../clients.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
 
@@ -228,30 +228,93 @@ function countStageMarkers(content) {
 // Check 1: eval-coverage
 // ---------------------------------------------------------------------------
 
-/**
- * For a given skill name, check whether an eval or test file exists.
- */
-async function hasEvalOrTest(skillName, cwd) {
-  // evals/{skillName}/ directory
-  const evalDir = path.join(cwd, 'evals', skillName);
-  try {
-    const stat = await fs.promises.stat(evalDir);
-    if (stat.isDirectory()) return true;
-  } catch { /* ok */ }
+// Runnable coverage inside `evals/<skill>/`. The old form `stat()`ed the
+// directory, so `mkdir` alone turned this check green: a placeholder holding
+// only a README reported as covered while the skill was never evaluated.
+const EVAL_SHELL_RE = /^test_.+\.sh$/;
 
-  // tests/test_{skillName}.* or tests/test_{skillName.replace(/-/g,'_')}.*
-  const variants = [skillName, skillName.replace(/-/g, '_')];
-  const testsDir = path.join(cwd, 'tests');
-  try {
-    const entries = await fs.promises.readdir(testsDir);
-    for (const entry of entries) {
-      for (const v of variants) {
-        if (entry.startsWith(`test_${v}`)) return true;
+/**
+ * True when `p` is a file with non-whitespace content, or a directory holding
+ * one. A zero-byte file is a presence-check satisfier, not coverage.
+ */
+async function carriesContent(p) {
+  const stat = await statSafe(p);
+  if (!stat) return false;
+  if (stat.isDirectory()) {
+    try {
+      for (const name of await fs.promises.readdir(p)) {
+        if (await carriesContent(path.join(p, name))) return true;
       }
+    } catch { /* unreadable */ }
+    return false;
+  }
+  const content = await readFileSafe(p);
+  return Boolean(content && content.trim());
+}
+
+/**
+ * True when `cases.jsonl` holds at least one replay case — a line parsing as a
+ * JSON object with `prompt` and `expected_assertions`. Unparseable lines are
+ * skipped, not fatal: a half-written line shouldn't erase the rest of the file.
+ */
+async function hasReplayCases(p) {
+  const content = await readFileSafe(p);
+  for (const line of (content || '').split('\n')) {
+    if (!line.trim()) continue;
+    let parsed;
+    try { parsed = JSON.parse(line); } catch { continue; }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      && 'prompt' in parsed && 'expected_assertions' in parsed) return true;
+  }
+  return false;
+}
+
+/** 'covered' (holds runnable coverage), 'hollow' (exists, holds none), 'absent'. */
+async function evalDirState(evalDir) {
+  let entries;
+  try {
+    entries = await fs.promises.readdir(evalDir, { withFileTypes: true });
+  } catch { return 'absent'; }
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const full = path.join(evalDir, entry.name);
+    if (EVAL_SHELL_RE.test(entry.name)) {
+      // A shell eval nobody can execute is not runnable. Windows has no
+      // executable bit, so content alone is the bar there (as in git-hooks).
+      if (!await carriesContent(full)) continue;
+      if (process.platform === 'win32') return 'covered';
+      const stat = await statSafe(full);
+      if (stat && (stat.mode & 0o111) !== 0) return 'covered';
+    } else if (entry.name === 'cases.jsonl' && await hasReplayCases(full)) return 'covered';
+    else if (entry.name === 'acceptance-criteria.md' && await carriesContent(full)) return 'covered';
+  }
+  return 'hollow';
+}
+
+/**
+ * Eval coverage for one skill: 'covered', 'hollow' (a placeholder exists but
+ * covers nothing) or 'none' (nothing was ever created). `where` names the
+ * placeholder. Hyphens are tolerated as `_` under `tests/`, as before.
+ */
+async function evalCoverage(skillName, cwd) {
+  const dirState = await evalDirState(path.join(cwd, 'evals', skillName));
+  if (dirState === 'covered') return { state: 'covered' };
+
+  const variants = [skillName, skillName.replace(/-/g, '_')];
+  let placeholder = null;
+  try {
+    for (const entry of await fs.promises.readdir(path.join(cwd, 'tests'))) {
+      if (!variants.some(v => entry.startsWith(`test_${v}`))) continue;
+      const full = path.join(cwd, 'tests', entry);
+      if (await carriesContent(full)) return { state: 'covered' };
+      placeholder ??= relPosix(cwd, full);
     }
   } catch { /* no tests dir */ }
 
-  return false;
+  if (dirState === 'hollow') return { state: 'hollow', where: `evals/${skillName}/` };
+  if (placeholder) return { state: 'hollow', where: placeholder };
+  return { state: 'none' };
 }
 
 // ---------------------------------------------------------------------------
@@ -410,20 +473,37 @@ export default {
     // -----------------------------------------------------------------------
     let skillsChecked = skills.length;
     let skillsWithoutEvals = 0;
+    let hollowEvalDirs = 0;
 
     for (const skill of skills) {
-      const hasEval = await hasEvalOrTest(skill.name, cwd);
-      if (!hasEval) {
-        skillsWithoutEvals++;
+      const { state, where } = await evalCoverage(skill.name, cwd);
+      if (state === 'covered') continue;
+      skillsWithoutEvals++;
+
+      if (state === 'hollow') {
+        // Distinct from `skill-no-eval` on purpose: "created a placeholder" is a
+        // different maintenance action from "never created one", and a placeholder
+        // is the worse of the two — it reports green while the skill is unevaluated.
+        hollowEvalDirs++;
         findings.push({
-          findingId: 'workflow-maturity/skill-no-eval',
+          findingId: 'workflow-maturity/skill-eval-hollow',
           severity: 'info',
-          title: `Skill \`${skill.name}\` has no eval`,
-          detail: `Skill \`${skill.name}\` has no eval — graduation requires at least one eval before promoting to code or agent.`,
-          remediation: `Create \`evals/${skill.name}/\` or \`tests/test_${skill.name}.*\` to provide coverage for this skill.`,
-          context: { skill: skill.name },
+          title: `Skill \`${skill.name}\` has an eval placeholder with no runnable coverage`,
+          detail: `\`${where}\` exists but contains no runnable coverage (an empty directory, or only a README). A placeholder satisfies a presence check while the skill stays unevaluated.`,
+          remediation: `Put real coverage in \`${where}\`: an executable \`test_*.sh\`, a \`cases.jsonl\` with one \`{"prompt": …, "expected_assertions": …}\` object per line, or an \`acceptance-criteria.md\`.`,
+          context: { skill: skill.name, where },
         });
+        continue;
       }
+
+      findings.push({
+        findingId: 'workflow-maturity/skill-no-eval',
+        severity: 'info',
+        title: `Skill \`${skill.name}\` has no eval`,
+        detail: `Skill \`${skill.name}\` has no eval — graduation requires at least one eval before promoting to code or agent.`,
+        remediation: `Create \`evals/${skill.name}/\` or \`tests/test_${skill.name}.*\` to provide coverage for this skill.`,
+        context: { skill: skill.name },
+      });
     }
 
     // -----------------------------------------------------------------------
@@ -638,6 +718,7 @@ export default {
       data: {
         skillsChecked,
         skillsWithoutEvals,
+        hollowEvalDirs,
         compoundSkills,
         graduatedScriptsMissing,
         mcpServersChecked,

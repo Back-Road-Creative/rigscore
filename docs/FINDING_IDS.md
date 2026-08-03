@@ -403,7 +403,8 @@ Grouped by check. Each ID is stable within the current major.
 
 ### workflow-maturity
 
-- `workflow-maturity/skill-no-eval` (info)
+- `workflow-maturity/skill-no-eval` (info) — no `evals/<skill>/` directory and no `tests/test_<skill>.*` file exists at all.
+- `workflow-maturity/skill-eval-hollow` (info) — one of those exists but carries no runnable coverage (an empty directory, a README-only directory, an empty test file).
 - `workflow-maturity/skill-compound-responsibility` (info)
 - `workflow-maturity/graduated-script-missing` (warning)
 - `workflow-maturity/mcp-single-consumer` (warning)
