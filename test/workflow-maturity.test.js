@@ -24,6 +24,27 @@ function writeCommand(cwd, name, content) {
   writeFile(cmdPath, content);
 }
 
+/**
+ * Create `evals/<skill>/` holding `files` (name → content). A `test_*.sh` entry
+ * is written mode 0o755 — the check only counts a shell eval that can be run.
+ */
+function writeEvalDir(cwd, skill, files = {}) {
+  const dir = path.join(cwd, 'evals', skill);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, content);
+    if (/^test_.+\.sh$/.test(name)) fs.chmodSync(p, 0o755);
+  }
+  return dir;
+}
+
+const evalCoverageFindings = (result, skill) => result.findings.filter(
+  f => (f.findingId === 'workflow-maturity/skill-no-eval'
+    || f.findingId === 'workflow-maturity/skill-eval-hollow')
+    && f.context?.skill === skill,
+);
+
 // Track tmpdirs for cleanup
 const tmpdirs = [];
 function tmp() {
@@ -69,9 +90,8 @@ describe('workflow-maturity check', () => {
       '# Healthy',
       'Do one thing well.',
     ].join('\n'));
-    // Provide eval dir
-    fs.mkdirSync(path.join(cwd, 'evals', 'healthy'), { recursive: true });
-    fs.writeFileSync(path.join(cwd, 'evals', 'healthy', 'case.md'), 'eval');
+    // Provide eval dir with real coverage
+    writeEvalDir(cwd, 'healthy', { 'acceptance-criteria.md': '- returns the thing\n' });
 
     const result = await check.run({ cwd, homedir: home });
     expect(result.score).not.toBe(NOT_APPLICABLE_SCORE);
@@ -108,7 +128,7 @@ describe('workflow-maturity check', () => {
       expect(result.data.skillsWithoutEvals).toBe(1);
     });
 
-    it('does not flag skill with evals/<name>/ directory', async () => {
+    it('does not flag skill with evals/<name>/ directory carrying real coverage', async () => {
       const cwd = tmp();
       const home = tmp();
       writeSkill(cwd, 'has-evals', [
@@ -117,8 +137,7 @@ describe('workflow-maturity check', () => {
         'description: Covered',
         '---',
       ].join('\n'));
-      fs.mkdirSync(path.join(cwd, 'evals', 'has-evals'), { recursive: true });
-      fs.writeFileSync(path.join(cwd, 'evals', 'has-evals', 'case.md'), 'x');
+      writeEvalDir(cwd, 'has-evals', { 'acceptance-criteria.md': '# Passes when x\n' });
 
       const result = await check.run({ cwd, homedir: home });
       const evalFindings = result.findings.filter(f =>
@@ -162,6 +181,120 @@ describe('workflow-maturity check', () => {
         f.title?.includes('hyphen-name') && f.title?.includes('no eval'),
       );
       expect(evalFindings).toHaveLength(0);
+    });
+  });
+
+  // ---- eval-coverage: a directory is not coverage ----
+  //
+  // `stat(evals/<skill>/)` was satisfiable by `mkdir`, so a consuming repo ran 17
+  // eval dirs holding nothing but a README saying "STUB — presence-check satisfier"
+  // while its dashboard read green. The directory must carry something runnable.
+  describe('eval-coverage — hollow placeholders', () => {
+    const skillFor = (cwd, name) => writeSkill(cwd, name, [
+      '---', `name: ${name}`, 'description: A skill', '---', '# Skill',
+    ].join('\n'));
+
+    it('an EMPTY evals/<name>/ directory no longer counts as coverage', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      skillFor(cwd, 'empty-dir');
+      writeEvalDir(cwd, 'empty-dir');
+
+      const result = await check.run({ cwd, homedir: home });
+      const found = evalCoverageFindings(result, 'empty-dir');
+      expect(found).toHaveLength(1);
+      expect(found[0].findingId).toBe('workflow-maturity/skill-eval-hollow');
+      expect(result.data.skillsWithoutEvals).toBe(1);
+      expect(result.data.hollowEvalDirs).toBe(1);
+    });
+
+    it('a README-only (or blank-cases.jsonl) evals/<name>/ is not coverage', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      skillFor(cwd, 'readme-only');
+      writeEvalDir(cwd, 'readme-only', {
+        'README.md': '# evals/readme-only\n\nSTUB — replace with a real fixture.\n',
+        'cases.jsonl': '\n\n',
+      });
+
+      const result = await check.run({ cwd, homedir: home });
+      const found = evalCoverageFindings(result, 'readme-only');
+      expect(found).toHaveLength(1);
+      expect(found[0].findingId).toBe('workflow-maturity/skill-eval-hollow');
+    });
+
+    it('the hollow-directory message is DISTINCT from the plain "has no eval" one', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      skillFor(cwd, 'nothing-at-all');
+      skillFor(cwd, 'placeholder');
+      writeEvalDir(cwd, 'placeholder', { 'README.md': '# stub\n' });
+
+      const result = await check.run({ cwd, homedir: home });
+      const [none] = evalCoverageFindings(result, 'nothing-at-all');
+      const [hollow] = evalCoverageFindings(result, 'placeholder');
+
+      expect(none.findingId).toBe('workflow-maturity/skill-no-eval');
+      expect(hollow.findingId).toBe('workflow-maturity/skill-eval-hollow');
+      // "never created one" must read differently from "created a placeholder".
+      expect(hollow.title).not.toBe(none.title);
+      expect(hollow.detail).not.toBe(none.detail);
+      expect(hollow.remediation).not.toBe(none.remediation);
+      expect(hollow.title).toMatch(/no runnable coverage/i);
+      expect(hollow.detail).toMatch(/README/);
+      expect(hollow.context.where).toBe('evals/placeholder/');
+    });
+
+    it('an executable test_*.sh counts as coverage', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      skillFor(cwd, 'shell-eval');
+      writeEvalDir(cwd, 'shell-eval', {
+        'README.md': '# notes\n',
+        'test_shell_eval.sh': '#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n',
+      });
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(evalCoverageFindings(result, 'shell-eval')).toHaveLength(0);
+      expect(result.data.skillsWithoutEvals).toBe(0);
+    });
+
+    it('a non-empty cases.jsonl counts as coverage', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      skillFor(cwd, 'replay');
+      writeEvalDir(cwd, 'replay', {
+        'cases.jsonl': `${JSON.stringify({
+          prompt: 'audit the repo', expected_assertions: ['names a file'],
+        })}\n`,
+      });
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(evalCoverageFindings(result, 'replay')).toHaveLength(0);
+    });
+
+    it('an EMPTY tests/test_<name>.js no longer counts as coverage', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      skillFor(cwd, 'empty-test');
+      writeFile(path.join(cwd, 'tests', 'test_empty_test.js'), '');
+
+      const result = await check.run({ cwd, homedir: home });
+      const found = evalCoverageFindings(result, 'empty-test');
+      expect(found).toHaveLength(1);
+      expect(found[0].findingId).toBe('workflow-maturity/skill-eval-hollow');
+      expect(found[0].context.where).toBe('tests/test_empty_test.js');
+    });
+
+    it('a hollow evals/ dir is redeemed by a real tests/test_<name>.* file', async () => {
+      const cwd = tmp();
+      const home = tmp();
+      skillFor(cwd, 'both');
+      writeEvalDir(cwd, 'both', { 'README.md': '# stub\n' });
+      writeFile(path.join(cwd, 'tests', 'test_both.py'), 'def test_x(): assert True\n');
+
+      const result = await check.run({ cwd, homedir: home });
+      expect(evalCoverageFindings(result, 'both')).toHaveLength(0);
     });
   });
 
