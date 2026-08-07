@@ -147,7 +147,7 @@ describe('community health + disclosure (RS-44, SECURITY)', () => {
 describe('release — a forced re-post can run twice (v2.2.0 regression)', () => {
   const post = parse('.github/workflows/release.yml')
     .jobs['headlessmode-post'].steps
-    .find((s) => s.name?.startsWith('Generate headlessmode release post'));
+    .find((s) => s.name?.startsWith('Sync release facts to headlessmode'));
 
   it('reuses the release branch instead of demanding a fresh one', () => {
     expect(post.run).not.toMatch(/git checkout -b "\$\{BRANCH\}"/);

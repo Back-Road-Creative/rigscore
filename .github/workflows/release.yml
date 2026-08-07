@@ -3,7 +3,7 @@ name: Release
 # Triggered by a package.json version bump on main.
 # Single workflow — no cross-workflow event chain, no GITHUB_TOKEN trigger gap.
 #
-# Steps: test → GitHub release → headlessmode post PR
+# Steps: test → GitHub release → headlessmode facts PR (data/rigscore.json only)
 # Distribution: GitHub only (npx github:Back-Road-Creative/rigscore)
 
 on:
@@ -13,7 +13,7 @@ on:
   # rc/beta/alpha tags never reach this workflow: it fires only on a
   # package.json version bump, and rc tags do not bump package.json. rc site
   # posts are therefore hand-authored by design (release-provenance.yml still
-  # signs the rc tag; only the headlessmode site post is skipped).
+  # signs the rc tag; only the headlessmode facts sync is skipped).
   workflow_dispatch:   # manual re-trigger after tag/release cleanup
     inputs:
       force_site_post:
@@ -85,8 +85,8 @@ jobs:
         run: npm run verify:docs
 
       - name: Build changelog
-        # Also runs on a forced re-post so the site job still has release notes,
-        # even though the release itself already exists.
+        # Feeds the GitHub release notes. (The site facts job no longer consumes
+        # it — release notes retired from the site with its /releases/ section.)
         if: steps.check.outputs.exists == 'false' || inputs.force_site_post
         id: changelog
         env:
@@ -136,7 +136,7 @@ jobs:
       # per-check {id,weight,category,grade}, enforcement-grade split,
       # frameworks, exit codes, CLI flags) every downstream site surface —
       # homepage count/version, JSON-LD softwareVersion, docs check tables — is
-      # rendered from. The headlessmode-post job regenerates the same fact set
+      # rendered from. The headlessmode facts job regenerates the same fact set
       # into data/rigscore.json; E4's verify-facts gate compares that file to
       # THIS asset. Generated here, where npm ci already ran.
       - name: Attach facts snapshot to release
@@ -169,29 +169,16 @@ jobs:
           gh workflow run release-provenance.yml --repo "${{ github.repository }}" \
             --ref "v${VERSION}"
 
-      # Export changelog + prev-tag for the downstream headlessmode job so
-      # it doesn't have to re-checkout this repo.
+      # Version for the downstream headlessmode facts job. The changelog +
+      # prev-tag exports retired with the site's release-post pipeline
+      # (hybrid redesign 2026-08-06) — the facts sync needs only the version.
       - name: Export release outputs
         id: release_out
         if: steps.check.outputs.exists == 'false' || inputs.force_site_post
-        # Pass the changelog through env, not raw `${{ }}` interpolation, so a
-        # commit/PR title with shell metacharacters cannot execute in the runner
-        # (same handling as the "Create GitHub release" step above).
-        env:
-          CHANGELOG: ${{ steps.changelog.outputs.log }}
-        run: |
-          {
-            echo "version=${{ steps.pkg.outputs.version }}"
-            echo "prev_tag=${{ steps.changelog.outputs.prev_tag }}"
-            echo "changelog<<EOF"
-            printf '%s\n' "$CHANGELOG"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+        run: echo "version=${{ steps.pkg.outputs.version }}" >> "$GITHUB_OUTPUT"
     outputs:
       released: ${{ steps.check.outputs.exists == 'false' && 'true' || 'false' }}
       version: ${{ steps.release_out.outputs.version }}
-      prev_tag: ${{ steps.release_out.outputs.prev_tag }}
-      changelog: ${{ steps.release_out.outputs.changelog }}
 
   # Separate job so the cross-repo PAT (HEADLESSMODE_PAT) is only exposed
   # to the step that needs it, with `contents: read` on this repo —
@@ -199,7 +186,7 @@ jobs:
   # 'true'` and on the PAT being set, so a fork without the secret
   # cannot trigger a misleading failure.
   headlessmode-post:
-    name: Post release to headlessmode
+    name: Sync release facts to headlessmode
     needs: release
     # Forced re-post (force_site_post) bypasses the released==true guard so a
     # re-dispatch after a dead PAT is not silently skipped.
@@ -262,20 +249,15 @@ jobs:
         if: env.skip != 'true'
         run: npm ci
 
-      - name: Generate headlessmode release post + docs page sync
+      - name: Sync release facts to headlessmode
         if: env.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
-          RIGSCORE_CHANGELOG: ${{ needs.release.outputs.changelog }}
-          RIGSCORE_PREV_TAG: ${{ needs.release.outputs.prev_tag }}
           VERSION: ${{ needs.release.outputs.version }}
         run: |
           set -euo pipefail
 
-          PREV_VERSION="${RIGSCORE_PREV_TAG#v}"
-
           echo "Version: ${VERSION}"
-          echo "Previous: ${PREV_VERSION:-none}"
 
           git clone "https://x-access-token:${GH_TOKEN}@github.com/Back-Road-Creative/headlessmode.git" /tmp/headlessmode
           cd /tmp/headlessmode
@@ -283,32 +265,18 @@ jobs:
           # Regenerate the site's product-facts data file from the live rigscore
           # registry (checked out at the released tag in $GITHUB_WORKSPACE). The
           # site renders its homepage count/version, JSON-LD softwareVersion and
-          # docs check tables FROM this file, so hand-patched counts/versions —
+          # the check tables FROM this file, so hand-patched counts/versions —
           # and the fragile version regex that broke on U+2502 — structurally
           # cease to exist: a release updates one JSON file and everything
           # re-renders. generate-facts.js resolves the registry (and node_modules)
           # from its own checkout dir, so cwd here only decides where --out lands.
+          #
+          # Facts ONLY: the site retired /releases/ and its post pipeline in the
+          # hybrid redesign (headlessmode feat/redesign-hybrid, 2026-08-06) —
+          # release notes live on THIS repo's GitHub releases page, and the old
+          # generate-rigscore-post.js / content/docs.md no longer exist to call.
           mkdir -p data
           node "${GITHUB_WORKSPACE}/scripts/generate-facts.js" --out data/rigscore.json
-
-          # Write git log to temp file — avoids multiline shell argument issues
-          printf '%s\n' "${RIGSCORE_CHANGELOG}" > /tmp/rigscore-git-log.txt
-
-          # Generate release post (content/releases/) — exits non-zero if no
-          # conventional commits found
-          node scripts/generate-rigscore-post.js \
-            --version "${VERSION}" \
-            --prev-version "${PREV_VERSION}" \
-            --git-log-file "/tmp/rigscore-git-log.txt"
-
-          # Bump content/docs.md frontmatter date to the release date. Version,
-          # counts and the sample-output version now render from data/rigscore.json
-          # (E2 shortcodes), so patch-rigscore-toolpage.js — which searched for a
-          # literal version block that no longer exists — is retired. Hugo
-          # frontmatter can't run shortcodes, so the date stays literal and is
-          # stamped directly.
-          RELEASE_DATE=$(node -pe "require('./data/rigscore.json').date" 2>/dev/null || date -u +%Y-%m-%d)
-          sed -i "0,/^date:/s|^date:.*|date: ${RELEASE_DATE}|" content/docs.md
 
           BRANCH="rigscore-release/v${VERSION}"
           git config user.name "rigscore-bot"
@@ -316,8 +284,8 @@ jobs:
           # -B, not -b: a re-dispatch must not die because the local branch name
           # is taken. The remote side is handled at the push below.
           git checkout -B "${BRANCH}"
-          git add content/releases/ content/docs.md data/rigscore.json
-          git commit -m "release: rigscore v${VERSION} — facts data + release post + docs date"
+          git add data/rigscore.json
+          git commit -m "release: rigscore v${VERSION} — facts data refresh"
 
           # force_site_post exists to RE-run a post that failed. The first attempt
           # leaves ${BRANCH} on headlessmode, so a plain push from a freshly-built
@@ -337,8 +305,8 @@ jobs:
           else
             gh pr create \
               --repo Back-Road-Creative/headlessmode \
-              --title "release: rigscore v${VERSION}" \
-              --body "Auto-generated release post for rigscore v${VERSION}. Includes release post and docs page version bump. Created by rigscore release workflow." \
+              --title "release: rigscore v${VERSION} facts refresh" \
+              --body "Auto-generated data/rigscore.json refresh for rigscore v${VERSION} — the one file every rigscore fact on the site renders from. Release notes live on this repo's GitHub releases page. Created by the rigscore release workflow." \
               --head "${BRANCH}" \
               --base master
           fi
