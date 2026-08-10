@@ -428,11 +428,11 @@ Scans every SKILL.md under `.claude/skills/` and `.claude/commands/` (both proje
 **What rigscore looks for:**
 - Skills that perform git/ship/push operations but don't acknowledge manual merge workflow requirements (`gh-merge-approved`, `brc-merge-approved`)
 - Skills that perform write/edit/scaffold operations but don't acknowledge layer write restrictions on `_governance/` and `_foundation/`
-- Skills that overwrite files without mentioning WIP protection (untracked files in `projects/svc-*` have no backup)
+- Skills that overwrite files without mentioning WIP protection (untracked files in `services/svc-*` have no backup)
 - Skills that push/commit/ship without mentioning branch protection (no force push, no direct push to main/master)
 - Hook ↔ settings conflicts where a PreToolUse hook blocks a pattern that `settings.json` allow-lists
 
-**Opt-in by default.** The detections above are driven by `.rigscorerc.json` → `skillCoherence.constraints` and `skillCoherence.hookSettingsConflicts`, both of which ship **empty** — a stock install emits nothing from this check until you configure the constraints your workspace enforces. The `gh-merge-approved` / `_governance/` / `projects/svc-*` examples are the conventions this repo configures, not built-in defaults.
+**Opt-in by default.** The detections above are driven by `.rigscorerc.json` → `skillCoherence.constraints` and `skillCoherence.hookSettingsConflicts`, both of which ship **empty** — a stock install emits nothing from this check until you configure the constraints your workspace enforces. The `gh-merge-approved` / `_governance/` / `services/svc-*` examples are the conventions this repo configures, not built-in defaults.
 
 ### 19. Workflow maturity (advisory, 0 points) {#workflow-maturity}
 
@@ -445,7 +445,7 @@ Classifies the project's workflow artefacts against the AI development taxonomy 
 
 ### 20. Agent output schemas (advisory, 0 points) {#agent-output-schemas}
 
-Scans `.claude/agents/*.md` (project and `~/.claude/`) and verifies that every agent that claims to emit JSON output (e.g. body contains "Return ONLY a JSON" or an "## Output Format" section) declares a parseable ```` ```json ```` fenced example block. Codifies the convention documented in `projects/lib-skill-utils/AGENT_OUTPUT_SCHEMAS.md` so fan-out orchestrators have a reliable contract to parse against.
+Scans `.claude/agents/*.md` (project and `~/.claude/`) and verifies that every agent that claims to emit JSON output (e.g. body contains "Return ONLY a JSON" or an "## Output Format" section) declares a parseable ```` ```json ```` fenced example block. Codifies the schema convention documented in [`docs/checks/agent-output-schemas.md`](docs/checks/agent-output-schemas.md) so fan-out orchestrators have a reliable contract to parse against.
 
 **What rigscore looks for:**
 - Agents that announce JSON output but contain no `` ```json `` fenced example block
@@ -834,7 +834,7 @@ For monorepos and multi-project workspaces, `--recursive` discovers project subd
 # Scan all projects one level deep
 npx github:Back-Road-Creative/rigscore . --recursive
 
-# Scan two levels (e.g., workspace/projects/svc-foo)
+# Scan two levels (e.g., workspace/services/svc-foo)
 npx github:Back-Road-Creative/rigscore . -r --depth 2
 
 # JSON output with per-project breakdown

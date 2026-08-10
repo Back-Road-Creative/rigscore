@@ -2,9 +2,9 @@
  * Enforcement-grade labels — RED tests (Phase 1B).
  *
  * Encodes the acceptance criteria for the "transparency labels" feature
- * described in `internal-data/plans/rigscore-enforcement-grade-labels.md` and
- * the Phase 0 validation report at
- * `internal-data/plans/enforcement-grade-phase0-validation.md`.
+ * described in the enforcement-grade labels plan, a pre-extraction internal
+ * doc, and its Phase 0 validation report (also a pre-extraction internal
+ * doc).
  *
  * All tests in this file are expected to FAIL until Phase 2 lands. They
  * are the TDD target for:
@@ -24,8 +24,8 @@
  *   - Advisory (weight-0) and N/A (score === NOT_APPLICABLE_SCORE)
  *     reporter branches must both show the grade column.
  *
- * The Phase 1A authoritative classification lives at
- * `internal-data/plans/enforcement-grade-classification.md`. The EXPECTED_GRADES
+ * The Phase 1A authoritative classification lives in the enforcement-grade
+ * classification plan, a pre-extraction internal doc. The EXPECTED_GRADES
  * map below is synced to that table (Phase 2 reconciliation); update it
  * here and in every `src/checks/*.js` module if a grade is reclassified.
  */
@@ -43,8 +43,8 @@ const FIXTURE = path.join(__dirname, 'fixtures', 'claude-full');
 
 const VALID_GRADES = ['mechanical', 'pattern', 'keyword'];
 
-// Authoritative mapping synced with Phase 1A classification at
-// `internal-data/plans/enforcement-grade-classification.md`.
+// Authoritative mapping synced with the Phase 1A classification plan,
+// a pre-extraction internal doc.
 const EXPECTED_GRADES = {
   'mcp-config': 'mechanical',
   'claude-settings': 'mechanical',

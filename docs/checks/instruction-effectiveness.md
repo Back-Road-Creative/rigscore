@@ -81,7 +81,7 @@ No `fixes` export. `--fix --yes` is a no-op.
   ```json
   {
     "instructionEffectiveness": {
-      "crossRepoRefs": ["projects/**", "lib-skill-utils/**", "_foundation/**"]
+      "crossRepoRefs": ["projects/**", "shared-lib/**"]
     }
   }
   ```

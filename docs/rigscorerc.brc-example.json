@@ -5,11 +5,11 @@
     "gitWrapper": "/usr/local/bin/git",
     "safetyGates": "/etc/profile.d/safety-gates.sh",
     "immutableDirs": [
-      "/home/user/workspaces/_governance",
-      "/home/user/workspaces/_foundation"
+      "/home/user/workspace/_governance",
+      "/home/user/workspace/_foundation"
     ],
     "governanceDirs": [
-      "/home/user/workspaces/_governance"
+      "/home/user/workspace/_governance"
     ],
     "hookFiles": [
       "/etc/claude-hooks/sandbox-gate.py"
@@ -84,8 +84,8 @@
         "finding": {
           "severity": "info",
           "title": "Skill does not mention WIP protection",
-          "detail": "Governance requires reading existing files before overwriting in projects/svc-* (untracked files have no backup), but this skill performs write operations without mentioning the precaution.",
-          "remediation": "Add WIP protection note: 'Before overwriting files in projects/svc-*, read them first — untracked files have no backup.'"
+          "detail": "Governance requires reading existing files before overwriting in services/svc-* (untracked files have no backup), but this skill performs write operations without mentioning the precaution.",
+          "remediation": "Add WIP protection note: 'Before overwriting files in services/svc-*, read them first — untracked files have no backup.'"
         }
       },
       {

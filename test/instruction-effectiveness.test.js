@@ -345,8 +345,8 @@ describe('instruction-effectiveness check', () => {
     const tmpDir = makeTmpDir();
     const content = [
       '# Rules',
-      'Report lives at `internal-data/health-reports/<project-slug>/YYYY-MM-DD-build.md`.',
-      'Stage path is `internal-data/skill-staging/<skill-name>/SKILL.md`.',
+      'Report lives at `reports/<project-slug>/YYYY-MM-DD-build.md`.',
+      'Stage path is `staging/<skill-name>/SKILL.md`.',
     ].join('\n');
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Enforces the convention documented in `projects/lib-skill-utils/AGENT_OUTPUT_SCHEMAS.md`: every fan-out sub-agent that emits JSON for an orchestrator to parse must declare the shape in a parseable ```` ```json ```` fenced block inside its `.md` file. Maps to OWASP Agentic Top 10 **ASI01 — Agent Authorization & Control Hijacking** (loosely; an undeclared or drifted JSON contract lets aggregated orchestrator output silently diverge from what the agent actually emits, breaking the goal-routing pipeline). A passing check means orchestrators in `health-check`, `workflow-maturity`, `pipeline-diagnose`, and the like have a stable contract to validate against. A failure usually means an agent was renamed, edited, or hand-authored without keeping its declared output example in lockstep with what the orchestrator-side schema expects.
+Enforces the schema convention this check codifies: every fan-out sub-agent that emits JSON for an orchestrator to parse must declare the shape in a parseable ```` ```json ```` fenced block inside its `.md` file. Maps to OWASP Agentic Top 10 **ASI01 — Agent Authorization & Control Hijacking** (loosely; an undeclared or drifted JSON contract lets aggregated orchestrator output silently diverge from what the agent actually emits, breaking the goal-routing pipeline). A passing check means orchestrators in `health-check`, `workflow-maturity`, `pipeline-diagnose`, and the like have a stable contract to validate against. A failure usually means an agent was renamed, edited, or hand-authored without keeping its declared output example in lockstep with what the orchestrator-side schema expects.
 
 ## Triggers
 
@@ -21,7 +21,7 @@ Advisory — weight 0. The check enforces a documentation/contract convention, n
 
 No auto-fix. Both findings require a human decision about the agent's intended output shape, which rigscore cannot synthesize.
 
-- `agent-output-schemas/missing-schema-block` → manual: author copies the canonical shape from `projects/lib-skill-utils/AGENT_OUTPUT_SCHEMAS.md` and customizes the keys for this agent's domain.
+- `agent-output-schemas/missing-schema-block` → manual: author adds a ```` ```json ```` example block under `## Output Format` (see the Example below) and customizes the keys for this agent's domain.
 - `agent-output-schemas/malformed-schema-block` → manual: author fixes the JSON syntax. A naive find-and-replace would risk overwriting valid placeholder semantics (e.g., `"verdict": "FOO|BAR"` is an intentional enum hint, not a string literal to coerce).
 - Out of scope: cross-referencing orchestrator-side schemas (e.g., `STRATEGY_SCHEMA` in `health-check.py`) against the agent-side example. That cross-check belongs in `lib-skill-utils` runtime validation, not a static doc scan.
 
@@ -49,7 +49,7 @@ No auto-fix. Both findings require a human decision about the agent's intended o
 - **Scans `.claude/agents/*.md` at the top level only.** Nested subdirectories under `.claude/agents/` are not walked. The convention as documented places agent files directly under that directory.
 - **Both cwd and homedir scanned.** When `homedir !== cwd`, the check picks up user-global agent files installed under `~/.claude/agents/` in addition to repo-tracked ones under `<cwd>/.claude/agents/`.
 - **Heuristic for "claims JSON" is intentionally loose.** Either `Return ONLY a JSON` (case-insensitive) or `## Output Format` (case-insensitive H2) qualifies. Tighter detection would miss synthesizer-style agents like `health-strategy` whose body uses the H2 form without the literal "Return ONLY" phrasing.
-- **Parse-only validation, not key-level.** The check verifies that ```` ```json ```` blocks are valid JSON; it does NOT enforce that required keys (`name`, `verdict`, `rationale`, etc.) are present. Key-level enforcement is the orchestrator's responsibility at runtime — see `STRATEGY_SCHEMA` and `CATEGORY_SCHEMA` in `projects/lib-skill-utils/health-check.py`.
+- **Parse-only validation, not key-level.** The check verifies that ```` ```json ```` blocks are valid JSON; it does NOT enforce that required keys (`name`, `verdict`, `rationale`, etc.) are present. Key-level enforcement is the orchestrator's responsibility at runtime — see `STRATEGY_SCHEMA` and `CATEGORY_SCHEMA` in `lib-skill-utils/health-check.py`.
 - **`.rigscorerc.json` disable.** This check is disabled in rigscore's own self-scan profile because rigscore itself is an npm package with no `.claude/agents/` directory. Workspaces that dogfood rigscore should leave it enabled.
 - **No config knobs.** Detection patterns and the agent-directory location are hard-coded. If the convention drifts (e.g., agents move under `.claude/subagents/`), update `discoverAgentDirs` in `src/checks/agent-output-schemas.js` rather than adding configuration.
 

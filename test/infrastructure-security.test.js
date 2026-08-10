@@ -98,7 +98,7 @@ describe('infrastructure-security check', () => {
     if (process.platform !== 'linux') return;
 
     const result = await check.run({
-      cwd: '/home/user/workspaces',
+      cwd: '/home/user/workspace',
       homedir: '/home/user',
       config: {
         paths: {
@@ -141,7 +141,7 @@ describe('infrastructure-security check', () => {
     if (process.platform !== 'linux') return;
 
     const result = await check.run({
-      cwd: '/home/user/workspaces',
+      cwd: '/home/user/workspace',
       homedir: '/home/user',
       config: {
         paths: {

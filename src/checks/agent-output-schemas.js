@@ -100,7 +100,7 @@ export default {
           severity: 'warning',
           title: `Agent \`${agent.name}\` claims JSON output but declares no schema`,
           detail: `\`${agent.path}\` says it emits JSON (matched "Return ONLY a JSON" or an "## Output Format" section) but contains no \`\`\`json fenced block — orchestrators can't validate the contract.`,
-          remediation: `Add an \`\`\`json fenced example block under \`## Output Format\` showing the exact shape the agent emits. See \`projects/lib-skill-utils/AGENT_OUTPUT_SCHEMAS.md\` for the convention.`,
+          remediation: `Add an \`\`\`json fenced example block under \`## Output Format\` showing the exact shape the agent emits. See docs/checks/agent-output-schemas.md for the convention.`,
           context: { agent: agent.name, path: agent.path },
         });
         continue;
