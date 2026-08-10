@@ -71,6 +71,8 @@ jobs:
 
       - name: Run tests
         if: steps.check.outputs.exists == 'false'
+        env:
+          FORBIDDEN_EXTRA: ${{ secrets.FORBIDDEN_EXTRA }}
         run: npm test
 
       # docs-first gate: same blocking check ci.yml runs. Without it, a
