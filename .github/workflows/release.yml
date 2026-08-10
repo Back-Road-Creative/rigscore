@@ -3,8 +3,10 @@ name: Release
 # Triggered by a package.json version bump on main.
 # Single workflow — no cross-workflow event chain, no GITHUB_TOKEN trigger gap.
 #
-# Steps: test → GitHub release → headlessmode facts PR (data/rigscore.json only)
+# Steps: test → GitHub release (facts snapshot attached as a release asset)
 # Distribution: GitHub only (npx github:Back-Road-Creative/rigscore)
+# The consuming site's facts data file is refreshed downstream, in that repo,
+# by a workflow there that pulls from this repo's public releases.
 
 on:
   push:
@@ -13,13 +15,8 @@ on:
   # rc/beta/alpha tags never reach this workflow: it fires only on a
   # package.json version bump, and rc tags do not bump package.json. rc site
   # posts are therefore hand-authored by design (release-provenance.yml still
-  # signs the rc tag; only the headlessmode facts sync is skipped).
+  # signs the rc tag).
   workflow_dispatch:   # manual re-trigger after tag/release cleanup
-    inputs:
-      force_site_post:
-        description: 'Re-post to the headlessmode site even though the release already exists (e.g. after rotating a dead HEADLESSMODE_PAT). Bypasses the released==true guard so a re-dispatch is not silently skipped.'
-        type: boolean
-        default: false
 
 jobs:
   release:
@@ -85,20 +82,19 @@ jobs:
         run: npm run verify:docs
 
       - name: Build changelog
-        # Feeds the GitHub release notes. (The site facts job no longer consumes
-        # it — release notes retired from the site with its /releases/ section.)
-        if: steps.check.outputs.exists == 'false' || inputs.force_site_post
+        # Feeds the GitHub release notes. (Release notes retired from the site
+        # with its /releases/ section — the site validator (2026-07-27) that
+        # once checked this output no longer applies here.)
+        if: steps.check.outputs.exists == 'false'
         id: changelog
         env:
           VERSION: ${{ steps.pkg.outputs.version }}
         run: |
           # --exclude the version being released. On a normal run its tag does
           # not exist yet, so a bare `describe` correctly returns the previous
-          # release. On a `force_site_post` re-run the tag DOES already exist,
-          # so a bare `describe` returns the current version and the range
-          # collapses to "vX..vX" — an empty changelog. That produced a
-          # 70-word, table-less v2.2.0 site post that the release-post
-          # validator rejected (headlessmode#173, 2026-07-27).
+          # release. On a re-dispatch after the tag already exists, a bare
+          # `describe` would return the current version and the range would
+          # collapse to "vX..vX" — an empty changelog.
           PREV_TAG=$(git describe --tags --abbrev=0 --exclude "v${VERSION}" 2>/dev/null || echo "")
           # Prefer the curated `## [<version>]` section the maintainer folded into
           # CHANGELOG.md in the version-bump PR (assemble-changelog --release). Fall
@@ -136,9 +132,9 @@ jobs:
       # per-check {id,weight,category,grade}, enforcement-grade split,
       # frameworks, exit codes, CLI flags) every downstream site surface —
       # homepage count/version, JSON-LD softwareVersion, docs check tables — is
-      # rendered from. The headlessmode facts job regenerates the same fact set
-      # into data/rigscore.json; E4's verify-facts gate compares that file to
-      # THIS asset. Generated here, where npm ci already ran.
+      # rendered from. The site facts sync, which now lives downstream in the
+      # site repo and pulls from this repo's public releases, regenerates the
+      # same fact set from this asset. Generated here, where npm ci already ran.
       - name: Attach facts snapshot to release
         if: steps.check.outputs.exists == 'false'
         env:
@@ -169,159 +165,9 @@ jobs:
           gh workflow run release-provenance.yml --repo "${{ github.repository }}" \
             --ref "v${VERSION}"
 
-      # Version for the downstream headlessmode facts job. The changelog +
-      # prev-tag exports retired with the site's release-post pipeline
-      # (hybrid redesign 2026-08-06) — the facts sync needs only the version.
-      - name: Export release outputs
-        id: release_out
-        if: steps.check.outputs.exists == 'false' || inputs.force_site_post
-        run: echo "version=${{ steps.pkg.outputs.version }}" >> "$GITHUB_OUTPUT"
-    outputs:
-      released: ${{ steps.check.outputs.exists == 'false' && 'true' || 'false' }}
-      version: ${{ steps.release_out.outputs.version }}
-
-  # Separate job so the cross-repo PAT (HEADLESSMODE_PAT) is only exposed
-  # to the step that needs it, with `contents: read` on this repo —
-  # nothing in this job writes to rigscore. Also gated on `released ==
-  # 'true'` and on the PAT being set, so a fork without the secret
-  # cannot trigger a misleading failure.
-  headlessmode-post:
-    name: Sync release facts to headlessmode
-    needs: release
-    # Forced re-post (force_site_post) bypasses the released==true guard so a
-    # re-dispatch after a dead PAT is not silently skipped.
-    if: needs.release.outputs.released == 'true' || inputs.force_site_post
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write     # "Create issue on failure" step opens a tracking issue
-    steps:
-      - name: Guard — require HEADLESSMODE_PAT
-        env:
-          PAT: ${{ secrets.HEADLESSMODE_PAT }}
-        run: |
-          if [ -z "${PAT}" ]; then
-            echo "HEADLESSMODE_PAT not set — skipping cross-repo post."
-            echo "skip=true" >> "$GITHUB_ENV"
-          fi
-
-      # Fail loudly here, BEFORE the cross-repo clone, if the PAT is set but
-      # dead — otherwise the clone dies at `git clone` with an opaque exit 128
-      # ("Authentication failed"), which is exactly how the v2.1.0 site post
-      # broke unnoticed.
-      - name: Preflight — HEADLESSMODE_PAT must be valid
-        if: env.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
-        run: |
-          if ! login=$(gh api user --jq '.login' 2>/tmp/pat-err); then
-            echo "::error::HEADLESSMODE_PAT is set but invalid/expired — 'gh api user' failed. Rotate the PAT; the cross-repo site post cannot run." >&2
-            cat /tmp/pat-err >&2
-            exit 1
-          fi
-          echo "HEADLESSMODE_PAT valid — authenticated as ${login}."
-
-      # Check out rigscore AT THE RELEASED TAG to run the facts generator, so the
-      # emitted facts describe exactly the released registry. Default-branch HEAD
-      # is the wrong source: it can carry merged-but-unreleased check changes, so
-      # a `force_site_post` re-dispatch would publish UNRELEASED facts onto an
-      # already-shipped release's site post. Pinning to `v<version>` closes that.
-      #
-      # generate-facts.js must exist in the released tag — it does for every
-      # release after v2.1.0 (that tag predates the generator). A re-post of a tag
-      # that lacks the generator fails loudly here and opens a tracking issue via
-      # the "Create issue on failure" step, rather than silently regenerating
-      # from a different tree. generate-facts.js loads the check modules, which
-      # pull in the two runtime deps (chalk, yaml), so npm ci is required.
-      - name: Check out rigscore at the released tag (facts pinned to the release)
-        if: env.skip != 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: v${{ needs.release.outputs.version }}
-
-      - name: Set up Node
-        if: env.skip != 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        if: env.skip != 'true'
-        run: npm ci
-
-      - name: Sync release facts to headlessmode
-        if: env.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.HEADLESSMODE_PAT }}
-          VERSION: ${{ needs.release.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          echo "Version: ${VERSION}"
-
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/Back-Road-Creative/headlessmode.git" /tmp/headlessmode
-          cd /tmp/headlessmode
-
-          # Regenerate the site's product-facts data file from the live rigscore
-          # registry (checked out at the released tag in $GITHUB_WORKSPACE). The
-          # site renders its homepage count/version, JSON-LD softwareVersion and
-          # the check tables FROM this file, so hand-patched counts/versions —
-          # and the fragile version regex that broke on U+2502 — structurally
-          # cease to exist: a release updates one JSON file and everything
-          # re-renders. generate-facts.js resolves the registry (and node_modules)
-          # from its own checkout dir, so cwd here only decides where --out lands.
-          #
-          # Facts ONLY: the site retired /releases/ and its post pipeline in the
-          # hybrid redesign (headlessmode feat/redesign-hybrid, 2026-08-06) —
-          # release notes live on THIS repo's GitHub releases page, and the old
-          # generate-rigscore-post.js / content/docs.md no longer exist to call.
-          mkdir -p data
-          node "${GITHUB_WORKSPACE}/scripts/generate-facts.js" --out data/rigscore.json
-
-          BRANCH="rigscore-release/v${VERSION}"
-          git config user.name "rigscore-bot"
-          git config user.email "rigscore-bot@headlessmode.com"
-          # -B, not -b: a re-dispatch must not die because the local branch name
-          # is taken. The remote side is handled at the push below.
-          git checkout -B "${BRANCH}"
-          git add data/rigscore.json
-          git commit -m "release: rigscore v${VERSION} — facts data refresh"
-
-          # force_site_post exists to RE-run a post that failed. The first attempt
-          # leaves ${BRANCH} on headlessmode, so a plain push from a freshly-built
-          # branch is non-fast-forward and the job dies — the re-run flag could
-          # only ever work once. Force is correct rather than merely convenient:
-          # every byte of this branch is derived from the released tag and the
-          # facts generator, so the regenerated commit is by definition the
-          # authoritative one. No lease — we just cloned, so a lease would be
-          # taken against our own fetch and would protect nothing.
-          git push --force origin "${BRANCH}"
-
-          # The PR outlives a failed run too, and `gh pr create` errors on a
-          # duplicate. The force-push above already updated an open PR in place.
-          if gh pr view "${BRANCH}" --repo Back-Road-Creative/headlessmode \
-               --json state --jq '.state' 2>/dev/null | grep -qx OPEN; then
-            echo "PR for ${BRANCH} is already open — the force-push updated it in place."
-          else
-            gh pr create \
-              --repo Back-Road-Creative/headlessmode \
-              --title "release: rigscore v${VERSION} facts refresh" \
-              --body "Auto-generated data/rigscore.json refresh for rigscore v${VERSION} — the one file every rigscore fact on the site renders from. Release notes live on this repo's GitHub releases page. Created by the rigscore release workflow." \
-              --head "${BRANCH}" \
-              --base master
-          fi
-
-      # Mirrors the headlessmode site deploy job's alerting: if any step above
-      # failed (dead PAT, patch-script drift, PR-create error), open a tracking
-      # issue so a broken site post cannot sit unnoticed the way v2.1.0 did.
-      - name: Create issue on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.release.outputs.version }}
-        run: |
-          gh issue create \
-            --repo "${{ github.repository }}" \
-            --title "Release post to headlessmode failed: v${VERSION:-unknown} ($(date +'%Y-%m-%d %H:%M'))" \
-            --body "The GitHub release exists but the headlessmode site post / docs sync did not complete, so the live site is stale. Likely causes: expired HEADLESSMODE_PAT or patch-script drift.
-          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || echo "Could not create issue"
+      # The release-facts sync that used to run here (a second job that
+      # cloned the consuming site repo with a cross-repo token and opened a
+      # PR against it) moved downstream: the site repo now runs its own
+      # pull-based workflow that watches this repo's public releases and
+      # regenerates its facts data file from the attached facts snapshot
+      # above. Nothing in this repo pushes into another repo anymore.
