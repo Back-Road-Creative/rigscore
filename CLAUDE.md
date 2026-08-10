@@ -9,7 +9,7 @@ AI dev security scoring tool. Moat-first: MCP supply chain, governance coherence
 node bin/rigscore.js .
 
 # Run recursively on workspace
-npx --prefix . rigscore --recursive --depth 1 /home/dev/workspaces/_active/
+npx --prefix . rigscore --recursive --depth 1 ~/workspace/services/
 
 # Test
 npx vitest run
