@@ -345,8 +345,8 @@ describe('instruction-effectiveness check', () => {
     const tmpDir = makeTmpDir();
     const content = [
       '# Rules',
-      'Report lives at `.data/health-reports/<project-slug>/YYYY-MM-DD-build.md`.',
-      'Stage path is `.data/skill-staging/<skill-name>/SKILL.md`.',
+      'Report lives at `reports/<project-slug>/YYYY-MM-DD-build.md`.',
+      'Stage path is `staging/<skill-name>/SKILL.md`.',
     ].join('\n');
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
     try {
@@ -379,7 +379,7 @@ describe('instruction-effectiveness check', () => {
     const tmpDir = makeTmpDir();
     const content = [
       '# Rules',
-      'Run `git -C _active/pkg log --oneline HEAD` to inspect.',
+      'Run `git -C projects/pkg log --oneline HEAD` to inspect.',
       'Count with `find ~/.claude/skills -name SKILL.md | wc -l`.',
       'Use `grep -E pattern` for extended regex.',
     ].join('\n');
@@ -450,13 +450,13 @@ describe('instruction-effectiveness check', () => {
       const content = [
         '# Rules',
         'See `lib-skill-utils/foo.sh` for the helper.',
-        'And `_active/other/bar.py` for cross-repo code.',
+        'And `projects/other/bar.py` for cross-repo code.',
       ].join('\n');
       fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
       const cfg = {
         ...defaultConfig,
         instructionEffectiveness: {
-          crossRepoRefs: ['lib-skill-utils/**', '_active/**'],
+          crossRepoRefs: ['lib-skill-utils/**', 'projects/**'],
         },
       };
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: cfg });

@@ -636,7 +636,7 @@ changelog.
   longer drag the score down.
 - **`instruction-effectiveness`** false-positive reduction — file-line-range
   suffixes stripped before path existence check; cross-repo refs
-  allowlist-aware; `/home/joe` dead-ref count dropped from 143 to 12 (#90).
+  allowlist-aware; authoring-machine dead-ref count dropped from 143 to 12 (#90).
 
 ### Distribution
 - **npm publish remains off** by design. Distribution is GitHub-only via

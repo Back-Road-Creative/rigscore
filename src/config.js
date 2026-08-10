@@ -70,7 +70,7 @@ const DEFAULTS = {
     // Glob patterns for legitimate cross-repo file references. Refs matching
     // any pattern are NOT flagged as dead even if the file can't be resolved
     // from the current cwd. Supports `*` (segment) and `**` (any) globs.
-    // Example: ["_active/**", "lib-skill-utils/**", "_foundation/**"]
+    // Example: ["projects/**", "shared-lib/**"]
     crossRepoRefs: [],
   },
   memoryHygiene: {

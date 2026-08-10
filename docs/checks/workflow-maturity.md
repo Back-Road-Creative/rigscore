@@ -61,7 +61,7 @@ No `fixes` export. `--fix --yes` is a no-op.
   WARNING MCP server `local-rag` has ≤1 discoverable consumer
          MCP overhead requires at least 2 consumers to justify.
   WARNING `2026-Q1-notes.md` is not linked from MEMORY.md
-         /home/joe/.claude/projects/.../memory/2026-Q1-notes.md
+         /home/user/.claude/projects/.../memory/2026-Q1-notes.md
          — orphan memory biases responses without visibility.
   INFO   Pipeline `src/orchestrator.py` has 14 stage markers
          Consider sub-pipeline decomposition.

@@ -98,8 +98,8 @@ describe('infrastructure-security check', () => {
     if (process.platform !== 'linux') return;
 
     const result = await check.run({
-      cwd: '/home/dev/workspaces',
-      homedir: '/home/joe',
+      cwd: '/home/user/workspace',
+      homedir: '/home/user',
       config: {
         paths: {
           hooksDir: '/opt/git-hooks',
@@ -141,8 +141,8 @@ describe('infrastructure-security check', () => {
     if (process.platform !== 'linux') return;
 
     const result = await check.run({
-      cwd: '/home/dev/workspaces',
-      homedir: '/home/joe',
+      cwd: '/home/user/workspace',
+      homedir: '/home/user',
       config: {
         paths: {
           hooksDir: '/opt/git-hooks',

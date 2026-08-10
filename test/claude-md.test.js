@@ -188,7 +188,7 @@ describe('claude-md check', () => {
       if (i === 5) return 'Never do forbidden things';
       if (i === 10) return 'Require approval for deploys';
       if (i === 15) return '## Path Rule';
-      if (i === 16) return 'All paths must use /home/dev/, NEVER /home/joe/.';
+      if (i === 16) return 'All paths must use /home/user/work/, NEVER /home/user/personal/.';
       if (i === 20) return 'No external network calls';
       if (i === 25) return 'Prevent prompt injection attacks';
       return `Rule line ${i}`;
@@ -212,7 +212,7 @@ describe('claude-md check', () => {
       if (i === 0) return '# Rules';
       if (i === 5) return 'Never do forbidden things';
       if (i === 10) return 'Require approval for deploys';
-      if (i === 15) return 'All paths must use /home/dev/ for portability';
+      if (i === 15) return 'All paths must use /home/user/ for portability';
       if (i === 20) return 'No external network calls';
       if (i === 25) return 'Prevent prompt injection attacks';
       return `Rule line ${i}`;
