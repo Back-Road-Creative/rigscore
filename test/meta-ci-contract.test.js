@@ -138,26 +138,26 @@ describe('community health + disclosure (RS-44, SECURITY)', () => {
   });
 });
 
-// force_site_post exists so a failed cross-repo post can be re-run. The first
-// attempt leaves `rigscore-release/v<version>` behind on headlessmode, so every
-// later re-dispatch built a fresh branch of the same name and died
-// non-fast-forward — the feature could only ever work once. Observed 2026-07-28
-// on v2.2.0 (run 30389926406): the post regenerated correctly (3 files, +72/-10)
-// and then could not land.
-describe('release — a forced re-post can run twice (v2.2.0 regression)', () => {
-  const post = parse('.github/workflows/release.yml')
-    .jobs['headlessmode-post'].steps
-    .find((s) => s.name?.startsWith('Sync release facts to headlessmode'));
+// The cross-repo facts-sync job (formerly `headlessmode-post`) moved
+// downstream to the consuming site repo, which now pulls from this repo's
+// public releases instead of being pushed to by a token clone + PR. The
+// public workflow must not name a private repo (org leak-scan policy,
+// 2026-08-09), so this asserts the job and every reference to it are gone
+// for good rather than merely renamed.
+describe('release — no private-repo automation in the public workflow', () => {
+  const raw = read('.github/workflows/release.yml');
+  const wf = parse('.github/workflows/release.yml');
 
-  it('reuses the release branch instead of demanding a fresh one', () => {
-    expect(post.run).not.toMatch(/git checkout -b "\$\{BRANCH\}"/);
+  it('does not name the private site repo anywhere in the file', () => {
+    expect(raw.toLowerCase()).not.toMatch(/headlessmode/);
   });
 
-  it('publishes in a form that survives an existing remote branch', () => {
-    expect(post.run).toMatch(/git push --force[^\n]*"\$\{BRANCH\}"/);
+  it('has no job that clones or PRs into another repo', () => {
+    expect(wf.jobs['headlessmode-post']).toBeUndefined();
+    expect(Object.keys(wf.jobs)).toEqual(['release']);
   });
 
-  it('does not fail the job when the release PR is already open', () => {
-    expect(post.run).toMatch(/gh pr view/);
+  it('dropped the force_site_post re-post input with the job it served', () => {
+    expect(wf.on.workflow_dispatch?.inputs?.force_site_post).toBeUndefined();
   });
 });
