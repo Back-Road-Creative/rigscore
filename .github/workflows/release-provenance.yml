@@ -36,6 +36,8 @@ jobs:
         run: npm ci
 
       - name: Run tests
+        env:
+          FORBIDDEN_EXTRA: ${{ secrets.FORBIDDEN_EXTRA }}
         run: npm test
 
       - name: Pack tarball

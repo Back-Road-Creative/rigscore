@@ -88,15 +88,29 @@ it('healthcheck negative leg: a NON-allow-listed host that must be refused', () 
 });
 
 // Adapted from a private, PHI-adjacent devcontainer. Nothing identifying that project — least of
-// all a storage-account hostname — may ship in this public repo.
+// all a storage-account hostname — may ship in this public repo. The identifying entries (client
+// project names, storage-account host) live in the FORBIDDEN_EXTRA CI secret rather than here, so
+// this public file cannot itself leak the very names it guards against.
+const forbidden = ['core.windows.net', 'management.azure.com',
+  'visualstudio.com', 'vsassets.io', 'vscode-unpkg', '172.20.0.0', 'HOST_GID', '/home/vscode'];
+const forbiddenExtra = (process.env.FORBIDDEN_EXTRA || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 it('leaks no identifier from the source project it was adapted from', () => {
-  const forbidden = ['redacted-client', 'redacted-client', 'redacted-storage-account', 'core.windows.net', 'management.azure.com',
-    'visualstudio.com', 'vsassets.io', 'vscode-unpkg', '172.20.0.0', 'HOST_GID', '/home/vscode'];
   for (const file of fs.readdirSync(PACK)) {
     const body = read(file).toLowerCase();
-    for (const token of forbidden) {
+    for (const token of [...forbidden, ...forbiddenExtra]) {
       expect(body, `"${token}" leaked into templates/container/${file}`)
         .not.toContain(token.toLowerCase());
     }
   }
+});
+
+it('CI supplies FORBIDDEN_EXTRA, so the identifying-entry guard cannot silently vanish', () => {
+  if (!process.env.GITHUB_ACTIONS) return; // local runs cover only the public entries above
+  expect(forbiddenExtra.length,
+    'FORBIDDEN_EXTRA is unset/empty in CI — the identifying-name leak guard is not running')
+    .toBeGreaterThan(0);
 });

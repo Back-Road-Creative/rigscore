@@ -69,6 +69,8 @@ jobs:
         run: git diff --exit-code package-lock.json
 
       - name: Run tests
+        env:
+          FORBIDDEN_EXTRA: ${{ secrets.FORBIDDEN_EXTRA }}
         run: npm test -- --coverage
 
       # docs-first gate: verify every src/checks/*.js has a complete doc page at
