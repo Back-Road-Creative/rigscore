@@ -124,7 +124,7 @@ describe('loadConfig', () => {
     fs.writeFileSync(
       path.join(cwdDir, '.rigscorerc.json'),
       JSON.stringify({
-        instructionEffectiveness: { crossRepoRefs: ['_active/**', 'AGENTS.md'] },
+        instructionEffectiveness: { crossRepoRefs: ['projects/**', 'AGENTS.md'] },
       }),
     );
     try {
@@ -132,7 +132,7 @@ describe('loadConfig', () => {
       const refs = config.instructionEffectiveness.crossRepoRefs;
       expect(refs).toContain('AGENTS.md');
       expect(refs).toContain('MEMORY.md');
-      expect(refs).toContain('_active/**');
+      expect(refs).toContain('projects/**');
       // Dedup: AGENTS.md appears in both, should only land once
       expect(refs.filter(r => r === 'AGENTS.md')).toHaveLength(1);
     } finally {
