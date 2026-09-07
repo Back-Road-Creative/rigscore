@@ -24,7 +24,12 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # self-hosted (JP 2026-09-07, "everything should be on the self hosted
+    # runner"). Safe here and NOT in ci.yml: this workflow is never triggered
+    # by `pull_request`, so a fork of this PUBLIC repo cannot queue a job onto
+    # the box. ci.yml stays GitHub-hosted for that reason, and because its
+    # matrix covers macos and windows, which the org's Linux runners cannot.
+    runs-on: self-hosted
     steps:
       # Checked out at the ref the caller dispatched with (`gh workflow run
       # --ref v<version>` from release.yml), so a dispatched build uses the
