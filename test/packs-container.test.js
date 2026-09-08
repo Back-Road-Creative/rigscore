@@ -108,8 +108,16 @@ it('leaks no identifier from the source project it was adapted from', () => {
   }
 });
 
+// Dependabot-triggered runs read the *Dependabot* secret store, which GitHub keeps separate from
+// the Actions one on purpose — `secrets.FORBIDDEN_EXTRA` is therefore structurally empty on every
+// dependabot PR, and mirroring the identifying names into that second store would hand them to
+// workflow code proposed by the bot. So exempt exactly those runs. GITHUB_ACTOR is set by GitHub,
+// not by the workflow, so a run cannot opt itself out of the guard.
+const secretsWithheld = process.env.GITHUB_ACTOR === 'dependabot[bot]';
+
 it('CI supplies FORBIDDEN_EXTRA, so the identifying-entry guard cannot silently vanish', () => {
   if (!process.env.GITHUB_ACTIONS) return; // local runs cover only the public entries above
+  if (secretsWithheld) return; // dependabot cannot be handed the Actions secret store
   expect(forbiddenExtra.length,
     'FORBIDDEN_EXTRA is unset/empty in CI — the identifying-name leak guard is not running')
     .toBeGreaterThan(0);
