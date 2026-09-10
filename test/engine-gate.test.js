@@ -10,18 +10,19 @@ const PKG_PATH = path.resolve(__dirname, '..', 'package.json');
  * E6 (Track E): guard the Node engine floor established by Track B
  * (distribution integrity). Track B bumped engines.node to 18.17+ to
  * unlock `fs.cp`, `structuredClone`, top-level async iterators in
- * streams, and stable test-runner APIs. A future "fix a CI weirdness by
+ * streams, and stable test-runner APIs. D13 raised the floor to 20+
+ * after Node 18 reached EOL (2025-04-30). A future "fix a CI weirdness by
  * dropping the bump" is exactly the kind of regression this gate exists
  * to catch.
  */
 describe('E6: Node engine gate', () => {
-  it('package.json declares engines.node starting with ">=18.17"', () => {
+  it('package.json declares engines.node starting with ">=20"', () => {
     const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf8'));
     expect(pkg.engines, 'package.json missing engines field').toBeDefined();
     expect(pkg.engines.node, 'engines.node missing').toBeDefined();
     expect(
-      pkg.engines.node.startsWith('>=18.17'),
-      `expected engines.node to start with ">=18.17", got "${pkg.engines.node}"`,
+      pkg.engines.node.startsWith('>=20'),
+      `expected engines.node to start with ">=20", got "${pkg.engines.node}"`,
     ).toBe(true);
   });
 
