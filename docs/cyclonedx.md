@@ -14,9 +14,9 @@ hand-transcribed restatement of it. A companion negative test mutates a componen
 off-spec value and requires the validator to reject it, so a validator that silently no-opped could
 not produce a green run.
 
-> **Pin the dep to v7, not v8+.** v8 requires Node ≥20.18; the CI matrix (`.github/workflows/ci.yml`)
-> still includes **18.17**, which `package.json` `engines` also declares support for. v7 needs only
-> Node ≥14. Bump to v8 *only* together with dropping the 18.17 leg.
+> `package.json` `engines` now declares Node `>=20.0.0` and the CI matrix (`.github/workflows/ci.yml`)
+> dropped the 18.17 leg, so the v8+ floor of `@cyclonedx/cyclonedx-library` (Node ≥20.18) is no longer
+> a blocker.
 >
 > The library's XML validator pulls the native addon `libxmljs2`, but only as an **optional**
 > dependency — rigscore validates JSON only (pure-JS `ajv`), so a failed native build is harmless and

@@ -7,8 +7,8 @@ import { calculatePracticeScore } from './scoring.js';
 
 // createRequire instead of `import pkg from '../package.json' assert
 // { type: 'json' }` because the JSON-import assertion syntax is still
-// behind a flag on Node 18.17 (our floor; see engines field in
-// package.json). Once the engines floor moves to ≥20.10 — which made
+// behind a flag below Node 20.10 (our floor is ≥20.0.0; see engines field
+// in package.json). Once the engines floor moves to ≥20.10 — which made
 // `import ... with { type: 'json' }` stable without a flag — this
 // shim can be replaced with the native import form.
 const require = createRequire(import.meta.url);

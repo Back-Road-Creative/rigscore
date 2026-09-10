@@ -122,10 +122,11 @@ export function buildRescan({ cwd, scanOptions, options }) {
  * Create the fs watcher(s), returning an array of closable watchers.
  *
  * On Linux + Node < 19.1, `fs.watch(cwd, { recursive: true })` throws
- * ERR_FEATURE_UNAVAILABLE_ON_PLATFORM — so --watch would crash despite
- * `engines.node` allowing >=18.17 and CI testing 18.17 on ubuntu. Rather than
- * drop Node 18 for the whole tool, degrade only --watch: fall back to a
- * non-recursive watch of the project root plus each governance dir, and say so.
+ * ERR_FEATURE_UNAVAILABLE_ON_PLATFORM — so --watch would crash on a system
+ * Node older than `engines.node` (>=20.0.0) declares support for. Rather
+ * than assume every install honours the engines floor, degrade only
+ * --watch: fall back to a non-recursive watch of the project root plus
+ * each governance dir, and say so.
  * (Changes nested deeper than one level under an unwatched dir may be missed.)
  */
 export function setupWatchers(cwd, onTrigger) {

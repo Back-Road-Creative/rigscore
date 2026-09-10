@@ -12,7 +12,7 @@ changes and get them merged.
 
 ## Development setup
 
-rigscore is a Node CLI. Requirements: Node **>= 18.17** (the CI floor).
+rigscore is a Node CLI. Requirements: Node **>= 20** (the CI floor).
 
 ```bash
 git clone https://github.com/Back-Road-Creative/rigscore.git
