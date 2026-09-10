@@ -4,7 +4,7 @@ name: Prebuilt archives
 #
 # rigscore is a pure-JS CLI (deps: chalk + yaml, no native addons), so one build
 # produces a portable app tree — bin/src/templates/docs + production node_modules
-# + a launcher — that runs on any OS with a system Node >= 18.17, without npm,
+# + a launcher — that runs on any OS with a system Node >= 20, without npm,
 # npx, or network access to a registry. This broadens distribution beyond
 # `npx github:` for offline / air-gapped / no-npm security teams.
 #

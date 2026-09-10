@@ -48,7 +48,7 @@ Weights are the single source of truth in `src/constants.js` — never hardcode 
 
 ## Conventions
 
-- Node.js >=18, ES modules (`"type": "module"`)
+- Node.js >=20, ES modules (`"type": "module"`)
 - Dependencies: chalk, yaml (no others)
 - Tests: vitest
 - Plugin system: `rigscore-check-*` packages auto-discovered from node_modules

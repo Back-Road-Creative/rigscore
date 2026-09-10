@@ -78,8 +78,8 @@ one, open an issue — it's a known gap.
 
 ## "`npm ci` fails with engine mismatch"
 
-rigscore requires **Node `>=18`** (`package.json` `engines`). Node 16 and
-earlier are not supported. Pin your CI to Node 18 or 20.
+rigscore requires **Node `>=20`** (`package.json` `engines`). Node 18 and
+earlier are not supported. Pin your CI to Node 20 or 22.
 
 ```yaml
 # GitHub Actions

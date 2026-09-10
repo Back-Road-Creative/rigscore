@@ -194,7 +194,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
             fail-under: '70'
             upload-sarif: true
   ```
-- **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node `18.17`, `20`, and `22` (`.github/workflows/ci.yml`). WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
+- **Cross-platform support.** CI runs against `ubuntu-latest` and `macos-latest` across Node `20` and `22` (`.github/workflows/ci.yml`). WSL users get the Linux path. **Windows native is out of scope** — POSIX-only permission checks and shell-command assumptions make it a separate workstream, not a v1.0.0 deliverable.
 
 ## What it checks
 
