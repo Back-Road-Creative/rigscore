@@ -21,12 +21,11 @@ on:
 jobs:
   release:
     name: Test and release
-    # self-hosted (JP 2026-09-07, "everything should be on the self hosted
-    # runner"). Safe here and NOT in ci.yml: this workflow is never triggered
-    # by `pull_request`, so a fork of this PUBLIC repo cannot queue a job onto
-    # the box. ci.yml stays GitHub-hosted for that reason, and because its
-    # matrix covers macos and windows, which the org's Linux runners cannot.
-    runs-on: self-hosted
+    # GitHub-hosted (JP 2026-09-21). The org's self-hosted runner groups have
+    # allows_public_repositories=false, so `runs-on: self-hosted` on this PUBLIC
+    # repo never got a runner: the 2026-09-10 and 2026-09-12 Release runs sat
+    # queued 24h and were cancelled. Hosted minutes are free for public repos.
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       # `actions: write` is what lets the "Trigger tag-scoped workflows" step
