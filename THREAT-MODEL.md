@@ -71,10 +71,10 @@ Mitigation path is Stream A of the verifiability campaign: signed releases, SBOM
 - Contiguous base64 blobs ≥50 chars surrounded by whitespace: flagged (warning).
 - Base64 split across lines with non-whitespace separators, or embedded mid-sentence: not flagged.
 - Minified JavaScript pasted as "config": not flagged (looks like prose to the regex).
-- Binary files dropped into `.claude/skills/` (e.g. `payload.bin`): the skill-file walker has **no** extension filter ([`skill-files.js`](src/checks/skill-files.js) includes every non-dotfile), so a binary IS read and regex-scanned — but only after a hardcoded UTF-8 decode, so a non-text payload arrives as mojibake and slips the entire pattern catalog while the file still counts as "scanned" (a false sense of coverage, not a skipped file). There is no NUL/replacement-char sniff to flag it as non-text.
+- Binary files dropped into `.claude/skills/` (e.g. `payload.bin`): the walker has no extension filter, so a binary is read; a NUL / U+FFFD sniff flags it as `skill-files/non-text-file` (warning) and skips the pattern scans. It is reported in `data.filesNonText` and does **not** count toward `data.filesScanned`, so it cannot raise meaningful coverage while yielding a clean verdict.
 - Hex-encoded or ROT13-encoded payloads: not flagged.
 
-**Test coverage:** [`test/injection-evasion.test.js`](test/injection-evasion.test.js) covers Unicode homoglyph and zero-width evasion of *injection phrases*, not encoded *payloads*. `# TODO(stream-E): characterization test needed` for base64-embedded-in-prose, hex, and binary-file-in-skill-dir cases.
+**Test coverage:** [`test/injection-evasion.test.js`](test/injection-evasion.test.js) covers Unicode homoglyph and zero-width evasion of *injection phrases*, not encoded *payloads*. Coverage and heuristic limits are characterized in [`test/skill-files-coverage.test.js`](test/skill-files-coverage.test.js) (binary not counted as scanned; hex/ROT13 payloads and escape-clause prose stay unflagged — keyword scores are configuration evidence, not semantic proof). `# TODO(stream-E): characterization test needed` for base64-embedded-in-prose.
 
 ### 3.5 Obfuscated bash in git hooks
 
