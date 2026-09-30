@@ -65,6 +65,9 @@ const DEFAULTS = {
     // reports runtime tool-hash pin status (see `rigscore mcp-hash` subcommand).
     // Set to false to suppress the INFO findings in normal scans.
     surfaceRuntimeHashStatus: true,
+    // A recorded runtime tool pin older than this many days (or with no valid
+    // timestamp) is reported as stale/unverified, not as a current pin.
+    runtimeToolPinMaxAgeDays: 90,
   },
   instructionEffectiveness: {
     // Glob patterns for legitimate cross-repo file references. Refs matching
@@ -432,6 +435,10 @@ function mergeConfig(userConfig, baseline) {
   if (userConfig.mcpConfig && typeof userConfig.mcpConfig === 'object') {
     if (typeof userConfig.mcpConfig.surfaceRuntimeHashStatus === 'boolean') {
       result.mcpConfig.surfaceRuntimeHashStatus = userConfig.mcpConfig.surfaceRuntimeHashStatus;
+    }
+    const maxAge = userConfig.mcpConfig.runtimeToolPinMaxAgeDays;
+    if (typeof maxAge === 'number' && Number.isFinite(maxAge) && maxAge > 0) {
+      result.mcpConfig.runtimeToolPinMaxAgeDays = maxAge;
     }
   }
 
