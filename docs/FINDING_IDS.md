@@ -314,6 +314,7 @@ Grouped by check. Each ID is stable within the current major.
 - `mcp-config/server-hash-drift` (warning)
 - `mcp-config/runtime-tool-pin-recorded` (info)
 - `mcp-config/runtime-tool-pin-missing` (info)
+- `mcp-config/runtime-tool-pin-stale` (info) — a runtime tool hash is recorded but older than `mcpConfig.runtimeToolPinMaxAgeDays` (default 90) or has no valid timestamp; stale/unverified, never a current pin.
 - `mcp-config/state-write-disabled` (warning/info) — `--no-state-write` suppressed config-shape pinning: a pin write was due, so rug-pull drift detection is lost (warning), or the pin was already current so nothing was lost (info).
 - `mcp-config/config-unparseable` (warning) — an MCP config file exists but does not parse as JSON, so the servers it declares are scanned by nothing and (for a committed repo-level config) pinned by nothing. Mirrors `claude-settings/settings-unparseable`.
 

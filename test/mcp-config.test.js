@@ -815,6 +815,62 @@ describe('Wave 13d — checkCrossClientDrift / checkHashPinning / checkRuntimeTo
         fs.rmSync(tmp, { recursive: true });
       }
     });
+
+    describe('pin freshness', () => {
+      const NOW = Date.parse('2026-09-30T00:00:00Z');
+      const pinWith = (entry) => {
+        const tmp = makeTmpDir();
+        fs.writeFileSync(path.join(tmp, '.rigscore-state.json'),
+          JSON.stringify({ version: 1, servers: {}, mcpServers: {}, ...{ servers: { srv: entry } } }));
+        return tmp;
+      };
+      const run = async (entry, opts) => {
+        const tmp = pinWith(entry);
+        try {
+          return await checkRuntimeToolPinStatus(tmp, { srv: 'h' }, true, { now: NOW, ...opts });
+        } finally {
+          fs.rmSync(tmp, { recursive: true });
+        }
+      };
+
+      it('current pin (within default 90d) stays recorded and reports age', async () => {
+        const f = await run({ runtimeToolHash: 'a'.repeat(64), runtimeToolPinnedAt: '2026-09-01T00:00:00Z' });
+        expect(f[0].findingId).toBe('mcp-config/runtime-tool-pin-recorded');
+        expect(f[0].context.ageDays).toBe(29);
+      });
+
+      it('pin older than default 90d is stale, not recorded', async () => {
+        const f = await run({ runtimeToolHash: 'a'.repeat(64), runtimeToolPinnedAt: '2026-01-01T00:00:00Z' });
+        expect(f).toHaveLength(1);
+        expect(f[0].findingId).toBe('mcp-config/runtime-tool-pin-stale');
+        expect(f[0].severity).toBe('info');
+        expect(f[0].context.ageDays).toBe(272);
+        expect(f[0].context.maxAgeDays).toBe(90);
+        expect(f[0].detail).toContain('2026-01-01');
+      });
+
+      it('threshold is configurable', async () => {
+        const entry = { runtimeToolHash: 'a'.repeat(64), runtimeToolPinnedAt: '2026-09-01T00:00:00Z' };
+        expect((await run(entry, { maxAgeDays: 7 }))[0].findingId).toBe('mcp-config/runtime-tool-pin-stale');
+        expect((await run(entry, { maxAgeDays: 30 }))[0].findingId).toBe('mcp-config/runtime-tool-pin-recorded');
+      });
+
+      it('hash with unparseable timestamp is stale (unverified), never recorded', async () => {
+        const f = await run({ runtimeToolHash: 'a'.repeat(64), runtimeToolPinnedAt: 'not-a-date' });
+        expect(f[0].findingId).toBe('mcp-config/runtime-tool-pin-stale');
+        expect(f[0].detail).toMatch(/unparseable|unverified/i);
+      });
+
+      it('hash with no timestamp is stale (unverified)', async () => {
+        const f = await run({ runtimeToolHash: 'a'.repeat(64) });
+        expect(f[0].findingId).toBe('mcp-config/runtime-tool-pin-stale');
+      });
+
+      it('missing pin is still missing', async () => {
+        const f = await run({});
+        expect(f[0].findingId).toBe('mcp-config/runtime-tool-pin-missing');
+      });
+    });
   });
 });
 

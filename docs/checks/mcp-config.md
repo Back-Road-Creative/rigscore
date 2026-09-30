@@ -41,6 +41,7 @@ A failure typically means an MCP server was added without reviewing its args, a 
 | `--no-state-write` passed but the pin was already current (the write would have been a no-op) | INFO | `mcp-config/state-write-disabled` | None — drift detection is intact |
 | Runtime tool pin recorded for server | INFO | `mcp-config/runtime-tool-pin-recorded` | Verify with `rigscore mcp-verify <name>` |
 | Runtime tool pin missing for server | INFO | `mcp-config/runtime-tool-pin-missing` | Pin via `rigscore mcp-hash \| rigscore mcp-pin <name>` |
+| Runtime tool pin older than threshold or undated | INFO | `mcp-config/runtime-tool-pin-stale` | Re-verify with `rigscore mcp-verify <name>`, then re-pin |
 | No MCP config files found | INFO (score = N/A) | `mcp-config/no-config-found` | None — check inapplicable |
 | An MCP config file exists but does not parse as JSON — **keeps the check applicable** (an absent file stays a clean N/A) | WARNING | `mcp-config/config-unparseable` | Repair the JSON (or delete the file) — until then its servers are neither scanned nor pinned |
 | All servers clean | PASS | — | — |
@@ -186,6 +187,7 @@ The report prints the pinned hash, the current hash, and the **current** shape. 
 - Typosquat detection uses Levenshtein distance 1-2 against `KNOWN_MCP_SERVERS` (~52 entries in `src/known-mcp-servers.js`) offline, augmented by the MCP registry when online.
 - Cross-client drift requires 2+ detected clients. A project that uses only Claude Code will never emit drift findings.
 - Rug-pull detection requires at least one prior scan to have written `.rigscore-state.json`. First scan records hashes silently.
+- Pin freshness threshold: `.rigscorerc.json` key `mcpConfig.runtimeToolPinMaxAgeDays` (default 90). The scan is offline and reads only the stored pin; live observation stays in the opt-in `rigscore mcp-verify`.
 - Runtime tool pin status is opt-out via `.rigscorerc.json` key `mcpConfig.surfaceRuntimeHashStatus: false`.
 - Additional config paths can be registered via `.rigscorerc.json` key `paths.mcpConfig`.
 - **Non-JSON MCP surfaces.** Each `mcp` / `credentials` entry in the client registry declares

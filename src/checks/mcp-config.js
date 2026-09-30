@@ -659,8 +659,10 @@ export async function checkHashPinning(cwd, currentHashes, writeState) {
  * `rigscore mcp-pin`, which is what the CVE-2025-54136 drift detection
  * needs as a baseline.
  */
-export async function checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRuntime) {
+export async function checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRuntime, opts = {}) {
   const findings = [];
+  const maxAgeDays = Number.isFinite(opts.maxAgeDays) && opts.maxAgeDays > 0 ? opts.maxAgeDays : 90;
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
   if (!surfaceRuntime || Object.keys(currentHashes).length === 0) return findings;
 
   const { state: pinState } = await loadState(cwd);
@@ -672,14 +674,31 @@ export async function checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRunti
     const entry = serversMap[name] || {};
     const pinnedAt = typeof entry.runtimeToolPinnedAt === 'string' ? entry.runtimeToolPinnedAt : null;
     const hasRuntimeHash = typeof entry.runtimeToolHash === 'string';
-    if (hasRuntimeHash && pinnedAt) {
+    if (hasRuntimeHash) {
+      const pinnedMs = pinnedAt ? Date.parse(pinnedAt) : NaN;
+      const ageDays = Number.isFinite(pinnedMs) ? Math.floor((now - pinnedMs) / 86400000) : null;
+      // A hash we cannot date is unverified, not current — it must never read as a pass.
+      if (ageDays === null || ageDays > maxAgeDays) {
+        const why = ageDays === null
+          ? `pin timestamp is ${pinnedAt ? 'unparseable' : 'absent'}, so its age is unverified`
+          : `pinned ${pinnedAt.slice(0, 10)}, ${ageDays} days ago (threshold ${maxAgeDays} days)`;
+        findings.push({
+          findingId: 'mcp-config/runtime-tool-pin-stale',
+          severity: 'info',
+          title: `MCP server "${name}": runtime tool pin is stale or unverified`,
+          detail: `Runtime tool hash recorded, but ${why}. rigscore compares against the stored hash only; it has not observed the live server. Re-verify with: rigscore mcp-verify ${name}, then re-pin.`,
+          remediation: `Run: rigscore mcp-verify ${name} (then re-pin with rigscore mcp-pin ${name} if the tool set is still trusted). Threshold: mcpConfig.runtimeToolPinMaxAgeDays.`,
+          context: { serverName: name, pinnedAt, ageDays, maxAgeDays },
+        });
+        continue;
+      }
       const date = pinnedAt.slice(0, 10); // ISO YYYY-MM-DD
       findings.push({
         findingId: 'mcp-config/runtime-tool-pin-recorded',
         severity: 'info',
         title: `MCP server "${name}": runtime tool pin recorded ${date}`,
-        detail: `Runtime tool hash pinned (pinnedAt ${pinnedAt}). Verify before trusting tool descriptions with: rigscore mcp-verify ${name}.`,
-        context: { serverName: name, pinnedAt },
+        detail: `Runtime tool hash pinned (pinnedAt ${pinnedAt}, ${ageDays} days old). Verify before trusting tool descriptions with: rigscore mcp-verify ${name}.`,
+        context: { serverName: name, pinnedAt, ageDays },
       });
     } else {
       findings.push({
@@ -1137,7 +1156,9 @@ export default {
     findings.push(...(await checkHashPinning(cwd, currentHashes, context.writeState)));
 
     const surfaceRuntime = config?.mcpConfig?.surfaceRuntimeHashStatus !== false;
-    findings.push(...(await checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRuntime)));
+    findings.push(...(await checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRuntime, {
+      maxAgeDays: config?.mcpConfig?.runtimeToolPinMaxAgeDays,
+    })));
 
     if (findings.length === 0) {
       findings.push({
