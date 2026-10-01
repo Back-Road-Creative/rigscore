@@ -702,10 +702,13 @@ export default {
         title: 'No skill files found',
         detail: 'No AI agent instruction files detected.',
       });
-      return { score: NOT_APPLICABLE_SCORE, findings, data: { filesScanned: 0, injectionFindings: 0, exfiltrationFindings: 0 } };
+      return { score: NOT_APPLICABLE_SCORE, findings, data: { filesScanned: 0, filesNonText: 0, injectionFindings: 0, exfiltrationFindings: 0 } };
     }
 
     const allowlist = config?.skillFiles?.allowlist || [];
+    // Coverage honesty: only text files are pattern-scanned. Non-text files are
+    // counted separately so they cannot inflate filesScanned.
+    let filesNonText = 0;
 
     for (const file of filesToScan) {
       // Non-text sniff (RS-7): a binary/mojibake file is not a skill instruction
@@ -722,6 +725,7 @@ export default {
           remediation: 'Remove the binary file from the skill directory, or move it outside the scanned skill tree.',
           context: { file: file.path },
         });
+        filesNonText++;
         continue;
       }
 
@@ -863,7 +867,7 @@ export default {
     return {
       score: calculateCheckScore(findings),
       findings,
-      data: { filesScanned: filesToScan.length, injectionFindings, exfiltrationFindings, shellFindings },
+      data: { filesScanned: filesToScan.length - filesNonText, filesNonText, injectionFindings, exfiltrationFindings, shellFindings },
     };
   },
 };
