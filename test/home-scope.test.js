@@ -17,6 +17,7 @@ import agentSchemas from '../src/checks/agent-output-schemas.js';
 import gitHooks from '../src/checks/git-hooks.js';
 import skillCoherence from '../src/checks/skill-coherence.js';
 import workflowMaturity from '../src/checks/workflow-maturity.js';
+import mcpConfig from '../src/checks/mcp-config.js';
 import { CLIENTS } from '../src/clients.js';
 import { NOT_APPLICABLE_SCORE } from '../src/constants.js';
 
@@ -246,5 +247,38 @@ describe('claude-settings hook-file-cap-reached names the root that hit the cap'
 
     const r = await claudeSettings.run({ cwd, homedir: home });
     expect(r.findings.some(f => f.findingId === 'claude-settings/hook-file-cap-reached')).toBe(false);
+  });
+});
+
+describe('mcp-config: home MCP configs and settings are gated', () => {
+  const server = { mcpServers: { files: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] } } };
+  const ctx = (cwd, homedir, extra = {}) => ({ cwd, homedir, config: cfg, writeState: false, ...extra });
+
+  it('does NOT read home MCP configs without the flag', async () => {
+    const home = tmp();
+    write(path.join(home, '.cursor', 'mcp.json'), JSON.stringify(server));
+    const r = await mcpConfig.run(ctx(tmp(), home));
+    expect(r.score).toBe(NOT_APPLICABLE_SCORE);
+  });
+  it('reads home MCP configs under --include-home-skills', async () => {
+    const home = tmp();
+    write(path.join(home, '.cursor', 'mcp.json'), JSON.stringify(server));
+    const r = await mcpConfig.run(ctx(tmp(), home, { includeHomeSkills: true }));
+    expect(r.score).not.toBe(NOT_APPLICABLE_SCORE);
+    expect(r.data.serverCount).toBeGreaterThan(0);
+  });
+  it('home auto-approve does not change a project verdict without the flag', async () => {
+    const project = tmp();
+    write(path.join(project, '.mcp.json'), JSON.stringify(server));
+    const bareHome = tmp();
+    const richHome = tmp();
+    write(path.join(richHome, '.claude', 'settings.json'), JSON.stringify({ enableAllProjectMcpServers: true }));
+    const ids = r => r.findings.map(f => f.findingId).filter(Boolean).sort();
+    const bare = await mcpConfig.run(ctx(project, bareHome));
+    const rich = await mcpConfig.run(ctx(project, richHome));
+    expect(ids(rich)).toEqual(ids(bare));
+    expect(rich.score).toBe(bare.score);
+    const optedIn = await mcpConfig.run(ctx(project, richHome, { includeHomeSkills: true }));
+    expect(optedIn.findings.some(f => f.findingId === 'mcp-config/mcp-auto-approve-enabled')).toBe(true);
   });
 });

@@ -7,7 +7,8 @@ import { readJsonSafe, readFileSafe, fileExists, relPosix } from '../utils.js';
 import { KNOWN_MCP_SERVERS, findTyposquatMatch, levenshtein } from '../known-mcp-servers.js';
 import { readRepoServers, loadState, loadCommittedState, saveState, STATE_VERSION, STATE_FILENAME } from '../state.js';
 import { fetchRegistry, findRegistryTyposquatMatch, getDefaultCachePath } from '../mcp-registry.js';
-import { mcpConfigPaths, mcpServersIn, repoMcpRelPaths, readMcpConfig, mcpConfigFormat } from '../clients.js';
+import { mcpConfigPaths, mcpServersIn, repoMcpRelPaths, repoMcpPaths, readMcpConfig, mcpConfigFormat } from '../clients.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 // Injected readers for the registry-driven config loader (src/clients.js readMcpConfig):
 // JSONC-tolerant JSON for the default format, raw text for TOML/YAML surfaces.
@@ -360,9 +361,10 @@ export function checkTyposquatRegistry(name, packageName, registryResult, hadCur
 export async function checkClaudeSettings(cwd, homedir) {
   const findings = [];
   let autoApproveEnabled = false;
+  // A falsy homedir means home scope is off: project settings only.
   const settingsPaths = [
     path.join(cwd, '.claude', 'settings.json'),
-    path.join(homedir, '.claude', 'settings.json'),
+    ...(homedir ? [path.join(homedir, '.claude', 'settings.json')] : []),
   ];
   for (const settingsPath of settingsPaths) {
     const settings = await readJsonSafe(settingsPath);
@@ -969,8 +971,11 @@ export default {
     const findings = [];
     const safeHosts = config?.network?.safeHosts || DEFAULT_SAFE_HOSTS;
 
-    // Locations to scan for MCP config — all known AI clients (src/clients.js)
-    const configPaths = mcpConfigPaths(cwd, homedir);
+    // Locations to scan for MCP config — all known AI clients (src/clients.js).
+    // Home-base configs belong to the operator, so they count only with
+    // --include-home-skills (src/lib/home-scope.js).
+    const homeScope = homeScopeEnabled(context);
+    const configPaths = homeScope ? mcpConfigPaths(cwd, homedir) : repoMcpPaths(cwd);
 
     // Add config-specified paths
     if (config?.paths?.mcpConfig) {
@@ -1138,7 +1143,7 @@ export default {
     // .claude/settings.json scan (auto-approve + dangerous hooks) and the
     // compound CVE-2025-59536 detection — see helpers. The settings parse
     // is reused so the CVE check doesn't re-read the files.
-    const settingsResult = await checkClaudeSettings(cwd, homedir);
+    const settingsResult = await checkClaudeSettings(cwd, homeScope ? homedir : null);
     findings.push(...settingsResult.findings);
     findings.push(...checkCve2025_59536(hasRepoMcpJson, settingsResult.autoApproveEnabled));
 

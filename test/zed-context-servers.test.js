@@ -50,7 +50,7 @@ describe('Zed uses context_servers, not mcpServers', () => {
       },
     });
 
-    const result = await check.run({ cwd: tmpCwd, homedir: tmpHome, config: defaultConfig, writeState: false });
+    const result = await check.run({ cwd: tmpCwd, homedir: tmpHome, config: defaultConfig, writeState: false, includeHomeSkills: true });
 
     expect(result.data.serverCount).toBe(1);
     expect(result.data.serverNames).toContain('fs-server');
@@ -64,7 +64,7 @@ describe('Zed uses context_servers, not mcpServers', () => {
       context_servers: { remote: { url: 'https://mcp.example.com/mcp' } },
     });
 
-    const result = await check.run({ cwd: tmpCwd, homedir: tmpHome, config: defaultConfig, writeState: false });
+    const result = await check.run({ cwd: tmpCwd, homedir: tmpHome, config: defaultConfig, writeState: false, includeHomeSkills: true });
 
     expect(result.data.hasNetworkTransport).toBe(true);
     expect(result.findings.some(f => f.findingId === 'mcp-config/network-transport')).toBe(true);
