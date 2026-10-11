@@ -3,6 +3,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
 import { fileExists, readFileSafe, readJsonSafe, execSafe, statSafe } from '../utils.js';
+import { homeScopeEnabled } from '../lib/home-scope.js';
 
 // Required git hooks in the global hooks directory
 const REQUIRED_HOOKS = ['pre-commit', 'pre-push', 'commit-msg'];
@@ -20,7 +21,7 @@ const DEFAULT_SAFETY_GATE_PATHS = [
 const MAX_WRAPPER_BYTES = 256 * 1024;
 
 // Required deny-list entries in settings.json
-const REQUIRED_DENY_PATTERNS = [
+export const REQUIRED_DENY_PATTERNS = [
   'git push --force',
   'git reset --hard',
   'rm -rf',
@@ -326,9 +327,15 @@ export default {
     }
 
     // ── 5. Settings.json deny list ──────────────────────────────────────
+    // The operator's home profile counts only with --include-home-skills, so
+    // the same project scores the same on a laptop and a bare CI runner.
     const settingsPaths = [
-      path.join(homedir, '.claude', 'settings.json'),
-      path.join(homedir, '.claude', 'settings.local.json'),
+      ...(homeScopeEnabled(context)
+        ? [
+          path.join(homedir, '.claude', 'settings.json'),
+          path.join(homedir, '.claude', 'settings.local.json'),
+        ]
+        : []),
       path.join(cwd, '.claude', 'settings.json'),
     ];
 

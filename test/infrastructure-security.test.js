@@ -232,4 +232,63 @@ describe('infrastructure-security check', () => {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  // ── Home scope ──────────────────────────────────────────────────────────
+
+  function writeSettings(root, settings) {
+    fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.claude', 'settings.json'), JSON.stringify(settings));
+  }
+
+  function denyFindings(result) {
+    return result.findings
+      .filter((f) => /deny list/i.test(f.title || ''))
+      .map((f) => `${f.severity}:${f.findingId || ''}:${f.title}`)
+      .sort();
+  }
+
+  it('home settings do not change deny-list findings without --include-home-skills', async () => {
+    if (process.platform !== 'linux') return;
+    const fx = makeRepoFixture({ hooks: ['pre-commit'] });
+    const bareHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-infra-barehome-'));
+    const richHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-infra-richhome-'));
+    try {
+      const { REQUIRED_DENY_PATTERNS } = await import('../src/checks/infrastructure-security.js');
+      writeSettings(richHome, { permissions: { deny: [...REQUIRED_DENY_PATTERNS] } });
+
+      const bare = await runWithFixture(fx, { cwd: fx.dir, homedir: bareHome, config: {} });
+      const rich = await runWithFixture(fx, { cwd: fx.dir, homedir: richHome, config: {} });
+
+      // Same project, different operator home: identical verdict.
+      expect(denyFindings(rich)).toEqual(denyFindings(bare));
+      expect(rich.score).toBe(bare.score);
+      expect(rich.data.denyListEntries).toBe(0);
+
+      // Opting in does read the home profile.
+      const optedIn = await runWithFixture(fx, {
+        cwd: fx.dir, homedir: richHome, includeHomeSkills: true, config: {},
+      });
+      expect(
+        optedIn.findings.some((f) => f.severity === 'pass' && /all required patterns/.test(f.title)),
+      ).toBe(true);
+    } finally {
+      for (const d of [fx.dir, bareHome, richHome]) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('project settings are read whether or not home scope is enabled', async () => {
+    if (process.platform !== 'linux') return;
+    const fx = makeRepoFixture({ hooks: ['pre-commit'] });
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-infra-home-'));
+    try {
+      const { REQUIRED_DENY_PATTERNS } = await import('../src/checks/infrastructure-security.js');
+      writeSettings(fx.dir, { permissions: { deny: [...REQUIRED_DENY_PATTERNS] } });
+      const result = await runWithFixture(fx, { cwd: fx.dir, homedir: home, config: {} });
+      expect(
+        result.findings.some((f) => f.severity === 'pass' && /all required patterns/.test(f.title)),
+      ).toBe(true);
+    } finally {
+      for (const d of [fx.dir, home]) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
 });

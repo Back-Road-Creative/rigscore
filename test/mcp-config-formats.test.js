@@ -136,7 +136,7 @@ describe('scan flows Codex TOML and Goose YAML servers through mcp-config', () =
     await withTmpDir(async (dir) => {
       const home = path.join(dir, 'home');
       write(home, '.codex/config.toml', CODEX_TOML);
-      const r = await mcpCheck.run({ cwd: path.join(dir, 'repo'), homedir: home, config: defaultConfig });
+      const r = await mcpCheck.run({ cwd: path.join(dir, 'repo'), homedir: home, config: defaultConfig, includeHomeSkills: true });
       expect(r.data.serverNames).toContain('docs');
       const ids = r.findings.map((f) => f.findingId);
       expect(ids).not.toContain('mcp-config/config-unparseable');
@@ -150,7 +150,7 @@ describe('scan flows Codex TOML and Goose YAML servers through mcp-config', () =
     await withTmpDir(async (dir) => {
       const home = path.join(dir, 'home');
       write(home, '.config/goose/config.yaml', GOOSE_YAML);
-      const r = await mcpCheck.run({ cwd: path.join(dir, 'repo'), homedir: home, config: defaultConfig });
+      const r = await mcpCheck.run({ cwd: path.join(dir, 'repo'), homedir: home, config: defaultConfig, includeHomeSkills: true });
       expect(r.data.serverNames).toContain('fetch');
       expect(r.findings.map((f) => f.findingId)).not.toContain('mcp-config/config-unparseable');
     });

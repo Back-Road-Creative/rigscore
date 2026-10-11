@@ -268,7 +268,7 @@ describe('mcp-config multi-client paths', () => {
       },
     }));
     try {
-      const result = await check.run({ cwd: '/tmp', homedir: tmpHome, config: defaultConfig });
+      const result = await check.run({ cwd: '/tmp', homedir: tmpHome, config: defaultConfig, includeHomeSkills: true });
       const warning = result.findings.find((f) => f.severity === 'warning' && f.title.includes('risky-server'));
       expect(warning).toBeDefined();
     } finally {
