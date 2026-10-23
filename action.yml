@@ -22,7 +22,7 @@ inputs:
     required: false
     default: 'default'
   check:
-    description: 'Limit the scan to a single check id (e.g. mcp-config). Empty = all checks.'
+    description: 'Limit the scan to one check id, or a comma-separated list (e.g. mcp-config or claude-settings,git-hooks). Valid ids are the page names under docs/checks/ in the rigscore repo. Empty runs every check.'
     required: false
     default: ''
   recursive:
@@ -168,6 +168,97 @@ runs:
           head -c 2000 "$RUNNER_TEMP/rigscore.json" >&2 || true
         fi
         echo "rigscore: score ${score:-n/a} (grade ${grade:-n/a}), threshold ${FAIL_UNDER}, exit ${code}"
+
+    # Job summary: a readable Markdown report on the run page (and in the PR
+    # checks UI) instead of a wall of JSON in the log. Runs even when the scan
+    # failed so the failure is explained. Inputs reach the program through env,
+    # never interpolated into the script. It never fails the job: the gate below
+    # owns the exit code.
+    - name: Write job summary
+      if: always()
+      shell: bash
+      env:
+        RIGSCORE_JSON: ${{ runner.temp }}/rigscore.json
+        SCAN_EXIT: ${{ steps.scan.outputs.exit-code }}
+        FAIL_UNDER: ${{ inputs.fail-under }}
+      run: |
+        node - <<'RIGSCORE_SUMMARY' || true
+        const fs = require('fs');
+        const out = process.env.GITHUB_STEP_SUMMARY;
+        if (!out) process.exit(0);
+        const code = process.env.SCAN_EXIT || '';
+        const failUnder = process.env.FAIL_UNDER || '';
+        const esc = (v) => String(v == null ? '' : v)
+          .replace(/\s+/g, ' ').trim()
+          .replace(/[\\`*_|<>]/g, (c) => ({ '<': '&lt;', '>': '&gt;' }[c] || '\\' + c));
+        let d = null;
+        try { d = JSON.parse(fs.readFileSync(process.env.RIGSCORE_JSON, 'utf8')); } catch {}
+        const L = ['## rigscore', ''];
+        if (!d || (code !== '' && Number(code) >= 2)) {
+          L.push(`The scan did not complete (exit ${esc(code || 'unknown')}). See the job log for the error.`);
+          fs.appendFileSync(out, L.join('\n') + '\n');
+          process.exit(0);
+        }
+        const recursive = Array.isArray(d.projects);
+        const failed = code !== '' && code !== '0';
+        const score = typeof d.score === 'number' ? d.score : null;
+        L.push(
+          `**Score:** ${score === null ? 'n/a' : score + '/100'}` +
+          `  **Grade:** ${esc(d.grade || 'n/a')}` +
+          `  **Threshold:** ${esc(failUnder)}` +
+          `  **Result:** ${failed ? 'FAIL, below the threshold of ' + esc(failUnder) : 'pass'}`,
+          '');
+        const rank = { critical: 0, warning: 1 };
+        const rows = [];
+        const projects = recursive ? d.projects : [{ path: '', results: d.results || [] }];
+        if (recursive) {
+          L.push('### Projects', '', '| Project | Score | Grade |', '| --- | --- | --- |');
+          for (const p of d.projects) {
+            L.push(`| ${esc(p.path)} | ${typeof p.score === 'number' ? p.score : 'n/a'} | ${esc(p.grade || 'n/a')} |`);
+          }
+          L.push('');
+          if (d.worstProject) {
+            L.push(`Worst project: \`${esc(d.worstProject.path)}\` (${esc(d.worstProject.score)}/100)`, '');
+          }
+        }
+        let clean = 0;
+        const checkRows = [];
+        for (const p of projects) {
+          for (const r of p.results || []) {
+            if (typeof r.score !== 'number' || r.score < 0) continue;
+            const f = r.findings || [];
+            const n = (sev) => f.filter((x) => x.severity === sev).length;
+            if (r.score >= 100 && !n('critical') && !n('warning')) { clean++; continue; }
+            checkRows.push({ proj: p.path, id: r.id, score: r.score, c: n('critical'), w: n('warning'), i: n('info') });
+            for (const x of f) {
+              if (x.severity in rank) rows.push({ proj: p.path, check: r.id, sev: x.severity, f: x });
+            }
+          }
+        }
+        checkRows.sort((a, b) => a.score - b.score);
+        if (checkRows.length) {
+          L.push('### Checks needing attention', '', `| ${recursive ? 'Project | ' : ''}Check | Score | Critical | Warning | Info |`,
+            `| ${recursive ? '--- | ' : ''}--- | --- | --- | --- | --- |`);
+          for (const r of checkRows.slice(0, 30)) {
+            L.push(`| ${recursive ? esc(r.proj) + ' | ' : ''}${esc(r.id)} | ${r.score} | ${r.c} | ${r.w} | ${r.i} |`);
+          }
+          if (checkRows.length > 30) L.push('', `...and ${checkRows.length - 30} more checks.`);
+          L.push('');
+        }
+        if (rows.length) {
+          rows.sort((a, b) => rank[a.sev] - rank[b.sev]);
+          L.push('### Findings', '');
+          for (const r of rows.slice(0, 25)) {
+            const where = recursive ? `${esc(r.proj)}: ` : '';
+            const rem = r.f.remediation ? ` Fix: ${esc(r.f.remediation)}` : '';
+            L.push(`- **${r.sev}** ${where}\`${esc(r.f.findingId || r.check)}\` ${esc(r.f.title)}.${rem}`);
+          }
+          if (rows.length > 25) L.push('', `...and ${rows.length - 25} more critical and warning findings. Run rigscore locally for the full list.`);
+          L.push('');
+        }
+        if (clean) L.push(`${clean} checks passed clean.`, '');
+        fs.appendFileSync(out, L.join('\n') + '\n');
+        RIGSCORE_SUMMARY
 
     # SARIF is a distinct artifact (a different output format), emitted only when
     # a consumer actually wants to upload it — so the default path stays a single
