@@ -2,24 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE } from '../constants.js';
-import { readFileSafe, readJsonSafe, collectGovernanceDirFiles, relPosix, toPosix } from '../utils.js';
+import { readFileSafe, readJsonSafe, collectGovernanceDirFiles, relPosix, toPosix, toRegex } from '../utils.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
-
-/**
- * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
- * into a RegExp. Returns null if the spec is unusable.
- */
-function toRegex(spec) {
-  if (!spec) return null;
-  if (spec instanceof RegExp) return spec;
-  if (typeof spec === 'string') {
-    try { return new RegExp(spec, 'i'); } catch { return null; }
-  }
-  if (typeof spec === 'object' && typeof spec.source === 'string') {
-    try { return new RegExp(spec.source, spec.flags || 'i'); } catch { return null; }
-  }
-  return null;
-}
 
 /**
  * Normalise a config-provided constraint entry into a runnable constraint.

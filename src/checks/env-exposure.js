@@ -1,13 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { calculateCheckScore } from '../scoring.js';
 import { KEY_PATTERNS, AI_CONFIG_FILES } from '../constants.js';
-import { readFileSafe, readJsonSafe, fileExists, statSafe, scanLineForSecrets } from '../utils.js';
+import { readFileSafe, readJsonSafe, fileExists, statSafe, scanLineForSecrets, gitCheckIgnore } from '../utils.js';
 import { repoMcpEnvValues } from '../clients.js';
-
-const execFileAsync = promisify(execFile);
 
 const CONFIG_FILES = AI_CONFIG_FILES;
 
@@ -30,37 +26,6 @@ const SAFE_NEGATION_RE = /^!\.env\.(example|sample|template)$/;
 // unrelated lines like `!venv/keep.txt`, `!environment/`, or `!.eslintrc.env-notes`
 // would spuriously flag an already-ignored `.env` as exposed.
 const DANGEROUS_NEGATION_RE = /^!(?:.*\/)?\.env(?:\..+)?$/;
-
-/**
- * Run `git check-ignore --quiet --no-index <file>` to ask git itself whether
- * a path matches gitignore rules. `--no-index` is required: without it, git
- * reports tracked files as "not ignored" even when `.gitignore` would match
- * them, which is the wrong semantic for a hygiene scanner (a `.env` checked
- * in by mistake is exactly what we want to flag, or recognize as gitignored
- * when the rule is in place).
- *
- * Git's exit codes:
- *   0   = path is ignored
- *   1   = path is NOT ignored
- *   128 = not a git repo (or other fatal error)
- * Returns 'ignored' | 'not-ignored' | 'unknown'. 'unknown' lets callers fall
- * back to the legacy exact-string match when git itself is unavailable.
- */
-async function gitCheckIgnore(cwd, file) {
-  try {
-    await execFileAsync('git', ['check-ignore', '--quiet', '--no-index', file], {
-      cwd,
-      timeout: 5000,
-    });
-    return 'ignored';
-  } catch (err) {
-    // execFile rejects with an Error carrying a numeric `code` for the exit
-    // status. 1 = not ignored (definitive). 128 (or anything else, including
-    // ENOENT when git is missing) = fall back to the legacy parser.
-    if (err && err.code === 1) return 'not-ignored';
-    return 'unknown';
-  }
-}
 
 // Legacy fallback: parse .gitignore in `cwd` and look for an exact-string
 // match against a known set of `.env` patterns. Used when git is unavailable

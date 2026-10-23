@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
+import { toRegex } from '../utils.js';
 
 const BROAD_CAPABILITY_NAMES = ['filesystem', 'browser', 'database', 'shell', 'terminal', 'code', 'exec'];
 
@@ -66,22 +67,6 @@ export const fixes = [
     },
   },
 ];
-
-/**
- * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
- * into a RegExp. Returns null if the spec is unusable.
- */
-function toRegex(spec) {
-  if (!spec) return null;
-  if (spec instanceof RegExp) return spec;
-  if (typeof spec === 'string') {
-    try { return new RegExp(spec, 'i'); } catch { return null; }
-  }
-  if (typeof spec === 'object' && typeof spec.source === 'string') {
-    try { return new RegExp(spec.source, spec.flags || 'i'); } catch { return null; }
-  }
-  return null;
-}
 
 /**
  * Reverse coherence: for each MCP server in config, verify governance declares it.

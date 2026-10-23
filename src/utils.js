@@ -280,6 +280,50 @@ export async function execSafe(cmd, args, options = {}) {
 }
 
 /**
+ * Run `git check-ignore --quiet --no-index <file>` to ask git itself whether
+ * a path matches the gitignore rules in effect at `cwd`. `--no-index` is
+ * required: without it git reports tracked files as "not ignored" even when
+ * `.gitignore` would match them, the wrong semantic for a hygiene scanner (a
+ * `.env` or governance file checked in by mistake is exactly what we flag).
+ * Git's own matcher also handles anchored (`/CLAUDE.md`), glob (`*.md`) and
+ * recursive double-star syntax that an exact-string match would miss.
+ *
+ * Git exit codes: 0 = ignored, 1 = not ignored, 128 = not a git repo / fatal.
+ * Returns 'ignored' | 'not-ignored' | 'unknown'. 'unknown' (also git missing)
+ * lets callers fall back to a legacy exact-string match: a degraded matcher
+ * must fail toward the old miss, never toward a false positive.
+ */
+export async function gitCheckIgnore(cwd, file) {
+  try {
+    await execFileAsync('git', ['check-ignore', '--quiet', '--no-index', file], {
+      cwd,
+      timeout: 5000,
+    });
+    return 'ignored';
+  } catch (err) {
+    if (err && err.code === 1) return 'not-ignored';
+    return 'unknown';
+  }
+}
+
+/**
+ * Coerce a user-supplied regex spec (string, RegExp, or {source, flags})
+ * into a RegExp. Strings compile case-insensitively. Returns null if the
+ * spec is unusable.
+ */
+export function toRegex(spec) {
+  if (!spec) return null;
+  if (spec instanceof RegExp) return spec;
+  if (typeof spec === 'string') {
+    try { return new RegExp(spec, 'i'); } catch { return null; }
+  }
+  if (typeof spec === 'object' && typeof spec.source === 'string') {
+    try { return new RegExp(spec.source, spec.flags || 'i'); } catch { return null; }
+  }
+  return null;
+}
+
+/**
  * Walk a directory tree safely, defended against symlink loops and runaway
  * depth. Returns `{ files, loopDetected }` — `files` is the list of file
  * paths (filtered by `opts.shouldInclude(fullPath, dirent)`); `loopDetected`

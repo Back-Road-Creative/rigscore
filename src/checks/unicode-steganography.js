@@ -2,6 +2,7 @@ import path from 'node:path';
 import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
 import { readFileSafe, collectGovernanceDirFiles, committedConfigScanPaths } from '../utils.js';
+import { TAG_CHARS_RE } from '../lib/unicode.js';
 
 // Classic homoglyph ranges (detected AFTER NFKC normalization):
 // Greek, Cyrillic, Armenian, Georgian, Cherokee (U+13A0-13FF has Latin A/D/E/G/H lookalikes)
@@ -12,7 +13,6 @@ const FULLWIDTH_LATIN_RE = /[\uFF00-\uFF5E]/;
 const CHEROKEE_RE = /[\u13A0-\u13FF]/;
 const ZERO_WIDTH_RE = /[\u200B-\u200D\u2060\uFEFF]/;
 const BIDI_RE = /[\u202A-\u202E\u2066-\u2069]/;
-const TAG_CHARS_RE = /[\u{E0001}-\u{E007F}]/u;
 
 function detectModernHomoglyphRanges(text) {
   const ranges = [];
