@@ -23,20 +23,26 @@ surfaces carry — so a muted CRITICAL can never read to an auditor as clean-wit
 
 rigscore evidences technical controls in a repository; it is not a management system, so it
 cannot evidence your risk-management process, log retention, or end-user disclosures. Adding a
-framework? Confirm every ID against its **primary source**, record that URL and status in
-`FRAMEWORKS`, and if you cannot confirm a control, leave it out — the invariants in
-`test/constants.test.js` then hold the table honest.
+framework? Confirm every ID against its **primary source**, record that URL, status and the
+date you checked it (`verified`) in `FRAMEWORKS`, and if you cannot confirm a control, leave
+it out — the invariants in `test/constants.test.js` then hold the table honest.
 
 ## Frameworks
 
 "Full" coverage = every **scored** check (weight > 0) is mapped.
 
-| Framework | Status | Coverage | Primary source |
-|---|---|---|---|
-| OWASP Top 10 for Agentic Applications 2026 (`ASIxx:2026`) | Final (2025-12-09) | full | <https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/> |
-| OWASP MCP Top 10 (`MCPxx:2025`) | **Beta** (Phase 3, pilot testing) | partial | <https://owasp.org/www-project-mcp-top-10/> |
-| NIST AI RMF 1.0 (NIST AI 100-1) | Final (Jan 2023) | full | <https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf> |
-| EU AI Act — Regulation (EU) 2024/1689 | In force, phased | full | <https://ai-act-service-desk.ec.europa.eu/en/ai-act/timeline/timeline-implementation-eu-ai-act> |
+| Framework | Status | Coverage | Mappings last verified | Primary source |
+|---|---|---|---|---|
+| OWASP Top 10 for Agentic Applications 2026 (`ASIxx:2026`) | Final (2025-12-09) | full | 2026-07-21 | <https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/> |
+| OWASP MCP Top 10 (`MCPxx:2025`) | **Beta** (Phase 3, pilot testing) | partial | 2026-07-21 | <https://owasp.org/www-project-mcp-top-10/> |
+| NIST AI RMF 1.0 (NIST AI 100-1) | Final (Jan 2023) | full | 2026-07-21 | <https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf> |
+| EU AI Act — Regulation (EU) 2024/1689 | In force, phased | full | 2026-07-21 | <https://ai-act-service-desk.ec.europa.eu/en/ai-act/timeline/timeline-implementation-eu-ai-act> |
+
+Every framework prints a `Mappings last verified: YYYY-MM-DD` line beside its status: the date a
+maintainer last re-checked its control IDs and titles against the primary source. Standards move
+(a beta list firms up, an enforcement date shifts), so an old date tells an auditor to confirm
+the mapping before relying on it. The date lives in `FRAMEWORKS` (`src/constants.js`) and is
+bumped only after a real re-check.
 
 ## OWASP MCP Top 10 — beta, and it says so
 

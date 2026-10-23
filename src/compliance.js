@@ -46,7 +46,7 @@ export function formatCompliance(scanResult) {
       evidence.get(control).push(r);
     }
     const cov = fw.coverage === 'full' ? 'full (every scored check is mapped)' : 'partial (intentionally sparse)';
-    out.push('', '='.repeat(72), fw.name, `Status: ${fw.status}`, `Coverage: ${cov}`, `Source: ${fw.url}`);
+    out.push('', '='.repeat(72), fw.name, `Status: ${fw.status}`, `Mappings last verified: ${fw.verified}`, `Coverage: ${cov}`, `Source: ${fw.url}`);
     if (fw.note) out.push(`Note: ${fw.note}`);
     out.push('');
 

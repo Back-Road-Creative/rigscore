@@ -53,6 +53,18 @@ describe('formatCompliance', () => {
     expect(text).toMatch(/Digital Omnibus/);
   });
 
+  it('prints when each framework\'s mappings were last verified against its primary source', () => {
+    for (const fw of Object.values(FRAMEWORKS)) {
+      expect(fw.verified, `${fw.name} records a verification date`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(Number.isNaN(Date.parse(fw.verified)), `${fw.name} date parses`).toBe(false);
+      expect(text).toContain(`Mappings last verified: ${fw.verified}`);
+    }
+    // Same section as the status, so an auditor reads them together.
+    const lines = text.split('\n');
+    const i = lines.findIndex((l) => l.startsWith('Status: final (published 2025-12-09)'));
+    expect(lines[i + 1]).toMatch(/^Mappings last verified: \d{4}-\d{2}-\d{2}$/);
+  });
+
   it('renders the OWASP MCP list with its upstream BETA state visible to the auditor', () => {
     expect(text).toContain('OWASP MCP Top 10');
     // The one upstream-beta list: the beta state must reach the OUTPUT, not just the constant,
