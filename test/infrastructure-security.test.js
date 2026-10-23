@@ -76,21 +76,115 @@ describe('infrastructure-security check', () => {
     expect(WEIGHTS[check.id]).toBe(6);
   });
 
-  it('returns NOT_APPLICABLE on non-Linux', async () => {
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
-
-    try {
-      const result = await check.run({ cwd: '/tmp', homedir: '/tmp', config: {} });
-      expect(result.score).toBe(-1);
-      expect(result.findings[0].severity).toBe('skipped');
-      // The skip must name the condition that fired, so "wrong platform" and
-      // "nothing to scan" are distinguishable in output.
-      expect(result.findings[0].title).toMatch(/linux-only/i);
-      expect(result.findings[0].title).toContain('darwin');
-    } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  describe('off Linux', () => {
+    /** Run `fn` with `process.platform` stubbed, always restoring it. */
+    async function withPlatform(platform, fn) {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+      try {
+        return await fn();
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      }
     }
+
+    function writeSettings(dir, deny) {
+      fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, '.claude', 'settings.json'),
+        JSON.stringify({ permissions: { deny } }),
+      );
+    }
+
+    it.each(['darwin', 'win32'])('is not skipped on %s: the deny-list arm still runs', async (platform) => {
+      const fx = makeRepoFixture({ hooks: ['pre-commit', 'pre-push', 'commit-msg'] });
+      writeSettings(fx.dir, ['rm -rf']);
+      const result = await withPlatform(platform, () => runWithFixture(fx, {
+        cwd: fx.dir, homedir: path.join(fx.dir, 'nohome'), config: {},
+      }));
+      expect(result.score).not.toBe(-1);
+      expect(result.findings.some((f) => f.severity === 'skipped')).toBe(false);
+      const ids = result.findings.map((f) => f.findingId);
+      expect(ids).toContain('infrastructure-security/deny-list-missing-patterns');
+    });
+
+    it('checks the detected git hooks path on darwin', async () => {
+      const fx = makeRepoFixture({ hooks: ['pre-commit'] });
+      const result = await withPlatform('darwin', () => runWithFixture(fx, {
+        cwd: fx.dir, homedir: path.join(fx.dir, 'nohome'), config: {},
+      }));
+      const missing = result.findings.filter(
+        (f) => f.findingId === 'infrastructure-security/required-hook-missing',
+      );
+      expect(missing.map((f) => f.context.hook).sort()).toEqual(['commit-msg', 'pre-push']);
+      expect(result.data.hooksDir).toBe(fx.hooksDir);
+    });
+
+    it('still reports the nothing-to-scan skip (not a platform skip) on darwin', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-infra-bare-'));
+      const result = await withPlatform('darwin', () => check.run({
+        cwd: dir, homedir: path.join(dir, 'nohome'), config: {},
+      }));
+      expect(result.score).toBe(-1);
+      expect(result.findings[0].title).toMatch(/nothing found at the default locations/i);
+      expect(result.findings[0].title).not.toMatch(/linux-only/i);
+    });
+
+    it('gates the Linux-only immutability arm instead of running lsattr', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-infra-imm-'));
+      const result = await withPlatform('darwin', () => check.run({
+        cwd: dir,
+        homedir: path.join(dir, 'nohome'),
+        config: { paths: { immutableDirs: [dir] } },
+      }));
+      const f = result.findings.find((x) => x.findingId === 'infrastructure-security/cannot-check-immutability');
+      expect(f).toBeDefined();
+      expect(f.severity).toBe('info');
+      expect(f.detail).toMatch(/linux/i);
+      expect(f.detail).toContain('darwin');
+      expect(result.findings.some(
+        (x) => x.findingId === 'infrastructure-security/immutable-flag-not-set',
+      )).toBe(false);
+    });
+
+    it('does not look for the /etc/profile.d safety guard off Linux', async () => {
+      const fx = makeRepoFixture({ hooks: ['pre-commit', 'pre-push', 'commit-msg'] });
+      const result = await withPlatform('darwin', () => runWithFixture(fx, {
+        cwd: fx.dir, homedir: path.join(fx.dir, 'nohome'), config: {},
+      }));
+      expect(result.data.safetyGates).toBeNull();
+    });
+
+    it('does not apply POSIX mode or root-ownership rules on win32', async () => {
+      const fx = makeRepoFixture();
+      // Hooks without the owner-execute bit and a dir that is not uid 0.
+      for (const hook of ['pre-commit', 'pre-push', 'commit-msg']) {
+        fs.writeFileSync(path.join(fx.hooksDir, hook), '@echo off\r\n', { mode: 0o644 });
+      }
+      const result = await withPlatform('win32', () => runWithFixture(fx, {
+        cwd: fx.dir,
+        homedir: path.join(fx.dir, 'nohome'),
+        config: { paths: { hooksDir: fx.hooksDir } },
+      }));
+      const ids = result.findings.map((f) => f.findingId);
+      expect(ids).not.toContain('infrastructure-security/hook-not-executable');
+      expect(ids).not.toContain('infrastructure-security/hooks-dir-not-root-owned');
+    });
+  });
+
+  it('keeps the POSIX mode rule on Linux', async () => {
+    if (process.platform !== 'linux') return;
+    const fx = makeRepoFixture();
+    for (const hook of ['pre-commit', 'pre-push', 'commit-msg']) {
+      fs.writeFileSync(path.join(fx.hooksDir, hook), '#!/bin/sh\n', { mode: 0o644 });
+    }
+    const result = await runWithFixture(fx, {
+      cwd: fx.dir,
+      homedir: path.join(fx.dir, 'nohome'),
+      config: { paths: { hooksDir: fx.hooksDir } },
+    });
+    const ids = result.findings.map((f) => f.findingId);
+    expect(ids).toContain('infrastructure-security/hook-not-executable');
   });
 
   it('produces findings when infrastructure is present (with opt-in paths)', async () => {

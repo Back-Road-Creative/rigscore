@@ -29,18 +29,32 @@ export const REQUIRED_DENY_PATTERNS = [
   'git push origin master',
 ];
 
+// Platform notes. The hooks path, git wrapper, deny list and sandbox-gate arms
+// are plain file reads and run everywhere. Three things are POSIX/Linux
+// concepts and are gated instead of skipping the whole check:
+//   - lsattr / the immutable flag: Linux only.
+//   - `/etc/profile.d` safety-guard defaults: Linux only (a declared
+//     `paths.safetyGates` is a plain existence check and runs everywhere).
+//   - uid-0 ownership and the owner-execute bit: meaningless on Windows,
+//     where `stat` reports neither.
+const isWindows = () => process.platform === 'win32';
+
 /**
- * Check if a file is owned by root (uid 0).
+ * Check if a file is owned by root (uid 0). Windows has no uid: the claim is
+ * not assertable there, so it is treated as satisfied.
  */
 async function isRootOwned(filePath) {
+  if (isWindows()) return true;
   const stat = await statSafe(filePath);
   return stat ? stat.uid === 0 : false;
 }
 
 /**
- * Check if a file is executable (owner execute bit).
+ * Check if a file is executable (owner execute bit). Windows has no execute
+ * bit (executability comes from the extension), so a present file passes.
  */
 async function isExecutable(filePath) {
+  if (isWindows()) return fileExists(filePath);
   const stat = await statSafe(filePath);
   // eslint-disable-next-line no-bitwise
   return stat ? (stat.mode & 0o100) !== 0 : false;
@@ -101,10 +115,12 @@ async function detectDefaultPaths(cwd, env) {
 
   detected.gitWrapper = await detectGitWrapper(env);
 
-  for (const candidate of DEFAULT_SAFETY_GATE_PATHS) {
-    if (await fileExists(candidate)) {
-      detected.safetyGates = candidate;
-      break;
+  if (process.platform === 'linux') {
+    for (const candidate of DEFAULT_SAFETY_GATE_PATHS) {
+      if (await fileExists(candidate)) {
+        detected.safetyGates = candidate;
+        break;
+      }
     }
   }
   return detected;
@@ -130,17 +146,7 @@ export default {
   async run(context) {
     const { cwd, homedir, config } = context;
 
-    // Only applicable on Linux. Name the platform so this skip is
-    // distinguishable from the "nothing to scan" skip below.
-    if (process.platform !== 'linux') {
-      return {
-        score: NOT_APPLICABLE_SCORE,
-        findings: [{
-          severity: 'skipped',
-          title: `Infrastructure security check is Linux-only (platform: ${process.platform})`,
-        }],
-      };
-    }
+    const onLinux = process.platform === 'linux';
 
     const declaredHooksDir = config?.paths?.hooksDir || null;
     const declaredGitWrapper = config?.paths?.gitWrapper || null;
@@ -169,7 +175,7 @@ export default {
         findings: [{
           severity: 'skipped',
           title: 'Infrastructure security: nothing found at the default locations (no managed git hooks dir, git wrapper, or shell safety guard) — opt-in via .rigscorerc.json paths.hooksDir/gitWrapper/safetyGates/immutableDirs',
-          detail: `Searched: git hooks path for ${cwd}, the first \`git\` on PATH, ${DEFAULT_SAFETY_GATE_PATHS.join(', ')}.`,
+          detail: `Searched: git hooks path for ${cwd}, the first \`git\` on PATH${onLinux ? `, ${DEFAULT_SAFETY_GATE_PATHS.join(', ')}` : ''}.`,
         }],
         data: {},
       };
@@ -303,6 +309,18 @@ export default {
     const dirsToCheck = [...immutableDirs];
 
     for (const dir of dirsToCheck) {
+      if (!onLinux) {
+        // The immutable flag is a Linux filesystem feature: say so rather than
+        // run a command that does not exist (or means something else) here.
+        findings.push({
+          findingId: 'infrastructure-security/cannot-check-immutability',
+          severity: 'info',
+          title: `Cannot check immutability: ${path.basename(dir)}`,
+          detail: `The immutable flag is Linux-only (platform: ${process.platform}); this directory was not checked.`,
+          context: { dir, platform: process.platform },
+        });
+        continue;
+      }
       const output = await execSafe('lsattr', ['-d', dir]);
       if (output === null) {
         findings.push({
