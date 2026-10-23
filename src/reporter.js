@@ -149,6 +149,96 @@ function box(lines, width = 38) {
   return [top, ...boxed, bottom].join('\n');
 }
 
+// Narrowest width the report wraps to: the fixed-width CTA lines and the score
+// box fit inside it. A wider terminal widens the wrap; a narrower one (or a
+// bogus value) is clamped here rather than producing one-word-per-line output.
+const MIN_WIDTH = 60;
+const DEFAULT_WIDTH = 80;
+
+/**
+ * Column budget for the human report: an explicit `options.width`, else the
+ * attached terminal's width, else 80 (piped output / CI logs have no columns).
+ */
+function resolveWidth(options = {}) {
+  const raw = Number.isFinite(options.width) ? options.width : process.stdout.columns;
+  const w = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_WIDTH;
+  return Math.max(MIN_WIDTH, w);
+}
+
+/**
+ * Greedy word wrap of PLAIN text (no ANSI) to `width` columns. A word longer
+ * than the width (a long path or URL) is hard-broken rather than overflowing.
+ */
+function wrapPlain(text, width) {
+  const out = [];
+  let cur = '';
+  for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    let w = word;
+    while (w.length > width) {
+      if (cur) { out.push(cur); cur = ''; }
+      out.push(w.slice(0, width));
+      w = w.slice(width);
+    }
+    if (!cur) cur = w;
+    else if (cur.length + 1 + w.length <= width) cur += ` ${w}`;
+    else { out.push(cur); cur = w; }
+  }
+  if (cur) out.push(cur);
+  return out.length > 0 ? out : [''];
+}
+
+/**
+ * Push `text` wrapped to `width`, led by `prefix` (which may carry colour).
+ * Continuation lines are indented to the prefix's visible width so wrapped
+ * text stays under the first word. `label` is a leading run of `text` kept
+ * unstyled (e.g. "Fix: "); `style` colours the rest.
+ */
+function pushWrapped(lines, width, prefix, text, { label = '', style = (x) => x } = {}) {
+  const pad = ' '.repeat(stripAnsi(prefix).length);
+  const chunks = wrapPlain(text, Math.max(10, width - pad.length));
+  chunks.forEach((chunk, i) => {
+    const body = i === 0 && label && chunk.startsWith(label)
+      ? label + style(chunk.slice(label.length))
+      : style(chunk);
+    lines.push(`${i === 0 ? prefix : pad}${body}`);
+  });
+}
+
+/** Clip `str` to `max` columns with an ellipsis, keeping its start or its tail. */
+function clip(str, max, keep = 'start') {
+  if (str.length <= max) return str;
+  if (max <= 1) return str.slice(0, max);
+  return keep === 'end' ? `\u2026${str.slice(-(max - 1))}` : `${str.slice(0, max - 1)}\u2026`;
+}
+
+/** Wrapped finding headline: `<icon> <title> [<findingId>]`, id dimmed. */
+function pushFindingTitle(lines, width, indent, color, icon, title, findingId) {
+  const prefix = `${indent}${color(icon)} `;
+  const idTok = findingId ? `[${findingId}]` : '';
+  const pad = ' '.repeat(stripAnsi(prefix).length);
+  const chunks = wrapPlain(idTok ? `${title || ''} ${idTok}` : (title || ''), Math.max(10, width - pad.length));
+  chunks.forEach((chunk, i) => {
+    const body = idTok && i === chunks.length - 1 && chunk.endsWith(idTok)
+      ? chunk.slice(0, -idTok.length) + chalk.dim(idTok)
+      : chunk;
+    lines.push(`${i === 0 ? prefix : pad}${body}`);
+  });
+}
+
+/** Display-safe finding id, or '' when the finding has none. */
+function displayId(finding) {
+  const id = safeField(finding.findingId);
+  return typeof id === 'string' ? id.trim() : '';
+}
+
+/** The once-per-report pointer from a printed `[id]` to its docs. */
+function pushExplainHint(lines, width) {
+  pushWrapped(lines, width, '  ',
+    'Run rigscore explain <id> with the [id] beside a finding for what it checks and how to fix or suppress it.',
+    { style: chalk.dim });
+  lines.push('');
+}
+
 // How many suppressed ids to spell out before collapsing the tail into a
 // "+N more" count — keeps the line readable when a config mutes many findings.
 const SUPPRESS_ID_PREVIEW = 8;
@@ -197,8 +287,14 @@ function formatQuietSummary(result) {
   ].join('\n');
 }
 
+/**
+ * Human report. `options`: `quiet` (two-line summary), `verbose` (include
+ * passing findings), `noCta`, and `width` (columns to wrap to; defaults to the
+ * terminal width, else 80).
+ */
 export function formatTerminal(result, cwd, options = {}) {
   const { score, results, config } = result;
+  const width = resolveWidth(options);
   // `--check` selected only checks that are N/A here: there is nothing to
   // score. Say so — never invent a 0, which renders as Grade F.
   const notApplicable = result.notApplicable === true;
@@ -216,7 +312,7 @@ export function formatTerminal(result, cwd, options = {}) {
     '',
   ]));
   lines.push('');
-  lines.push(`  Scanning ${cwd} ...`);
+  pushWrapped(lines, width, '  ', `Scanning ${cwd} ...`);
   lines.push('');
 
   // C1 banner: when NO AI-tooling governance/coherence surface was found,
@@ -228,29 +324,33 @@ export function formatTerminal(result, cwd, options = {}) {
   const allSurfaceMissing = surfaceResults.length > 0 &&
     surfaceResults.every((r) => r.score === NOT_APPLICABLE_SCORE);
   if (allSurfaceMissing) {
-    lines.push(`  ${chalk.yellow('\u26A0')} ${chalk.yellow(`No AI tooling detected in ${cwd}.`)}`);
-    lines.push(`    ${chalk.dim('\u2192')} Run with ${chalk.cyan('--include-home-skills')} to scan user-level skills, or add a`);
-    lines.push(`      ${chalk.cyan('CLAUDE.md')} / ${chalk.cyan('.cursorrules')} / ${chalk.cyan('etc.')} to your project first.`);
-    lines.push(`    ${chalk.dim('\u2192')} Generic-hygiene checks (secrets, docker, permissions, git-hooks) still ran below.`);
+    pushWrapped(lines, width, `  ${chalk.yellow('\u26A0')} `, `No AI tooling detected in ${cwd}.`, { style: chalk.yellow });
+    pushWrapped(lines, width, `    ${chalk.dim('\u2192')} `, 'Run with --include-home-skills to scan user-level skills, or add a CLAUDE.md / .cursorrules / etc. to your project first.');
+    pushWrapped(lines, width, `    ${chalk.dim('\u2192')} `, 'Generic-hygiene checks (secrets, docker, permissions, git-hooks) still ran below.');
     lines.push('');
   }
 
-  // Check scores
+  // Check scores. Pad to the longest name (not a fixed 30: names reach 31+),
+  // clipped so `<icon> <name> <[grade]> <score>` still fits the width.
+  const nameWidth = Math.min(
+    Math.max(0, ...results.map((r) => r.name.length)),
+    width - 26,
+  );
   for (const r of results) {
     const gradeLabel = formatGradeLabel(r.enforcementGrade);
     if (r.score === NOT_APPLICABLE_SCORE) {
       const icon = chalk.dim('\u21B7');
-      const name = r.name.padEnd(30, '.');
+      const name = clip(r.name, nameWidth).padEnd(nameWidth, '.');
       lines.push(`  ${icon} ${name} ${gradeLabel} N/A`);
     } else if (r.weight === 0) {
       // Advisory check — no score contribution. Mark clearly, don't use critical red.
       const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.yellow('\u26A0');
-      const name = r.name.padEnd(30, '.');
+      const name = clip(r.name, nameWidth).padEnd(nameWidth, '.');
       lines.push(`  ${icon} ${name} ${gradeLabel} ${chalk.dim('advisory')}`);
     } else {
       const checkScore = Math.round((r.score / 100) * r.weight);
       const icon = r.score >= 70 ? chalk.green('\u2713') : chalk.red('\u2717');
-      const name = r.name.padEnd(30, '.');
+      const name = clip(r.name, nameWidth).padEnd(nameWidth, '.');
       lines.push(`  ${icon} ${name} ${gradeLabel} ${checkScore}/${r.weight}`);
     }
   }
@@ -286,13 +386,13 @@ export function formatTerminal(result, cwd, options = {}) {
   ]));
   lines.push('');
   if (practiceScore === null) {
-    lines.push(`  ${chalk.dim('Practice: n/a — no agent loops, specs, CI agent jobs or memory files found to score.')}`);
+    pushWrapped(lines, width, '  ', 'Practice: n/a — no agent loops, specs, CI agent jobs or memory files found to score.', { style: chalk.dim });
     lines.push('');
   }
 
   // Enforcement-grade legend — terminal-only; suppressed in JSON/SARIF paths
   // because formatJson/formatSarif do not call formatTerminal.
-  lines.push(`  ${chalk.dim('mechanical = deterministic config check \u00B7 pattern = regex/structural \u00B7 keyword = presence detection')}`);
+  pushWrapped(lines, width, '  ', 'mechanical = deterministic config check \u00B7 pattern = regex/structural \u00B7 keyword = presence detection', { style: chalk.dim });
   lines.push('');
 
   // Coverage messaging
@@ -315,9 +415,9 @@ export function formatTerminal(result, cwd, options = {}) {
     const scaleNote = scaled
       ? ` — score scaled ×${(applicableWeight / totalWeight).toFixed(2)}`
       : '';
-    lines.push(`  ${chalk.dim(`Coverage: ${applicableResults.length} of ${totalResults} checks applicable (weight ${applicableWeight}/${totalWeight})${scaleNote}`)}`);
+    pushWrapped(lines, width, '  ', `Coverage: ${applicableResults.length} of ${totalResults} checks applicable (weight ${applicableWeight}/${totalWeight})${scaleNote}`, { style: chalk.dim });
     if (scaled) {
-      lines.push(`  ${chalk.dim(`→ Only ${applicableWeight} of ${totalWeight} points of check weight could be scored, so even an all-passing scan caps at ${applicableWeight}/100.`)}`);
+      pushWrapped(lines, width, `  ${chalk.dim('→')} `, `Only ${applicableWeight} of ${totalWeight} points of check weight could be scored, so even an all-passing scan caps at ${applicableWeight}/100.`, { style: chalk.dim });
     }
     lines.push('');
   }
@@ -330,6 +430,7 @@ export function formatTerminal(result, cwd, options = {}) {
   const severities = options.verbose
     ? ['critical', 'warning', 'info', 'skipped', 'pass']
     : ['critical', 'warning', 'info', 'skipped'];
+  let anyId = false;
   for (const severity of severities) {
     const items = allFindings.filter((f) => f.severity === severity);
     if (items.length === 0) continue;
@@ -345,22 +446,26 @@ export function formatTerminal(result, cwd, options = {}) {
       const evidence = safeField(item.evidence);
       const remediation = safeField(item.remediation);
       const learnMore = safeField(item.learnMore);
-      lines.push(`  ${color(icon)} ${title}`);
+      const findingId = displayId(item);
+      if (findingId) anyId = true;
+      pushFindingTitle(lines, width, '  ', color, icon, title, findingId);
+      const arrow = `    ${chalk.dim('\u2192')} `;
       if (detail) {
-        lines.push(`    ${chalk.dim('\u2192')} ${detail}`);
+        pushWrapped(lines, width, arrow, detail);
       }
       if (evidence) {
-        lines.push(`    ${chalk.dim('\u2192')} Evidence: ${chalk.dim(evidence)}`);
+        pushWrapped(lines, width, arrow, `Evidence: ${evidence}`, { label: 'Evidence: ', style: chalk.dim });
       }
       if (remediation) {
-        lines.push(`    ${chalk.dim('\u2192')} Fix: ${remediation}`);
+        pushWrapped(lines, width, arrow, `Fix: ${remediation}`);
       }
       if (learnMore) {
-        lines.push(`    ${chalk.dim('\u2192')} Learn more: ${chalk.cyan(learnMore)}`);
+        pushWrapped(lines, width, arrow, `Learn more: ${learnMore}`, { label: 'Learn more: ', style: chalk.cyan });
       }
       lines.push('');
     }
   }
+  if (anyId) pushExplainHint(lines, width);
 
   // CTA (opt-in: only shown when noCta is explicitly false)
   if (options.noCta === false) {
@@ -378,7 +483,7 @@ export function formatTerminal(result, cwd, options = {}) {
   // only in a .rigscorerc.json diff.
   const suppressedLine = formatSuppressedSummary(result.suppressed);
   if (suppressedLine) {
-    lines.push(`  ${chalk.yellow(`⚠ ${suppressedLine}`)}`);
+    pushWrapped(lines, width, `  ${chalk.yellow('⚠')} `, suppressedLine, { style: chalk.yellow });
     lines.push('');
   }
 
@@ -391,6 +496,7 @@ export function formatTerminal(result, cwd, options = {}) {
  */
 export function formatTerminalRecursive(result, rootDir, options = {}) {
   const { score, projects, worstProject } = result;
+  const width = resolveWidth(options);
   const grade = getGrade(score);
   const colorFn = getScoreColor(score);
   const lines = [];
@@ -405,12 +511,17 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
     '',
   ]));
   lines.push('');
-  lines.push(`  Scanning ${rootDir} (${projects.length} projects found)`);
+  pushWrapped(lines, width, '  ', `Scanning ${rootDir} (${projects.length} projects found)`);
   lines.push('');
 
-  // Per-project summary
+  // Per-project summary. Pad to the longest path; clip (keeping the tail, the
+  // distinguishing part) so `<icon> <path> <score>/100 (<grade>)` fits.
+  const pathWidth = Math.min(
+    Math.max(0, ...projects.map((p) => safeField(p.path).length)),
+    width - 16,
+  );
   for (const project of projects) {
-    const name = project.path.padEnd(40, '.');
+    const name = clip(safeField(project.path), pathWidth, 'end').padEnd(pathWidth, '.');
     if (project.notApplicable) {
       // Nothing to score here: not a red cross, and never in the failing list.
       lines.push(`  ${chalk.dim('\u21b7')} ${name} ${chalk.dim('n/a')}`);
@@ -437,7 +548,7 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
 
   // Catastrophic project warning
   if (worstProject && worstProject.score < 40) {
-    lines.push(`  ${chalk.red.bold('⚠ CATASTROPHIC: ')}${chalk.red(`"${worstProject.path}" scores ${worstProject.score}/100 — immediate attention required`)}`);
+    pushWrapped(lines, width, `  ${chalk.red.bold('⚠ CATASTROPHIC: ')}`, `"${safeField(worstProject.path)}" scores ${worstProject.score}/100 — immediate attention required`, { style: chalk.red });
     lines.push('');
   }
 
@@ -445,12 +556,13 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
   // nothing to score is not "needing attention" — `null < 70` is true, so it
   // has to be filtered explicitly.
   const failing = projects.filter((p) => !p.notApplicable && p.score < 70);
+  let anyId = false;
   if (failing.length > 0) {
     lines.push(`  ${chalk.yellow('Projects needing attention:')}`);
     lines.push('');
 
     for (const project of failing) {
-      lines.push(`  ${chalk.bold(project.path)} (${project.score}/100)`);
+      pushWrapped(lines, width, '  ', `${safeField(project.path)} (${project.score}/100)`, { style: chalk.bold });
       const allFindings = project.results.flatMap((r) =>
         r.findings.map((f) => ({ ...f, checkName: r.name })),
       );
@@ -463,15 +575,18 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
           const icon = getSeverityIcon(severity);
           const title = safeField(item.title);
           const remediation = safeField(item.remediation);
-          lines.push(`    ${color(icon)} ${title}`);
+          const findingId = displayId(item);
+          if (findingId) anyId = true;
+          pushFindingTitle(lines, width, '    ', color, icon, title, findingId);
           if (remediation) {
-            lines.push(`      ${chalk.dim('\u2192')} Fix: ${remediation}`);
+            pushWrapped(lines, width, `      ${chalk.dim('\u2192')} `, `Fix: ${remediation}`);
           }
         }
       }
       lines.push('');
     }
   }
+  if (anyId) pushExplainHint(lines, width);
 
   // CTA (opt-in: only shown when noCta is explicitly false)
   if (options.noCta === false) {
@@ -486,7 +601,7 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
   // the single-project report.
   const suppressedLine = formatSuppressedSummary(result.suppressed);
   if (suppressedLine) {
-    lines.push(`  ${chalk.yellow(`⚠ ${suppressedLine}`)}`);
+    pushWrapped(lines, width, `  ${chalk.yellow('⚠')} `, suppressedLine, { style: chalk.yellow });
     lines.push('');
   }
 
