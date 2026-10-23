@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { findFindingSection } from '../src/cli/explain.js';
+import { findFindingSection, findTriggerRow } from '../src/cli/explain.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.resolve(__dirname, '..', 'bin', 'rigscore.js');
@@ -38,10 +38,12 @@ Ten points.
     expect(findFindingSection(doc, 'nonexistent-slug')).toBeNull();
   });
 
-  it('partial slug match still resolves', () => {
-    // "conflicting" is a subset of the "conflicting-rules" heading
-    const section = findFindingSection(doc, 'conflicting');
-    expect(section).toMatch(/^### conflicting-rules/);
+  it('does not resolve a slug by substring of an unrelated heading', () => {
+    // "conflicting" is only a fragment of "conflicting-rules"; a loose
+    // includes() match would print an unrelated section for any short slug.
+    expect(findFindingSection(doc, 'conflicting')).toBeNull();
+    // ...and a long slug must not match a heading that is merely a prefix of it.
+    expect(findFindingSection(doc, 'findings-and-more')).toBeNull();
   });
 });
 
@@ -62,5 +64,71 @@ describe('rigscore explain — CLI dispatch', () => {
     });
     expect(res.status).not.toBe(0);
     expect(res.stderr).toMatch(/no docs found/i);
+  });
+});
+
+describe('rigscore explain — Triggers table resolver', () => {
+  const doc = `# demo
+
+## Triggers
+
+| Condition | Severity | SARIF ruleId | Remediation summary |
+|---|---|---|---|
+| No file found | CRITICAL | \`demo/no-file\` | Create the file |
+| Two ids in one row | WARNING | \`demo/alpha\`, \`demo/beta\` | Fix both |
+| Informational | INFO | — | None |
+
+## Example
+Body.
+`;
+
+  it('resolves a ruleId to its Triggers row', () => {
+    const row = findTriggerRow(doc, 'demo', 'no-file');
+    expect(row).toEqual({
+      condition: 'No file found',
+      severity: 'CRITICAL',
+      ruleId: 'demo/no-file',
+      remediation: 'Create the file',
+    });
+  });
+
+  it('resolves any id listed in a multi-id row', () => {
+    expect(findTriggerRow(doc, 'demo', 'beta').severity).toBe('WARNING');
+  });
+
+  it('returns null for an id that is not a whole ruleId token', () => {
+    expect(findTriggerRow(doc, 'demo', 'no')).toBeNull();
+    expect(findTriggerRow(doc, 'demo', 'missing')).toBeNull();
+  });
+});
+
+describe('rigscore explain — real finding ids', () => {
+  const run = (...a) =>
+    spawnSync('node', [BIN, 'explain', ...a], { encoding: 'utf-8', env: { ...process.env, NO_COLOR: '1' } });
+
+  it('resolves a documented finding id to its Triggers row, not the whole doc', () => {
+    const res = run('governance-docs/no-governance-file');
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('governance-docs/no-governance-file');
+    expect(res.stdout).toContain('CRITICAL');
+    expect(res.stdout).toContain('Create CLAUDE.md');
+    expect(res.stdout).toContain('docs/checks/governance-docs.md');
+    expect(res.stderr).not.toMatch(/No finding-specific section/);
+    // a single finding, not the whole check page
+    expect(res.stdout).not.toContain('## Purpose');
+  });
+
+  it('notes an undocumented slug and lists the ids that are documented', () => {
+    const res = run('governance-docs/not-a-real-slug');
+    expect(res.status).toBe(0);
+    expect(res.stderr).toMatch(/No finding "not-a-real-slug" in docs\/checks\/governance-docs\.md/);
+    expect(res.stderr).toContain('governance-docs/no-governance-file');
+    expect(res.stdout).toContain('# governance-docs');
+  });
+
+  it('explain --help prints usage and exits 0', () => {
+    const res = run('--help');
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/Usage:\s+rigscore explain/);
   });
 });
