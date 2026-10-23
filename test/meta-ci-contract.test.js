@@ -109,13 +109,47 @@ describe('GitLab CI component (RS-25)', () => {
 });
 
 describe('Homebrew formula (RS-39)', () => {
+  const semver = (v) => v.split('.').map(Number);
+  const cmp = (a, b) => {
+    const [x, y] = [semver(a), semver(b)];
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+  };
+
   it('ships a formula pinned to a released tag + sha', () => {
     const f = read('Formula/rigscore.rb');
     expect(f).toMatch(/class Rigscore < Formula/);
-    expect(f).toMatch(/archive\/refs\/tags\/v2\.1\.0\.tar\.gz/);
+    expect(f).toMatch(/archive\/refs\/tags\/v\d+\.\d+\.\d+\.tar\.gz/);
     expect(f).toMatch(/sha256 "[0-9a-f]{64}"/);
     expect(f).toMatch(/depends_on "node"/);
   });
+
+  it('pins a tag no newer than package.json (version-agnostic)', () => {
+    // The release workflow bumps the formula after the release exists, so the
+    // pin may lag package.json but must never run ahead of it. Reading the
+    // version from package.json keeps this test from failing on every release.
+    const pinned = read('Formula/rigscore.rb').match(
+      /archive\/refs\/tags\/v(\d+\.\d+\.\d+)\.tar\.gz/,
+    )[1];
+    const current = JSON.parse(read('package.json')).version.match(/^\d+\.\d+\.\d+/)[0];
+    expect(cmp(pinned, current), `formula pins v${pinned}, package.json is ${current}`).toBeLessThanOrEqual(0);
+  });
+
+  it('release workflow bumps the formula pin after the release is created', () => {
+    const steps = parse('.github/workflows/release.yml').jobs.release.steps;
+    const idx = (pred) => steps.findIndex(pred);
+    const create = idx((s) => s.name === 'Create GitHub release');
+    const bump = idx((s) => typeof s.run === 'string' && /Formula\/rigscore\.rb/.test(s.run));
+    expect(create).toBeGreaterThanOrEqual(0);
+    expect(bump, 'no release.yml step edits Formula/rigscore.rb').toBeGreaterThan(create);
+    const step = steps[bump];
+    expect(step.if).toMatch(/steps\.check\.outputs\.exists == 'false'/);
+    expect(step.run).toMatch(/sha256sum|shasum/);
+    expect(step.run).toMatch(/archive\/refs\/tags\/v/);
+    expect(step.run).toMatch(/gh pr create/);
+    // Opening a PR needs this scope on the job token.
+    expect(parse('.github/workflows/release.yml').jobs.release.permissions['pull-requests']).toBe('write');
+  });
+
   it('ships a prebuilt-archives release workflow', () => {
     const wf = parse('.github/workflows/prebuilt-binaries.yml');
     expect(wf.on.release.types).toContain('published');
