@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../src/index.js';
@@ -193,5 +195,57 @@ describe('run() surfaces argv problems (H-unknown-flags, end-to-end)', () => {
   it('warns on stderr for an unknown flag while still running the scan', () => {
     const res = runCli(['--totally-bogus-flag', '.']);
     expect(res.stderr).toMatch(/rigscore: warning: unknown flag --totally-bogus-flag/);
+  });
+});
+
+describe('unknown-flag did-you-mean hint', () => {
+  it('suggests the closest known flag for a typo, exit behaviour unchanged', () => {
+    const opts = parseArgs(['--fail-undr', '70', '.']);
+    expect(opts.warnings.join('\n')).toMatch(/unknown flag --fail-undr ignored; did you mean --fail-under\?/);
+    expect(opts.argError).toBe(null);
+    expect(opts.failUnder).toBe(70);
+  });
+
+  it('adds no hint for a flag far from every known flag (forward-compat tolerance)', () => {
+    const opts = parseArgs(['--totally-bogus-flag']);
+    const w = opts.warnings.join('\n');
+    expect(w).toMatch(/unknown flag --totally-bogus-flag ignored/);
+    expect(w).not.toMatch(/did you mean/);
+  });
+
+  it('end-to-end: a typo prints the hint on stderr and still runs the scan', () => {
+    const res = runCli(['--fail-undr', '70', '--json', path.resolve('test/fixtures/claude-empty')]);
+    expect(res.stderr).toMatch(/rigscore: warning: unknown flag --fail-undr ignored; did you mean --fail-under\?/);
+    expect(() => JSON.parse(res.stdout)).not.toThrow();
+  });
+});
+
+describe('FAIL line on a failing gate', () => {
+  const fixture = path.resolve('test/fixtures/claude-empty');
+
+  it('single project: exit 1 writes score, threshold and flag to stderr', () => {
+    const res = runCli(['--fail-under', '100', '--json', fixture]);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/rigscore: FAIL score \d+ is below --fail-under 100/);
+  });
+
+  it('a passing run writes no FAIL line', () => {
+    const res = runCli(['--fail-under', '0', '--json', fixture]);
+    expect(res.status).toBe(0);
+    expect(res.stderr).not.toMatch(/FAIL/);
+  });
+
+  it('recursive: names the failing project count, threshold and flag', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rigscore-failline-'));
+    try {
+      fs.mkdirSync(path.join(root, 'pkg-foo'));
+      fs.writeFileSync(path.join(root, 'pkg-foo', 'package.json'), '{}');
+      fs.copyFileSync(path.join(fixture, 'CLAUDE.md'), path.join(root, 'pkg-foo', 'CLAUDE.md'));
+      const res = runCli(['--recursive', '--fail-under', '100', '--json', root]);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toMatch(/rigscore: FAIL 1 of 1 projects below --fail-under 100 \(lowest: pkg-foo, score \d+\)/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
