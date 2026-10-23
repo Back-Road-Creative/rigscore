@@ -54,12 +54,40 @@ const GLOB_RE = /[*?{]/;
 // Captured group keeps the bare path portion.
 const FILE_LINE_RANGE_RE = /^([^:#\s]+?)(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$/;
 
+// Symbol suffix: `path/to/file.py::run_preflight`, `src/lib.rs::Type::method`,
+// `file.py::Class.method`. The path portion is kept for the existence check.
+const SYMBOL_SUFFIX_RE = /^([^:#\s]+?)::[A-Za-z_]\w*(?:\(\))?(?:(?:::|\.)[A-Za-z_]\w*(?:\(\))?)*$/;
+
+// Top-level domains that mark a leading `host.tld` segment as a URL fragment
+// (`youtu.be/`, `github.com/org/repo`) rather than a dotted directory name.
+// Extensions that are also real file types (md, sh, py, rs, ...) are left out
+// on purpose; KNOWN_FILE_EXTS owns those.
+const DOMAIN_TLDS = new Set([
+  'com', 'net', 'org', 'io', 'be', 'tv', 'dev', 'app', 'co', 'ai', 'me',
+  'ly', 'gg', 'xyz', 'info', 'edu', 'gov', 'us', 'uk', 'de', 'fr', 'eu',
+  'cc', 'fm', 'to', 'so', 'run', 'cloud',
+]);
+
 /**
- * Strip a trailing `:line` / `:line-line` / `#L123-L456` suffix so the filesystem
- * existence check only sees the bare path. Preserves the original ref when no
- * suffix is present.
+ * True when the first path segment looks like a hostname ("youtu.be",
+ * "github.com", "www.youtube.com") — a URL written without its scheme.
+ */
+function startsWithDomain(str) {
+  const host = str.split('/')[0];
+  const labels = host.split('.');
+  if (labels.length < 2) return false;
+  if (!labels.every(l => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(l))) return false;
+  return DOMAIN_TLDS.has(labels[labels.length - 1].toLowerCase());
+}
+
+/**
+ * Strip a trailing `::symbol`, `:line` / `:line-line` or `#L123-L456` suffix so
+ * the filesystem existence check only sees the bare path. Preserves the
+ * original ref when no suffix is present.
  */
 function stripLineRange(ref) {
+  const sym = ref.match(SYMBOL_SUFFIX_RE);
+  if (sym) return sym[1];
   const m = ref.match(FILE_LINE_RANGE_RE);
   return m ? m[1] : ref;
 }
@@ -509,7 +537,11 @@ function looksLikeFilePath(str) {
   // Shell-command prefix: "git -C ...", "find ~/path", "grep -E pattern".
   // \d? catches trailing version digits (python3, node22, bash5).
   if (/^(git|bash|sh|zsh|node\d*|npm|npx|pnpm|yarn|pip\d*|python\d*|cargo|make|find|grep|sed|awk|cat|head|tail|less|more|echo|ls|cd|rm|cp|mv|sudo|curl|wget|chmod|chown|kill|ps|top)\s/.test(str)) return false;
-  if (str.includes(' ') && !str.includes('/')) return false;
+  // Any inner whitespace means a command line with arguments
+  // ("./scripts/build.sh build production"), not a single path.
+  if (/\s/.test(str)) return false;
+  // Scheme-less URL / bare domain: "youtu.be/", "github.com/org/repo".
+  if (startsWithDomain(str)) return false;
   // Must contain a path separator or file extension
   if (!str.includes('/') && !str.includes('.')) return false;
   // Must have a file extension or end with /

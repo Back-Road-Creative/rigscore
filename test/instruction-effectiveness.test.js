@@ -393,6 +393,85 @@ describe('instruction-effectiveness check', () => {
     }
   });
 
+  it('strips a ::symbol suffix before the existence check', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.mkdirSync(path.join(tmpDir, 'pipeline'));
+      fs.writeFileSync(path.join(tmpDir, 'pipeline', 'preflight.py'), 'def run_preflight(): pass\n');
+      const content = [
+        '# Rules',
+        'Entry point: `pipeline/preflight.py::run_preflight`.',
+        'Method: `pipeline/preflight.py::Runner.check`.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('still flags a ::symbol ref whose file is missing, reporting the bare path', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nSee `pipeline/gone.py::run_it`.\n');
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(1);
+      expect(deadRefs[0].context.bareRef).toBe('pipeline/gone.py');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag a path-led command with arguments as a dead reference', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const content = [
+        '# Rules',
+        'Build with `./scripts/build.sh build production`.',
+        'Deploy with `scripts/deploy.sh --env staging`.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('does not flag bare domains or domain-led URLs without a scheme', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const content = [
+        '# Rules',
+        'Short links look like `youtu.be/` plus an id.',
+        'Docs live at `github.com/acme/widget` and `example.io`.',
+        'Also `www.youtube.com/watch`.',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('still flags a missing file whose directory contains a dot', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nSee `config.d/missing.md` and `scripts/missing.sh`.\n');
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(2);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
   it('still flags real dead references (tightening does not regress)', async () => {
     const tmpDir = makeTmpDir();
     // A clearly-path-shaped ref that legitimately does not exist.
