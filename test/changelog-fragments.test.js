@@ -50,6 +50,38 @@ describe('changelog.d/ contents (repo gate)', () => {
   });
 });
 
+describe('v2.2.0 backfill (repo gate)', () => {
+  // v2.2.0 shipped from the release PR #372 with its fragments never folded, so
+  // the release notes were raw git log. The fragments at or below #372 now live
+  // in CHANGELOG.md's [2.2.0] section and must not reappear in changelog.d/.
+  const RELEASE_PR = 372;
+  const changelog = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8');
+
+  it('no fragment at or below the v2.2.0 release PR remains unfolded', () => {
+    const stale = readdirSync(fragmentDir)
+      .filter((f) => f !== 'README.md')
+      .filter((f) => parseFragmentName(f).id <= RELEASE_PR);
+    expect(stale).toEqual([]);
+  });
+
+  it('CHANGELOG.md carries a dated [2.2.0] section between [Unreleased] and [2.1.0]', () => {
+    expect(changelog).toMatch(/^## \[2\.2\.0\] - \d{4}-\d{2}-\d{2}$/m);
+    const at = (h) => changelog.indexOf(h);
+    expect(at('## [Unreleased]')).toBeGreaterThanOrEqual(0);
+    expect(at('## [Unreleased]')).toBeLessThan(at('## [2.2.0]'));
+    expect(at('## [2.2.0]')).toBeLessThan(at('## [2.1.0]'));
+  });
+
+  it('the [2.2.0] notes keep what shipped, grouped by Keep a Changelog section', () => {
+    const notes = extractReleaseNotes(changelog, '2.2.0');
+    for (const heading of ['### Added', '### Changed', '### Fixed', '### Docs']) expect(notes).toContain(heading);
+    expect(notes).toContain('`codex-guards` starter pack');
+    expect(notes).toContain('`semantic.command` rc key');
+    // later fragments belong to the next release, not this one
+    expect(notes).not.toContain('graduated-script-missing');
+  });
+});
+
 describe('assembleUnreleased', () => {
   it('folds a fragment into its existing section without dropping what is there', () => {
     const out = assembleUnreleased(BASE, [{ id: 281, type: 'fixed', body: '- **B door**: fixed.' }]);
