@@ -76,6 +76,13 @@ function releaseDate(root, version, fallback) {
   return fallback;
 }
 
+// Minimum supported Node version, from package.json `engines.node` (e.g.
+// ">=20.0.0" -> "20.0.0"). Padded to major.minor.patch; null when undeclared.
+function nodeFloor(pkg) {
+  const m = String(pkg.engines?.node ?? '').match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  return m ? `${m[1]}.${m[2] ?? 0}.${m[3] ?? 0}` : null;
+}
+
 /**
  * Build the facts object from the live registry.
  * @param {object} [opts]
@@ -88,6 +95,7 @@ export async function generateFacts(opts = {}) {
 
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const { WEIGHTS, FRAMEWORKS } = await importFromRoot(root, 'src', 'constants.js');
+  const { CLIENTS } = await importFromRoot(root, 'src', 'clients.js');
   const { loadChecks } = await importFromRoot(root, 'src', 'checks', 'index.js');
 
   const loaded = await loadChecks({ cwd: root });
@@ -123,6 +131,8 @@ export async function generateFacts(opts = {}) {
     generatedAt,
     version: pkg.version,
     date: releaseDate(root, pkg.version, generatedAt),
+    nodeFloor: nodeFloor(pkg),
+    clientCount: CLIENTS.length,
     checkCount: checks.length,
     scoredCount,
     advisoryCount,

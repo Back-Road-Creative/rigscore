@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { generateFacts } from '../scripts/generate-facts.js';
 import { WEIGHTS, FRAMEWORKS } from '../src/constants.js';
+import { CLIENTS } from '../src/clients.js';
 
 // Self-gate: the emitted facts MUST equal the live registry. If a check is
 // added/renamed/removed and the facts drift, this goes red — the whole point of
@@ -47,5 +48,18 @@ describe('generate-facts', () => {
     const f = await facts;
     expect(f.version).toBe(pkg.version);
     expect(f.frameworks.map((x) => x.id).sort()).toEqual(Object.keys(FRAMEWORKS).sort());
+  });
+  it('nodeFloor is the minimum version in package.json engines.node', async () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const floor = pkg.engines.node.match(/(\d+(?:\.\d+){0,2})/)[1];
+    const f = await facts;
+    expect(f.nodeFloor).toBe(floor);
+    expect(f.nodeFloor).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('clientCount equals the CLIENTS registry length', async () => {
+    const f = await facts;
+    expect(f.clientCount).toBe(CLIENTS.length);
+    expect(f.clientCount).toBeGreaterThan(0);
   });
 });
