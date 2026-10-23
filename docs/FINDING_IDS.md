@@ -463,6 +463,7 @@ Grouped by check. Each ID is stable within the current major.
 - `sandbox-posture/gemini-auto-edit` (warning) — a Gemini CLI client sets `general.defaultApprovalMode = "auto_edit"` (auto-approves file edits).
 - `sandbox-posture/opencode-auto-run-shell` (warning) — an opencode client sets `permission.bash` (or `*`) to `"allow"` (shell runs unprompted).
 - `sandbox-posture/cursor-wildcard-autorun` (warning) — a Cursor client's `.cursor/permissions.json` allowlist contains a `"*"` / `"*:*"` wildcard.
+- `sandbox-posture/windsurf-shell-allowlisted` (warning) — a Windsurf user's `windsurf.cascadeCommandsAllowList` holds a bare shell/interpreter or `"*"` that the deny list does not cancel.
 - `sandbox-posture/devcontainer-no-egress-control` (warning) — a devcontainer runs an agent with no egress control.
 - `sandbox-posture/devcontainer-file-cap-reached` (warning) — the devcontainer scan hit its file cap.
 

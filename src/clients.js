@@ -96,6 +96,12 @@ export const CLIENTS = [
   { id: 'windsurf', name: 'Windsurf', governance: ['.windsurfrules'],
     mcp: [{ path: '.codeium/windsurf/mcp_config.json', base: 'home' }],
     credentials: [{ dir: '.codeium/windsurf', file: 'mcp_config.json' }],
+    // Cascade's terminal allow/deny lists are USER settings (windsurf.cascadeCommandsAllowList /
+    // ...DenyList, docs.windsurf.com/windsurf/terminal) in the VS Code-style per-user settings.json:
+    // ~/.config/Windsurf/User on Linux, ~/Library/Application Support/Windsurf/User on macOS (the
+    // Windows %APPDATA% path is unverified, so it is not registered). Home-only: no committed file.
+    sandbox: [{ path: '.config/Windsurf/User/settings.json', base: 'home', format: 'windsurf' },
+      { path: 'Library/Application Support/Windsurf/User/settings.json', base: 'home', format: 'windsurf' }],
     // Workflows are committed .windsurf/workflows/*.md slash-commands invoked as /<name>
     // (docs.windsurf.com/plugins/cascade/workflows) — project-scoped prompt files skill-files scans.
     skillDirs: [{ path: '.windsurf/workflows', base: 'cwd' }] },
