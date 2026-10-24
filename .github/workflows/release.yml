@@ -116,10 +116,13 @@ jobs:
           else
             LOG=$(git log --oneline --no-merges | head -20)
           fi
+          # The notes reach the release step as a file, never as a step output:
+          # a commit subject (PR titles are untrusted text) equal to a heredoc
+          # delimiter would end an output value early and inject further keys.
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.txt"
+          printf '%s\n' "$LOG" > "$NOTES_FILE"
           {
-            echo "log<<EOF"
-            echo "$LOG"
-            echo "EOF"
+            echo "notes_file=${NOTES_FILE}"
             echo "prev_tag=${PREV_TAG}"
           } >> "$GITHUB_OUTPUT"
 
@@ -127,13 +130,12 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CHANGELOG: ${{ steps.changelog.outputs.log }}
+          NOTES_FILE: ${{ steps.changelog.outputs.notes_file }}
         run: |
-          printf '%s\n' "$CHANGELOG" > /tmp/release-notes.txt
           gh release create "v${{ steps.pkg.outputs.version }}" \
             --repo "${{ github.repository }}" \
             --title "rigscore v${{ steps.pkg.outputs.version }}" \
-            --notes-file /tmp/release-notes.txt
+            --notes-file "$NOTES_FILE"
           echo "Created release v${{ steps.pkg.outputs.version }}"
 
       # Attach the machine-readable facts snapshot to the release. This is the
@@ -163,7 +165,12 @@ jobs:
       # build/attest the released tag's tree, not main-at-dispatch. The
       # normalized (`v`-stripped) tag is passed so docker-publish tags the
       # image `<version>` + `latest`, matching the tag-push contract.
-      - name: Trigger tag-scoped workflows (docker + provenance)
+      #
+      # The same gap hit prebuilt-binaries.yml: a release created with the job
+      # token never fires its `release: published` trigger, so no release had
+      # its archives attached. It is dispatched too, with the `v`-prefixed tag
+      # its input expects.
+      - name: Trigger tag-scoped workflows (docker, provenance, archives)
         if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -173,6 +180,8 @@ jobs:
             --ref "v${VERSION}" -f tag="${VERSION}" -f push=true
           gh workflow run release-provenance.yml --repo "${{ github.repository }}" \
             --ref "v${VERSION}"
+          gh workflow run prebuilt-binaries.yml --repo "${{ github.repository }}" \
+            --ref "v${VERSION}" -f tag="v${VERSION}"
 
       # Keep the Homebrew formula pinned to the release just published. The
       # tag tarball only exists once `gh release create` has made the tag, so

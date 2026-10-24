@@ -24,3 +24,13 @@ updates:
       # CI matrix, then delete this stanza.
       - dependency-name: chalk
         versions: [">=6.0.0"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # The Dockerfile pins node:20-alpine by digest. Dependabot refreshes that
+      # digest within the tag; moving to a new Node major is a separate
+      # decision, not an automatic pull request.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

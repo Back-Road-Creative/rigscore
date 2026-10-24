@@ -168,6 +168,68 @@ describe('Homebrew formula (RS-39)', () => {
   });
 });
 
+describe('release workflow — archives, notes, coverage, docker bumps (G3)', () => {
+  const steps = parse('.github/workflows/release.yml').jobs.release.steps;
+  const named = (re) => steps.find((s) => re.test(s.name || ''));
+
+  it('dispatches the prebuilt archives on the released tag', () => {
+    // A release made with the job GITHUB_TOKEN never fires `release: published`,
+    // so prebuilt-binaries.yml has to be dispatched like the other tag workflows.
+    const step = named(/Trigger tag-scoped workflows/);
+    expect(step, 'no "Trigger tag-scoped workflows" step').toBeDefined();
+    expect(step.name).toMatch(/archives/i);
+    expect(step.run).toMatch(/gh workflow run prebuilt-binaries\.yml[^\n]*(\\\n[^\n]*)*--ref "v\$\{VERSION\}"/);
+    // The workflow's input takes the v-prefixed tag.
+    const call = step.run.slice(step.run.indexOf('gh workflow run prebuilt-binaries.yml'));
+    expect(call.split(/\ngh |\n\s*gh /)[0]).toMatch(/-f tag="v\$\{VERSION\}"/);
+    // The sibling dispatches stay.
+    expect(step.run).toMatch(/gh workflow run docker-publish\.yml/);
+    expect(step.run).toMatch(/gh workflow run release-provenance\.yml/);
+    const wf = parse('.github/workflows/prebuilt-binaries.yml');
+    expect(wf.on.workflow_dispatch.inputs.tag.required).toBe(true);
+  });
+
+  it('cannot have its release notes cut short or forged by a commit subject', () => {
+    // Commit subjects come from PR titles. A fixed `EOF` heredoc delimiter in
+    // $GITHUB_OUTPUT lets a subject of "EOF" end the value and inject keys.
+    const build = named(/^Build changelog$/);
+    expect(build.run).not.toMatch(/<<\s*"?'?EOF/);
+    expect(build.run).not.toMatch(/\n\s*echo "EOF"/);
+    expect(build.run).not.toMatch(/log</);
+    // The notes travel as a file, never as a step output or an env value.
+    expect(build.run).toMatch(/notes_file=/);
+    const create = named(/^Create GitHub release$/);
+    expect(JSON.stringify(create)).not.toMatch(/steps\.changelog\.outputs\.log/);
+    expect(create.run).toMatch(/--notes-file/);
+    expect(JSON.stringify(create)).toMatch(/steps\.changelog\.outputs\.notes_file/);
+  });
+});
+
+describe('coverage and dependabot config (G3)', () => {
+  it('counts every src file in the coverage denominator', () => {
+    const cfg = read('vitest.config.js');
+    expect(cfg).toMatch(/include:\s*\[\s*'src\/\*\*\/\*\.js'\s*\]/);
+    expect(cfg).not.toMatch(/84\.7%/);
+  });
+
+  it('proposes docker base-image bumps', () => {
+    const { updates } = parse('.github/dependabot.yml');
+    const docker = updates.find((u) => u['package-ecosystem'] === 'docker');
+    expect(docker, 'no docker ecosystem in dependabot.yml').toBeDefined();
+    expect(docker.directory).toBe('/');
+    expect(docker.schedule.interval).toBe('weekly');
+    // A major Node bump is a separate decision, not a dependabot PR.
+    expect(docker.ignore).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          'dependency-name': 'node',
+          'update-types': ['version-update:semver-major'],
+        }),
+      ]),
+    );
+  });
+});
+
 describe('community health + disclosure (RS-44, SECURITY)', () => {
   it('has CONTRIBUTING, CODE_OF_CONDUCT, and both issue templates', () => {
     for (const p of [

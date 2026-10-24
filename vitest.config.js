@@ -47,8 +47,12 @@ export default defineConfig({
     hookTimeout: isWindows ? 30000 : 10000,
     coverage: {
       provider: 'v8',
+      // Count every src file, imported by a test or not. Without this the
+      // denominator is only the files a test happens to load, so a new
+      // untested module would vanish from the report instead of lowering it.
+      include: ['src/**/*.js'],
       // 75% line coverage floor. Actual coverage at the time of writing is
-      // 84.7% lines (91 test files / 1157 tests), so the floor sits ~10
+      // about 88% lines over src/**, so the floor sits ~13
       // points under the real number. That buffer is deliberate: it absorbs
       // per-run variance across the Node 18/20/22 x ubuntu/macOS CI matrix
       // (platform-gated branches leave a few lines unexecuted on any single
