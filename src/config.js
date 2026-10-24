@@ -281,7 +281,7 @@ export async function loadConfig(cwd, homedir) {
  * only (`~/.rigscorerc.json` and its own `extends` chain). Best-effort: a missing
  * or malformed home rc yields [] (loadConfig reports the parse error on its own
  * path). `~/` expands against `homedir`; every entry is resolved to an absolute
- * path. Non-string and empty entries are dropped.
+ * path. Non-string, empty and relative entries are dropped.
  *
  * @param {string} [homedir]
  * @returns {Promise<string[]>}
@@ -297,7 +297,11 @@ export async function loadTrustedPluginRoots(homedir) {
     );
     return (merged.trustProjectPlugins || [])
       .filter((p) => typeof p === 'string' && p.length > 0)
-      .map((p) => (p === '~' || p.startsWith('~/') ? path.join(homedir, p.slice(1)) : path.resolve(p)));
+      .map((p) => (p === '~' || p.startsWith('~/') ? path.join(homedir, p.slice(1)) : p))
+      // A relative entry would resolve against whichever directory rigscore runs
+      // from, so "." would trust every repo scanned that way. Absolute only.
+      .filter((p) => path.isAbsolute(p))
+      .map((p) => path.resolve(p));
   } catch {
     return [];
   }

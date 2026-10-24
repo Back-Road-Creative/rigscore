@@ -914,7 +914,7 @@ rigscore discovers `rigscore-check-*` packages from `node_modules`, and local ch
 }
 ```
 
-Entries are repo roots (an exact match on the scanned directory; `~/` expands to your home directory). The key is honoured only in the home config (and files it `extends`); a project's own `.rigscorerc.json` cannot trust itself. In CI, write the home config in a step before the scan.
+Entries are absolute repo roots (an exact match on the scanned directory; `~/` expands to your home directory; relative entries are ignored). With `--recursive`, each subproject root whose plugins should load must be listed. The key is honoured only in the home config (and files it `extends`); a project's own `.rigscorerc.json` cannot trust itself. In CI, write the home config in a step before the scan.
 
 **Creating a plugin:**
 

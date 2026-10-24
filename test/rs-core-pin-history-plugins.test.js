@@ -286,5 +286,15 @@ describe('SEC-1b: a scan does not run plugin code the scanned repo supplies', ()
         expect(roots).toEqual([path.resolve('/srv/a'), path.join(home, 'code', 'b')]);
       });
     });
+
+    it('drops relative entries so "." never trusts whichever directory rigscore runs from', async () => {
+      await withTmpDir(async (home) => {
+        fs.writeFileSync(
+          path.join(home, '.rigscorerc.json'),
+          JSON.stringify({ trustProjectPlugins: ['.', './repo', 'code/repo', '/srv/a'] }),
+        );
+        expect(await loadTrustedPluginRoots(home)).toEqual([path.resolve('/srv/a')]);
+      });
+    });
   });
 });
