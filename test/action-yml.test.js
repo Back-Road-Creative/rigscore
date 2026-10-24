@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -176,5 +178,190 @@ describe('action.yml — GitHub composite action distribution', () => {
         expect(inputs[key], `missing input: ${key}`).toBeDefined();
       }
     });
+  });
+});
+
+
+describe('action.yml — job summary (UI-5)', () => {
+  const steps = flattenSteps(action);
+  const scanIdx = steps.findIndex((s) => s.id === 'scan');
+  const summaryIdx = steps.findIndex((s) => typeof s.run === 'string' && s.run.includes('GITHUB_STEP_SUMMARY'));
+  const summaryStep = steps[summaryIdx];
+
+  it('has a summary step that runs after the scan and even when the scan failed', () => {
+    expect(summaryIdx, 'no step writes to GITHUB_STEP_SUMMARY').toBeGreaterThan(scanIdx);
+    expect(String(summaryStep.if)).toMatch(/always\(\)/);
+  });
+
+  it('runs before the threshold gate so a failing scan still reports', () => {
+    const gateIdx = steps.findIndex((s) => s.name === 'Enforce threshold');
+    expect(summaryIdx).toBeLessThan(gateIdx);
+  });
+
+  it('passes inputs through env, never interpolated into the script', () => {
+    expect(summaryStep.run).not.toMatch(/\$\{\{/);
+  });
+
+  // Pull the embedded node program out of the step so it can be run against
+  // fixture JSON exactly as the runner would run it.
+  function runSummary(json, { exit = '0', failUnder = '70', baseline = '' } = {}) {
+    const m = summaryStep.run.match(/<<'(\w+)'[^\n]*\n([\s\S]*?)\n\s*\1\n/);
+    expect(m, 'summary step must embed its node program as a quoted heredoc').not.toBeNull();
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'rigscore-summary-'));
+    const jsonPath = path.join(dir, 'rigscore.json');
+    const outPath = path.join(dir, 'summary.md');
+    if (json !== null) writeFileSync(jsonPath, typeof json === 'string' ? json : JSON.stringify(json));
+    const r = spawnSync(process.execPath, ['-'], {
+      input: m[2],
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        RIGSCORE_JSON: jsonPath,
+        SCAN_EXIT: exit,
+        FAIL_UNDER: failUnder,
+        BASELINE: baseline,
+        GITHUB_STEP_SUMMARY: outPath,
+      },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    return existsSync(outPath) ? readFileSync(outPath, 'utf8') : '';
+  }
+
+  const single = {
+    score: 42,
+    grade: 'D',
+    results: [
+      { id: 'mcp-config', name: 'MCP config', score: 20, findings: [
+        { findingId: 'mcp-config/unpinned', severity: 'critical', title: 'MCP server is unpinned', remediation: 'Pin the version.' },
+        { findingId: 'mcp-config/x', severity: 'info', title: 'Minor note' },
+      ] },
+      { id: 'git-hooks', name: 'Git hooks', score: 100, findings: [{ findingId: 'git-hooks/ok', severity: 'pass', title: 'Hooks fine' }] },
+      { id: 'windows-security', name: 'Windows security', score: -1, findings: [] },
+    ],
+  };
+
+  it('single project: headline, per-check table, and the finding with its id', () => {
+    const md = runSummary(single, { exit: '1' });
+    expect(md).toMatch(/^## rigscore/m);
+    expect(md).toContain('42');
+    expect(md).toContain('D');
+    expect(md).toMatch(/below the threshold of 70|threshold.*70/i);
+    expect(md).toContain('mcp-config');
+    expect(md).toContain('mcp-config/unpinned');
+    expect(md).toContain('MCP server is unpinned');
+    expect(md).not.toContain('Hooks fine');
+  });
+
+  it('reports a pass when the gate passed', () => {
+    const md = runSummary({ ...single, score: 95, grade: 'A' }, { exit: '0' });
+    expect(md).toMatch(/pass/i);
+  });
+
+  it('recursive: one row per project plus the worst project', () => {
+    const rec = {
+      score: 60,
+      grade: 'C',
+      worstProject: { path: 'pkgs/b', score: 30 },
+      projects: [
+        { path: 'pkgs/a', score: 90, grade: 'A', results: [] },
+        { path: 'pkgs/b', score: 30, grade: 'F', results: single.results },
+        { path: 'pkgs/c', score: null, notApplicable: true, grade: 'n/a', results: [] },
+      ],
+    };
+    const md = runSummary(rec, { exit: '1' });
+    expect(md).toContain('pkgs/a');
+    expect(md).toContain('pkgs/b');
+    expect(md).toContain('pkgs/c');
+    expect(md).toMatch(/worst/i);
+    expect(md).toContain('mcp-config/unpinned');
+  });
+
+  it('recursive: average above the threshold but one project below names that project', () => {
+    const rec = {
+      score: 80,
+      grade: 'B',
+      worstProject: { path: 'pkgs/b', score: 50 },
+      projects: [
+        { path: 'pkgs/a', score: 95, grade: 'A', results: [] },
+        { path: 'pkgs/b', score: 50, grade: 'F', results: [] },
+        { path: 'pkgs/d', score: 95, grade: 'A', results: [] },
+      ],
+    };
+    const md = runSummary(rec, { exit: '1' });
+    const result = md.match(/\*\*Result:\*\*[^\n]*/)[0];
+    expect(result).toMatch(/FAIL/);
+    expect(result).toContain('1 project');
+    expect(result).toContain('pkgs/b');
+    expect(result).not.toContain('pkgs/a');
+    expect(result).not.toMatch(/score is below/i);
+  });
+
+  it('baseline mode: a failing exit is reported as new findings, not a low score', () => {
+    const md = runSummary({ ...single, score: 92, grade: 'A' }, { exit: '1', baseline: 'base.json' });
+    const result = md.match(/\*\*Result:\*\*[^\n]*/)[0];
+    expect(result).toMatch(/new findings since the baseline/i);
+    expect(result).not.toMatch(/below the threshold/i);
+  });
+
+  it('code spans keep underscores literal (no backslash escapes inside backticks)', () => {
+    const rec = { score: 10, grade: 'F', worstProject: { path: 'my_pkg', score: 10 },
+      projects: [{ path: 'my_pkg', score: 10, grade: 'F', results: [
+        { id: 'c', name: 'C', score: 0, findings: [{ findingId: 'a_b*c', severity: 'warning', title: 't' }] },
+      ] }] };
+    const md = runSummary(rec, { exit: '1' });
+    expect(md).toContain('`my_pkg`');
+    expect(md).toContain('`a_b*c`');
+  });
+
+  it('recursive: N/A projects show n/a and never become the worst project', () => {
+    const rec = {
+      score: 60, grade: 'C',
+      worstProject: { path: 'na', score: 0 },
+      projects: [
+        { path: 'pkgs/a', score: 60, grade: 'C', results: [] },
+        { path: 'na', score: 0, notApplicable: true, grade: 'n/a', results: [] },
+      ],
+    };
+    const md = runSummary(rec, { exit: '0' });
+    expect(md).toMatch(/\| na \| n\/a \| n\/a \|/);
+    expect(md).not.toMatch(/Worst project: `na`/);
+  });
+
+  it('crash or unparseable JSON: says the scan did not complete, still exits 0', () => {
+    const md = runSummary('not json', { exit: '2' });
+    expect(md).toMatch(/did not complete/i);
+    expect(md).toContain('2');
+  });
+
+  it('missing JSON file: same, no throw', () => {
+    const md = runSummary(null, { exit: '2' });
+    expect(md).toMatch(/did not complete/i);
+  });
+
+  it('escapes markdown table breakers in finding text', () => {
+    const evil = { ...single, results: [{ id: 'c', name: 'C', score: 10, findings: [
+      { findingId: 'c/a', severity: 'warning', title: 'pipe | and\nnewline <b>' },
+    ] }] };
+    const md = runSummary(evil, { exit: '1' });
+    expect(md).not.toContain('pipe | and');
+    expect(md).not.toContain('<b>');
+  });
+
+  it('caps the finding list so a huge scan cannot blow the summary size limit', () => {
+    const many = { score: 10, grade: 'F', results: [{ id: 'c', name: 'C', score: 0, findings:
+      Array.from({ length: 500 }, (_, i) => ({ findingId: `c/f${i}`, severity: 'warning', title: `t${i}` })) }] };
+    const md = runSummary(many, { exit: '1' });
+    expect(md.length).toBeLessThan(60000);
+    expect(md).toMatch(/more/i);
+  });
+});
+
+describe('action.yml — input descriptions (UI-12)', () => {
+  it('check input says what a valid value is and where to find ids', () => {
+    const d = action.inputs.check.description;
+    expect(d).toMatch(/check id/i);
+    expect(d).toMatch(/comma/i);
+    expect(d).toMatch(/docs\/checks/);
+    expect(d).toMatch(/empty/i);
   });
 });
