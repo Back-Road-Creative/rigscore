@@ -322,6 +322,69 @@ describe('sandbox-posture: Cursor permissions.json allowlist', () => {
   });
 });
 
+describe('sandbox-posture: Windsurf Cascade command lists', () => {
+  // Windsurf's lists are USER settings (windsurf.cascadeCommandsAllowList / DenyList), so the
+  // surface is the editor's per-user settings.json under $HOME, not a committed project file.
+  const LINUX = '.config/Windsurf/User/settings.json';
+  const MACOS = 'Library/Application Support/Windsurf/User/settings.json';
+  const runHome = (files) => {
+    const homedir = tree(files);
+    return check.run({ cwd: fs.mkdtempSync(path.join(os.tmpdir(), 'rs-ws-cwd-')), homedir, config: {} });
+  };
+  const settings = (o) => JSON.stringify(o);
+
+  it('registers a home-only sandbox surface for windsurf', () => {
+    const ws = CLIENTS.find((c) => c.id === 'windsurf');
+    expect(ws.sandbox.length).toBeGreaterThan(0);
+    expect(ws.sandbox.every((e) => e.base === 'home' && e.format === 'windsurf')).toBe(true);
+  });
+
+  it.each([[LINUX], [MACOS]])('flags a bare shell in the allow list as unrestricted (%s)', async (rel) => {
+    const r = await runHome({ [rel]: settings({ 'windsurf.cascadeCommandsAllowList': ['git', 'bash'] }) });
+    expect(ids(r)).toContain('sandbox-posture/windsurf-shell-allowlisted');
+    expect(sev(r, 'sandbox-posture/windsurf-shell-allowlisted')).toBe('warning');
+    expect(r.data.postures.windsurf).toBe('unrestricted');
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it.each([['*'], ['/bin/zsh'], ['sudo'], ['Bash']])('treats "%s" as handing over arbitrary commands', async (entry) => {
+    const r = await runHome({ [LINUX]: settings({ 'windsurf.cascadeCommandsAllowList': [entry] }) });
+    expect(ids(r)).toContain('sandbox-posture/windsurf-shell-allowlisted');
+  });
+
+  it('a deny-list entry for the same shell cancels it (deny wins over allow)', async () => {
+    const r = await runHome({ [LINUX]: settings({
+      'windsurf.cascadeCommandsAllowList': ['bash'], 'windsurf.cascadeCommandsDenyList': ['bash'],
+    }) });
+    expect(ids(r)).not.toContain('sandbox-posture/windsurf-shell-allowlisted');
+    expect(r.data.postures.windsurf).toBe('partial');
+  });
+
+  it('passes a narrow allow list (partial: Windsurf has no restricted ceiling here)', async () => {
+    const r = await runHome({ [LINUX]: settings({ 'windsurf.cascadeCommandsAllowList': ['git', 'npm test'] }) });
+    expect(ids(r)).not.toContain('sandbox-posture/windsurf-shell-allowlisted');
+    expect(r.data.postures.windsurf).toBe('partial');
+    expect(r.score).toBe(100);
+  });
+
+  it('a settings.json with no Windsurf command-list keys is not a surface (N/A)', async () => {
+    const r = await runHome({ [LINUX]: settings({ 'editor.fontSize': 14 }) });
+    expect(r.data.postures.windsurf).toBeUndefined();
+    expect(r.score).toBe(NOT_APPLICABLE_SCORE);
+  });
+
+  it('reads a JSONC settings.json (VS Code-style comments, trailing commas)', async () => {
+    const r = await runHome({ [LINUX]: '{\n  // my lists\n  "windsurf.cascadeCommandsAllowList": ["bash",],\n}' });
+    expect(ids(r)).toContain('sandbox-posture/windsurf-shell-allowlisted');
+  });
+
+  it('unparseable settings.json reads as absent, never dangerous', async () => {
+    const r = await runHome({ [LINUX]: '{ "windsurf.cascadeCommandsAllowList": ["bash"' });
+    expect(ids(r)).not.toContain('sandbox-posture/windsurf-shell-allowlisted');
+    expect(r.score).toBe(NOT_APPLICABLE_SCORE);
+  });
+});
+
 describe('sandbox-posture: new clients — absent config is not-applicable (no false positive)', () => {
   it.each([
     ['gemini', 'sandbox-posture/gemini-yolo-approval'],

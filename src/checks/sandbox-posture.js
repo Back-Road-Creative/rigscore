@@ -10,6 +10,7 @@ const GEMINI_DOCS = 'https://github.com/google-gemini/gemini-cli/blob/main/docs/
 const QWEN_DOCS = 'https://qwenlm.github.io/qwen-code-docs/en/users/features/approval-mode/';
 const OPENCODE_DOCS = 'https://opencode.ai/docs/permissions/';
 const CURSOR_DOCS = 'https://cursor.com/docs/reference/permissions';
+const WINDSURF_DOCS = 'https://docs.windsurf.com/windsurf/terminal';
 const DEVCONTAINER_DOCS = 'https://containers.dev/implementors/json_reference/';
 
 // Package / devcontainer-feature identifiers that install an agent CLI into the container.
@@ -262,6 +263,45 @@ const CURSOR_RULES = [
 ];
 
 /**
+ * Windsurf's posture surface: the per-user `windsurf.cascadeCommandsAllowList` / `...DenyList`
+ * settings (docs.windsurf.com/windsurf/terminal). Entries are command prefixes ("git" auto-runs
+ * `git add -A`) and the deny list wins over the allow list, so an allow entry that is a bare
+ * shell or interpreter (or "*") auto-runs ANY command through it unless the deny list names it.
+ * Like Cursor there is no sandbox knob, so the ceiling is `partial`. The auto-execution LEVEL
+ * (Turbo etc.) is chosen in the editor UI, not a documented file key, and team lists live in
+ * the admin portal — neither is readable here, so neither is claimed.
+ */
+const WINDSURF_SHELLS = new Set(['*', 'sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'csh', 'tcsh',
+  'pwsh', 'powershell', 'cmd', 'eval', 'sudo']);
+
+function windsurfEntry(v) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim().toLowerCase();
+  return t === '*' ? t : path.posix.basename(t.replace(/\\/g, '/')).replace(/\.exe$/, '');
+}
+
+export function readWindsurfKeys(settings) {
+  const allow = settings?.['windsurf.cascadeCommandsAllowList'];
+  const deny = settings?.['windsurf.cascadeCommandsDenyList'];
+  if (!Array.isArray(allow) && !Array.isArray(deny)) return null; // no Windsurf lists: not a surface
+  const denied = new Set((Array.isArray(deny) ? deny : []).map(windsurfEntry));
+  const shells = [...new Set((Array.isArray(allow) ? allow : []).map(windsurfEntry)
+    .filter((e) => WINDSURF_SHELLS.has(e) && !denied.has(e)))];
+  return { shells };
+}
+
+function windsurfPosture(k) {
+  return k.shells.length > 0 ? 'unrestricted' : 'partial';
+}
+
+const WINDSURF_RULES = [
+  { id: 'windsurf-shell-allowlisted', severity: 'warning', verb: 'auto-runs any command through an allow-listed shell',
+    when: (k) => k.shells.length > 0,
+    detail: (k) => `windsurf.cascadeCommandsAllowList contains ${k.shells.map((e) => `"${e}"`).join(', ')} and the deny list does not — Cascade runs every command starting with that entry without an approval prompt, so a prompt-injected instruction becomes an executed command.`,
+    remediation: 'Replace the shell/wildcard entry with specific prefixes (e.g. "git status", "npm test") in windsurf.cascadeCommandsAllowList, or add it to windsurf.cascadeCommandsDenyList.' },
+];
+
+/**
  * One reader + rule set per declared `format` in the client registry. The run loop below
  * knows nothing about any specific client: a new registry entry declaring a `sandbox`
  * surface in a known format is scanned with no change here. `merge` folds a client's files
@@ -319,6 +359,14 @@ const FORMATS = {
       wildcardMcp: a.wildcardMcp || b.wildcardMcp,
     }),
     posture: cursorPosture, rules: CURSOR_RULES, docs: CURSOR_DOCS,
+  },
+  windsurf: {
+    read: async (file) => {
+      const settings = await readJsonSafe(file);
+      return settings === null ? null : readWindsurfKeys(settings);
+    },
+    merge: (a, b) => ({ shells: [...new Set([...a.shells, ...b.shells])] }),
+    posture: windsurfPosture, rules: WINDSURF_RULES, docs: WINDSURF_DOCS,
   },
 };
 

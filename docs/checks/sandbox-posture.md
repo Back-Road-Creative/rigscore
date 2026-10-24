@@ -34,6 +34,15 @@ so a **new client is picked up with no change to this check's logic**. Two forma
   the [Cursor permissions reference](https://cursor.com/docs/reference/permissions). It is an allowlist with
   no sandbox knob, so a bare `*` (terminal) or `*:*` (MCP) wildcard is the dangerous, auto-run-everything state.
 
+- `windsurf` — **Windsurf**, the per-user `settings.json` (`~/.config/Windsurf/User/` on Linux,
+  `~/Library/Application Support/Windsurf/User/` on macOS; `$HOME` only — Windsurf has no committed project
+  file for these), keys `windsurf.cascadeCommandsAllowList` / `windsurf.cascadeCommandsDenyList`, per the
+  [Windsurf terminal docs](https://docs.windsurf.com/windsurf/terminal). Entries are command prefixes and the
+  deny list wins, so a bare shell or interpreter (`bash`, `zsh`, `eval`, …) or `*` in the allow list auto-runs
+  any command and is the dangerous state. The auto-execution level (Turbo etc.) is chosen in the editor UI and
+  team lists live in the admin portal, so neither is readable here and neither is graded. A `settings.json`
+  with neither list key is no surface at all. The Windows `%APPDATA%` location is not registered (unverified).
+
 One surface is **not** registry-driven: the project's `.devcontainer/` (or single-file
 `.devcontainer.json`). It belongs to no client — it is the box every client runs *inside* — so it is
 scanned separately, and only when it installs an agent CLI (a devcontainer that runs no agent is not
@@ -51,11 +60,12 @@ this check's business, and reads as no surface at all rather than as a passing o
 | Gemini CLI `general.defaultApprovalMode = "auto_edit"` — auto-approves file edits without prompting | WARNING | `sandbox-posture/gemini-auto-edit` | Set `general.defaultApprovalMode = "default"` in `.gemini/settings.json` |
 | opencode `permission.bash` (or the `*` catch-all) is `"allow"` — shell runs unprompted | WARNING | `sandbox-posture/opencode-auto-run-shell` | Set `"permission": { "bash": "ask" }` (or `"deny"`) in `opencode.json` |
 | Cursor `.cursor/permissions.json` has a `"*"` `terminalAllowlist` (or `"*:*"` `mcpAllowlist`) wildcard — auto-runs everything | WARNING | `sandbox-posture/cursor-wildcard-autorun` | Replace the wildcard with specific prefixes in `.cursor/permissions.json` |
+| Windsurf `windsurf.cascadeCommandsAllowList` holds a bare shell/interpreter or `"*"` that `windsurf.cascadeCommandsDenyList` does not name — runs any command through it unprompted | WARNING | `sandbox-posture/windsurf-shell-allowlisted` | Replace it with specific prefixes (e.g. `"git status"`), or add it to the deny list |
 | A `.devcontainer/` (or `.devcontainer.json`) **installs an agent CLI** and contains **no** firewall, proxy, default-deny network rule or capability drop — no attempt at egress control is visible anywhere in it | WARNING | `sandbox-posture/devcontainer-no-egress-control` | Internal-only network + deny-by-default proxy, `--cap-drop=ALL`, `--security-opt=no-new-privileges` (`templates/container` is a worked example) |
 | The `.devcontainer/` walk hit the 200-file cap or the depth cap — files past it (possibly the agent-install line, or an egress control that would silence the finding above) were never read. **Keeps the check applicable**, so a truncated walk can never report "no sandbox surface anywhere" | WARNING | `sandbox-posture/devcontainer-file-cap-reached` | Move generated or vendored trees out of `.devcontainer/`, or reduce nesting, so the surface fits under the caps |
 | Surface present, nothing above matches → PASS. No sandbox surface anywhere → N/A (`-1`), never 0 | PASS / N/A | — | — |
 
-Every client ruleId above is **not a literal in the source**: each is the `id` of an entry in one of the ordered rule tables (`CODEX_RULES`, `DENY_RULES`, `GEMINI_RULES`, `OPENCODE_RULES`, `CURSOR_RULES`), interpolated at emit time as `` sandbox-posture/${rule.id} ``. Add a rule-table entry and its id becomes a ruleId with no other change — so a ruleId extractor must read the rule tables, not just scan for quoted `findingId:` values (the `EXPANDERS['sandbox-posture']` entry in `src/lib/verify-docs.js` enumerates every table). Only `sandbox-posture/devcontainer-no-egress-control` and `sandbox-posture/devcontainer-file-cap-reached` are written literally.
+Every client ruleId above is **not a literal in the source**: each is the `id` of an entry in one of the ordered rule tables (`CODEX_RULES`, `DENY_RULES`, `GEMINI_RULES`, `OPENCODE_RULES`, `CURSOR_RULES`, `WINDSURF_RULES`), interpolated at emit time as `` sandbox-posture/${rule.id} ``. Add a rule-table entry and its id becomes a ruleId with no other change — so a ruleId extractor must read the rule tables, not just scan for quoted `findingId:` values (the `EXPANDERS['sandbox-posture']` entry in `src/lib/verify-docs.js` enumerates every table). Only `sandbox-posture/devcontainer-no-egress-control` and `sandbox-posture/devcontainer-file-cap-reached` are written literally.
 
 A **missing** settings file is not a posture finding — absence is `claude-settings`' report, not this one.
 Deny rules are counted as the **union** across a client's files: one file with rules covers the pair.
@@ -65,11 +75,11 @@ Posture levels (`data.postures`, keyed by client id):
 | Level | Rule |
 |---|---|
 | `restricted` | Codex `sandbox_mode = "read-only"`; Gemini `defaultApprovalMode = "plan"` (read-only); opencode `bash` (or `*`) `= "deny"` — a real read-only / deny boundary binds |
-| `unrestricted` | `danger-full-access`; `approval_policy = "never"` while writes are still possible; zero deny rules **and** `bypassPermissions`; Gemini `"yolo"`; opencode `bash`/`*` `= "allow"`; Cursor a `"*"` / `"*:*"` wildcard allowlist (nothing refused, nothing asked) |
-| `partial` | Everything else — e.g. `workspace-write` with approvals left on, a deny list that binds *something*, Gemini `"default"`/`"auto_edit"`, opencode `bash = "ask"`, or a bounded Cursor allowlist |
+| `unrestricted` | `danger-full-access`; `approval_policy = "never"` while writes are still possible; zero deny rules **and** `bypassPermissions`; Gemini `"yolo"`; opencode `bash`/`*` `= "allow"`; Windsurf a bare shell or `"*"` allow-listed and not denied; Cursor a `"*"` / `"*:*"` wildcard allowlist (nothing refused, nothing asked) |
+| `partial` | Everything else — e.g. `workspace-write` with approvals left on, a deny list that binds *something*, Gemini `"default"`/`"auto_edit"`, opencode `bash = "ask"`, a bounded Cursor allowlist, or a Windsurf allow list with no bare shell |
 
-Claude Code and Cursor never reach `restricted`: neither ships a sandbox this check can read (Claude has
-only its deny list + approval mode; Cursor's `.cursor/permissions.json` is allowlist-only), so their honest
+Claude Code, Cursor and Windsurf never reach `restricted`: none ships a sandbox this check can read (Claude has
+only its deny list + approval mode; Cursor and Windsurf are allow/deny-list-only), so their honest
 ceiling is `partial`, not a claim of containment. Gemini (`plan`) and opencode (`deny`) can reach `restricted`.
 
 **The devcontainer surface gets no posture row at all** — deliberately. A posture is a claim about what

@@ -191,7 +191,7 @@ export const EXPANDERS = {
   'sandbox-posture': (s) =>
     grab(region(s, 'const CODEX_RULES', '\n];') + region(s, 'const DENY_RULES', '\n];')
       + region(s, 'const GEMINI_RULES', '\n];') + region(s, 'const OPENCODE_RULES', '\n];')
-      + region(s, 'const CURSOR_RULES', '\n];'), /\bid:\s*'([^']+)'/g),
+      + region(s, 'const CURSOR_RULES', '\n];') + region(s, 'const WINDSURF_RULES', '\n];'), /\bid:\s*'([^']+)'/g),
   'ci-agent-caps': (s) => [
     ...grab(s, /\badd\(\s*'([^']+)'/g),
     ...grab(region(s, 'const GAPS', '\n];'), /,\s*'([a-z][a-z0-9-]*)',/g),

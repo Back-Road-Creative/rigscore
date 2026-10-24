@@ -521,7 +521,7 @@ Every agent CLI expresses "how much can this agent do without asking me" differe
 - opencode (`opencode.json`): the `permission` block — whether `bash` (or the `*` catch-all) auto-runs (`allow`) vs prompts (`ask`) / blocks (`deny`)
 - Cursor (committed `.cursor/permissions.json`): a `"*"` / `"*:*"` wildcard in `terminalAllowlist` / `mcpAllowlist` that auto-runs everything
 
-Windsurf is deliberately **not** graded: its Turbo-mode auto-execute level and allow/deny lists live only in the Windsurf Settings UI / global config, with no committed in-repo file rigscore can read at cwd.
+- Windsurf (per-user `settings.json`, `$HOME` only): a bare shell or `"*"` in `windsurf.cascadeCommandsAllowList` that `windsurf.cascadeCommandsDenyList` does not cancel. The Turbo auto-execute level is chosen in the editor UI and team lists live in the admin portal, so neither is graded.
 
 ### 28. Semantic tool-description judge (advisory, 0 points, `--semantic`) {#semantic-tools}
 
