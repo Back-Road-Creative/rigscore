@@ -57,7 +57,7 @@ describe('plugin system', () => {
       );
       fs.writeFileSync(path.join(pluginDir, 'index.js'), pluginCode);
 
-      const plugins = await discoverPlugins(dir);
+      const plugins = await discoverPlugins(dir, { trustProject: true });
       expect(plugins.length).toBe(1);
       expect(plugins[0].id).toBe('test-plugin');
       expect(plugins[0].name).toBe('Test Plugin');
@@ -83,7 +83,7 @@ describe('plugin system', () => {
       process.stderr.write = (msg) => { warnings.push(msg); return true; };
 
       try {
-        const plugins = await discoverPlugins(dir);
+        const plugins = await discoverPlugins(dir, { trustProject: true });
         expect(plugins.length).toBe(0);
         expect(warnings.some(w => w.includes('missing required'))).toBe(true);
       } finally {
@@ -117,7 +117,11 @@ describe('plugin system', () => {
         };`,
       );
 
-      const checks = await loadChecks({ cwd: dir });
+      // Project-local plugins load only when the home config trusts the repo root.
+      const home = path.join(dir, 'home');
+      fs.mkdirSync(home);
+      fs.writeFileSync(path.join(home, '.rigscorerc.json'), JSON.stringify({ trustProjectPlugins: [dir] }));
+      const checks = await loadChecks({ cwd: dir, homedir: home });
       const pluginCheck = checks.find(c => c.id === 'mock-check');
       expect(pluginCheck).toBeDefined();
 
@@ -164,7 +168,7 @@ describe('plugin system', () => {
           };`,
         );
       }
-      const plugins = await discoverPlugins(dir);
+      const plugins = await discoverPlugins(dir, { trustProject: true });
       const matches = plugins.filter((p) => p.id === 'dupe-plugin');
       expect(matches).toHaveLength(1);
     });
@@ -181,11 +185,11 @@ describe('plugin system', () => {
   // cannot stand in for Node's. They are the oracle that the resolution is
   // genuinely fixed rather than merely re-hidden by a different bundler.
   describe('resolves entry points in real Node (not the runner resolver)', () => {
-    /** Run discoverPlugins(dir) in a real Node process; return parsed ids + stderr. */
+    /** Run discoverPlugins(dir, { trustProject: true }) in a real Node process; return parsed ids + stderr. */
     function discoverInRealNode(dir) {
       const script = `
         const { discoverPlugins } = await import(${JSON.stringify(pathToFileURL(CHECKS_INDEX).href)});
-        const plugins = await discoverPlugins(${JSON.stringify(dir)});
+        const plugins = await discoverPlugins(${JSON.stringify(dir)}, { trustProject: true });
         process.stdout.write('IDS:' + JSON.stringify(plugins.map((p) => p.id)));
       `;
       const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {

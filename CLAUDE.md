@@ -51,7 +51,7 @@ Weights are the single source of truth in `src/constants.js` — never hardcode 
 - Node.js >=20, ES modules (`"type": "module"`)
 - Dependencies: chalk, yaml (no others)
 - Tests: vitest
-- Plugin system: `rigscore-check-*` packages auto-discovered from node_modules
+- Plugin system: `rigscore-check-*` packages discovered from node_modules; project-local plugins load only when `~/.rigscorerc.json` lists the repo root in `trustProjectPlugins`
 - Check interface: `export default { id, name, category, weight, run(context) }`
 
 ## Constraints

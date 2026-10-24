@@ -905,7 +905,17 @@ use `rigscore init --<pack> [--force]`.
 
 ### Plugins
 
-rigscore auto-discovers `rigscore-check-*` packages from `node_modules`. Plugins extend rigscore with custom checks without modifying the core.
+rigscore discovers `rigscore-check-*` packages from `node_modules`, and local check files listed in `.rigscorerc.json` (`"plugins": ["./checks/mine.js"]`). Plugins extend rigscore with custom checks without modifying the core.
+
+**Trust:** a plugin is code, and loading it runs it. By default a scan does **not** load plugins that the scanned repo supplies, that is, the repo's own `node_modules/rigscore-check-*` packages and the paths in its `.rigscorerc.json` `plugins`; it prints one line naming what it skipped. Plugins installed beside rigscore itself (for example in a global install) always load. To opt a repo in, add its absolute path to `trustProjectPlugins` in your **home** config, `~/.rigscorerc.json`:
+
+```json
+{
+  "trustProjectPlugins": ["~/code/my-repo", "/srv/ci/workspace"]
+}
+```
+
+Entries are absolute repo roots (an exact match on the scanned directory; `~/` expands to your home directory; relative entries are ignored). With `--recursive`, each subproject root whose plugins should load must be listed. The key is honoured only in the home config (and files it `extends`); a project's own `.rigscorerc.json` cannot trust itself. In CI, write the home config in a step before the scan.
 
 **Creating a plugin:**
 

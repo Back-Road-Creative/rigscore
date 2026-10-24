@@ -114,6 +114,13 @@ const DEFAULTS = {
   // relative to the project root. Complements npm `rigscore-check-*` discovery —
   // a repo can ship a bespoke check without publishing it. See src/checks/index.js.
   plugins: [],
+  // Repo roots whose project-local plugin code (the `plugins` paths above and
+  // `<repo>/node_modules/rigscore-check-*`) rigscore may import on a scan. Ships
+  // empty: a scan imports no JavaScript the scanned repo supplies. HOME layer only
+  // (`~/.rigscorerc.json` and its own `extends`) — a repo cannot trust itself.
+  // Plugins installed beside rigscore itself are always loaded. See
+  // loadTrustedPluginRoots and src/checks/index.js.
+  trustProjectPlugins: [],
 };
 
 export const PROFILES = {
@@ -257,9 +264,9 @@ export async function loadConfig(cwd, homedir) {
   if (cwdConfig) {
     const ctx = { trusted: false, ignored: [] };
     merged = await applyConfigWithExtends(cwdConfig, merged, cwd, new Set([cwdPath]), ctx);
-    if (ctx.ignored.length > 0) {
+    for (const key of new Set(ctx.ignored)) {
       process.stderr.write(
-        'rigscore: ignoring semantic.command from the project config — the judge command is only read from ~/.rigscorerc.json\n',
+        `rigscore: ignoring ${key} from the project config — it is only read from ~/.rigscorerc.json\n`,
       );
     }
   }
@@ -267,6 +274,37 @@ export async function loadConfig(cwd, homedir) {
   // the home layer. Recorded so the caller can scope the dead-pattern warning.
   merged.projectSuppress = (merged.suppress || []).filter((p) => !homeSuppress.has(p));
   return merged;
+}
+
+/**
+ * Repo roots the operator trusts to supply plugin code, read from the HOME layer
+ * only (`~/.rigscorerc.json` and its own `extends` chain). Best-effort: a missing
+ * or malformed home rc yields [] (loadConfig reports the parse error on its own
+ * path). `~/` expands against `homedir`; every entry is resolved to an absolute
+ * path. Non-string, empty and relative entries are dropped.
+ *
+ * @param {string} [homedir]
+ * @returns {Promise<string[]>}
+ */
+export async function loadTrustedPluginRoots(homedir) {
+  if (!homedir) return [];
+  const homePath = path.join(homedir, '.rigscorerc.json');
+  try {
+    const homeConfig = await readJsonStrict(homePath);
+    if (!homeConfig) return [];
+    const merged = await applyConfigWithExtends(
+      homeConfig, structuredClone(DEFAULTS), homedir, new Set([homePath]), { trusted: true },
+    );
+    return (merged.trustProjectPlugins || [])
+      .filter((p) => typeof p === 'string' && p.length > 0)
+      .map((p) => (p === '~' || p.startsWith('~/') ? path.join(homedir, p.slice(1)) : p))
+      // A relative entry would resolve against whichever directory rigscore runs
+      // from, so "." would trust every repo scanned that way. Absolute only.
+      .filter((p) => path.isAbsolute(p))
+      .map((p) => path.resolve(p));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -385,6 +423,17 @@ function mergeConfig(userConfig, baseline, ctx = { trusted: true }) {
   if (Array.isArray(userConfig.plugins)) {
     // Concat & dedupe local-path check plugins.
     result.plugins = [...new Set([...(result.plugins || []), ...userConfig.plugins])];
+  }
+
+  if (Array.isArray(userConfig.trustProjectPlugins)) {
+    if (ctx.trusted) {
+      result.trustProjectPlugins = [
+        ...new Set([...(result.trustProjectPlugins || []), ...userConfig.trustProjectPlugins]),
+      ];
+    } else {
+      // Project layer: the scanned repo must not grant itself permission to run its code.
+      ctx.ignored.push('trustProjectPlugins');
+    }
   }
 
   if (Array.isArray(userConfig.sites)) {
