@@ -42,7 +42,10 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
-          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+          # [[ =~ ]] matches the whole value (a newline is an ordinary
+          # character), so a multi-line input cannot smuggle a second line
+          # into GITHUB_ENV the way a line-by-line grep check would allow.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             echo "::error::refusing tag that is not vX.Y.Z[-prerelease]"
             exit 1
           fi

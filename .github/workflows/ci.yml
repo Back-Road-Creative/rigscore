@@ -79,7 +79,7 @@ jobs:
       # Dependency gate: shipped (production) dependencies only, so a dev-only
       # advisory never reds CI. Dependabot handles dev dependencies weekly.
       - name: Audit production dependencies
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.node-version == '22'
         run: npm audit --omit=dev --audit-level=high
 
       - name: Run tests

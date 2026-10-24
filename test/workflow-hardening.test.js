@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import * as YAML from 'yaml';
@@ -38,12 +40,54 @@ describe('workflows — no attacker-controlled expressions inside run: scripts',
     expect(offenders).toEqual([]);
   });
 
-  it('prebuilt-binaries.yml validates the tag shape before using it', () => {
-    const wf = parse('prebuilt-binaries.yml');
-    const resolve = wf.jobs.build.steps.find((s) => s.id === 'tag');
-    expect(resolve.env?.TAG).toContain('github.event.release.tag_name');
-    expect(resolve.run).toContain('"$TAG"');
-    expect(resolve.run).toMatch(/\^v\[0-9\]\+/);
+  describe('prebuilt-binaries.yml tag shape check (runs the real step script)', () => {
+    const resolve = parse('prebuilt-binaries.yml').jobs.build.steps.find((s) => s.id === 'tag');
+
+    const runResolve = (tag) => {
+      const dir = mkdtempSync(join(tmpdir(), 'rigscore-tag-'));
+      try {
+        const out = join(dir, 'output');
+        const envFile = join(dir, 'env');
+        writeFileSync(out, '');
+        writeFileSync(envFile, '');
+        const res = spawnSync('bash', ['-c', resolve.run], {
+          env: { PATH: process.env.PATH, TAG: tag, GITHUB_OUTPUT: out, GITHUB_ENV: envFile },
+          encoding: 'utf8',
+        });
+        return { status: res.status, output: readFileSync(out, 'utf8'), env: readFileSync(envFile, 'utf8') };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    it('takes the tag from the environment, not template substitution', () => {
+      expect(resolve.env?.TAG).toContain('github.event.release.tag_name');
+    });
+
+    it('accepts release tags', () => {
+      for (const tag of ['v1.2.3', 'v0.10.0-rc.1']) {
+        const r = runResolve(tag);
+        expect(r.status, tag).toBe(0);
+        expect(r.output).toBe(`tag=${tag}\n`);
+        expect(r.env).toBe(`TAG=${tag}\n`);
+      }
+    });
+
+    it('rejects malformed tags and writes nothing', () => {
+      for (const tag of ['', '1.2.3', 'v1.2', 'v1.2.3; rm -rf /', 'v1.2.3 ', '$(id)']) {
+        const r = runResolve(tag);
+        expect(r.status, JSON.stringify(tag)).not.toBe(0);
+        expect(r.output + r.env, JSON.stringify(tag)).toBe('');
+      }
+    });
+
+    it('rejects a multi-line value whose first line looks like a tag', () => {
+      for (const tag of ['v1.0.0\nBASH_ENV=/tmp/x', 'v1.0.0\n', 'x\nv1.0.0']) {
+        const r = runResolve(tag);
+        expect(r.status, JSON.stringify(tag)).not.toBe(0);
+        expect(r.output + r.env, JSON.stringify(tag)).toBe('');
+      }
+    });
   });
 });
 
@@ -59,12 +103,13 @@ describe('workflows — least-privilege token', () => {
 });
 
 describe('ci.yml — dependency audit gate', () => {
-  it('audits production dependencies at high severity on the linux leg', () => {
+  it('audits production dependencies at high severity on one linux leg', () => {
     const step = parse('ci.yml').jobs.test.steps.find(
       (s) => typeof s.run === 'string' && /npm audit --omit=dev/.test(s.run),
     );
     expect(step, 'no npm audit --omit=dev step').toBeDefined();
     expect(step.run).toContain('--audit-level=high');
-    expect(String(step.if)).toMatch(/Linux|ubuntu/);
+    expect(String(step.if)).toMatch(/Linux/);
+    expect(String(step.if)).toMatch(/node-version == '22'/);
   });
 });
