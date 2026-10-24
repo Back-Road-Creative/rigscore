@@ -13,6 +13,27 @@ import { formatCycloneDx } from './cyclonedx.js';
 import { findApplicableFixes, applyFixes, findApplicablePacks, installPacks } from './fixer.js';
 import { PROFILE_HINTS } from './config.js';
 import { ConfigParseError } from './utils.js';
+import { levenshtein } from './known-mcp-servers.js';
+
+/**
+ * Closest known long flag to a mistyped one, or null when nothing is near.
+ * Edit distance must stay within 2 and under half the flag's length, so a
+ * genuinely foreign flag (forward-compat pass-through) gets no false hint.
+ * @param {string} arg - the unrecognized `--flag`.
+ * @returns {string|null}
+ */
+function suggestFlag(arg) {
+  if (!arg.startsWith('--') || arg.length < 5) return null;
+  const typed = arg.split('=')[0];
+  let best = null;
+  let bestDist = Infinity;
+  for (const known of Object.keys(FLAG_DEFS)) {
+    if (!known.startsWith('--')) continue;
+    const dist = levenshtein(typed, known);
+    if (dist < bestDist) { best = known; bestDist = dist; }
+  }
+  return best && bestDist <= 2 && bestDist < typed.length / 2 ? best : null;
+}
 
 /**
  * Parse rigscore's CLI argument vector into a normalized options object.
@@ -102,7 +123,9 @@ export function parseArgs(args) {
       // Unknown flag. Tolerate it (forward-compat: CI scripts pass through
       // extra flags) but SURFACE it — a typo like `--fail-unde` must not
       // silently gate at the default threshold with nothing on stderr.
-      options.warnings.push(`unknown flag ${arg} ignored`);
+      // A near-miss of a real flag gets a hint; the flag is still ignored.
+      const hint = suggestFlag(arg);
+      options.warnings.push(`unknown flag ${arg} ignored${hint ? `; did you mean ${hint}?` : ''}`);
     } else {
       // Bare positional → target directory; last positional wins.
       options.cwd = arg;
@@ -538,6 +561,14 @@ export async function run(args) {
     // Use exitCode + return so Node flushes piped stdout before exiting.
     // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
     process.exitCode = allPassed ? 0 : 1;
+    if (!allPassed) {
+      const failing = result.projects.filter((p) => !p.notApplicable && p.score < options.failUnder);
+      const lowest = failing.reduce((a, b) => (b.score < a.score ? b : a));
+      process.stderr.write(
+        `rigscore: FAIL ${failing.length} of ${result.projects.length} projects below `
+        + `--fail-under ${options.failUnder} (lowest: ${lowest.path}, score ${lowest.score})\n`,
+      );
+    }
     return;
   } else {
     let result;
@@ -670,7 +701,11 @@ export async function run(args) {
       // Use exitCode + return so Node flushes piped stdout before exiting.
       // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
       // Nothing to score (`--check` selected only N/A checks) is not a failure.
-      process.exitCode = result.notApplicable || result.score >= options.failUnder ? 0 : 1;
+      const passed = result.notApplicable || result.score >= options.failUnder;
+      process.exitCode = passed ? 0 : 1;
+      if (!passed) {
+        process.stderr.write(`rigscore: FAIL score ${result.score} is below --fail-under ${options.failUnder}\n`);
+      }
       return;
     }
   }
