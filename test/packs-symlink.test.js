@@ -87,4 +87,32 @@ describe.skipIf(process.platform === 'win32')('installPack refuses symlinked des
     expect(res.results[0].status).toBe('written');
     expect(fs.readFileSync(path.join(repo, 'real', 'CLAUDE.md'), 'utf-8')).toBe('x');
   });
+
+  it('installs into a target directory that does not exist yet', () => {
+    const templates = tmp(); const base = tmp();
+    dropPack(templates, [{ src: 'c.md', dest: 'CLAUDE.md', body: 'x' }]);
+    const repo = path.join(base, 'new', 'sub');
+    const res = installPack('sym', repo, { templatesDir: templates });
+    expect(res.results[0].status).toBe('written');
+    expect(fs.readFileSync(path.join(repo, 'CLAUDE.md'), 'utf-8')).toBe('x');
+  });
+
+  it('installs into a missing target nested under a symlinked ancestor', () => {
+    const templates = tmp(); const real = tmp(); const holder = tmp();
+    dropPack(templates, [{ src: 'c.md', dest: 'CLAUDE.md', body: 'x' }]);
+    const link = path.join(holder, 'link');
+    fs.symlinkSync(real, link);
+    const res = installPack('sym', path.join(link, 'new'), { templatesDir: templates });
+    expect(res.results[0].status).toBe('written');
+    expect(fs.readFileSync(path.join(real, 'new', 'CLAUDE.md'), 'utf-8')).toBe('x');
+  });
+
+  it('refuses a dest symlink even when it points inside the repo (deliberate: never write through a link)', () => {
+    const templates = tmp(); const repo = tmp();
+    dropPack(templates, [{ src: 'c.md', dest: 'CLAUDE.md', body: 'x' }]);
+    fs.writeFileSync(path.join(repo, 'AGENTS.md'), 'orig');
+    fs.symlinkSync(path.join(repo, 'AGENTS.md'), path.join(repo, 'CLAUDE.md'));
+    expect(() => installPack('sym', repo, { force: true, templatesDir: templates })).toThrow(/symlink.*CLAUDE\.md/);
+    expect(fs.readFileSync(path.join(repo, 'AGENTS.md'), 'utf-8')).toBe('orig');
+  });
 });

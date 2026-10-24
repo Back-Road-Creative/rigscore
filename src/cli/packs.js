@@ -32,7 +32,7 @@ function assertNoSymlinkEscape(name, realRoot, dest, target) {
   let anc = path.dirname(target);
   while (!lstat(anc)) anc = path.dirname(anc);
   let real;
-  try { real = fs.realpathSync(anc); } catch { fail(name, `dest parent is a dangling symlink: "${dest}"`); }
+  try { real = path.join(fs.realpathSync(anc), path.relative(anc, path.dirname(target))); } catch { fail(name, `dest parent is a dangling symlink: "${dest}"`); }
   const rel = path.relative(realRoot, real);
   if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
     fail(name, `dest resolves outside the target directory through a symlink: "${dest}"`);
@@ -123,7 +123,12 @@ export function installPack(name, cwd, { force = false, merge = false, templates
     if (!target.startsWith(root + path.sep)) fail(name, `dest escapes the target directory: "${f.dest}"`);
     return { ...f, target };
   });
-  const realRoot = fs.realpathSync(root);
+  // The target dir may not exist yet (the install creates it): resolve its nearest existing
+  // ancestor and re-append the missing tail.
+  let top = root; const tail = [];
+  while (!fs.existsSync(top) && path.dirname(top) !== top) { tail.unshift(path.basename(top)); top = path.dirname(top); }
+  let realRoot;
+  try { realRoot = path.join(fs.realpathSync(top), ...tail); } catch { fail(name, `target directory is unreachable: "${root}"`); }
   for (const f of planned) assertNoSymlinkEscape(name, realRoot, f.dest, f.target);
   const results = [];
   const unresolved = new Set();
