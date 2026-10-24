@@ -61,3 +61,67 @@ describe('docs/ROADMAP.md — de-vendored + agnosticism entries', () => {
     expect(lower).toContain('memory-hygiene');
   });
 });
+
+/** Text of "### N. ..." up to the next heading or rule. */
+function itemSection(text, n) {
+  const m = text.match(new RegExp(`^### ${n}\\. [\\s\\S]*?(?=^### |^---$|^## )`, 'm'));
+  if (!m) throw new Error(`ROADMAP item ${n} not found`);
+  return m[0];
+}
+
+describe('docs/ROADMAP.md — items reworded after the capability shipped', () => {
+  const roadmap = fs.readFileSync(ROADMAP_PATH, 'utf8');
+
+  it('item 5 credits the shipped non-text sniff and leaves only the online lookup open', () => {
+    const item = itemSection(roadmap, 5).toLowerCase();
+    expect(item).toContain('skill-files');
+    expect(item).toContain('non-text');
+    expect(item).toContain('--online');
+    expect(item).not.toContain('regex-scanned as mojibake');
+    expect(item).not.toContain('there is no non-text sniff');
+  });
+
+  it('item 11 names the shipped GitLab CI and CircleCI scan and the remaining gap', () => {
+    const item = itemSection(roadmap, 11).toLowerCase();
+    expect(item).toContain('gitlab ci');
+    expect(item).toContain('circleci');
+    expect(item).toContain('other ci systems');
+    expect(item).not.toContain('parses `.github/workflows` exclusively');
+  });
+
+  it('item 13 credits the registry-driven MCP env scan and names the remaining hardcoded list', () => {
+    const item = itemSection(roadmap, 13);
+    expect(item).toContain('repoMcpEnvValues');
+    expect(item).toContain('AI_CONFIG_FILES');
+    expect(item).not.toContain('only client-settings entry');
+  });
+
+  it('item 17 records Homebrew and prebuilt archives as shipped', () => {
+    const lower = roadmap.toLowerCase();
+    expect(lower).not.toContain('excludes part of the security audience');
+    expect(roadmap).toContain('Formula/rigscore.rb');
+    expect(roadmap).toContain('prebuilt-binaries.yml');
+  });
+});
+
+describe('docs/checks/ci-agent-caps.md — scope matches the check', () => {
+  const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'checks', 'ci-agent-caps.md'), 'utf8');
+
+  it('no longer claims .github/workflows is the only surface', () => {
+    expect(doc).not.toContain('`.github/workflows/*.yml|yaml` only');
+  });
+
+  it('documents the GitLab CI and CircleCI config files and what they are not graded on', () => {
+    expect(doc).toContain('.gitlab-ci.yml');
+    expect(doc).toContain('.circleci/config.yml');
+    expect(doc.toLowerCase()).toContain('timeout');
+  });
+});
+
+describe('docs/known-limits.md — spend limits', () => {
+  const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'known-limits.md'), 'utf8');
+
+  it('has a row saying account-level spend limits are not repo-checkable', () => {
+    expect(doc.toLowerCase()).toContain('spend limit');
+  });
+});

@@ -52,8 +52,12 @@ A repo whose CI runs no agent (most of them, including rigscore itself) reports 
 
 ## Scope and limitations
 
-Scans `.github/workflows/*.yml|yaml` only — CI workflow agent jobs are this check's surface alone
-(`loop-governance` owns shell scripts and crontabs, so the two never double-deduct the same job).
+Scans `.github/workflows/*.yml|yaml`, plus the GitLab CI (`.gitlab-ci.yml`, `.gitlab-ci.yaml`) and CircleCI
+(`.circleci/config.yml`, `.circleci/config.yaml`) configs at those exact paths. CI agent jobs are this
+check's surface alone (`loop-governance` owns shell scripts and crontabs, so the two never double-deduct
+the same job). GitLab and CircleCI jobs get the bypass-flag scan and the turn-cap and tool-scoping checks;
+the job-timeout check and the reusable-workflow analysis are GitHub Actions only, so a missing timeout on
+those two providers is not reported. Other CI systems are not read.
 Surfaces detected: an `anthropics/claude-code-action` / `claude-code-base-action` step, and `run:` steps
 shelling out to `claude -p|--print`, `codex exec`, `gemini -p|--prompt`, `aider -m|--msg|--message[-file]`,
 or `opencode run`. Every flag/input name comes from primary vendor docs — a name that could not be

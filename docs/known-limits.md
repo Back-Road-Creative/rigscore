@@ -17,6 +17,7 @@ For the full reasoning and code pointers, see [`THREAT-MODEL.md`](../THREAT-MODE
 | Novel LLM prompt-injection content (beyond the canonical phrase list) | rigscore matches a fixed catalog of injection phrases plus their Unicode/homoglyph variants. Paraphrased or multi-paragraph injection walks past. | An LLM-judge advisory pass over skill/doc prose, or a model-artifact scanner for model payloads. |
 | Source-code vulnerabilities (SQL injection, SSRF, deserialization, etc.) | rigscore does not do SAST. It has never claimed to. | Source-level SAST (taint / dataflow analysis). |
 | Secrets in git history | rigscore scans the working tree. A secret committed and then deleted is in history and invisible to rigscore. | A git-history secret scanner. |
+| Account-level spend limits and usage caps for AI tools (organization budgets, per-seat or per-agent cost ceilings) | These are set in a vendor's admin console, not in a file in your repo, so rigscore cannot see or verify them. A green report says nothing about what an unattended agent can spend. | Your vendor's admin console or billing alerts. Inside the repo, rigscore does check the turn, timeout and loop ceilings that bound a run (`ci-agent-caps`, `loop-governance`). |
 | Anything that happens between scans | rigscore is point-in-time. `--watch` re-runs on file change; it is not continuous observation. | A runtime agent monitor (there is no clear category leader yet; log-based observability is the closest off-the-shelf option). |
 
 ## How to read a rigscore report, given the above

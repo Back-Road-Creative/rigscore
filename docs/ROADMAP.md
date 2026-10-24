@@ -57,13 +57,15 @@ relative to each other, not deadlines.
 - **Current gap:** rigscore analyzes each server's config independently.
 - **Priority:** med
 
-### 5. Binary-file detection in skill dirs + opt-in malware-hash lookup
+### 5. Opt-in malware-hash lookup for files in skill dirs
 
-- **Capability:** Offline detection of binary / non-text files dropped into
-  skill directories, plus an opt-in `--online` malware-hash lookup.
-- **Current gap:** binaries dropped into `.claude/skills/` are read as UTF-8 and
-  regex-scanned as mojibake, so a non-text payload slips the pattern catalog while
-  still counting as "scanned" — there is no non-text sniff to flag it (THREAT-MODEL §3.4).
+- **Capability:** An opt-in `--online` malware-hash lookup for files found in
+  skill directories.
+- **Shipped:** offline detection of binary / non-text files. The `skill-files`
+  check sniffs for NUL and replacement characters, flags the file as a non-text
+  blind spot, and skips the text pattern scans for it.
+- **Current gap:** the sniff only says "this is not text". Nothing identifies
+  the payload, and rigscore stays offline, so there is no hash lookup (THREAT-MODEL §3.4).
 - **Priority:** med
 
 ### 6. AST / dataflow (taint) analysis for skill code
@@ -122,10 +124,14 @@ Each is on hold until the cross-vendor surface it depends on stabilizes.
 
 ### 11. CI agent-capability check beyond GitHub Actions
 
-- **Capability:** Extend the `ci-agent-caps` check past `.github/workflows` to
-  other CI systems — at minimum GitLab CI — via a generic CI-recipe reader, so
-  agent-capability scanning is not GitHub-Actions-only.
-- **Current gap:** `ci-agent-caps` parses `.github/workflows` exclusively.
+- **Capability:** Extend the `ci-agent-caps` check to every CI system that can
+  run an unattended agent, via a generic CI-recipe reader, so agent-capability
+  scanning is not tied to one provider's file layout.
+- **Shipped:** `ci-agent-caps` scans `.github/workflows`, GitLab CI
+  (`.gitlab-ci.yml`) and CircleCI (`.circleci/config.yml`). The last two get the
+  permission-bypass scan and the turn-cap and tool-scoping checks per job.
+- **Current gap:** other CI systems are not read, and the job-timeout check
+  and reusable-workflow analysis still apply to GitHub Actions only.
 - **Priority:** low
 
 ### 12. Scored per-client settings-safety family
@@ -139,11 +145,15 @@ Each is on hold until the cross-vendor surface it depends on stabilizes.
 
 ### 13. Registry-driven env-exposure client list
 
-- **Capability:** Derive the AI-client config-file list scanned by
+- **Capability:** Derive the whole AI-client config-file list scanned by
   `env-exposure` from the client registry (`src/clients.js`) rather than a
   hardcoded list.
-- **Current gap:** `env-exposure`'s client-settings coverage is a hardcoded
-  list whose only client-settings entry is `.claude/settings.json`.
+- **Shipped:** the committed repo-level MCP configs of every registered client
+  are read through the registry (`repoMcpEnvValues`), so a client added there is
+  covered for its MCP `env` maps.
+- **Current gap:** the raw-text scan still walks the hardcoded `AI_CONFIG_FILES`
+  list (`src/constants.js`), with `.claude/settings.json` as its sole
+  client-settings entry.
 - **Priority:** low
 
 ### 14. Cross-vendor memory-hygiene conventions
@@ -206,6 +216,8 @@ a dedicated check. Recorded here so none is silently dropped:
 - **Machine-level scan mode** — discover user-global configs + IDE extensions
   system-wide (some scanners auto-discover ~12 clients system-wide); rigscore's
   repo-only read is narrower. **Priority:** low.
-- **Homebrew tap + prebuilt binaries** — some competing tools ship them; an
-  npm/npx-only distribution excludes part of the security audience. Distribution,
-  not a check. **Priority:** low.
+- **Homebrew tap + prebuilt binaries** — shipped. `Formula/rigscore.rb` is a
+  Homebrew tap formula, and `.github/workflows/prebuilt-binaries.yml` attaches
+  self-contained archives (no registry or npm needed, system Node required) to
+  each release. Distribution, not a check. A zero-Node single binary is not
+  built. **Priority:** low.
