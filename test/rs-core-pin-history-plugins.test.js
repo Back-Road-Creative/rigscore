@@ -8,6 +8,7 @@ import {
   loadScoreHistory, recordScoreHistory, formatTrend, HISTORY_FILENAME,
 } from '../src/state.js';
 import { loadChecks, discoverLocalPlugins } from '../src/checks/index.js';
+import { loadTrustedPluginRoots } from '../src/config.js';
 import { withTmpDir } from './helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -119,7 +120,11 @@ describe('RS-29: local-path check plugins', () => {
       fs.mkdirSync(path.join(dir, 'checks'));
       fs.writeFileSync(path.join(dir, 'checks', 'local.js'), PLUGIN_SRC);
       fs.writeFileSync(path.join(dir, '.rigscorerc.json'), JSON.stringify({ plugins: ['./checks/local.js'] }));
-      const checks = await loadChecks({ cwd: dir });
+      // Project-local plugin code loads only when the operator's HOME config trusts the repo.
+      const home = path.join(dir, 'home');
+      fs.mkdirSync(home);
+      fs.writeFileSync(path.join(home, '.rigscorerc.json'), JSON.stringify({ trustProjectPlugins: [dir] }));
+      const checks = await loadChecks({ cwd: dir, homedir: home });
       expect(checks.some((c) => c.id === 'rs-core-local-test-check')).toBe(true);
     });
   });
@@ -129,6 +134,157 @@ describe('RS-29: local-path check plugins', () => {
       fs.writeFileSync(path.join(dir, 'local.js'), PLUGIN_SRC);
       const loaded = await discoverLocalPlugins(dir, ['./local.js', 'https://evil.example/x.js']);
       expect(loaded.map((p) => p.id)).toEqual(['rs-core-local-test-check']);
+    });
+  });
+});
+
+// ── SEC-1b: project-local plugin code loads only on opt-in ───────────────────
+describe('SEC-1b: a scan does not run plugin code the scanned repo supplies', () => {
+  const markerSrc = (id, marker) => `import fs from 'node:fs';
+    fs.writeFileSync(${JSON.stringify(marker)}, 'ran');
+    export default {
+      id: '${id}', name: '${id}', category: 'governance',
+      run() { return { score: 100, findings: [] }; },
+    };\n`;
+
+  /** A repo with one rc-declared local plugin and one node_modules plugin, each writing a marker at import. */
+  function makeRepo(dir) {
+    const markers = { local: path.join(dir, 'MARK-local'), npm: path.join(dir, 'MARK-npm') };
+    fs.mkdirSync(path.join(dir, 'repo', 'checks'), { recursive: true });
+    const repo = path.join(dir, 'repo');
+    fs.writeFileSync(path.join(repo, 'checks', 'local.js'), markerSrc('sec1b-local', markers.local));
+    fs.writeFileSync(path.join(repo, '.rigscorerc.json'), JSON.stringify({ plugins: ['./checks/local.js'] }));
+    const pkg = path.join(repo, 'node_modules', 'rigscore-check-sec1b');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: 'rigscore-check-sec1b', type: 'module', main: 'index.js' }));
+    fs.writeFileSync(path.join(pkg, 'index.js'), markerSrc('sec1b-npm', markers.npm));
+    const home = path.join(dir, 'home');
+    fs.mkdirSync(home);
+    return { repo, home, markers };
+  }
+
+  async function load(opts) {
+    const writes = [];
+    const orig = process.stderr.write;
+    process.stderr.write = (chunk) => { writes.push(String(chunk)); return true; };
+    try {
+      const checks = await loadChecks(opts);
+      return { checks, stderr: writes.join('') };
+    } finally {
+      process.stderr.write = orig;
+    }
+  }
+
+  it('without an opt-in, imports neither the rc plugin nor the node_modules plugin', async () => {
+    await withTmpDir(async (dir) => {
+      const { repo, home, markers } = makeRepo(dir);
+      const { checks } = await load({ cwd: repo, homedir: home });
+      expect(fs.existsSync(markers.local)).toBe(false);
+      expect(fs.existsSync(markers.npm)).toBe(false);
+      expect(checks.some((c) => c.id === 'sec1b-local' || c.id === 'sec1b-npm')).toBe(false);
+    });
+  });
+
+  it('names the skipped plugins in exactly one line', async () => {
+    await withTmpDir(async (dir) => {
+      const { repo, home } = makeRepo(dir);
+      const { stderr } = await load({ cwd: repo, homedir: home });
+      const lines = stderr.split('\n').filter((l) => /skipped/i.test(l));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('./checks/local.js');
+      expect(lines[0]).toContain('rigscore-check-sec1b');
+      expect(lines[0]).toContain('trustProjectPlugins');
+    });
+  });
+
+  it('prints nothing about skipping when the repo declares no plugins', async () => {
+    await withTmpDir(async (dir) => {
+      const home = path.join(dir, 'home');
+      fs.mkdirSync(home);
+      const { stderr } = await load({ cwd: dir, homedir: home });
+      expect(stderr).not.toMatch(/skipped/i);
+    });
+  });
+
+  it('a home trustProjectPlugins entry for the repo root loads both kinds', async () => {
+    await withTmpDir(async (dir) => {
+      const { repo, home, markers } = makeRepo(dir);
+      fs.writeFileSync(path.join(home, '.rigscorerc.json'), JSON.stringify({ trustProjectPlugins: [repo] }));
+      const { checks, stderr } = await load({ cwd: repo, homedir: home });
+      expect(checks.some((c) => c.id === 'sec1b-local')).toBe(true);
+      expect(checks.some((c) => c.id === 'sec1b-npm')).toBe(true);
+      expect(fs.existsSync(markers.local)).toBe(true);
+      expect(fs.existsSync(markers.npm)).toBe(true);
+      expect(stderr).not.toMatch(/skipped/i);
+    });
+  });
+
+  it('an allow-list entry for a different repo does not trust this one', async () => {
+    await withTmpDir(async (dir) => {
+      const { repo, home, markers } = makeRepo(dir);
+      fs.writeFileSync(path.join(home, '.rigscorerc.json'), JSON.stringify({ trustProjectPlugins: [path.join(dir, 'elsewhere')] }));
+      await load({ cwd: repo, homedir: home });
+      expect(fs.existsSync(markers.local)).toBe(false);
+      expect(fs.existsSync(markers.npm)).toBe(false);
+    });
+  });
+
+  it('the scanned repo cannot trust itself via its own .rigscorerc.json', async () => {
+    await withTmpDir(async (dir) => {
+      const { repo, home, markers } = makeRepo(dir);
+      fs.writeFileSync(
+        path.join(repo, '.rigscorerc.json'),
+        JSON.stringify({ plugins: ['./checks/local.js'], trustProjectPlugins: [repo] }),
+      );
+      await load({ cwd: repo, homedir: home });
+      expect(fs.existsSync(markers.local)).toBe(false);
+      expect(fs.existsSync(markers.npm)).toBe(false);
+    });
+  });
+
+  it('a repo cannot trust itself through an extends base it points at', async () => {
+    await withTmpDir(async (dir) => {
+      const { repo, home, markers } = makeRepo(dir);
+      fs.writeFileSync(path.join(dir, 'base.json'), JSON.stringify({ trustProjectPlugins: [repo] }));
+      fs.writeFileSync(
+        path.join(repo, '.rigscorerc.json'),
+        JSON.stringify({ extends: path.join(dir, 'base.json'), plugins: ['./checks/local.js'] }),
+      );
+      await load({ cwd: repo, homedir: home });
+      expect(fs.existsSync(markers.local)).toBe(false);
+      expect(fs.existsSync(markers.npm)).toBe(false);
+    });
+  });
+
+  it('plugins passed explicitly by the embedding caller still load', async () => {
+    await withTmpDir(async (dir) => {
+      const { repo, home, markers } = makeRepo(dir);
+      const { checks } = await load({ cwd: repo, homedir: home, plugins: ['./checks/local.js'] });
+      expect(checks.some((c) => c.id === 'sec1b-local')).toBe(true);
+      expect(fs.existsSync(markers.local)).toBe(true);
+      expect(fs.existsSync(markers.npm)).toBe(false);
+    });
+  });
+
+  describe('loadTrustedPluginRoots', () => {
+    it('returns [] with no home rc, and for a malformed one', async () => {
+      await withTmpDir(async (home) => {
+        expect(await loadTrustedPluginRoots(home)).toEqual([]);
+        fs.writeFileSync(path.join(home, '.rigscorerc.json'), '{ not json');
+        expect(await loadTrustedPluginRoots(home)).toEqual([]);
+      });
+    });
+
+    it('expands ~/ against the home dir, resolves paths, and honours the home extends chain', async () => {
+      await withTmpDir(async (home) => {
+        fs.writeFileSync(path.join(home, 'base.json'), JSON.stringify({ trustProjectPlugins: ['/srv/a'] }));
+        fs.writeFileSync(
+          path.join(home, '.rigscorerc.json'),
+          JSON.stringify({ extends: './base.json', trustProjectPlugins: ['~/code/b', 7, ''] }),
+        );
+        const roots = await loadTrustedPluginRoots(home);
+        expect(roots).toEqual([path.resolve('/srv/a'), path.join(home, 'code', 'b')]);
+      });
     });
   });
 });
