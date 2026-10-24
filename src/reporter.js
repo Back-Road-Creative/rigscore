@@ -231,6 +231,64 @@ function displayId(finding) {
   return typeof id === 'string' ? id.trim() : '';
 }
 
+/**
+ * Fold findings that share a `group.key` (within one severity list, so one
+ * check) into a single display entry: `<group.title>: <label>, <label>, ...`
+ * with one fix line and the member ids. A group of one renders as itself.
+ * Display only: scoring, JSON, SARIF and suppression keep one finding each.
+ */
+function groupFindings(items) {
+  const byKey = new Map();
+  for (const item of items) {
+    const key = item.group && typeof item.group.key === 'string' ? `${item.checkName}\u0000${item.group.key}` : null;
+    if (key === null) continue;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(item);
+  }
+  const out = [];
+  const done = new Set();
+  for (const item of items) {
+    const key = item.group && typeof item.group.key === 'string' ? `${item.checkName}\u0000${item.group.key}` : null;
+    const members = key === null ? null : byKey.get(key);
+    if (!members || members.length < 2) { out.push(item); continue; }
+    if (done.has(key)) continue;
+    done.add(key);
+    const labels = members.map((m) => safeField(m.group.label ?? m.title));
+    out.push({
+      severity: item.severity,
+      checkName: item.checkName,
+      title: `${safeField(item.group.title ?? item.title)}: ${labels.join(', ')}`,
+      remediation: item.group.remediation,
+      groupedIds: members.map((m) => displayId(m)).filter(Boolean),
+    });
+  }
+  return out;
+}
+
+/** Push one finding (or grouped entry); returns true when it showed an id. */
+function pushFinding(lines, width, indent, color, severity, item, { full }) {
+  const title = safeField(item.title);
+  const remediation = safeField(item.remediation);
+  const findingId = displayId(item);
+  pushFindingTitle(lines, width, indent, color, getSeverityIcon(severity), title, findingId);
+  const arrow = `${indent}  ${chalk.dim('\u2192')} `;
+  if (full) {
+    const detail = safeField(item.detail);
+    const evidence = safeField(item.evidence);
+    if (detail) pushWrapped(lines, width, arrow, detail);
+    if (evidence) pushWrapped(lines, width, arrow, `Evidence: ${evidence}`, { label: 'Evidence: ', style: chalk.dim });
+  }
+  if (remediation) pushWrapped(lines, width, arrow, `Fix: ${remediation}`);
+  if (item.groupedIds && item.groupedIds.length > 0) {
+    pushWrapped(lines, width, arrow, `Ids: ${item.groupedIds.join(', ')}`, { label: 'Ids: ', style: chalk.dim });
+  }
+  if (full) {
+    const learnMore = safeField(item.learnMore);
+    if (learnMore) pushWrapped(lines, width, arrow, `Learn more: ${learnMore}`, { label: 'Learn more: ', style: chalk.cyan });
+  }
+  return Boolean(findingId) || Boolean(item.groupedIds && item.groupedIds.length > 0);
+}
+
 /** The once-per-report pointer from a printed `[id]` to its docs. */
 function pushExplainHint(lines, width) {
   pushWrapped(lines, width, '  ',
@@ -439,29 +497,8 @@ export function formatTerminal(result, cwd, options = {}) {
     const color = getSeverityColor(severity);
     lines.push(`  ${color(`${label} (${items.length})`)}`);
 
-    for (const item of items) {
-      const icon = getSeverityIcon(severity);
-      const title = safeField(item.title);
-      const detail = safeField(item.detail);
-      const evidence = safeField(item.evidence);
-      const remediation = safeField(item.remediation);
-      const learnMore = safeField(item.learnMore);
-      const findingId = displayId(item);
-      if (findingId) anyId = true;
-      pushFindingTitle(lines, width, '  ', color, icon, title, findingId);
-      const arrow = `    ${chalk.dim('\u2192')} `;
-      if (detail) {
-        pushWrapped(lines, width, arrow, detail);
-      }
-      if (evidence) {
-        pushWrapped(lines, width, arrow, `Evidence: ${evidence}`, { label: 'Evidence: ', style: chalk.dim });
-      }
-      if (remediation) {
-        pushWrapped(lines, width, arrow, `Fix: ${remediation}`);
-      }
-      if (learnMore) {
-        pushWrapped(lines, width, arrow, `Learn more: ${learnMore}`, { label: 'Learn more: ', style: chalk.cyan });
-      }
+    for (const item of groupFindings(items)) {
+      if (pushFinding(lines, width, '  ', color, severity, item, { full: true })) anyId = true;
       lines.push('');
     }
   }
@@ -571,16 +608,8 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
         const items = allFindings.filter((f) => f.severity === severity);
         if (items.length === 0) continue;
         const color = getSeverityColor(severity);
-        for (const item of items) {
-          const icon = getSeverityIcon(severity);
-          const title = safeField(item.title);
-          const remediation = safeField(item.remediation);
-          const findingId = displayId(item);
-          if (findingId) anyId = true;
-          pushFindingTitle(lines, width, '    ', color, icon, title, findingId);
-          if (remediation) {
-            pushWrapped(lines, width, `      ${chalk.dim('\u2192')} `, `Fix: ${remediation}`);
-          }
+        for (const item of groupFindings(items)) {
+          if (pushFinding(lines, width, '    ', color, severity, item, { full: false })) anyId = true;
         }
       }
       lines.push('');
