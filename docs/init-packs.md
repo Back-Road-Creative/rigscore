@@ -8,7 +8,7 @@ rigscore init --<pack> [dir]  # install a starter pack
 rigscore .                    # watch the score move
 ```
 
-`rigscore init --list-packs` lists the packs and the checks each targets. An existing file is never overwritten without `--force`, and every file is reported `written`, `merged`, or `skipped (exists)`.
+`rigscore init --list-packs` lists the packs and the checks each targets. An existing file is never overwritten without `--force`, and every file is reported `written`, `merged`, or `skipped (exists)`. A pack install also refuses to write through symlinks: if any destination is itself a symlink, or a destination's parent directory resolves outside the target directory, the whole pack is refused with a named error and nothing is written.
 
 ## Harden an existing config in place (`--merge` / `--harden`)
 
