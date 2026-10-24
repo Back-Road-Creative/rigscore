@@ -34,7 +34,20 @@ jobs:
     steps:
       - name: Resolve target tag
         id: tag
-        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+        # The tag is attacker-influenced text (a dispatch input or a release
+        # tag name), so it reaches the shell through the environment, never by
+        # template substitution, and must look like a release tag before any
+        # later step uses it.
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::refusing tag that is not vX.Y.Z[-prerelease]"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,7 +60,6 @@ jobs:
       - name: Assemble the self-contained app tree
         run: |
           set -euo pipefail
-          TAG="${{ steps.tag.outputs.tag }}"
           VERSION="${TAG#v}"
           STAGE="dist/rigscore-${VERSION}"
           # Production deps only (chalk + yaml — pure JS, identical on every OS).
@@ -64,7 +76,6 @@ jobs:
       - name: Smoke test the assembled app
         run: |
           set -euo pipefail
-          TAG="${{ steps.tag.outputs.tag }}"
           VERSION="${TAG#v}"
           out="$("dist/rigscore-${VERSION}/rigscore" --version)"
           echo "$out"
@@ -73,7 +84,6 @@ jobs:
       - name: Package archives + checksums
         run: |
           set -euo pipefail
-          TAG="${{ steps.tag.outputs.tag }}"
           VERSION="${TAG#v}"
           cd dist
           tar -czf "rigscore-${VERSION}-node.tar.gz" "rigscore-${VERSION}"
@@ -86,10 +96,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.tag.outputs.tag }}"
           VERSION="${TAG#v}"
           gh release upload "$TAG" \
             "dist/rigscore-${VERSION}-node.tar.gz" \
             "dist/rigscore-${VERSION}-node.zip" \
             "dist/SHA256SUMS.txt" \
-            --repo "${{ github.repository }}" --clobber
+            --repo "$GITHUB_REPOSITORY" --clobber

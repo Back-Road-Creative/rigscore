@@ -12,6 +12,11 @@ on:
   # pushes and PRs made with GITHUB_TOKEN do not trigger the events above.
   workflow_dispatch:
 
+# Least privilege: every job here only reads the repo. A later change to the
+# repository's default token permissions must not widen this workflow.
+permissions:
+  contents: read
+
 # Cancel only PR runs when superseded by a newer push on the same PR; a
 # push-to-main run always completes so main's history keeps a full result.
 concurrency:
@@ -70,6 +75,12 @@ jobs:
       # lockfile — fail loudly so `npm ci` reproducibility holds.
       - name: Lockfile drift check
         run: git diff --exit-code package-lock.json
+
+      # Dependency gate: shipped (production) dependencies only, so a dev-only
+      # advisory never reds CI. Dependabot handles dev dependencies weekly.
+      - name: Audit production dependencies
+        if: runner.os == 'Linux'
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Run tests
         env:
