@@ -227,6 +227,11 @@ export function resolveWeights(config) {
  *
  * A config file (home or project) may declare an `extends` key to inherit from
  * a shared baseline — see applyConfigWithExtends for the resolution rules.
+ *
+ * `semantic.command` is the one key only the HOME layer (and its own `extends`
+ * chain) may set: it is the argv `--semantic` spawns, so a scanned repo must not
+ * choose it. A value from the project layer (or anything it extends) is dropped
+ * with one stderr line.
  */
 export async function loadConfig(cwd, homedir) {
   // Strict parse — a malformed .rigscorerc.json surfaces a ConfigParseError
@@ -242,7 +247,7 @@ export async function loadConfig(cwd, homedir) {
   // extends back to it is caught as a cycle. Home and project are resolved
   // independently — each may declare its own `extends`.
   if (homeConfig) {
-    merged = await applyConfigWithExtends(homeConfig, merged, homedir, new Set([homePath]));
+    merged = await applyConfigWithExtends(homeConfig, merged, homedir, new Set([homePath]), { trusted: true });
   }
   // Suppress patterns known after the HOME layer (and its `extends` bases) but
   // before the project layer. Their provenance is "personal / cross-project", so
@@ -250,7 +255,13 @@ export async function loadConfig(cwd, homedir) {
   // CLI `--ignore` patterns earn the "matched nothing" warning (src/index.js).
   const homeSuppress = new Set(merged.suppress || []);
   if (cwdConfig) {
-    merged = await applyConfigWithExtends(cwdConfig, merged, cwd, new Set([cwdPath]));
+    const ctx = { trusted: false, ignored: [] };
+    merged = await applyConfigWithExtends(cwdConfig, merged, cwd, new Set([cwdPath]), ctx);
+    if (ctx.ignored.length > 0) {
+      process.stderr.write(
+        'rigscore: ignoring semantic.command from the project config — the judge command is only read from ~/.rigscorerc.json\n',
+      );
+    }
   }
   // Project-scoped suppressions = everything the project layer added on top of
   // the home layer. Recorded so the caller can scope the dead-pattern warning.
@@ -283,7 +294,7 @@ export async function loadConfig(cwd, homedir) {
  *   - `extends` is meta and is stripped before mergeConfig (whose signature is
  *     unchanged) ever sees it.
  */
-async function applyConfigWithExtends(config, merged, baseDir, visited) {
+async function applyConfigWithExtends(config, merged, baseDir, visited, ctx) {
   const ext = config.extends;
   if (ext !== undefined) {
     const targets = Array.isArray(ext) ? ext : [ext];
@@ -319,15 +330,16 @@ async function applyConfigWithExtends(config, merged, baseDir, visited) {
         merged,
         path.dirname(targetPath),
         new Set([...visited, targetPath]),
+        ctx,
       );
     }
   }
   // Strip the meta `extends` key before the additive merge runs.
   const { extends: _extends, ...own } = config;
-  return mergeConfig(own, merged);
+  return mergeConfig(own, merged, ctx);
 }
 
-function mergeConfig(userConfig, baseline) {
+function mergeConfig(userConfig, baseline, ctx = { trusted: true }) {
   const result = baseline ? structuredClone(baseline) : structuredClone(DEFAULTS);
 
   if (userConfig.paths) {
@@ -500,10 +512,16 @@ function mergeConfig(userConfig, baseline) {
     // `semantic.command` is an ordered argv, not an additive list — it REPLACES
     // the default rather than concatenating (["claude","-p"] + ["gemini"] would
     // be nonsense). Accept only a non-empty array of non-empty strings; anything
-    // else is dropped and the ["claude", "-p"] default stands.
+    // else is dropped and the ["claude", "-p"] default stands. Only the home
+    // layer may set it (SEC-1); see loadConfig.
     const cmd = userConfig.semantic.command;
     if (Array.isArray(cmd) && cmd.length > 0 && cmd.every((s) => typeof s === 'string' && s.length > 0)) {
-      result.semantic.command = [...cmd];
+      if (ctx.trusted) {
+        result.semantic.command = [...cmd];
+      } else {
+        // Project layer: the scanned repo must not pick what `--semantic` spawns.
+        ctx.ignored.push('semantic.command');
+      }
     }
   }
 
