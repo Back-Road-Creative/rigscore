@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import { findFindingSection, findTriggerRow } from '../src/cli/explain.js';
+import { extractDocumentedRuleIds } from '../src/lib/verify-docs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.resolve(__dirname, '..', 'bin', 'rigscore.js');
@@ -99,6 +101,57 @@ Body.
   it('returns null for an id that is not a whole ruleId token', () => {
     expect(findTriggerRow(doc, 'demo', 'no')).toBeNull();
     expect(findTriggerRow(doc, 'demo', 'missing')).toBeNull();
+  });
+
+  it('keeps an escaped pipe inside a cell and resolves the row', () => {
+    const pipeDoc = [
+      '## Triggers',
+      '| Condition | Severity | SARIF ruleId | Remediation summary |',
+      '|---|---|---|---|',
+      '| RUN has `curl\\|wget` piped to a shell | WARNING | `demo/pipe-to-shell` | Verify, then run |',
+      '',
+    ].join('\n');
+    expect(findTriggerRow(pipeDoc, 'demo', 'pipe-to-shell')).toEqual({
+      condition: 'RUN has `curl|wget` piped to a shell',
+      severity: 'WARNING',
+      ruleId: 'demo/pipe-to-shell',
+      remediation: 'Verify, then run',
+    });
+  });
+
+  it('resolves an id in a 2-column sub-table under Triggers', () => {
+    const subDoc = [
+      '## Triggers',
+      '| Condition | Severity | SARIF ruleId | Remediation summary |',
+      '|---|---|---|---|',
+      '| Something | INFO | `demo/other` | None |',
+      '',
+      '### Escalation ruleIds',
+      '| Matches | SARIF ruleId |',
+      '|---|---|',
+      '| `run as root` | `demo/escalation-root` |',
+      '',
+      '## Example',
+      '| `x` | `demo/not-a-trigger` |',
+    ].join('\n');
+    const row = findTriggerRow(subDoc, 'demo', 'escalation-root');
+    expect(row.ruleId).toBe('demo/escalation-root');
+    expect(row.condition).toBe('`run as root`');
+    expect(findTriggerRow(subDoc, 'demo', 'not-a-trigger')).toBeNull();
+  });
+
+  it('resolves every ruleId documented under docs/checks', () => {
+    const dir = path.resolve(__dirname, '..', 'docs', 'checks');
+    const missing = [];
+    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.md') && !n.startsWith('_'))) {
+      const checkId = f.replace(/\.md$/, '');
+      const body = fs.readFileSync(path.join(dir, f), 'utf8');
+      for (const id of extractDocumentedRuleIds(body, checkId)) {
+        const slug = id.slice(checkId.length + 1);
+        if (!findTriggerRow(body, checkId, slug) && !findFindingSection(body, slug)) missing.push(id);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });
 

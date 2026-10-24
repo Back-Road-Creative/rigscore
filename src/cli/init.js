@@ -9,7 +9,7 @@ Write a starter .rigscorerc.json into the current directory, scaffold a demo
 project, or install a pack.
 
 Options:
-  --profile <name>   Pre-fill the profile (default, minimal, ci, home, monorepo)
+  --profile <name>   Pre-fill the profile (${Object.keys(PROFILES).join(', ')})
   --force, -f        Overwrite pre-existing files
   --example [dir]    Scaffold a demo project with intentional hygiene issues
                      (refuses a directory that already holds a real project)

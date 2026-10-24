@@ -37,7 +37,7 @@ export async function runExplainSubcommand(args) {
   if (args.length === 0) {
     process.stderr.write(
       'Error: rigscore explain <findingId>\n' +
-      '  e.g. rigscore explain governance-docs/missing-claude-md\n',
+      '  e.g. rigscore explain governance-docs/no-governance-file\n',
     );
     process.exit(2);
   }
@@ -90,17 +90,24 @@ export async function runExplainSubcommand(args) {
 
 /**
  * Split a markdown table row into trimmed cells, or null if it is not a row.
+ * Only unescaped pipes separate cells; an escaped pipe (`\\|`) is cell text.
  */
 function tableCells(line) {
   const t = line.trim();
   if (!t.startsWith('|')) return null;
-  return t.replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  return t
+    .replace(/^\|/, '')
+    .replace(/(?<!\\)\|$/, '')
+    .split(/(?<!\\)\|/)
+    .map((c) => c.replace(/\\\|/g, '|').trim());
 }
 
 /**
- * Find the "## Triggers" row that documents `<checkId>/<slug>`. The id must be
- * a whole backticked token in the row, so `no` never matches `no-file`.
- * Returns { condition, severity, ruleId, remediation } or null.
+ * Find the row under "## Triggers" (including its ### sub-tables) that
+ * documents `<checkId>/<slug>`. The id must be a whole backticked token in a
+ * cell, so `no` never matches `no-file`. Returns { condition, severity,
+ * ruleId, remediation } or null; severity and remediation are null for rows
+ * from a narrower table that does not carry them.
  */
 export function findTriggerRow(doc, checkId, slug) {
   const wanted = `${checkId}/${slug}`;
@@ -109,15 +116,20 @@ export function findTriggerRow(doc, checkId, slug) {
     if (/^##\s/.test(line)) inTriggers = /^##\s+Triggers\s*$/.test(line);
     if (!inTriggers) continue;
     const cells = tableCells(line);
-    if (!cells || cells.length < 4) continue;
-    const tokens = [...cells[2].matchAll(/`([^`\n]+)`/g)].map((m) => m[1].trim());
-    if (!tokens.includes(wanted)) continue;
-    return {
-      condition: cells[0],
-      severity: cells[1],
-      ruleId: cells[2].replace(/`/g, ''),
-      remediation: cells.slice(3).join(' | '),
-    };
+    if (!cells) continue;
+    const idx = cells.findIndex((c) =>
+      [...c.matchAll(/`([^`\n]+)`/g)].some((m) => m[1].trim() === wanted));
+    if (idx === -1) continue;
+    if (cells.length >= 4 && idx === 2) {
+      return {
+        condition: cells[0],
+        severity: cells[1],
+        ruleId: cells[2].replace(/`/g, ''),
+        remediation: cells.slice(3).join(' | '),
+      };
+    }
+    const rest = cells.filter((_, i) => i !== idx);
+    return { condition: rest[0] ?? '', severity: null, ruleId: wanted, remediation: rest.slice(1).join(' | ') || null };
   }
   return null;
 }
@@ -125,10 +137,10 @@ export function findTriggerRow(doc, checkId, slug) {
 function formatTriggerRow(checkId, row) {
   return (
     `${row.ruleId}\n\n` +
-    `  Severity:   ${row.severity}\n` +
+    (row.severity ? `  Severity:   ${row.severity}\n` : '') +
     `  When:       ${row.condition}\n` +
-    `  Fix:        ${row.remediation}\n\n` +
-    `Full check doc: docs/checks/${checkId}.md  (rigscore explain ${checkId})\n`
+    (row.remediation ? `  Fix:        ${row.remediation}\n` : '') +
+    `\nFull check doc: docs/checks/${checkId}.md  (rigscore explain ${checkId})\n`
   );
 }
 
