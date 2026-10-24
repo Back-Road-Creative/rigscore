@@ -146,6 +146,18 @@ describe('Homebrew formula (RS-39)', () => {
     expect(step.run).toMatch(/sha256sum|shasum/);
     expect(step.run).toMatch(/archive\/refs\/tags\/v/);
     expect(step.run).toMatch(/gh pr create/);
+    // A GITHUB_TOKEN push/PR never triggers ci.yml, so the step dispatches it
+    // on the bump branch to give the PR its required checks.
+    expect(step.run).toMatch(/gh workflow run ci\.yml[^\n]*--ref/);
+    expect(parse('.github/workflows/ci.yml').on).toHaveProperty('workflow_dispatch');
+    // The repo may forbid Actions from opening PRs; that must surface, not hide.
+    expect(step.run).toMatch(/::warning::/);
+    expect(step.run).toMatch(/GITHUB_STEP_SUMMARY/);
+    // sed that stops matching must fail loudly, and the base follows the ref.
+    expect(step.run).toMatch(/grep -q[^\n]*tags\/v\$\{VERSION\}\.tar\.gz/);
+    expect(step.run).not.toMatch(/--base main/);
+    expect(step.run).toMatch(/--base "\$\{\{ github\.ref_name \}\}"/);
+    expect(read('.github/workflows/release.yml').split('\n').slice(0, 12).join('\n')).toMatch(/formula/i);
     // Opening a PR needs this scope on the job token.
     expect(parse('.github/workflows/release.yml').jobs.release.permissions['pull-requests']).toBe('write');
   });

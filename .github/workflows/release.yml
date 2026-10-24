@@ -4,6 +4,7 @@ name: Release
 # Single workflow — no cross-workflow event chain, no GITHUB_TOKEN trigger gap.
 #
 # Steps: test → GitHub release (facts snapshot attached as a release asset)
+# → pull request pinning the Homebrew formula to the new release tag
 # Distribution: GitHub only (npx github:Back-Road-Creative/rigscore)
 # The consuming site's facts data file is refreshed downstream, in that repo,
 # by a workflow there that pulls from this repo's public releases.
@@ -176,10 +177,17 @@ jobs:
       # Keep the Homebrew formula pinned to the release just published. The
       # tag tarball only exists once `gh release create` has made the tag, so
       # the pin can only follow the release, never ride in the same PR as the
-      # version bump. The change goes through a pull request (main is
-      # protected); test/meta-ci-contract.test.js accepts a pin that lags
-      # package.json and rejects one that runs ahead of it. Best effort: a
-      # failure here must not mark an already-published release as failed.
+      # version bump. The change goes through a pull request (the base branch
+      # is protected); test/meta-ci-contract.test.js accepts a pin that lags
+      # package.json and rejects one that runs ahead of it.
+      #
+      # Two GITHUB_TOKEN limits shape this step. Pushes and PRs it makes never
+      # trigger ci.yml, so the step dispatches ci.yml on the bump branch to
+      # give the PR its required checks. And a repo can forbid Actions from
+      # opening pull requests ("Allow GitHub Actions to create and approve
+      # pull requests"); then the branch is pushed but no PR exists. The step
+      # is best effort so a published release is never marked failed, but it
+      # always leaves a ::warning:: and a job-summary entry saying what to do.
       - name: Bump Homebrew formula pin
         if: steps.check.outputs.exists == 'false'
         continue-on-error: true
@@ -190,24 +198,38 @@ jobs:
           set -euo pipefail
           URL="https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.tar.gz"
           SHA=$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)
+          if grep -q "tags/v${VERSION}.tar.gz" Formula/rigscore.rb \
+             && grep -q "${SHA}" Formula/rigscore.rb; then
+            echo "Formula already pinned to v${VERSION}."
+            exit 0
+          fi
           sed -i -E \
             -e "s#archive/refs/tags/v[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz#archive/refs/tags/v${VERSION}.tar.gz#" \
             -e "s#^(  sha256 \")[0-9a-f]{64}(\")#\1${SHA}\2#" \
             Formula/rigscore.rb
-          if git diff --quiet -- Formula/rigscore.rb; then
-            echo "Formula already pinned to v${VERSION}."
-            exit 0
+          if ! grep -q "tags/v${VERSION}.tar.gz" Formula/rigscore.rb \
+             || ! grep -q "${SHA}" Formula/rigscore.rb; then
+            echo "::error::Formula/rigscore.rb layout changed; the url/sha256 edit did not apply."
+            exit 1
           fi
           BRANCH="chore/formula-v${VERSION}"
+          TITLE="chore(formula): pin Homebrew formula to v${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add Formula/rigscore.rb
-          git commit -m "chore(formula): pin Homebrew formula to v${VERSION}"
+          git commit -m "$TITLE"
           git push origin "$BRANCH"
-          gh pr create --repo "${{ github.repository }}" --base main --head "$BRANCH" \
-            --title "chore(formula): pin Homebrew formula to v${VERSION}" \
-            --body "Automated: points Formula/rigscore.rb at the v${VERSION} release tarball and its sha256."
+          gh workflow run ci.yml --repo "${{ github.repository }}" --ref "$BRANCH"
+          if ! gh pr create --repo "${{ github.repository }}" --base "${{ github.ref_name }}" --head "$BRANCH" \
+            --title "$TITLE" \
+            --body "Automated: points Formula/rigscore.rb at the v${VERSION} release tarball and its sha256."; then
+            MSG="Pushed ${BRANCH} but could not open the pull request. Open it by hand, or enable Settings > Actions > General > Allow GitHub Actions to create and approve pull requests. Pin: url ${URL} sha256 ${SHA}"
+            echo "::warning::${MSG}"
+            echo "### Formula pin needs a pull request" >> "$GITHUB_STEP_SUMMARY"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       # The release-facts sync that used to run here (a second job that
       # cloned the consuming site repo with a cross-repo token and opened a
