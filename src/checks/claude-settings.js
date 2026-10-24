@@ -189,8 +189,9 @@ function recordTruncation(walkState, rootLabel, truncated, depthTruncated) {
 
 /** Every `<plugin>/hooks/hooks.json` under a plugins root, via the shared
  *  symlink-loop-safe, depth-capped walker. Never hand-roll a walker here. */
-async function findPluginHookFiles(root, walkState, rootLabel) {
+async function findPluginHookFiles(root, walkState, rootLabel, scanRoot) {
   const { files, truncated, depthTruncated } = await walkDirSafe(root, {
+    containWithin: scanRoot,
     maxDepth: 6,
     maxFiles: 200,
     shouldInclude: (full, dirent) =>
@@ -201,8 +202,9 @@ async function findPluginHookFiles(root, walkState, rootLabel) {
 }
 
 /** Every markdown file under a skills/commands/agents root, via the same shared walker. */
-async function findMarkdownFiles(root, walkState, rootLabel) {
+async function findMarkdownFiles(root, walkState, rootLabel, scanRoot) {
   const { files, truncated, depthTruncated } = await walkDirSafe(root, {
+    containWithin: scanRoot,
     maxDepth: 6,
     maxFiles: 200,
     shouldInclude: (_full, dirent) => dirent.name.endsWith('.md'),
@@ -400,7 +402,7 @@ export default {
     // to make the check applicable — else a hook-only plugin scores NOT_APPLICABLE.
     const walkState = { truncated: false, depthTruncated: false, truncatedRoots: new Set() };
     for (const { root, prefix, label } of hookScanRoots) {
-      for (const hookFile of await findPluginHookFiles(path.join(root, PLUGIN_ROOT), walkState, label)) {
+      for (const hookFile of await findPluginHookFiles(path.join(root, PLUGIN_ROOT), walkState, label, root)) {
         const pluginHooks = await readJsonSafe(hookFile);
         if (!pluginHooks) continue;
         foundAny = true;
@@ -421,7 +423,7 @@ export default {
     const fmCtx = { ...ctx, configuredHooks: new Set() };
     for (const { root, prefix, label } of hookScanRoots) {
       for (const dir of FRONTMATTER_HOOK_DIRS) {
-        for (const mdFile of await findMarkdownFiles(path.join(root, dir), walkState, label)) {
+        for (const mdFile of await findMarkdownFiles(path.join(root, dir), walkState, label, root)) {
           const content = await readFileSafe(mdFile);
           const fm = content ? readFrontmatterHooks(content) : null;
           if (!fm) continue;

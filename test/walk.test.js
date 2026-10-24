@@ -149,4 +149,100 @@ describe('walkDirSafe — unified walk parity', () => {
       expect(loopDetected).toBe(true);
     });
   });
+  describe('symlinks that leave the scan root', () => {
+    const skipEscape = !CAN_SYMLINK || process.platform === 'win32';
+
+    it.skipIf(skipEscape)('skips dir and file symlinks pointing outside the root and discloses it', async () => {
+      await withTmpDir(async (tmp) => {
+        const root = path.join(tmp, 'root');
+        const outside = path.join(tmp, 'outside');
+        fs.mkdirSync(root);
+        fs.mkdirSync(outside);
+        fs.writeFileSync(path.join(outside, 'secret.txt'), 'x');
+        fs.writeFileSync(path.join(root, 'inside.txt'), 'y');
+        fs.symlinkSync(outside, path.join(root, 'escape'));
+        fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'fileLink'));
+        const { files, outsideRootSkipped } = await walkDirSafe(root);
+        expect(files.map((f) => path.basename(f))).toEqual(['inside.txt']);
+        expect(outsideRootSkipped).toBe(true);
+      });
+    });
+
+    it.skipIf(skipEscape)('followOutsideRoot:true restores the old behaviour', async () => {
+      await withTmpDir(async (tmp) => {
+        const root = path.join(tmp, 'root');
+        const outside = path.join(tmp, 'outside');
+        fs.mkdirSync(root);
+        fs.mkdirSync(outside);
+        fs.writeFileSync(path.join(outside, 'secret.txt'), 'x');
+        fs.symlinkSync(outside, path.join(root, 'escape'));
+        const { files, outsideRootSkipped } = await walkDirSafe(root, { followOutsideRoot: true });
+        expect(files.map((f) => path.basename(f))).toContain('secret.txt');
+        expect(outsideRootSkipped).toBe(false);
+      });
+    });
+
+    it.skipIf(skipEscape)('still follows a symlink to a directory inside the root', async () => {
+      await withTmpDir(async (tmp) => {
+        const root = path.join(tmp, 'root');
+        fs.mkdirSync(path.join(root, 'real'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'real', 'inside.txt'), 'x');
+        fs.symlinkSync(path.join(root, 'real'), path.join(root, 'link'));
+        const { files, outsideRootSkipped } = await walkDirSafe(root);
+        expect(files.filter((f) => f.endsWith('inside.txt')).length).toBe(1);
+        expect(outsideRootSkipped).toBe(false);
+      });
+    });
+
+    it.skipIf(skipEscape)('containWithin: a scoped walk follows an in-repo link that leaves the walk root', async () => {
+      await withTmpDir(async (tmp) => {
+        const root = path.join(tmp, 'root');
+        const scoped = path.join(root, '.claude', 'skills');
+        fs.mkdirSync(scoped, { recursive: true });
+        fs.mkdirSync(path.join(root, 'shared', 'x'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'shared', 'x', 'SKILL.md'), 'x');
+        fs.symlinkSync(path.join('..', '..', 'shared', 'x'), path.join(scoped, 'x'));
+        const outside = path.join(tmp, 'outside');
+        fs.mkdirSync(outside);
+        fs.writeFileSync(path.join(outside, 'leak.md'), 'x');
+        fs.symlinkSync(outside, path.join(scoped, 'escape'));
+        const { files, outsideRootSkipped } = await walkDirSafe(scoped, { containWithin: root });
+        expect(files.map((f) => path.basename(f))).toEqual(['SKILL.md']);
+        expect(outsideRootSkipped).toBe(true);
+      });
+    });
+
+    it.skipIf(skipEscape)('does not flag a link the walker would have dropped by name anyway', async () => {
+      await withTmpDir(async (tmp) => {
+        const root = path.join(tmp, 'root');
+        const outside = path.join(tmp, 'outside');
+        fs.mkdirSync(root);
+        fs.mkdirSync(outside);
+        fs.writeFileSync(path.join(root, 'a.txt'), 'x');
+        fs.writeFileSync(path.join(outside, 'README.md'), 'x');
+        fs.symlinkSync(outside, path.join(root, 'node_modules'));
+        fs.symlinkSync(outside, path.join(root, '.venv'));
+        fs.symlinkSync(path.join(outside, 'README.md'), path.join(root, 'README.md'));
+        const { files, outsideRootSkipped } = await walkDirSafe(root, {
+          skipDirs: new Set(['node_modules']),
+          shouldInclude: (full) => full.endsWith('.txt'),
+        });
+        expect(files.map((f) => path.basename(f))).toEqual(['a.txt']);
+        expect(outsideRootSkipped).toBe(false);
+      });
+    });
+
+    it.skipIf(skipEscape)('a root that is itself a symlink is still walked', async () => {
+      await withTmpDir(async (tmp) => {
+        const real = path.join(tmp, 'real');
+        fs.mkdirSync(real);
+        fs.writeFileSync(path.join(real, 'a.txt'), 'x');
+        const viaLink = path.join(tmp, 'viaLink');
+        fs.symlinkSync(real, viaLink);
+        const { files, outsideRootSkipped } = await walkDirSafe(viaLink);
+        expect(files.map((f) => path.basename(f))).toEqual(['a.txt']);
+        expect(outsideRootSkipped).toBe(false);
+      });
+    });
+  });
 });

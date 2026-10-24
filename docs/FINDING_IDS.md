@@ -176,6 +176,7 @@ Grouped by check. Each ID is stable within the current major.
 - `deep-secrets/hardcoded-secret` (critical)
 - `deep-secrets/possible-secret-comment` (warning)
 - `deep-secrets/symlink-loop-skipped` (info)
+- `deep-secrets/outside-root-skipped` (info) — a symlink leaving the scan root was not followed; the files behind it were not scanned.
 - `deep-secrets/no-source-files` (info)
 - `deep-secrets/file-cap-reached` (info)
 - `deep-secrets/oversize-skipped` (info) — id retained for contract stability; large files are now stream-scanned in bounded memory, not skipped.
