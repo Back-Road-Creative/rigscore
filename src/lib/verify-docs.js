@@ -373,7 +373,10 @@ export async function verifyCheckDocs(opts = {}) {
 // ---------------------------------------------------------------------------
 
 /** Narrative docs (repo-root-relative) that get link-checked. */
-export const EXTERNAL_DOC_RELPATHS = ['THREAT-MODEL.md', 'docs/known-limits.md'];
+export const EXTERNAL_DOC_RELPATHS = ['README.md', 'THREAT-MODEL.md', 'docs/known-limits.md'];
+
+/** Lines of README.md that count as the "lead" the client-count guard reads. */
+const README_LEAD_LINES = 12;
 
 /**
  * Markdown link targets that point at a repo-local file (relative path),
@@ -443,6 +446,31 @@ export function checkCountSentences(texts, counts) {
       }
     }
   }
+  const readme = texts['README.md'];
+  if (readme != null) {
+    const lead = readme.split('\n').slice(0, README_LEAD_LINES).join('\n');
+    if (!/\bany AI (?:coding )?client\b/i.test(lead)) {
+      offenders.push({
+        doc: 'README.md',
+        reason: 'lead-any-client-missing',
+        detail: 'the README lead (first lines) must say rigscore works with "any AI client"',
+      });
+    }
+    const m = lead.match(/(\d+) known agent clients/);
+    if (!m) {
+      offenders.push({
+        doc: 'README.md',
+        reason: 'count-anchor-missing',
+        detail: 'the README lead must state the client count as "N known agent clients"',
+      });
+    } else if (Number(m[1]) !== counts.clients) {
+      offenders.push({
+        doc: 'README.md',
+        reason: 'count-drift',
+        detail: `README lead says ${m[1]} known agent clients; src/clients.js has ${counts.clients}`,
+      });
+    }
+  }
   const cs = texts['docs/checks/credential-storage.md'];
   if (cs != null) {
     const m = cs.match(/currently (\d+) credential-file entries/);
@@ -459,6 +487,33 @@ export function checkCountSentences(texts, counts) {
         detail: `says ${m[1]} credential-file entries; credentialClients() returns ${counts.credentialFiles}`,
       });
     }
+  }
+  return offenders;
+}
+
+/**
+ * CLAUDE.md guard. Its H1 must be the product name (`rigscore`, not the
+ * workspace-checkout name `pkg-rigscore`), and it must name every check in
+ * src/checks/ in backticks so a new check cannot ship without the contributor
+ * guide knowing it exists. Pure: `checkIds` comes from the caller.
+ */
+export function checkClaudeMd(text, checkIds) {
+  const offenders = [];
+  const h1 = text.match(/^# (.+?)\s*$/m);
+  if (!h1 || h1[1] !== 'rigscore') {
+    offenders.push({
+      doc: 'CLAUDE.md',
+      reason: 'claude-md-title',
+      detail: `H1 is ${h1 ? `"${h1[1]}"` : 'missing'}; expected "rigscore"`,
+    });
+  }
+  const missing = checkIds.filter((id) => !text.includes(`\`${id}\``));
+  if (missing.length) {
+    offenders.push({
+      doc: 'CLAUDE.md',
+      reason: 'claude-md-check-missing',
+      detail: `does not name check(s): ${missing.join(', ')}`,
+    });
   }
   return offenders;
 }
@@ -497,11 +552,21 @@ export async function verifyExternalDocs(opts = {}) {
   let countOffenders = [];
   if (counts) {
     const texts = {};
-    for (const rel of ['THREAT-MODEL.md', 'docs/checks/credential-storage.md']) {
+    for (const rel of ['README.md', 'THREAT-MODEL.md', 'docs/checks/credential-storage.md']) {
       const b = await readFileSafe(path.join(root, rel));
       if (b !== null) texts[rel] = b;
     }
     countOffenders = checkCountSentences(texts, counts);
+  }
+
+  const claudeMd = await readFileSafe(path.join(root, 'CLAUDE.md'));
+  if (claudeMd !== null) {
+    const checkFiles = (await readDirSafe(path.join(root, 'src', 'checks'))) || [];
+    const checkIds = checkFiles
+      .filter((f) => f.endsWith('.js') && f !== 'index.js')
+      .map((f) => path.basename(f, '.js'))
+      .sort();
+    countOffenders = countOffenders.concat(checkClaudeMd(claudeMd, checkIds));
   }
 
   return {
@@ -518,7 +583,7 @@ export function formatExternalDocsResult(result) {
     lines.push(`docs-gate: DEAD-LINK ${doc} links to \`${target}\`, which does not exist. Fix or remove the link.`);
   }
   for (const { doc, reason, detail } of result.countOffenders || []) {
-    const label = reason === 'count-drift' ? 'COUNT-DRIFT' : 'COUNT-ANCHOR-MISSING';
+    const label = reason.toUpperCase();
     lines.push(`docs-gate: ${label} ${doc} — ${detail}`);
   }
   return lines.join('\n');

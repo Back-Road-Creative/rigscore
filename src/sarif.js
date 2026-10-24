@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { OWASP_AGENTIC_MAP, OWASP_MCP_MAP, AGENTIC_SKILLS_MAP } from './constants.js';
-import { FINDING_ID_RENAMES } from './findings.js';
+import fs from 'node:fs';
+import { FINDING_ID_RENAMES, findingLocation } from './findings.js';
 import { stripAnsi, getGrade, getRiskProfile } from './reporter.js';
 
 // GitHub code scanning reads a numeric `security-severity` (CVSS-like 0.0–10.0)
@@ -26,6 +27,35 @@ const DEPRECATED_IDS_BY_CURRENT = Object.entries(FINDING_ID_RENAMES).reduce(
   },
   Object.create(null),
 );
+
+// Check docs ship in the package (`docs/checks/` is in package.json `files`), so
+// a check whose doc exists in the install dir gets a default rule `helpUri`
+// pointing at the same doc on GitHub — the form the checks' own `learnMore`
+// links already use.
+const CHECK_DOCS_DIR = new URL('../docs/checks/', import.meta.url);
+const CHECK_DOCS_URL = 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks';
+const checkDocCache = new Map();
+
+function checkDocUri(checkId) {
+  if (typeof checkId !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(checkId)) return null;
+  if (!checkDocCache.has(checkId)) {
+    let exists = false;
+    try {
+      exists = fs.existsSync(new URL(`${checkId}.md`, CHECK_DOCS_DIR));
+    } catch { /* unreadable install dir: no default */ }
+    checkDocCache.set(checkId, exists ? `${CHECK_DOCS_URL}/${checkId}.md` : null);
+  }
+  return checkDocCache.get(checkId);
+}
+
+function withHelp(rule, helpUri) {
+  if (!helpUri) return;
+  rule.helpUri = helpUri;
+  rule.help = {
+    text: `Learn more: ${helpUri}`,
+    markdown: `[Learn more](${helpUri})`,
+  };
+}
 
 function safeText(value) {
   if (value == null || typeof value !== 'string') return value;
@@ -132,6 +162,7 @@ export function formatSarif(result) {
         level: 'warning',
       },
     };
+    withHelp(rule, checkDocUri(r.id));
     const deprecated = DEPRECATED_IDS_BY_CURRENT[r.id];
     if (deprecated && deprecated.length > 0) rule.deprecatedIds = [...deprecated];
     return rule;
@@ -166,12 +197,20 @@ export function formatSarif(result) {
         ],
       };
 
-      // Extract physical file location from finding text
-      const filePath = extractFilePath(finding.title) || extractFilePath(finding.detail);
-      if (filePath) {
-        location.physicalLocation = {
-          artifactLocation: { uri: filePath },
-        };
+      // Physical location: the check's own `context.file` / `context.line` when
+      // it supplied them (exact, gives code scanning an inline annotation),
+      // else a best-effort path guessed from the finding text (no region).
+      const located = findingLocation(finding);
+      if (located) {
+        location.physicalLocation = { artifactLocation: { uri: located.file } };
+        if (located.line) location.physicalLocation.region = { startLine: located.line };
+      } else {
+        const filePath = extractFilePath(finding.title) || extractFilePath(finding.detail);
+        if (filePath) {
+          location.physicalLocation = {
+            artifactLocation: { uri: filePath },
+          };
+        }
       }
 
       // Per-finding ruleId: <checkId>/<slug-or-findingId>. Register it in the
@@ -202,14 +241,9 @@ export function formatSarif(result) {
         // ruleId (`workflow-maturity/skill-no-eval` fires once per skill, each
         // with its own fix), so hoisting it would render the first finding's fix
         // next to every sibling's result. It stays per-result, below.
-        const helpUri = safeHelpUri(finding.learnMore);
-        if (helpUri) {
-          rule.helpUri = helpUri;
-          rule.help = {
-            text: `Learn more: ${helpUri}`,
-            markdown: `[Learn more](${helpUri})`,
-          };
-        }
+        // With no usable `learnMore`, default to the check's own doc when one
+        // ships in the install dir.
+        withHelp(rule, safeHelpUri(finding.learnMore) || checkDocUri(r.id));
         rules.push(rule);
       }
 

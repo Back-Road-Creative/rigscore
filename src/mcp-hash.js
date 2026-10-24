@@ -4,10 +4,13 @@ import crypto from 'node:crypto';
  * Runtime tool-description hashing for MCP servers.
  *
  * Architecture note (CRITICAL):
- *   rigscore NEVER executes an MCP server subprocess. Users invoke the server
- *   themselves and pipe the `tools/list` JSON response into
+ *   A scan never executes an MCP server subprocess. By default users invoke
+ *   the server themselves and pipe the `tools/list` JSON response into
  *   `rigscore mcp-hash`. This avoids RCE-on-scan attacks from malicious MCP
- *   packages.
+ *   packages. The one exception is the explicit, per-run, consent-gated
+ *   `--connect` option on the mcp-hash / mcp-pin / mcp-verify subcommands
+ *   (src/lib/mcp-connect.js), which launches ONE named local stdio server
+ *   after showing the operator its exact argv.
  *
  * Canonicalization rules (must be deterministic across hosts / JSON orderings):
  *   1. Extract the tools array. Accepts either a raw JSON-RPC envelope

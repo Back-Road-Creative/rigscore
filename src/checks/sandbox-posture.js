@@ -46,7 +46,7 @@ const DEVCONTAINER_MAX_FILES = 200;
  */
 async function scanDevcontainer(cwd) {
   const { files, truncated, depthTruncated } = await walkDirSafe(path.join(cwd, '.devcontainer'), {
-    maxFiles: DEVCONTAINER_MAX_FILES, skipHidden: false,
+    containWithin: cwd, maxFiles: DEVCONTAINER_MAX_FILES, skipHidden: false,
   });
   const single = path.join(cwd, '.devcontainer.json'); // the documented single-file form
   let text = '';

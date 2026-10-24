@@ -237,7 +237,7 @@ export default {
     const extraSkip = config?.deepScan?.excludeDirs || [];
     const skipDirs = extraSkip.length ? new Set([...SKIP_DIRS, ...extraSkip]) : SKIP_DIRS;
 
-    const { files, loopDetected, truncated, depthTruncated, readError } = await walkDirSafe(cwd, {
+    const { files, loopDetected, truncated, depthTruncated, readError, outsideRootSkipped } = await walkDirSafe(cwd, {
       maxFiles,
       maxDepth,
       skipDirs,
@@ -254,6 +254,16 @@ export default {
         severity: 'info',
         title: 'Deep scan skipped one or more symlink loops',
         detail: 'A symlink cycle was detected and safely skipped during traversal.',
+      });
+    }
+
+    if (outsideRootSkipped) {
+      findings.push({
+        findingId: 'deep-secrets/outside-root-skipped',
+        severity: 'info',
+        title: 'Deep scan skipped one or more symlinks that leave the scan root',
+        detail: 'A symlink pointing outside the scanned directory was not followed, so the files behind it were NOT scanned and this result cannot be read as "no secrets" for them.',
+        remediation: 'Scan the link target as its own root, or move the content inside the repository.',
       });
     }
 
@@ -416,7 +426,7 @@ export default {
     // clean. A truncated walk (file OR depth cap) or an unreadable path already
     // carries a warning above; adding "clean" next to it would be the exact
     // contradiction this fix exists to remove.
-    if (secretCount === 0 && !truncated && !depthTruncated && !unreadable) {
+    if (secretCount === 0 && !truncated && !depthTruncated && !unreadable && !outsideRootSkipped) {
       findings.push({
         severity: 'pass',
         title: `Deep scan clean — ${files.length} files checked`,

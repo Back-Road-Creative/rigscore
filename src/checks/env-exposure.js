@@ -376,7 +376,7 @@ export default {
           title: `Secrets found in ${histFile}`,
           detail: `Found ${secretsInHistory} potential secret(s) in shell history (~/${histFile}). These can be exposed via terminal shoulder-surfing or history file theft.`,
           remediation: `Clear secrets from history: edit ~/${histFile} or run history -c. Consider using a secrets manager.`,
-          context: { file: histFile, count: secretsInHistory },
+          context: { file: histFile, count: secretsInHistory, outsideRepo: true },
         });
       }
     }

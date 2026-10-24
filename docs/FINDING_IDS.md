@@ -39,6 +39,16 @@ Alongside `ruleId`, each SARIF result carries the fix text the check computed:
   one *is* rule-level: it is a constant doc link per finding class, and
   `helpUri` is a `reportingDescriptor` property in SARIF 2.1.0 (§3.49.12),
   never a result property.
+  A finding with no usable `learnMore` falls back to the check's own page
+  under `docs/checks/` when that page ships with the install.
+- **`locations[].physicalLocation`** — when a check attaches `context.file`
+  (and `context.line`) to a finding, SARIF carries that repo-relative path as
+  `artifactLocation.uri` and the line as `region.startLine`, so code scanning
+  can annotate the exact line. Absolute, `..` and home-relative (`~/...`) paths, and findings about files
+  outside the scanned repo (for example shell history), never get a location. The
+  CodeClimate report uses the same fields for `location.path` and
+  `lines.begin`. Without `context`, the path is guessed from the finding text,
+  as before, with no region.
 
 A finding with no `remediation` emits no `remediation` key at all — no `null`,
 no empty string. Same for `learnMore` / `helpUri`.
@@ -176,6 +186,7 @@ Grouped by check. Each ID is stable within the current major.
 - `deep-secrets/hardcoded-secret` (critical)
 - `deep-secrets/possible-secret-comment` (warning)
 - `deep-secrets/symlink-loop-skipped` (info)
+- `deep-secrets/outside-root-skipped` (info) — a symlink leaving the scan root was not followed; the files behind it were not scanned.
 - `deep-secrets/no-source-files` (info)
 - `deep-secrets/file-cap-reached` (info)
 - `deep-secrets/oversize-skipped` (info) — id retained for contract stability; large files are now stream-scanned in bounded memory, not skipped.

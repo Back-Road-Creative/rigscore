@@ -309,6 +309,14 @@ export default {
             title: `Governance file missing: ${check.name}`,
             detail: `No ${check.name} rules detected in your governance file(s).`,
             remediation: `Add ${check.name} instructions to your governance file.`,
+            // The terminal report folds these sibling warnings into one line;
+            // JSON, SARIF, scoring and suppression still see one per rule.
+            group: {
+              key: 'governance-docs/missing',
+              label: check.name,
+              title: 'Governance file missing',
+              remediation: 'Add instructions for each of these rules to your governance file.',
+            },
             learnMore: 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/governance-docs.md',
           });
         }

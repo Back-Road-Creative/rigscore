@@ -19,6 +19,7 @@ Gated behind `--deep`. The check returns `NOT_APPLICABLE` when the flag is absen
 | A directory or file could not be read (e.g. permission denied / `chmod 000`) and was never scanned, so the result cannot be read as "no secrets". Suppresses the PASS finding | WARNING | `deep-secrets/unreadable-skipped` | Grant read access to the affected paths, or exclude them via `deepScan.excludeDirs` if intentionally out of scope, then re-run |
 | One or more files exceeded `limits.maxFileBytes` and were read via bounded-memory streaming (not skipped) | INFO | `deep-secrets/oversize-skipped` | Informational — large files are still scanned for secrets; the id is retained for SARIF contract stability |
 | The walker detected a symlink cycle and skipped it | INFO | `deep-secrets/symlink-loop-skipped` | Informational — traversal continued safely |
+| A symlink (to a file or directory) pointed outside the scan root and was not followed, so the files behind it were never scanned. Suppresses the PASS finding | INFO | `deep-secrets/outside-root-skipped` | Scan the link target as its own root, or move the content inside the repository |
 | No source files matched the include list | INFO | `deep-secrets/no-source-files` | Informational — returns `NOT_APPLICABLE` |
 | Scan completed with zero matches | PASS | — | — |
 | `--deep` not set | N/A | — | Check returns `NOT_APPLICABLE` without walking files |

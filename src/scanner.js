@@ -26,8 +26,8 @@ export { runChecks };
  */
 export async function scan(options = {}) {
   const cwd = options.cwd || process.cwd();
-  const checks = await loadChecks({ cwd });
   const homedir = options.homedir || (await import('node:os')).homedir();
+  const checks = await loadChecks({ cwd, homedir });
   const config = await loadConfig(cwd, homedir);
 
   // Merge CLI profile into config

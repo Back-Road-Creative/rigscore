@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 28 checks — 13 scored plus 15 advisory. A hygiene score out of 100. Know where you stand before something breaks.
+One command. Works with any AI coding client: it scans the configs of 29 known agent clients. 29 checks — 13 scored plus 16 advisory. A hygiene score out of 100. Know where you stand before something breaks.
 
 > **Scope.** rigscore measures **configuration hygiene**, not runtime security. It inspects the files on disk — governance docs, MCP configs, Docker settings, skill files, permissions — and scores what those files *say*. It does not observe the running agent, intercept tool calls, or hash live MCP tool descriptions. Pair it with a runtime scanner and source-level SAST; it does not replace them. See [known limits](#known-limits) for what rigscore does not catch.
 
@@ -525,7 +525,7 @@ Every agent CLI expresses "how much can this agent do without asking me" differe
 
 ### 28. Semantic tool-description judge (advisory, 0 points, `--semantic`) {#semantic-tools}
 
-Opt-in check for **obfuscated MCP tool poisoning** — a hidden directive paraphrased into a tool description so static regex checks miss it. Runs **only** with `--semantic`; a default scan makes zero external calls from it. For each tool description (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` — the same JSON you pipe into `rigscore mcp-hash`), it asks your **own first-party agent CLI** (`claude -p`, `gemini`, `codex exec`, … — never an API key or SDK client) to classify the text benign vs. suspicious. The command is configurable via `semantic.command` in `.rigscorerc.json` (default `["claude", "-p"]`; the judge prompt is appended as the final argument). Each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge. If that binary is not on PATH the check skips gracefully (no finding, no crash). See [`docs/checks/semantic-tools.md`](docs/checks/semantic-tools.md).
+Opt-in check for **obfuscated MCP tool poisoning** — a hidden directive paraphrased into a tool description so static regex checks miss it. Runs **only** with `--semantic`; a default scan makes zero external calls from it. For each tool description (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` — the same JSON you pipe into `rigscore mcp-hash`), it asks your **own first-party agent CLI** (`claude -p`, `gemini`, `codex exec`, … — never an API key or SDK client) to classify the text benign vs. suspicious. The command is configurable via `semantic.command` in your **home** `~/.rigscorerc.json` only (default `["claude", "-p"]`; the judge prompt is appended as the final argument). A `semantic.command` in a project `.rigscorerc.json` (or in anything that file extends) is ignored with a one-line warning, so a scanned repo cannot choose which program runs. Each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge. If that binary is not on PATH the check skips gracefully (no finding, no crash). See [`docs/checks/semantic-tools.md`](docs/checks/semantic-tools.md).
 
 ## Scoring
 
@@ -664,7 +664,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 
 - **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. The only mitigation that ships today is the cross-config coherence pass, which cross-checks governance claims against observed configuration. LLM-judge assist (opt-in) is a **planned** roadmap item — it is not implemented (see [Roadmap](#roadmap)).
 - **Injection detection is pattern-based.** The injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
-- **The default scan pins config-shape; runtime tool descriptions are pinned on demand.** A scan hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). Hashing the tool descriptions a *running* server advertises is handled by the separate, opt-in `mcp-hash` / `mcp-verify` print-and-paste workflow ([Runtime tool pinning](#runtime-tool-pinning)) — rigscore never spawns the server itself, so runtime drift is verified on demand rather than on every scan. See "State file" below.
+- **The default scan pins config-shape; runtime tool descriptions are pinned on demand.** A scan hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). Hashing the tool descriptions a *running* server advertises is handled by the separate, opt-in `mcp-hash` / `mcp-verify` print-and-paste workflow ([Runtime tool pinning](#runtime-tool-pinning)) — a scan never spawns the server itself, so runtime drift is verified on demand rather than on every scan (an explicit `--connect` option can launch one named local server with your per-run consent). See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks the fixed set of names in `AI_CONFIG_FILES` (`src/constants.js`) — every known governance file plus `config.json`, `secrets.yaml`, `.env`, and similar. For deep recursive scanning, use `--deep`. For git history scanning, use a dedicated git-history secret scanner.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
 - **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 28 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 37/100 in CI for this reason — only 10 of its own 28 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
@@ -700,6 +700,7 @@ npx github:Back-Road-Creative/rigscore --cyclonedx               # CycloneDX 1.6
 npx github:Back-Road-Creative/rigscore --report compliance       # Group findings by compliance-framework control (see docs/compliance.md; not supported with --recursive)
 npx github:Back-Road-Creative/rigscore --ci                      # CI mode (--sarif --no-color --no-cta)
 npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score < 80 (default: 70)
+npx github:Back-Road-Creative/rigscore --fail-on <critical|warning> # Also fail (exit 1) on any finding at that severity or worse, whatever the score; `warning` includes critical. Respects suppressions; works with --recursive
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
 npx github:Back-Road-Creative/rigscore --badge                   # Generate a score badge (format set by --badge-format)
 npx github:Back-Road-Creative/rigscore --badge --badge-format svg # Badge format: markdown (default, shields.io image snippet), endpoint (shields.io Endpoint Badge JSON for a self-updating README), or svg (self-contained, no network). Also works with --recursive, badging the monorepo average
@@ -714,7 +715,7 @@ npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive sca
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
 npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
-npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to a first-party agent CLI — `claude -p` default, configurable via semantic.command; no API key; skips if that binary absent)
+npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to a first-party agent CLI — `claude -p` default, configurable via semantic.command in ~/.rigscorerc.json only; no API key; skips if that binary absent)
 npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan every registered client's home dir (~/.claude, ~/.codex/prompts, ~/.config/opencode/commands, ~/.gemini/commands, …) (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations (edits existing files only — never scaffolds new ones)
@@ -786,6 +787,7 @@ rigscore exits with a stable code so CI can branch cleanly:
 | `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, an unreadable **or corrupt/malformed** baseline file (unparseable JSON or no findings array fails closed — never silently re-minted), or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. In a git repo the baseline gate reads the copy **committed at HEAD** (`git show HEAD:<path>`, like `--verify-state`), so a deleted/corrupt working-tree baseline can't launder findings. This also covers HEAD-deletion: a baseline that was tracked but **removed at HEAD** (a PR that `git rm`'d it) fails closed here rather than silently re-minting a fresh baseline over the new findings — distinguished from a genuine first run (never tracked, still mints + exit `0`) by git history. Regenerate with `--baseline-refresh` then commit. |
 | `3` | Reserved for subcommand pre-conditions. Currently used by `rigscore mcp-verify <server>` when no runtime tool hash is pinned for that server. The main scan path does not emit `3`. |
 | `4` | Runtime tool-description **drift** detected by `rigscore mcp-verify <server>` — the server's current `tools/list` hash differs from the pinned snapshot (CVE-2025-54136 "MCP rug pull" class). Re-pin with `mcp-hash \| mcp-pin` if the change is intentional. The main scan path does not emit `4`. |
+| `5` | `--connect` could not read the tool list from the launched local server (timeout, early exit or malformed reply). Used only by `mcp-hash` / `mcp-pin` / `mcp-verify --connect`; consent refusals are exit `2`. The main scan path does not emit `5`. |
 
 A runtime crash inside a check surfaces as exit `2` with `Error: scan failed: ...` on stderr; it does not currently use a distinct code. CI authors should treat non-zero as failure and branch only on `0` vs `1` for score-gating logic.
 
@@ -904,7 +906,17 @@ use `rigscore init --<pack> [--force]`.
 
 ### Plugins
 
-rigscore auto-discovers `rigscore-check-*` packages from `node_modules`. Plugins extend rigscore with custom checks without modifying the core.
+rigscore discovers `rigscore-check-*` packages from `node_modules`, and local check files listed in `.rigscorerc.json` (`"plugins": ["./checks/mine.js"]`). Plugins extend rigscore with custom checks without modifying the core.
+
+**Trust:** a plugin is code, and loading it runs it. By default a scan does **not** load plugins that the scanned repo supplies, that is, the repo's own `node_modules/rigscore-check-*` packages and the paths in its `.rigscorerc.json` `plugins`; it prints one line naming what it skipped. Plugins installed beside rigscore itself (for example in a global install) always load. To opt a repo in, add its absolute path to `trustProjectPlugins` in your **home** config, `~/.rigscorerc.json`:
+
+```json
+{
+  "trustProjectPlugins": ["~/code/my-repo", "/srv/ci/workspace"]
+}
+```
+
+Entries are absolute repo roots (an exact match on the scanned directory; `~/` expands to your home directory; relative entries are ignored). With `--recursive`, each subproject root whose plugins should load must be listed. The key is honoured only in the home config (and files it `extends`); a project's own `.rigscorerc.json` cannot trust itself. In CI, write the home config in a step before the scan.
 
 **Creating a plugin:**
 
@@ -1032,7 +1044,7 @@ The config-shape hash above catches `.mcp.json` edits, but it cannot see changes
 
 rigscore detects this **without executing the MCP server itself**. The server's `npx` package is supplied by the upstream you are trying to verify — running it as part of a scan would hand arbitrary code execution to the thing you distrust. Instead, rigscore uses a print-and-paste workflow: you run the server, pipe its `tools/list` JSON output into `rigscore mcp-hash`, and paste the resulting hash back with `rigscore mcp-pin`. rigscore only ever canonicalizes and hashes text from stdin.
 
-**Why rigscore does NOT execute the MCP server:** a malicious MCP package can run any code during startup. Any tool that spawns it to probe its tool list becomes an RCE-on-scan gadget. The user is already going to launch the server in their editor — reusing that invocation to emit `tools/list` once keeps rigscore in the pure-inspection lane.
+**Why a scan does not execute the MCP server:** a malicious MCP package can run any code during startup. Any tool that spawns it to probe its tool list during a scan becomes an RCE-on-scan gadget. The user is already going to launch the server in their editor — reusing that invocation to emit `tools/list` once keeps scans in the pure-inspection lane. The only exception is the explicit, per-run `--connect` option below.
 
 ### Workflow
 
@@ -1045,6 +1057,18 @@ npx -y @modelcontextprotocol/server-filesystem /path | rigscore mcp-verify files
 ```
 
 `rigscore mcp-verify` exits 0 when the hash matches and non-zero with a drift message (including stored-hash prefix, current-hash prefix, and pinnedAt timestamp) when it doesn't.
+
+### Optional: let rigscore launch the server (`--connect`)
+
+If you would rather not pipe by hand, `mcp-hash`, `mcp-pin` and `mcp-verify` accept `--connect` to launch one named **local stdio** server from your project's MCP config and read its live tool list:
+
+```bash
+rigscore mcp-pin filesystem --connect          # shows the exact command, asks [y/N], then pins
+rigscore mcp-verify filesystem --connect --yes # non-interactive: --yes is consent for this run only
+rigscore mcp-hash --connect filesystem --yes   # print the hash instead of pinning
+```
+
+Nothing is launched by a scan, by default, or because a config file says so. Before each launch rigscore prints the exact argv, working directory and declared env keys; without `--yes` it asks on a terminal and refuses (exit 2, nothing launched) when there is no terminal. The server runs with a minimal environment (your own environment is not forwarded), a relative command that resolves outside the project through a symlink is refused, and the process (and any child processes it started) is killed once the list is read or after 15 s (exit 5 on timeout or a malformed reply). Set `RIGSCORE_CONNECT_TIMEOUT_MS` to change the timeout, for example when a first-run `npx -y` download needs longer. Relative script arguments (`node ./srv.js`) get the same symlink check as a relative command. opencode-style servers (`command` array, variables under `environment`) are supported. The command comes from the repository, so only consent for repositories you already trust to run. Limits: `env` values are passed as literal strings (a `${TOKEN}` placeholder is not expanded), and on Windows the server is started without a shell, so `npx` and other `.cmd` shims cannot be launched; use the pipe workflow there.
 
 During normal scans, each MCP server in `.mcp.json` produces an INFO finding showing its pin status ("runtime tool hash pinned <date>" or "runtime tool hash not pinned — run `rigscore mcp-hash`"). These INFOs are zero-weight and suppressible via `.rigscorerc.json`:
 

@@ -299,9 +299,10 @@ describe('SARIF output', () => {
     // Each result keeps its OWN fix...
     expect(first.properties.remediation).toBe('Create `evals/audit/`.');
     expect(second.properties.remediation).toBe('Create `evals/publish/`.');
-    // ...and the shared rule claims neither.
+    // ...and the shared rule claims neither (it only carries the check-doc link).
     const rule = ruleFor(sarif, first.ruleId);
-    expect('help' in rule).toBe(false);
+    expect(JSON.stringify(rule)).not.toContain('skill-no-eval/');
+    expect(JSON.stringify(rule)).not.toContain('evals/');
   });
 
   it('omits remediation entirely when the finding has none (no null/empty noise)', () => {
@@ -309,9 +310,9 @@ describe('SARIF output', () => {
     const bare = sarif.runs[0].results[1]; // 'Running as root'
     expect(bare.properties.remediation).toBeUndefined();
     expect('remediation' in bare.properties).toBe(false);
+    // No learnMore of its own: the rule falls back to the check's shipped doc.
     const rule = ruleFor(sarif, bare.ruleId);
-    expect('help' in rule).toBe(false);
-    expect('helpUri' in rule).toBe(false);
+    expect(rule.helpUri).toBe('https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks/docker-security.md');
     expect(JSON.stringify(sarif)).not.toContain('"remediation":null');
     expect(JSON.stringify(sarif)).not.toContain('"remediation":""');
   });
@@ -320,7 +321,7 @@ describe('SARIF output', () => {
     const sarif = formatSarif({
       score: 10,
       results: [{
-        id: 'governance-docs',
+        id: 'third-party-check',
         name: 'CLAUDE.md governance',
         category: 'governance',
         weight: 10,

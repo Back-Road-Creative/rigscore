@@ -50,7 +50,7 @@ No `fixes` export. `--fix --yes` is a no-op.
 - Tool component: `rigscore`
 - Rule ID emitted: `instruction-effectiveness` (check-level; per-finding discrimination via message text, which names the file and line number).
 - Level mapping: WARNING → `warning`, INFO → `note`, PASS/SKIPPED → `none`.
-- Location data: each finding carries the relative path of the offending file in its title/detail; line numbers are embedded in the message for contradictions, dead refs, and vague directives.
+- Location data: when `context.file`/`context.line` name a repo file, SARIF carries them as `physicalLocation` with `region.startLine` (see FINDING_IDS.md); home-skill files (`~/...`) get no location. Otherwise each finding carries the relative path of the offending file in its title/detail; line numbers are embedded in the message for contradictions, dead refs, and vague directives.
 
 ## Example
 
