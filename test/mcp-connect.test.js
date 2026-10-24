@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { hashTools } from '../src/mcp-hash.js';
 import { STATE_FILENAME } from '../src/state.js';
 import { withTmpDir } from './helpers.js';
+import { describePlan } from '../src/cli/mcp-subcommands.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.resolve(__dirname, '..', 'bin', 'rigscore.js');
@@ -74,6 +75,24 @@ describe('mcp --connect: consent gate (nothing spawns without it)', () => {
       expect(res.stderr).toContain('STUB_DESC');
       expect(res.stderr).not.toContain('=one');
     });
+  });
+
+  it('prints a Windows path as the user would type it, backslashes not doubled', () => {
+    const command = 'C:\\hostedtoolcache\\windows\\node\\22.23.4\\x64\\node.exe';
+    const script = 'C:\\Users\\RUNNER~1\\Temp\\new dir\\stub.cjs';
+    const text = describePlan('stub', { source: '.mcp.json', command, args: [script], cwd: 'C:\\Users\\RUNNER~1\\Temp', envKeys: [] });
+    expect(text).toContain(command);
+    expect(text).toContain(script);
+    expect(text).not.toContain('\\\\');
+  });
+
+  it('keeps the argv line one unambiguous line: control characters and quotes are made visible', () => {
+    const text = describePlan('stub', { source: '.mcp.json', command: 'node', args: ['a\nenv:     forged', 'say "hi"', 'dir\\'], cwd: '/p', envKeys: [] });
+    const argvLine = text.split('\n').filter((l) => l.startsWith('  argv:'));
+    expect(argvLine).toHaveLength(1);
+    expect(text.split('\n').filter((l) => l.startsWith('  env:'))).toHaveLength(1);
+    expect(argvLine[0]).toContain('"say \\"hi\\""');
+    expect(argvLine[0]).toContain('"dir\\\\"');
   });
 
   it('a project .rigscorerc.json cannot grant consent', async () => {

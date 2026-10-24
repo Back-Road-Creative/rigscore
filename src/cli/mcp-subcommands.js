@@ -121,8 +121,23 @@ async function resolveLaunchPlan(serverName, cwd) {
   };
 }
 
-function describePlan(serverName, plan) {
-  const argv = [plan.command, ...plan.args].map((a) => JSON.stringify(a)).join(' ');
+/**
+ * Render one argv element the way a user would type it. JSON.stringify would
+ * double every backslash, so a Windows path would display as C:\\Users\\... and
+ * not match what is launched. Backslashes stay literal (only a run before a
+ * quote is doubled, the Windows argv convention); control characters, which
+ * could forge extra lines in the consent prompt, are shown as <0xNN>.
+ */
+function quoteArg(arg) {
+  const body = String(arg)
+    .replace(/[\u0000-\u001f\u007f]/g, (c) => `<0x${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}>`)
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/, '$1$1');
+  return `"${body}"`;
+}
+
+export function describePlan(serverName, plan) {
+  const argv = [plan.command, ...plan.args].map(quoteArg).join(' ');
   return (
     `rigscore will LAUNCH this program from ${plan.source} to read its tool list:\n` +
     `  server:  ${serverName}\n` +
