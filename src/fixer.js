@@ -228,7 +228,10 @@ function fixerMatches(id, fixer, finding) {
  * Each fix: { id, description, finding }
  */
 export function findApplicableFixes(results) {
-  const allFixers = resolveFixers();
+  return collectFixes(results, resolveFixers());
+}
+
+function collectFixes(results, allFixers) {
   const fixes = [];
   for (const checkResult of results) {
     for (const finding of checkResult.findings) {
@@ -240,6 +243,26 @@ export function findApplicableFixes(results) {
     }
   }
   return fixes;
+}
+
+/**
+ * One-line, report-only pointer to `--fix` for the human report. Pure — it
+ * writes nothing and applies nothing; it only counts what findApplicableFixes
+ * would offer so the flag is discoverable from a plain scan. Returns null when
+ * no fixer matches, so callers can skip the line entirely.
+ */
+export function formatFixHint(results) {
+  // A report can be rendered before loadChecks() ran (a unit test, a library
+  // caller handing in a result): then only the core fixers are known. The hint
+  // must never throw, so it degrades to those instead of failing the report.
+  let allFixers = LOCAL_FIXERS;
+  try {
+    allFixers = resolveFixers();
+  } catch { /* checks not loaded: core fixers only */ }
+  const n = new Set(collectFixes(results || [], allFixers).map((f) => f.finding)).size;
+  if (n === 0) return null;
+  const subject = n === 1 ? '1 finding can be fixed automatically' : `${n} findings can be fixed automatically`;
+  return `${subject}. Run rigscore --fix to preview, rigscore --fix --yes to apply.`;
 }
 
 /**

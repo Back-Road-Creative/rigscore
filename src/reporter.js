@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { resolveWeights } from './config.js';
 import { calculatePracticeScore } from './scoring.js';
+import { formatFixHint } from './fixer.js';
 
 // createRequire instead of `import pkg from '../package.json' assert
 // { type: 'json' }` because the JSON-import assertion syntax is still
@@ -504,6 +505,14 @@ export function formatTerminal(result, cwd, options = {}) {
   }
   if (anyId) pushExplainHint(lines, width);
 
+  // Report-only pointer to --fix when a fixer matches a finding. Never applies
+  // anything; just makes the flag discoverable from a plain scan.
+  const fixHint = formatFixHint(results);
+  if (fixHint) {
+    pushWrapped(lines, width, '  ', fixHint, { style: chalk.dim });
+    lines.push('');
+  }
+
   // CTA (opt-in: only shown when noCta is explicitly false)
   if (options.noCta === false) {
     lines.push(`  ${'─'.repeat(40)}`);
@@ -637,12 +646,16 @@ export function formatTerminalRecursive(result, rootDir, options = {}) {
   return lines.join('\n');
 }
 
+const JSON_SCHEMA_VERSION = 1;
+
 export function formatJson(result) {
   // Enrich with the A–F grade + hardening tier the terminal shows, so a JSON
   // consumer (a monorepo dashboard, a CI gate) does not reimplement the
   // thresholds. Additive — every existing key is preserved. Both the single-
   // project shape (`results[]`) and the recursive shape (`projects[]`) are handled.
-  const enriched = { ...result };
+  // `rigscoreVersion` is the tool that produced the report; `schemaVersion`
+  // versions the JSON shape itself (bump only on a breaking key change).
+  const enriched = { rigscoreVersion: version, schemaVersion: JSON_SCHEMA_VERSION, ...result };
   if (typeof result.score === 'number' && result.notApplicable !== true) {
     enriched.grade = getGrade(result.score);
   } else if (result.notApplicable === true) {
