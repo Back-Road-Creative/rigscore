@@ -4,6 +4,7 @@ import { calculateCheckScore } from '../scoring.js';
 import { NOT_APPLICABLE_SCORE, GOVERNANCE_FILES } from '../constants.js';
 import { skillDirsForBase } from '../clients.js';
 import { readFileSafe, statSafe, walkDirSafe, relPosix, toPosix } from '../utils.js';
+import { TAG_CHARS_RE } from '../lib/unicode.js';
 import { homeScopeEnabled } from '../lib/home-scope.js';
 
 // Per-file read cap — a skill INSTRUCTION file is never megabytes. A file this
@@ -239,12 +240,6 @@ const ZERO_WIDTH_RE = /[\u200B-\u200D\u2060\uFEFF]/;
 // LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI
 const BIDI_OVERRIDE_RE = /[\u202A-\u202E\u2066-\u2069]/;
 
-// Unicode tag characters (U+E0001, U+E0020\u2013U+E007F). Invisible; a documented
-// steganographic channel for smuggling hidden instructions past human review.
-// unicode-steganography flags these in MCP/settings configs but never walked
-// skill dirs; skill-files had no tag-char regex \u2014 this closes that blind spot.
-const TAG_CHARS_RE = /[\u{E0001}\u{E0020}-\u{E007F}]/u;
-
 // Non-text sniff: a NUL or the Unicode replacement char (U+FFFD, produced when
 // readFileSafe decodes invalid UTF-8 bytes) means this is a binary/non-text file.
 // The walker has no extension filter, so binaries land here and get regex-scanned
@@ -467,7 +462,7 @@ export function checkUnicode(file) {
       findingId: 'skill-files/tag-chars',
       severity: 'critical',
       title: `Unicode tag characters in ${file.path}`,
-      detail: 'File contains Unicode tag characters (U+E0001, U+E0020-U+E007F) — an invisible steganographic channel that can smuggle hidden instructions past human review.',
+      detail: 'File contains Unicode tag characters (U+E0000-U+E007F) — an invisible steganographic channel that can smuggle hidden instructions past human review.',
       remediation: 'Remove all Unicode tag characters from the file.',
       context: { file: file.path },
     });
