@@ -57,7 +57,7 @@ Detection is anchored to a git project (`<cwd>/.git`): with no repo there is no 
 | `paths.immutableDirs` (`lsattr`) | yes | INFO, not checked | INFO, not checked |
 | Deny list and sandbox-gate registration | yes | yes | yes |
 
-Windows reports neither a uid nor an execute bit through `stat`, so the root-ownership and `hook-not-executable` rules are not asserted there.
+On Windows, `stat` reports uid 0 for every file and no execute bit, so neither the root-ownership nor the `hook-not-executable` rule means anything there, and neither is asserted.
 
 ## Weight rationale
 

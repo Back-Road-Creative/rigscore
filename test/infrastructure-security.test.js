@@ -147,12 +147,34 @@ describe('infrastructure-security check', () => {
       )).toBe(false);
     });
 
-    it('does not look for the /etc/profile.d safety guard off Linux', async () => {
-      const fx = makeRepoFixture({ hooks: ['pre-commit', 'pre-push', 'commit-msg'] });
-      const result = await withPlatform('darwin', () => runWithFixture(fx, {
-        cwd: fx.dir, homedir: path.join(fx.dir, 'nohome'), config: {},
-      }));
-      expect(result.data.safetyGates).toBeNull();
+    describe('default safety-guard lookup', () => {
+      const guard = ['', 'etc', 'profile.d', 'safety-gates.sh'].join('/');
+
+      /** Make the default guard path look present regardless of the host. */
+      function pretendGuardExists() {
+        const realAccess = fs.promises.access.bind(fs.promises);
+        vi.spyOn(fs.promises, 'access').mockImplementation(async (p, ...rest) => {
+          if (String(p) === guard) return undefined;
+          return realAccess(p, ...rest);
+        });
+      }
+
+      async function detectedGuard(platform) {
+        const fx = makeRepoFixture({ hooks: ['pre-commit', 'pre-push', 'commit-msg'] });
+        pretendGuardExists();
+        const result = await withPlatform(platform, () => runWithFixture(fx, {
+          cwd: fx.dir, homedir: path.join(fx.dir, 'nohome'), config: {},
+        }));
+        return result.data.safetyGates;
+      }
+
+      it('finds the guard on linux when it exists', async () => {
+        expect(await detectedGuard('linux')).toBe(guard);
+      });
+
+      it.each(['darwin', 'win32'])('does not look for the guard on %s even if the path exists', async (platform) => {
+        expect(await detectedGuard(platform)).toBeNull();
+      });
     });
 
     it('does not apply POSIX mode or root-ownership rules on win32', async () => {
