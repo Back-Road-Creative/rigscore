@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { formatSarif } from '../src/sarif.js';
 import { formatCodeClimate } from '../src/reporter.js';
 import { findingLocation } from '../src/findings.js';
+import envExposure from '../src/checks/env-exposure.js';
 
 const DOC_BASE = 'https://github.com/Back-Road-Creative/rigscore/blob/main/docs/checks';
 
@@ -32,6 +36,11 @@ describe('findingLocation', () => {
     for (const file of ['/abs/secret.md', 'C:\\x\\a.md', '../a.md', 'a/../../b.md', '', '   ', 42, null]) {
       expect(findingLocation({ context: { file, line: 3 } })).toBeNull();
     }
+  });
+  it('rejects home-relative files (~/...) and files flagged outsideRepo', () => {
+    expect(findingLocation({ context: { file: '~/x/CLAUDE.md', line: 4 } })).toBeNull();
+    expect(findingLocation({ context: { file: '~', line: 4 } })).toBeNull();
+    expect(findingLocation({ context: { file: '.bash_history', outsideRepo: true } })).toBeNull();
   });
   it('ignores a file that is relative to a directory outside the repo (memDir)', () => {
     expect(findingLocation({ context: { file: 'note.md', memDir: 'elsewhere' } })).toBeNull();
@@ -69,6 +78,26 @@ describe('SARIF region from finding context', () => {
     const pl = sarif.runs[0].results[0].locations[0].physicalLocation;
     expect(pl.artifactLocation.uri).toBe('other.md');
     expect('region' in pl).toBe(false);
+  });
+});
+
+describe('home-directory findings carry no repo location', () => {
+  it('shell-history findings get no physicalLocation and keep the check id as path', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-cwd-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-home-'));
+    const key = 'sk-ant-' + 'api03-abcdefghij1234567890';
+    fs.writeFileSync(path.join(home, '.bash_history'), `ls\nexport ANTHROPIC_API_KEY=${key}\n`);
+    try {
+      const res = await envExposure.run({ cwd, homedir: home });
+      const finding = res.findings.find((f) => f.findingId === 'env-exposure/shell-history-secrets');
+      expect(finding).toBeDefined();
+      const input = { score: 50, results: [{ id: 'env-exposure', name: 'Env', category: 'secrets', weight: 10, score: 50, findings: [finding] }] };
+      expect(formatSarif(input).runs[0].results[0].locations[0].physicalLocation).toBeUndefined();
+      expect(JSON.parse(formatCodeClimate(input))[0].location.path).toBe('env-exposure');
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 

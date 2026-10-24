@@ -34,7 +34,7 @@ No `fixes` export. `--fix --yes` is a no-op for this check.
 
 - Tool component: `rigscore`; rule IDs are the per-finding `network-exposure/*` ids in the Triggers table, with `network-exposure` as the check-level fallback rule.
 - Level mapping: CRITICAL → `error`, WARNING → `warning`, INFO → `note`, PASS/SKIPPED → `none`.
-- Location data: Docker findings carry the compose filename in the message; MCP findings carry the config path; Ollama findings carry the systemd/env file path; live-listener findings have no file location (they describe runtime state).
+- Location data: a finding with `context.file` (and `context.line`) carries `physicalLocation` with `region.startLine`. Otherwise: Docker findings carry the compose filename in the message; MCP findings carry the config path; Ollama findings carry the systemd/env file path; live-listener findings have no file location (they describe runtime state).
 
 ## Example
 

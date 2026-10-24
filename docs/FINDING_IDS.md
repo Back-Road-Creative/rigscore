@@ -44,7 +44,8 @@ Alongside `ruleId`, each SARIF result carries the fix text the check computed:
 - **`locations[].physicalLocation`** — when a check attaches `context.file`
   (and `context.line`) to a finding, SARIF carries that repo-relative path as
   `artifactLocation.uri` and the line as `region.startLine`, so code scanning
-  can annotate the exact line. Absolute or `..` paths are never emitted. The
+  can annotate the exact line. Absolute, `..` and home-relative (`~/...`) paths, and findings about files
+  outside the scanned repo (for example shell history), never get a location. The
   CodeClimate report uses the same fields for `location.path` and
   `lines.begin`. Without `context`, the path is guessed from the finding text,
   as before, with no region.
