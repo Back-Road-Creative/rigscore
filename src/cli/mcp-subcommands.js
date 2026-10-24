@@ -67,28 +67,50 @@ async function resolveLaunchPlan(serverName, cwd) {
     }
   }
   if (!spec) fail(`no MCP server named "${serverName}" in this project's MCP config files`);
-  if (typeof spec.command !== 'string' || !spec.command || spec.url) {
+  // Normalise the two shapes: `command` string + `args` (most clients) and
+  // opencode's `command` array (program first) with variables under `environment`.
+  let rawCommand = spec.command;
+  let rawArgs = Array.isArray(spec.args) ? spec.args : [];
+  if (Array.isArray(rawCommand)) {
+    rawArgs = [...rawCommand.slice(1), ...rawArgs];
+    rawCommand = rawCommand[0];
+  }
+  if (typeof rawCommand !== 'string' || !rawCommand || spec.url) {
     fail(`"${serverName}" is not a local stdio server (it declares a url or no command); --connect only launches local stdio servers`);
   }
 
-  let command = spec.command;
+  // A relative command, or a relative script argument (`node ./srv.js`), that resolves
+  // through symlinks outside the project is refused: a committed symlink must not
+  // smuggle in a program from elsewhere.
+  let root;
+  try { root = fs.realpathSync(cwd); } catch { root = cwd; }
+  const outside = (what, value) =>
+    fail(`${what} "${value}" for "${serverName}" resolves outside the project (symlink); refusing to launch it`);
+
+  let command = rawCommand;
   if (/[\\/]/.test(command) && !path.isAbsolute(command)) {
     let resolved;
-    let root;
     try {
       resolved = fs.realpathSync(path.resolve(cwd, command));
-      root = fs.realpathSync(cwd);
     } catch {
       fail(`command "${command}" for "${serverName}" does not exist`);
     }
-    if (!isInside(root, resolved)) {
-      fail(`command "${command}" for "${serverName}" resolves outside the project (symlink); refusing to launch it`);
-    }
+    if (!isInside(root, resolved)) outside('command', command);
     command = resolved;
   }
 
-  const args = Array.isArray(spec.args) ? spec.args.map((a) => String(a)) : [];
-  const declaredEnv = spec.env && typeof spec.env === 'object' ? spec.env : {};
+  const args = rawArgs.map((a) => String(a));
+  for (const a of args) {
+    if (a.startsWith('-') || path.isAbsolute(a)) continue;
+    let resolved;
+    // Only an existing FILE can be a script the interpreter runs; a directory arg is data.
+    try {
+      resolved = fs.realpathSync(path.resolve(cwd, a));
+      if (!fs.statSync(resolved).isFile()) continue;
+    } catch { continue; } // not a path on disk
+    if (!isInside(root, resolved)) outside('argument', a);
+  }
+  const declaredEnv = [spec.env, spec.environment].find((e) => e && typeof e === 'object' && !Array.isArray(e)) || {};
   return {
     source,
     command,

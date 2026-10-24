@@ -22,9 +22,6 @@ import crypto from 'node:crypto';
  *   5. SHA-256 hex digest.
  */
 
-/** JSON-RPC method that lists a server's tools (kept here so the spawn module holds no MCP wire knowledge beyond this constant). */
-export const TOOLS_LIST_METHOD = 'tools/list';
-
 /**
  * Extract the tools array from a tools/list JSON-RPC response shape.
  * Accepts { result: { tools } } or { tools }. Returns [] if neither present.

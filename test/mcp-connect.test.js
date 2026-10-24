@@ -201,6 +201,97 @@ describe('mcp --connect: refusals', () => {
   });
 });
 
+describe('mcp --connect: launch robustness', () => {
+  it('accepts a server that answers tools/list and exits immediately', async () => {
+    await withTmpDir(async (tmpDir) => {
+      const quick = path.join(tmpDir, 'quick.cjs');
+      fs.writeFileSync(quick, `
+const readline = require('node:readline');
+const rl = readline.createInterface({ input: process.stdin });
+rl.on('line', (line) => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'q', version: '1' } } }) + '\\n');
+  } else if (m.method === 'tools/list') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { tools: [{ name: 'echo', description: 'quick', inputSchema: { type: 'object' } }] } }) + '\\n', () => process.exit(0));
+  }
+});
+`);
+      setup(tmpDir, { args: [quick] });
+      const res = run(tmpDir, ['mcp-hash', '--connect', 'stub', '--yes']);
+      expect(res.status).toBe(0);
+      expect(res.stdout.trim()).toBe(expectedHash('quick'));
+    });
+  });
+
+  it.skipIf(process.platform === 'win32')('kills the whole process group, not only the direct child', async () => {
+    await withTmpDir(async (tmpDir) => {
+      const wrapper = path.join(tmpDir, 'wrapper.cjs');
+      fs.writeFileSync(wrapper, `
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const readline = require('node:readline');
+// Like an npx wrapper: a long-lived grandchild that ignores stdin closing.
+const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+fs.writeFileSync(path.join(__dirname, 'grandchild.pid'), String(g.pid));
+const rl = readline.createInterface({ input: process.stdin });
+const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+rl.on('line', (line) => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize') send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'w', version: '1' } } });
+  else if (m.method === 'tools/list') send({ jsonrpc: '2.0', id: m.id, result: { tools: [] } });
+});
+`);
+      setup(tmpDir, { args: [wrapper] });
+      const res = run(tmpDir, ['mcp-hash', '--connect', 'stub', '--yes']);
+      expect(res.status).toBe(0);
+      const pid = Number(fs.readFileSync(path.join(tmpDir, 'grandchild.pid'), 'utf-8'));
+      let alive = true;
+      for (let i = 0; i < 40 && alive; i++) {
+        try { process.kill(pid, 0); await new Promise((r) => setTimeout(r, 50)); } catch { alive = false; }
+      }
+      if (alive) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+      expect(alive).toBe(false);
+    });
+  });
+});
+
+describe('mcp --connect: launch plan resolution', () => {
+  it.skipIf(process.platform === 'win32')('refuses a relative script arg that is a symlink outside the project', async () => {
+    await withTmpDir(async (tmpDir) => {
+      await withTmpDir(async (outside) => {
+        const project = path.join(tmpDir, 'project');
+        fs.mkdirSync(project);
+        const outsideScript = path.join(outside, 'srv.cjs');
+        fs.writeFileSync(outsideScript, STUB);
+        fs.symlinkSync(outsideScript, path.join(project, 'srv.cjs'));
+        fs.writeFileSync(path.join(project, '.mcp.json'), JSON.stringify({
+          mcpServers: { stub: { command: 'node', args: ['./srv.cjs'] } },
+        }));
+        const res = run(project, ['mcp-hash', '--connect', 'stub', '--yes']);
+        expect(res.status).toBe(2);
+        expect(res.stderr).toMatch(/outside/i);
+        expect(fs.existsSync(path.join(project, 'spawned.marker'))).toBe(false);
+        expect(fs.existsSync(path.join(outside, 'spawned.marker'))).toBe(false);
+      });
+    });
+  });
+
+  it('launches an opencode-style server (command array, environment key)', async () => {
+    await withTmpDir(async (tmpDir) => {
+      const stubPath = path.join(tmpDir, 'stub.cjs');
+      fs.writeFileSync(stubPath, STUB);
+      fs.writeFileSync(path.join(tmpDir, 'opencode.json'), JSON.stringify({
+        mcp: { stub: { type: 'local', command: [process.execPath, stubPath], environment: { STUB_DESC: 'oc' } } },
+      }));
+      const res = run(tmpDir, ['mcp-hash', '--connect', 'stub', '--yes']);
+      expect(res.status).toBe(0);
+      expect(res.stdout.trim()).toBe(expectedHash('oc'));
+    });
+  });
+});
+
 describe('mcp --connect: spawn code stays out of the scan path', () => {
   it('only the mcp subcommands import src/lib/mcp-connect.js', () => {
     const srcDir = path.resolve(__dirname, '..', 'src');

@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { TOOLS_LIST_METHOD } from '../mcp-hash.js';
 
 /**
  * Opt-in launch of a local stdio MCP server to read its live tool list.
@@ -44,6 +43,14 @@ export function buildChildEnv(declaredEnv, base = process.env) {
 
 class ConnectError extends Error {}
 
+/** SIGKILL the child, and on POSIX its whole process group (it was spawned as a group leader). */
+function killTree(child) {
+  if (process.platform !== 'win32' && child.pid) {
+    try { process.kill(-child.pid, 'SIGKILL'); return; } catch { /* group already gone */ }
+  }
+  try { child.kill('SIGKILL'); } catch { /* already gone */ }
+}
+
 /**
  * Launch `plan.command plan.args` (no shell), run the MCP handshake, page through
  * the server's tool list and return `{ result: { tools } }` — the shape
@@ -66,6 +73,9 @@ export function fetchToolList(plan, opts = {}) {
         shell: false,
         stdio: ['pipe', 'pipe', 'ignore'],
         windowsHide: true,
+        // Own process group on POSIX so a wrapper (npx, a shell script) and the
+        // real server it starts can be killed together.
+        detached: process.platform !== 'win32',
       });
     } catch (err) {
       reject(new ConnectError(`could not start server: ${err.message}`));
@@ -86,7 +96,7 @@ export function fetchToolList(plan, opts = {}) {
       settled = true;
       clearTimeout(timer);
       try { child.stdin.destroy(); } catch { /* already closed */ }
-      try { child.kill('SIGKILL'); } catch { /* already gone */ }
+      killTree(child);
       if (err) reject(err); else resolve(value);
     };
 
@@ -101,7 +111,7 @@ export function fetchToolList(plan, opts = {}) {
     const requestPage = (cursor) => {
       pages += 1;
       listId = ++nextId;
-      send({ id: listId, method: TOOLS_LIST_METHOD, params: cursor ? { cursor } : {} });
+      send({ id: listId, method: 'tools/list', params: cursor ? { cursor } : {} });
     };
 
     const onMessage = (msg) => {
@@ -158,7 +168,8 @@ export function fetchToolList(plan, opts = {}) {
     });
     child.stdin.on('error', () => { /* surfaced via exit/timeout */ });
     child.on('error', (err) => finish(new ConnectError(`could not start server: ${err.message}`)));
-    child.on('exit', (code, signal) => {
+    // 'close' fires after stdout has ended, so a reply written just before exit is parsed first.
+    child.on('close', (code, signal) => {
       finish(new ConnectError(`server exited before answering (${signal || `code ${code}`})`));
     });
     timer = setTimeout(
