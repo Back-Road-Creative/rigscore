@@ -37,7 +37,14 @@ describe('gitCheckIgnore (shared helper)', () => {
 
   it("returns 'unknown' outside a git work tree", async () => {
     const cwd = tmp();
-    expect(await gitCheckIgnore(cwd, 'CLAUDE.md')).toBe('unknown');
+    const prev = process.env.GIT_CEILING_DIRECTORIES;
+    process.env.GIT_CEILING_DIRECTORIES = path.dirname(cwd);
+    try {
+      expect(await gitCheckIgnore(cwd, 'CLAUDE.md')).toBe('unknown');
+    } finally {
+      if (prev === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+      else process.env.GIT_CEILING_DIRECTORIES = prev;
+    }
   });
 });
 
@@ -80,9 +87,9 @@ describe('TAG_CHARS_RE (shared Unicode tag-char pattern)', () => {
     expect(TAG_CHARS_RE.test('plain ascii')).toBe(false);
   });
 
-  it.each([0xE0000, 0xE0001, 0xE0002, 0xE001F, 0xE0041])(
+  it.each([0xE0000, 0xE0001, 0xE0002, 0xE001F, 0xE0041].map((cp) => [cp.toString(16).toUpperCase(), cp]))(
     'skill-files and unicode-steganography both flag U+%s',
-    async (cp) => {
+    async (_hex, cp) => {
       const sample = `Hello${String.fromCodePoint(cp)}world\n`;
 
       const skillCwd = tmp();

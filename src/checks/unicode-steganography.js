@@ -112,7 +112,7 @@ export default {
           findingId: 'unicode-steganography/tag-chars',
           severity: 'warning',
           title: `Unicode tag characters in ${rel}`,
-          detail: 'File contains Unicode tag characters (U+E0001-E007F) used for steganographic encoding.',
+          detail: 'File contains Unicode tag characters (U+E0000-E007F) used for steganographic encoding.',
           remediation: 'Remove tag characters from the file.',
         });
       }

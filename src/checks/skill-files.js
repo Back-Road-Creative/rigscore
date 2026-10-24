@@ -462,7 +462,7 @@ export function checkUnicode(file) {
       findingId: 'skill-files/tag-chars',
       severity: 'critical',
       title: `Unicode tag characters in ${file.path}`,
-      detail: 'File contains Unicode tag characters (U+E0001, U+E0020-U+E007F) — an invisible steganographic channel that can smuggle hidden instructions past human review.',
+      detail: 'File contains Unicode tag characters (U+E0000-U+E007F) — an invisible steganographic channel that can smuggle hidden instructions past human review.',
       remediation: 'Remove all Unicode tag characters from the file.',
       context: { file: file.path },
     });
