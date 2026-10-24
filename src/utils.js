@@ -353,6 +353,13 @@ export function toRegex(spec) {
  * an unreadable directory or entry (chmod 000): its subtree vanishes from the walk,
  * so the caller must disclose it rather than report a clean scan.
  *
+ * Scan-root containment: `realpath(rootDir)` is computed once and a symlink (to a
+ * file or a directory) whose real path is outside it is NOT followed — a scanned repo
+ * holding `link -> /` or `link -> ~/.aws` must not make the scanner read the rest of
+ * the machine. `outsideRootSkipped` is true when at least one such link was skipped, so
+ * the caller can disclose it (same contract as `truncated`/`readError`). Symlinks that
+ * stay inside the root are followed as before. `opts.followOutsideRoot: true` opts out.
+ *
  * Silent on loops — caller surfaces a single INFO finding if `loopDetected`.
  */
 export async function walkDirSafe(rootDir, opts = {}) {
@@ -368,6 +375,17 @@ export async function walkDirSafe(rootDir, opts = {}) {
   let truncated = false;
   let depthTruncated = false;
   let readError = false;
+  let outsideRootSkipped = false;
+  const followOutsideRoot = opts.followOutsideRoot === true;
+
+  // Canonical scan root, computed once. Falls back to the given path if it cannot
+  // be resolved (the walk then reports the unreadable root itself).
+  let realRoot = rootDir;
+  try {
+    realRoot = await fs.promises.realpath(rootDir);
+  } catch { /* keep rootDir */ }
+  const rootPrefix = realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep;
+  const isInsideRoot = (p) => p === realRoot || p.startsWith(rootPrefix);
 
   async function keyForPath(p) {
     try {
@@ -452,6 +470,10 @@ export async function walkDirSafe(rootDir, opts = {}) {
         } catch {
           continue;
         }
+        if (!followOutsideRoot && !isInsideRoot(realPath)) {
+          outsideRootSkipped = true;
+          continue;
+        }
         const realKey = `${stReal.dev}:${stReal.ino}`;
         if (visited.has(realKey)) {
           loopDetected = true;
@@ -479,7 +501,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
   }
 
   await walk(rootDir, 1);
-  return { files, loopDetected, truncated, depthTruncated, readError };
+  return { files, loopDetected, truncated, depthTruncated, readError, outsideRootSkipped };
 }
 
 /**
