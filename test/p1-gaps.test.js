@@ -53,6 +53,8 @@ describe('skill-files: .continuerules scanning', () => {
   it('passes clean .continuerules', async () => {
     const tmpDir = makeTmpDir();
     fs.writeFileSync(path.join(tmpDir, '.continuerules'), 'Use TypeScript for all new files.');
+    // Pin the mode: umask 000 would create it 0666 and trip the (correct) world-writable warning.
+    fs.chmodSync(path.join(tmpDir, '.continuerules'), 0o644);
     try {
       const result = await skillFiles.run({ cwd: tmpDir, config: defaultConfig });
       const pass = result.findings.find((f) => f.severity === 'pass');
