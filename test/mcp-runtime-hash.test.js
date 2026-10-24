@@ -349,7 +349,20 @@ describe('T2.8 INFO finding: runtime-hash pin status in normal scan', () => {
   });
 });
 
-describe('T2.9 grep guard: no subprocess call anywhere in src/ that could invoke an MCP server', () => {
+// The one module allowed to start an MCP server: the opt-in, consent-gated --connect
+// launcher. Everything else in src/ must stay free of subprocess + MCP-invocation code.
+const ALLOWED_MCP_SPAWNER = 'lib/mcp-connect.js';
+const rel = (srcDir, file) => path.relative(srcDir, file).split(path.sep).join('/');
+
+describe('T2.9 grep guard: only src/lib/mcp-connect.js (opt-in --connect) may spawn an MCP server', () => {
+  it('mcp-connect.js is the spawner and carries the tools/list method inline', () => {
+    const body = fs.readFileSync(path.resolve(__dirname, '..', 'src', ALLOWED_MCP_SPAWNER), 'utf-8');
+    expect(body).toMatch(/from\s+['"]node:child_process['"]/);
+    expect(body).toContain("'tools/list'");
+    const hashBody = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'mcp-hash.js'), 'utf-8');
+    expect(hashBody).not.toMatch(/TOOLS_LIST_METHOD/);
+  });
+
   it('no src file passes an mcp server command/args to spawn/exec/execFile', () => {
     const srcDir = path.resolve(__dirname, '..', 'src');
     const files = [];
@@ -370,6 +383,7 @@ describe('T2.9 grep guard: no subprocess call anywhere in src/ that could invoke
       /\b(?:spawn|exec|execFile|execSync|spawnSync|execFileSync)\s*\(\s*[^,)]*\.mcp\.json\b/,
     ];
     for (const file of files) {
+      if (rel(srcDir, file) === ALLOWED_MCP_SPAWNER) continue;
       const body = fs.readFileSync(file, 'utf-8');
       for (const pat of badPatterns) {
         if (pat.test(body)) {
@@ -393,10 +407,12 @@ describe('T2.9 grep guard: no subprocess call anywhere in src/ that could invoke
 
     const violations = [];
     for (const file of files) {
+      if (rel(srcDir, file) === ALLOWED_MCP_SPAWNER) continue;
       const body = fs.readFileSync(file, 'utf-8');
       const imports = /from\s+['"]node:child_process['"]|require\(['"]child_process['"]\)/.test(body);
       if (!imports) continue;
-      // Allowed: utils.js (general execSafe), windows-security.js (system queries).
+      // Allowed: utils.js (general execSafe), windows-security.js (system queries);
+      // lib/mcp-connect.js (the opt-in --connect launcher) is skipped above.
       // Forbidden: any file that also touches MCP server invocation variables.
       const mcpRefs = /server\.command|mcpServer|\.mcp\.json|tools\/list/i;
       if (mcpRefs.test(body)) {
