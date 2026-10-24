@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { withTmpDir } from './helpers.js';
 import {
   runInitSubcommand,
@@ -255,6 +257,30 @@ describe('rigscore init --example', () => {
       await runInitSubcommand(['--example', '--profile', 'ci']);
       const raw = fs.readFileSync(path.join(dir, '.rigscorerc.json'), 'utf-8');
       expect(raw).toMatch(/"profile":\s*"ci"/);
+    });
+  });
+});
+
+describe('rigscore init --help', () => {
+  const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'rigscore.js');
+
+  for (const flag of ['--help', '-h']) {
+    it(`init ${flag} prints usage and writes nothing`, async () => {
+      await withTmpDir(async (dir) => {
+        const res = spawnSync('node', [BIN, 'init', flag], { cwd: dir, encoding: 'utf-8' });
+        expect(res.status).toBe(0);
+        expect(res.stdout).toMatch(/Usage:\s+rigscore init/);
+        expect(res.stdout).toContain('--list-packs');
+        expect(fs.readdirSync(dir)).toEqual([]);
+      });
+    });
+  }
+
+  it('init --example --help writes nothing either', async () => {
+    await withTmpDir(async (dir) => {
+      const res = spawnSync('node', [BIN, 'init', '--example', '--help'], { cwd: dir, encoding: 'utf-8' });
+      expect(res.status).toBe(0);
+      expect(fs.readdirSync(dir)).toEqual([]);
     });
   });
 });

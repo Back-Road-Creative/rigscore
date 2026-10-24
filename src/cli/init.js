@@ -3,6 +3,23 @@ import path from 'node:path';
 import { PROFILES } from '../config.js';
 import { listPacks, loadPack, installPack, formatInstallReport } from './packs.js';
 
+const INIT_USAGE = `Usage: rigscore init [options]
+
+Write a starter .rigscorerc.json into the current directory, scaffold a demo
+project, or install a pack.
+
+Options:
+  --profile <name>   Pre-fill the profile (${Object.keys(PROFILES).join(', ')})
+  --force, -f        Overwrite pre-existing files
+  --example [dir]    Scaffold a demo project with intentional hygiene issues
+                     (refuses a directory that already holds a real project)
+  --<pack> [dir]     Install a pack (see --list-packs)
+  --merge, --harden  With a pack: merge its keys into an existing json/yaml
+                     config additively (never overwrites your values)
+  --list-packs       List available packs
+  --help, -h         Show this help (writes nothing)
+`;
+
 /**
  * `rigscore init` — writes a commented .rigscorerc.json starter into the
  * current directory. With `--example`, scaffolds a small demo project with
@@ -24,6 +41,11 @@ import { listPacks, loadPack, installPack, formatInstallReport } from './packs.j
  *                                        exclusive with --force (merge wins).
  */
 export async function runInitSubcommand(args) {
+  // A help flag never writes: handle it before any option parsing or file I/O.
+  if (args.includes('--help') || args.includes('-h')) {
+    process.stdout.write(INIT_USAGE);
+    return 0;
+  }
   let profile = null;
   let force = false;
   let merge = false;
