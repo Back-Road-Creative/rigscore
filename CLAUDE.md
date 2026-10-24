@@ -1,4 +1,4 @@
-# pkg-rigscore
+# rigscore
 
 AI dev security scoring tool. Moat-first: MCP supply chain, governance coherence, prompt injection — not generic checks. Scans locally with zero external calls in default mode (`--online` and `--semantic` opt into network / LLM calls) and outputs two 0–100 scores: Security and Practice.
 
@@ -42,7 +42,7 @@ node bin/rigscore.js . --check governance-docs
 
 Scored: `mcp-config` (14pt), `coherence` (14pt), `skill-files` (10pt), `governance-docs` (10pt), `claude-settings` (8pt), `deep-secrets` (8pt), `env-exposure` (8pt), `credential-storage` (6pt), `docker-security` (6pt), `infrastructure-security` (6pt), `unicode-steganography` (4pt), `permissions-hygiene` (4pt), `git-hooks` (2pt).
 
-Advisory (weight 0): `windows-security`, `network-exposure`, `site-security`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`, `documentation`, `agent-output-schemas`, `loop-governance`, `spec-goals`, `ci-agent-caps`, `memory-hygiene`, `ai-disclosure`, `sandbox-posture`, `semantic-tools`.
+Advisory (weight 0): `windows-security`, `network-exposure`, `site-security`, `instruction-effectiveness`, `skill-coherence`, `workflow-maturity`, `documentation`, `agent-output-schemas`, `loop-governance`, `spec-goals`, `ci-agent-caps`, `memory-hygiene`, `ai-disclosure`, `sandbox-posture`, `semantic-tools`, `staged-copy-drift`.
 
 Weights are the single source of truth in `src/constants.js` — never hardcode them elsewhere.
 
@@ -61,4 +61,4 @@ Weights are the single source of truth in `src/constants.js` — never hardcode 
 - New checks must export `{ id, name, category, weight, run }` and self-register in `src/checks/`
 - Scoring weighted ~48% moat (mcp-config 14 + coherence 14 + skill-files 10 + governance-docs 10) / ~52% hygiene (secrets 22, docker/infra 12, permissions/hooks/unicode/settings 18)
 - `--fix` never modifies governance content
-- Distributed via GitHub only: `npx github:Back-Road-Creative/rigscore` (npm intentionally dropped)
+- Distributed from GitHub only, never npm (npm publish intentionally dropped, #62): `npx github:Back-Road-Creative/rigscore`, the Homebrew formula (`Formula/rigscore.rb`), prebuilt archives on each GitHub release, the composite action (`action.yml`) and the pre-commit hook (`.pre-commit-hooks.yaml`)

@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 28 checks — 13 scored plus 15 advisory. A hygiene score out of 100. Know where you stand before something breaks.
+One command. Works with any AI coding client: it scans the configs of 29 known agent clients. 29 checks — 13 scored plus 16 advisory. A hygiene score out of 100. Know where you stand before something breaks.
 
 > **Scope.** rigscore measures **configuration hygiene**, not runtime security. It inspects the files on disk — governance docs, MCP configs, Docker settings, skill files, permissions — and scores what those files *say*. It does not observe the running agent, intercept tool calls, or hash live MCP tool descriptions. Pair it with a runtime scanner and source-level SAST; it does not replace them. See [known limits](#known-limits) for what rigscore does not catch.
 
