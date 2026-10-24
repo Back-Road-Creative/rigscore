@@ -163,7 +163,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 | Platform | Status | Notes |
 |---|---|---|
-| **macOS** | Supported | CI runs `macos-latest`. Homebrew Node is fine. `infrastructure-security` returns N/A (Linux-only). |
+| **macOS** | Supported | CI runs `macos-latest`. Homebrew Node is fine. `infrastructure-security` runs; only its `lsattr` immutable-flag arm and its default safety-guard lookup are Linux-only ([details](docs/checks/infrastructure-security.md#platform-behaviour)). |
 | **Linux** | Supported | Native. All checks apply, including `infrastructure-security`. |
 | **WSL2** | Supported | Treat as Linux. See WSL2 gotcha below. |
 | **Docker Desktop** | Supported | Pull the image, bind-mount the target dir. See [CI Integration](#ci-integration) and the `Dockerfile` in the repo. |
@@ -331,7 +331,7 @@ rigscore scans **Docker Compose**, **Podman Compose**, **Kubernetes manifests**,
 
 ### 10. Infrastructure security (6 points) {#infrastructure-security}
 
-Host-level controls that sit beneath your project: root-owned git hooks, a git wrapper that cannot be bypassed, a shell safety guard, and immutable governance directories. These are the backstop when per-project hooks or settings are missing or tampered with. This check is Linux-only — it returns N/A on macOS and Windows.
+Host-level controls that sit beneath your project: root-owned git hooks, a git wrapper that cannot be bypassed, a shell safety guard, and immutable governance directories. These are the backstop when per-project hooks or settings are missing or tampered with. This check runs on Linux, macOS and Windows. Only the `lsattr` immutable-flag arm and the default safety-guard lookup are Linux-only, and Windows skips the uid-0 and execute-bit rules; see [platform behaviour](docs/checks/infrastructure-security.md#platform-behaviour).
 
 **What rigscore looks for:**
 - A managed git hooks directory (default: the repository's own, resolved via `git rev-parse --git-path hooks`; point it at a root-owned system dir such as `/opt/git-hooks/` via `.rigscorerc.json` → `paths.hooksDir`)
