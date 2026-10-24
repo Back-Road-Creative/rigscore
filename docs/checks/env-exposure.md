@@ -40,6 +40,7 @@ Out of scope for `--fix --yes`: removing hardcoded keys from config files, redac
 
 - Tool component: `rigscore`
 - Rule IDs: check-level `ruleId` is `env-exposure`; subrule slugs above identify the finding variant.
+- Location data: a finding with `context.file` (and `context.line`) in the repo carries `physicalLocation` with `region.startLine`; shell-history findings describe the home directory and carry no location.
 - Level mapping: CRITICAL → `error`, WARNING → `warning`, INFO → `note`, SKIPPED/PASS suppressed.
 - Location data: file path is extracted from the finding title (`in <file>`, or leading `<file> is ...`). No line numbers for config-file matches — the scanner records worst-per-file rather than per-line.
 
