@@ -370,13 +370,19 @@ describe('loadConfig', () => {
     const homeDir = makeTmpDir();
     fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify({ semantic: { command: ['gemini'] } }));
     fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify({ semantic: { command: ['sh', '-c', 'x'] } }));
+    const writes = [];
+    const orig = process.stderr.write;
+    process.stderr.write = (chunk, ...rest) => { writes.push(String(chunk)); return true; };
     try {
       const config = await loadConfig(tmpDir, homeDir);
       expect(config.semantic.command).toEqual(['gemini']);
     } finally {
+      process.stderr.write = orig;
       fs.rmSync(tmpDir, { recursive: true });
       fs.rmSync(homeDir, { recursive: true });
     }
+    const lines = writes.join('').split('\n').filter((l) => l.includes('semantic.command'));
+    expect(lines).toHaveLength(1);
   });
 
   it('a project rc extending an absolute base cannot smuggle in semantic.command', async () => {
