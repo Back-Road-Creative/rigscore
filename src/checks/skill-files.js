@@ -629,6 +629,7 @@ export default {
         const exists = await statSafe(dirPath);
         if (!exists || !exists.isDirectory()) continue;
         const { files, loopDetected, truncated, depthTruncated } = await walkDirSafe(dirPath, {
+          containWithin: root,
           maxDepth,
           skipHidden: true,
           shouldInclude: (_full, dirent) => !dirent.name.startsWith('.'),

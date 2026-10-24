@@ -359,6 +359,11 @@ export function toRegex(spec) {
  * the machine. `outsideRootSkipped` is true when at least one such link was skipped, so
  * the caller can disclose it (same contract as `truncated`/`readError`). Symlinks that
  * stay inside the root are followed as before. `opts.followOutsideRoot: true` opts out.
+ * The boundary is the SCAN root: a caller that walks a subdirectory (`.claude/skills`,
+ * `.cursor/rules`) passes `opts.containWithin` (the scan root, e.g. cwd or the home
+ * directory) so an in-repo link such as `skills/x -> ../../tools/x` is still followed.
+ * Without it the boundary is `rootDir`. The check runs after the skipHidden/skipDirs/
+ * shouldInclude filters, so a link dropped by name anyway never sets the flag.
  *
  * Silent on loops — caller surfaces a single INFO finding if `loopDetected`.
  */
@@ -378,12 +383,15 @@ export async function walkDirSafe(rootDir, opts = {}) {
   let outsideRootSkipped = false;
   const followOutsideRoot = opts.followOutsideRoot === true;
 
-  // Canonical scan root, computed once. Falls back to the given path if it cannot
-  // be resolved (the walk then reports the unreadable root itself).
-  let realRoot = rootDir;
+  // Canonical containment root, computed once: `opts.containWithin` (the SCAN root,
+  // for a caller that walks a subdirectory of it) else the walk root. Falls back to
+  // the given path if it cannot be resolved (the walk then reports the unreadable
+  // root itself).
+  const containPath = typeof opts.containWithin === 'string' ? opts.containWithin : rootDir;
+  let realRoot = containPath;
   try {
-    realRoot = await fs.promises.realpath(rootDir);
-  } catch { /* keep rootDir */ }
+    realRoot = await fs.promises.realpath(containPath);
+  } catch { /* keep containPath */ }
   const rootPrefix = realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep;
   const isInsideRoot = (p) => p === realRoot || p.startsWith(rootPrefix);
 
@@ -470,10 +478,6 @@ export async function walkDirSafe(rootDir, opts = {}) {
         } catch {
           continue;
         }
-        if (!followOutsideRoot && !isInsideRoot(realPath)) {
-          outsideRootSkipped = true;
-          continue;
-        }
         const realKey = `${stReal.dev}:${stReal.ino}`;
         if (visited.has(realKey)) {
           loopDetected = true;
@@ -482,9 +486,19 @@ export async function walkDirSafe(rootDir, opts = {}) {
         if (stReal.isDirectory()) {
           if (skipHidden && entry.name.startsWith('.')) continue;
           if (skipDirs.has(entry.name)) continue;
+          // Containment is checked AFTER the name filters: a link the walker drops by
+          // name anyway (node_modules, .venv) must not be reported as unscanned.
+          if (!followOutsideRoot && !isInsideRoot(realPath)) {
+            outsideRootSkipped = true;
+            continue;
+          }
           visited.add(realKey);
           await walk(realPath, depth + 1, { skipRootInode: true });
         } else if (stReal.isFile() && shouldInclude(full, entry)) {
+          if (!followOutsideRoot && !isInsideRoot(realPath)) {
+            outsideRootSkipped = true;
+            continue;
+          }
           files.push(full);
         }
         continue;
@@ -518,6 +532,7 @@ export async function collectGovernanceDirFiles(cwd, dirs = governanceDirDefault
   const seen = new Set();
   for (const dir of dirs) {
     const { files } = await walkDirSafe(path.join(cwd, dir), {
+      containWithin: cwd,
       shouldInclude: (full) => isGovernanceDirRuleFile(dir, path.basename(full)),
     });
     for (const full of files) {

@@ -194,6 +194,44 @@ describe('walkDirSafe — unified walk parity', () => {
       });
     });
 
+    it.skipIf(skipEscape)('containWithin: a scoped walk follows an in-repo link that leaves the walk root', async () => {
+      await withTmpDir(async (tmp) => {
+        const root = path.join(tmp, 'root');
+        const scoped = path.join(root, '.claude', 'skills');
+        fs.mkdirSync(scoped, { recursive: true });
+        fs.mkdirSync(path.join(root, 'shared', 'x'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'shared', 'x', 'SKILL.md'), 'x');
+        fs.symlinkSync(path.join('..', '..', 'shared', 'x'), path.join(scoped, 'x'));
+        const outside = path.join(tmp, 'outside');
+        fs.mkdirSync(outside);
+        fs.writeFileSync(path.join(outside, 'leak.md'), 'x');
+        fs.symlinkSync(outside, path.join(scoped, 'escape'));
+        const { files, outsideRootSkipped } = await walkDirSafe(scoped, { containWithin: root });
+        expect(files.map((f) => path.basename(f))).toEqual(['SKILL.md']);
+        expect(outsideRootSkipped).toBe(true);
+      });
+    });
+
+    it.skipIf(skipEscape)('does not flag a link the walker would have dropped by name anyway', async () => {
+      await withTmpDir(async (tmp) => {
+        const root = path.join(tmp, 'root');
+        const outside = path.join(tmp, 'outside');
+        fs.mkdirSync(root);
+        fs.mkdirSync(outside);
+        fs.writeFileSync(path.join(root, 'a.txt'), 'x');
+        fs.writeFileSync(path.join(outside, 'README.md'), 'x');
+        fs.symlinkSync(outside, path.join(root, 'node_modules'));
+        fs.symlinkSync(outside, path.join(root, '.venv'));
+        fs.symlinkSync(path.join(outside, 'README.md'), path.join(root, 'README.md'));
+        const { files, outsideRootSkipped } = await walkDirSafe(root, {
+          skipDirs: new Set(['node_modules']),
+          shouldInclude: (full) => full.endsWith('.txt'),
+        });
+        expect(files.map((f) => path.basename(f))).toEqual(['a.txt']);
+        expect(outsideRootSkipped).toBe(false);
+      });
+    });
+
     it.skipIf(skipEscape)('a root that is itself a symlink is still walked', async () => {
       await withTmpDir(async (tmp) => {
         const real = path.join(tmp, 'real');
