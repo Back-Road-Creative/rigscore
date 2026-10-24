@@ -12,6 +12,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   leak-scan:
     uses: Back-Road-Creative/.github/.github/workflows/leak-scan.yml@main
