@@ -278,3 +278,24 @@ export function suppressFindings(results, patterns, renames = FINDING_ID_RENAMES
   summary.unmatched = patterns.filter((_, i) => !matched[i]).map(String);
   return summary;
 }
+
+/**
+ * Where a finding points, from the `context` a check attached to it:
+ * `context.file` (repo-relative) and optionally `context.line` (1-based).
+ * Returns `{ file, line }` (`line` is null when absent or not a positive
+ * integer) or null when the finding carries no usable repo-relative file.
+ *
+ * Absolute paths, `..` traversal and files relative to a directory outside the
+ * scanned repo (`context.memDir`) are rejected, so a report never claims a
+ * location a viewer cannot open and never leaks a machine path.
+ */
+export function findingLocation(finding) {
+  const ctx = finding && typeof finding === 'object' ? finding.context : null;
+  if (!ctx || typeof ctx !== 'object' || typeof ctx.file !== 'string') return null;
+  if (ctx.memDir != null) return null;
+  const file = ctx.file.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '');
+  if (!file || file.startsWith('/') || /^[A-Za-z]:/.test(file)) return null;
+  if (file.split('/').includes('..')) return null;
+  const line = Number.isInteger(ctx.line) && ctx.line > 0 ? ctx.line : null;
+  return { file, line };
+}

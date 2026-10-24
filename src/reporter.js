@@ -5,6 +5,7 @@ import { NOT_APPLICABLE_SCORE, WEIGHTS } from './constants.js';
 import { resolveWeights } from './config.js';
 import { calculatePracticeScore } from './scoring.js';
 import { formatFixHint } from './fixer.js';
+import { findingLocation } from './findings.js';
 
 // createRequire instead of `import pkg from '../package.json' assert
 // { type: 'json' }` because the JSON-import assertion syntax is still
@@ -798,7 +799,8 @@ export function formatCodeClimate(result) {
     for (const f of r.findings || []) {
       const severity = CODECLIMATE_SEVERITY[f.severity];
       if (!severity) continue; // skip pass/skipped
-      const path = findingPath(f) || r.id;
+      const located = findingLocation(f);
+      const path = (located && located.file) || findingPath(f) || r.id;
       const description = f.detail ? `${f.title}: ${f.detail}` : (f.title || r.name);
       const fingerprint = crypto.createHash('sha256')
         .update(`${f.findingId || f.title || r.id}|${path}`).digest('hex').slice(0, 40);
@@ -807,7 +809,7 @@ export function formatCodeClimate(result) {
         check_name: r.id,
         fingerprint,
         severity,
-        location: { path, lines: { begin: 1 } },
+        location: { path, lines: { begin: (located && located.line) || 1 } },
       });
     }
   }
