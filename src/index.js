@@ -15,6 +15,32 @@ import { PROFILE_HINTS } from './config.js';
 import { ConfigParseError } from './utils.js';
 import { levenshtein } from './known-mcp-servers.js';
 
+/** Severity levels `--fail-on` accepts, from the loosest gate to the strictest. */
+const FAIL_ON_LEVELS = ['critical', 'warning'];
+
+/**
+ * Count findings at or above a `--fail-on` severity across scan units (a single
+ * scan result, or the projects of a recursive one). Findings are read after
+ * suppression, so a suppressed finding never trips the gate.
+ * @param {Array<{results: Array<{findings: Array<{severity: string}>}>}>} units
+ * @param {'critical'|'warning'|null} level - null means no severity gate.
+ * @returns {number}
+ */
+export function countGateFindings(units, level) {
+  if (!level) return 0;
+  const gated = new Set(level === 'critical' ? ['critical'] : ['critical', 'warning']);
+  let count = 0;
+  for (const unit of units) {
+    if (unit.notApplicable) continue;
+    for (const r of unit.results || []) {
+      for (const f of r.findings || []) {
+        if (gated.has(f.severity)) count++;
+      }
+    }
+  }
+  return count;
+}
+
 /**
  * Closest known long flag to a mistyped one, or null when nothing is near.
  * Edit distance must stay within 2 and under half the flag's length, so a
@@ -42,7 +68,7 @@ function suggestFlag(arg) {
  * --sarif, --cyclonedx, --badge, --ci (implies --sarif/--no-color/--no-cta), --check
  * <id>, --recursive/-r, --depth <N> (implies --recursive), --deep,
  * --online, --refresh-mcp-registry (implies --online), --fail-under <N>
- * (clamped 0-100), --profile <name>, --fix, --yes/-y, --install-packs,
+ * (clamped 0-100), --fail-on <critical|warning>, --profile <name>, --fix, --yes/-y, --install-packs,
  * --init-hook, --watch, --ignore <comma-list>, --baseline <path>.
  *
  * A bare positional argument is treated as the target directory; only
@@ -82,6 +108,7 @@ export function parseArgs(args) {
     refreshMcpRegistry: false,
     includeHomeSkills: false,
     failUnder: 70,
+    failOn: null,
     profile: null,
     initHook: false,
     watch: false,
@@ -110,6 +137,9 @@ export function parseArgs(args) {
           if (arg === '--fail-under') {
             options.argError = `${arg} requires a numeric value (0-100); `
               + 'refusing to silently fall back to the default threshold';
+          } else if (arg === '--fail-on') {
+            options.argError = `${arg} requires critical or warning; `
+              + 'refusing to silently run without the severity gate';
           } else {
             options.warnings.push(`${arg} expects a value but none was given; ignoring it`);
           }
@@ -239,6 +269,16 @@ const FLAG_DEFS = (() => {
       }
       o.failUnder = Math.max(0, Math.min(100, parsed));
     } },
+    '--fail-on':              { takesValue: true, handler: (o, v) => {
+      // A severity gate that silently fell back to "no gate" would look clean in CI,
+      // so an unknown level is fatal, exactly like a non-numeric --fail-under.
+      const level = String(v).toLowerCase();
+      if (!FAIL_ON_LEVELS.includes(level)) {
+        o.argError = `--fail-on requires critical or warning, got "${v}"`;
+        return;
+      }
+      o.failOn = level;
+    } },
   };
 })();
 
@@ -288,6 +328,13 @@ export function suppressAndRescore(unit, ignore, checkFilter) {
   return summary;
 }
 
+/** stderr line explaining a `--fail-on` failure; silent when the gate held. */
+function writeFailOnLine(count, level) {
+  if (count === 0) return;
+  const scope = level === 'critical' ? 'critical' : 'warning or worse';
+  process.stderr.write(`rigscore: FAIL ${count} finding(s) at ${scope} (--fail-on ${level})\n`);
+}
+
 /**
  * Top-level CLI entrypoint. Parses args, validates the target directory,
  * applies profile hints (recursive/depth defaults from `monorepo` etc.),
@@ -297,7 +344,8 @@ export function suppressAndRescore(unit, ignore, checkFilter) {
  *
  * Exit codes:
  *   0 — clean (score ≥ failUnder, or baseline mode with no new findings)
- *   1 — score below --fail-under, or baseline mode with new findings
+ *   1 — score below --fail-under, a finding at or above --fail-on, or
+ *       baseline mode with new findings
  *   2 — argument/config/scan error (delegated to handleFatal / the
  *       top-level unhandledRejection guard in bin/rigscore.js)
  *
@@ -558,9 +606,10 @@ export async function run(args) {
     // Fail if ANY project is below threshold (fail-fast on worst). A project with
     // nothing to score (`--check` selected only N/A checks) can't fail the gate.
     const allPassed = result.projects.every((p) => p.notApplicable || p.score >= options.failUnder);
+    const gateCount = countGateFindings(result.projects, options.failOn);
     // Use exitCode + return so Node flushes piped stdout before exiting.
     // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
-    process.exitCode = allPassed ? 0 : 1;
+    process.exitCode = allPassed && gateCount === 0 ? 0 : 1;
     if (!allPassed) {
       const failing = result.projects.filter((p) => !p.notApplicable && p.score < options.failUnder);
       const lowest = failing.reduce((a, b) => (b.score < a.score ? b : a));
@@ -569,6 +618,7 @@ export async function run(args) {
         + `--fail-under ${options.failUnder} (lowest: ${lowest.path}, score ${lowest.score})\n`,
       );
     }
+    writeFailOnLine(gateCount, options.failOn);
     return;
   } else {
     let result;
@@ -702,10 +752,12 @@ export async function run(args) {
       // On macOS Node 18.17/20, process.exit() truncates buffered JSON output.
       // Nothing to score (`--check` selected only N/A checks) is not a failure.
       const passed = result.notApplicable || result.score >= options.failUnder;
-      process.exitCode = passed ? 0 : 1;
+      const gateCount = countGateFindings([result], options.failOn);
+      process.exitCode = passed && gateCount === 0 ? 0 : 1;
       if (!passed) {
         process.stderr.write(`rigscore: FAIL score ${result.score} is below --fail-under ${options.failUnder}\n`);
       }
+      writeFailOnLine(gateCount, options.failOn);
       return;
     }
   }
