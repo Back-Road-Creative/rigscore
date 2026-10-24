@@ -394,4 +394,24 @@ describe('deep-secrets check', () => {
       expect(label.length).toBeGreaterThan(0);
     }
   });
+  it.skipIf(process.platform === 'win32')('discloses a symlink that leaves the scan root and does not read through it', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const root = path.join(tmpDir, 'root');
+      const outside = path.join(tmpDir, 'outside');
+      fs.mkdirSync(root);
+      fs.mkdirSync(outside);
+      fs.writeFileSync(path.join(root, 'app.js'), 'const x = 1;');
+      fs.writeFileSync(path.join(outside, 'leak.js'), 'const k = "AKIAIOSFODNN7REALKEY";');
+      fs.symlinkSync(outside, path.join(root, 'escape'));
+      const result = await check.run({ cwd: root, deep: true, config: defaultConfig });
+      const f = result.findings.find((x) => x.findingId === 'deep-secrets/outside-root-skipped');
+      expect(f).toBeDefined();
+      expect(f.severity).toBe('info');
+      expect(result.findings.some((x) => x.severity === 'critical')).toBe(false);
+      expect(result.findings.some((x) => x.severity === 'pass')).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -75,8 +75,9 @@ No auto-fix. The `governance-docs.js` module does not export a `fixes` array. Th
     Governance contains approval gates keywords in a negated context.
     → Remove negated approval gates statements and replace with genuine enforcement.
   WARNING Governance file is short (under 50 lines)
-  WARNING Governance file missing: anti-injection
-    → Add anti-injection instructions to your governance file.
+  WARNING Governance file missing: anti-injection, approval gates, path restrictions
+    → Fix: Add instructions for each of these rules to your governance file.
+    → Ids: governance-docs/missing-anti-injection, governance-docs/missing-approval-gates, ...
   WARNING Governance file CLAUDE.md is not tracked in git
     → Run: git add CLAUDE.md
 ```
@@ -88,6 +89,7 @@ No auto-fix. The `governance-docs.js` module does not export a `fixes` array. Th
 - The defensive-phrase detector `INJECTION_DEFENSIVE_RE` is narrower than skill-files' equivalent — governance files are expected to be authoritative, so borderline phrasings default to flagging.
 - The `.gitignore` check asks git itself (`git check-ignore --no-index`), so anchored (`/CLAUDE.md`), glob (`*.md`), and recursive-double-star patterns are caught, not just the bare filename. When git is unavailable or `cwd` is not a git repo it falls back to an exact-string match against the local `.gitignore` — a degraded matcher fails toward the old miss, never a false CRITICAL.
 - The `git ls-files` tracking check is skipped when no `.git` directory is present.
+- The terminal report folds the `missing-*` warnings into one line listing every missing rule and its id. This is display only: JSON, SARIF, scoring and `--ignore` still see one finding per rule, each with its own id.
 - Config override: `.rigscorerc.json` key `paths.claudeMd` adds extra files to the candidate list.
 - Exports `data.matchedPatterns` and `data.governanceText` for the `coherence` check; other checks should not depend on this internal shape.
 

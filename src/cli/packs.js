@@ -21,6 +21,24 @@ const escapes = (d) => path.isAbsolute(d) || d.split(/[\\/]/).includes('..');
 const isExec = (f) => f.exec === true || HOOK_DIR_RE.test(toPosix(f.dest));
 const fail = (name, msg) => { throw new Error(`pack "${name}": ${msg}`); };
 
+// The lexical escape checks cannot see symlinks already inside the target repo. A dest that
+// is itself a link (dangling ones read as "absent" to existsSync) or whose parent chain
+// resolves outside the repo would let a write or chmod land somewhere else. Refuse the
+// whole pack, before the first write.
+function assertNoSymlinkEscape(name, realRoot, dest, target) {
+  const lstat = (p) => { try { return fs.lstatSync(p); } catch { return null; } };
+  if (lstat(target)?.isSymbolicLink()) fail(name, `dest is a symlink, refusing to write through it: "${dest}"`);
+  // Nearest existing ancestor of the target's parent (lstat, so a dangling link counts as existing).
+  let anc = path.dirname(target);
+  while (!lstat(anc)) anc = path.dirname(anc);
+  let real;
+  try { real = path.join(fs.realpathSync(anc), path.relative(anc, path.dirname(target))); } catch { fail(name, `dest parent is a dangling symlink: "${dest}"`); }
+  const rel = path.relative(realRoot, real);
+  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    fail(name, `dest resolves outside the target directory through a symlink: "${dest}"`);
+  }
+}
+
 // Auto-discovered like src/checks: readdir. Dropping in templates/<name>/pack.json IS the
 // registration step — no list to edit.
 export function listPacks(templatesDir = TEMPLATES_DIR) {
@@ -105,6 +123,13 @@ export function installPack(name, cwd, { force = false, merge = false, templates
     if (!target.startsWith(root + path.sep)) fail(name, `dest escapes the target directory: "${f.dest}"`);
     return { ...f, target };
   });
+  // The target dir may not exist yet (the install creates it): resolve its nearest existing
+  // ancestor and re-append the missing tail.
+  let top = root; const tail = [];
+  while (!fs.existsSync(top) && path.dirname(top) !== top) { tail.unshift(path.basename(top)); top = path.dirname(top); }
+  let realRoot;
+  try { realRoot = path.join(fs.realpathSync(top), ...tail); } catch { fail(name, `target directory is unreachable: "${root}"`); }
+  for (const f of planned) assertNoSymlinkEscape(name, realRoot, f.dest, f.target);
   const results = [];
   const unresolved = new Set();
   // Substitute a pack file's {{VARS}}, tracking applied defaults / unresolved placeholders.

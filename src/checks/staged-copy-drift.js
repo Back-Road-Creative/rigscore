@@ -66,7 +66,7 @@ export default {
       const trackedRoot = path.join(cwd, row.tracked);
       const excluded = buildExcluder(row.exclude);
       const { files } = await walkDirSafe(trackedRoot,
-        { skipDirs: SKIP_DIRS, skipHidden: false, maxFiles: 5000 });
+        { containWithin: cwd, skipDirs: SKIP_DIRS, skipHidden: false, maxFiles: 5000 });
 
       for (const file of files) {
         const rel = relPosix(trackedRoot, file);

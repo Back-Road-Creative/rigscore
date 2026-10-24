@@ -2,7 +2,7 @@
 
 **A configuration hygiene checker for your AI development environment.**
 
-One command. 28 checks — 13 scored plus 15 advisory. A hygiene score out of 100. Know where you stand before something breaks.
+One command. Works with any AI coding client: it scans the configs of 29 known agent clients. 29 checks — 13 scored plus 16 advisory. A hygiene score out of 100. Know where you stand before something breaks.
 
 > **Scope.** rigscore measures **configuration hygiene**, not runtime security. It inspects the files on disk — governance docs, MCP configs, Docker settings, skill files, permissions — and scores what those files *say*. It does not observe the running agent, intercept tool calls, or hash live MCP tool descriptions. Pair it with a runtime scanner and source-level SAST; it does not replace them. See [known limits](#known-limits) for what rigscore does not catch.
 
@@ -525,7 +525,7 @@ Every agent CLI expresses "how much can this agent do without asking me" differe
 
 ### 28. Semantic tool-description judge (advisory, 0 points, `--semantic`) {#semantic-tools}
 
-Opt-in check for **obfuscated MCP tool poisoning** — a hidden directive paraphrased into a tool description so static regex checks miss it. Runs **only** with `--semantic`; a default scan makes zero external calls from it. For each tool description (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` — the same JSON you pipe into `rigscore mcp-hash`), it asks your **own first-party agent CLI** (`claude -p`, `gemini`, `codex exec`, … — never an API key or SDK client) to classify the text benign vs. suspicious. The command is configurable via `semantic.command` in `.rigscorerc.json` (default `["claude", "-p"]`; the judge prompt is appended as the final argument). Each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge. If that binary is not on PATH the check skips gracefully (no finding, no crash). See [`docs/checks/semantic-tools.md`](docs/checks/semantic-tools.md).
+Opt-in check for **obfuscated MCP tool poisoning** — a hidden directive paraphrased into a tool description so static regex checks miss it. Runs **only** with `--semantic`; a default scan makes zero external calls from it. For each tool description (read from `tools/list` snapshot files listed under `paths.mcpToolsSnapshot` in `.rigscorerc.json` — the same JSON you pipe into `rigscore mcp-hash`), it asks your **own first-party agent CLI** (`claude -p`, `gemini`, `codex exec`, … — never an API key or SDK client) to classify the text benign vs. suspicious. The command is configurable via `semantic.command` in your **home** `~/.rigscorerc.json` only (default `["claude", "-p"]`; the judge prompt is appended as the final argument). A `semantic.command` in a project `.rigscorerc.json` (or in anything that file extends) is ignored with a one-line warning, so a scanned repo cannot choose which program runs. Each description is wrapped in a data-only frame and the judge is told to treat it as data, not instructions, so a poisoned description cannot hijack the judge. If that binary is not on PATH the check skips gracefully (no finding, no crash). See [`docs/checks/semantic-tools.md`](docs/checks/semantic-tools.md).
 
 ## Scoring
 
@@ -700,6 +700,7 @@ npx github:Back-Road-Creative/rigscore --cyclonedx               # CycloneDX 1.6
 npx github:Back-Road-Creative/rigscore --report compliance       # Group findings by compliance-framework control (see docs/compliance.md; not supported with --recursive)
 npx github:Back-Road-Creative/rigscore --ci                      # CI mode (--sarif --no-color --no-cta)
 npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score < 80 (default: 70)
+npx github:Back-Road-Creative/rigscore --fail-on <critical|warning> # Also fail (exit 1) on any finding at that severity or worse, whatever the score; `warning` includes critical. Respects suppressions; works with --recursive
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
 npx github:Back-Road-Creative/rigscore --badge                   # Generate a score badge (format set by --badge-format)
 npx github:Back-Road-Creative/rigscore --badge --badge-format svg # Badge format: markdown (default, shields.io image snippet), endpoint (shields.io Endpoint Badge JSON for a self-updating README), or svg (self-contained, no network). Also works with --recursive, badging the monorepo average
@@ -714,7 +715,7 @@ npx github:Back-Road-Creative/rigscore -r --depth 2              # Recursive sca
 npx github:Back-Road-Creative/rigscore --deep                    # Deep source secret scanning
 npx github:Back-Road-Creative/rigscore --online                  # Enable online checks (site-security, MCP supply chain)
 npx github:Back-Road-Creative/rigscore --refresh-mcp-registry    # Force refetch of the MCP registry cache (implies --online; bypasses 24h TTL)
-npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to a first-party agent CLI — `claude -p` default, configurable via semantic.command; no API key; skips if that binary absent)
+npx github:Back-Road-Creative/rigscore --semantic                # Opt-in semantic MCP tool-description judge (semantic-tools check; shells to a first-party agent CLI — `claude -p` default, configurable via semantic.command in ~/.rigscorerc.json only; no API key; skips if that binary absent)
 npx github:Back-Road-Creative/rigscore --include-home-skills     # Also scan every registered client's home dir (~/.claude, ~/.codex/prompts, ~/.config/opencode/commands, ~/.gemini/commands, …) (default: off — project scope only)
 npx github:Back-Road-Creative/rigscore --fix                     # Show auto-fixable issues (dry run)
 npx github:Back-Road-Creative/rigscore --fix --yes               # Apply safe auto-remediations (edits existing files only — never scaffolds new ones)
@@ -905,7 +906,17 @@ use `rigscore init --<pack> [--force]`.
 
 ### Plugins
 
-rigscore auto-discovers `rigscore-check-*` packages from `node_modules`. Plugins extend rigscore with custom checks without modifying the core.
+rigscore discovers `rigscore-check-*` packages from `node_modules`, and local check files listed in `.rigscorerc.json` (`"plugins": ["./checks/mine.js"]`). Plugins extend rigscore with custom checks without modifying the core.
+
+**Trust:** a plugin is code, and loading it runs it. By default a scan does **not** load plugins that the scanned repo supplies, that is, the repo's own `node_modules/rigscore-check-*` packages and the paths in its `.rigscorerc.json` `plugins`; it prints one line naming what it skipped. Plugins installed beside rigscore itself (for example in a global install) always load. To opt a repo in, add its absolute path to `trustProjectPlugins` in your **home** config, `~/.rigscorerc.json`:
+
+```json
+{
+  "trustProjectPlugins": ["~/code/my-repo", "/srv/ci/workspace"]
+}
+```
+
+Entries are absolute repo roots (an exact match on the scanned directory; `~/` expands to your home directory; relative entries are ignored). With `--recursive`, each subproject root whose plugins should load must be listed. The key is honoured only in the home config (and files it `extends`); a project's own `.rigscorerc.json` cannot trust itself. In CI, write the home config in a step before the scan.
 
 **Creating a plugin:**
 

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadTrustedPluginRoots } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,6 +18,11 @@ let _registeredFixes = null;
  *
  * @param {object} [options]
  * @param {string} [options.cwd] - Project root scanned for rigscore-check-* plugins.
+ * @param {string} [options.homedir] - Home dir whose `~/.rigscorerc.json`
+ *   `trustProjectPlugins` allow-list decides whether `cwd`'s own plugin code may
+ *   load (default: the OS home dir).
+ * @param {string[]} [options.plugins] - Explicit local plugin paths from an
+ *   embedding caller (code, not scanned content), loaded without the allow-list.
  * @param {string[]} [options.extraCheckDirs] - Extra directories scanned for check
  *   modules, in addition to this one (default: none — behaviour is unchanged).
  *   A caller that needs to register a check module which does NOT live in
@@ -65,15 +72,36 @@ export async function loadChecks(options = {}) {
     }
   }
 
-  // Discover plugins from node_modules
-  const plugins = await discoverPlugins(options.cwd);
+  // Project-local plugin code (the scanned repo's `<cwd>/node_modules/rigscore-check-*`
+  // and its `.rigscorerc.json` `plugins` paths) is JavaScript the scanned repo
+  // supplies, so it is imported only when the operator's HOME config lists this
+  // repo root in `trustProjectPlugins`. Plugins installed beside rigscore itself
+  // always load. Anything skipped is named in one stderr line.
+  const trustProject = await isProjectPluginTrusted(options.cwd, options.homedir);
+  const plugins = await discoverPlugins(options.cwd, { trustProject });
   checks.push(...plugins);
 
-  // Discover local-path plugins declared in the project's `.rigscorerc.json`
-  // `plugins: ["./checks/foo.js"]`. Deduped by id against everything already
-  // loaded (built-ins + npm plugins) — first registration wins.
+  // Local-path plugins from `plugins: ["./checks/foo.js"]`. Deduped by id against
+  // everything already loaded (built-ins + npm plugins) — first registration wins.
+  const explicit = options.plugins && options.plugins.length ? options.plugins : null;
+  let localPlugins = [];
+  if (explicit || trustProject) {
+    localPlugins = await discoverLocalPlugins(options.cwd, explicit || undefined);
+  }
+  if (!trustProject) {
+    const skipped = [
+      ...(await listProjectNodeModulesPlugins(options.cwd)),
+      ...(explicit ? [] : await readConfiguredPluginPaths(options.cwd)),
+    ];
+    if (skipped.length > 0) {
+      process.stderr.write(
+        `rigscore: skipped ${skipped.length} project plugin${skipped.length === 1 ? '' : 's'} ` +
+        `(${skipped.join(', ')}) — this repo is not trusted to run plugin code; ` +
+        `add its absolute path to "trustProjectPlugins" in ~/.rigscorerc.json to load them\n`,
+      );
+    }
+  }
   const existingIds = new Set(checks.map((c) => c?.id).filter(Boolean));
-  const localPlugins = await discoverLocalPlugins(options.cwd, options.plugins);
   for (const p of localPlugins) {
     if (existingIds.has(p.id)) continue;
     existingIds.add(p.id);
@@ -81,6 +109,24 @@ export async function loadChecks(options = {}) {
   }
 
   return checks;
+}
+
+/** Canonical path for trust comparison: symlinks resolved when the path exists. */
+function canonical(p) {
+  const abs = path.resolve(p);
+  try { return fs.realpathSync(abs); } catch { return abs; }
+}
+
+/**
+ * True when the operator's home config lists `cwd` (exact repo root, symlinks
+ * resolved) in `trustProjectPlugins`. A scan with no `cwd` has no project layer.
+ */
+async function isProjectPluginTrusted(cwd, homedir) {
+  if (!cwd) return false;
+  const roots = await loadTrustedPluginRoots(homedir || os.homedir());
+  if (roots.length === 0) return false;
+  const here = canonical(cwd);
+  return roots.some((r) => canonical(r) === here);
 }
 
 /** Read the `plugins` array from the project's `.rigscorerc.json` (best-effort). */
@@ -223,10 +269,62 @@ function resolvePluginEntry(pluginDir) {
 }
 
 /**
+ * `rigscore-check-*` and `@scope/rigscore-check-*` entries of one node_modules
+ * directory, as `{ name, isDirectory }` rows (names are package names).
+ */
+async function listPluginDirs(nodeModules, entries) {
+  entries = entries || await fs.promises.readdir(nodeModules, { withFileTypes: true });
+  const pluginDirs = entries.filter(
+    (e) => e.isDirectory() && e.name.startsWith('rigscore-check-'),
+  );
+  // Also check scoped packages (@org/rigscore-check-*)
+  const scopedDirs = entries.filter(
+    (e) => e.isDirectory() && e.name.startsWith('@'),
+  );
+  for (const scope of scopedDirs) {
+    try {
+      const scopeEntries = await fs.promises.readdir(
+        path.join(nodeModules, scope.name),
+        { withFileTypes: true },
+      );
+      for (const entry of scopeEntries) {
+        if (entry.isDirectory() && entry.name.startsWith('rigscore-check-')) {
+          pluginDirs.push({
+            name: `${scope.name}/${entry.name}`,
+            isDirectory: () => true,
+          });
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  return pluginDirs;
+}
+
+/** Package names of the scanned repo's own `rigscore-check-*` plugins (not imported). */
+async function listProjectNodeModulesPlugins(cwd) {
+  if (!cwd) return [];
+  const own = path.resolve(__dirname, '..', '..', 'node_modules');
+  // Scanning rigscore's own install: that node_modules always loads, nothing is skipped.
+  if (canonical(path.join(cwd, 'node_modules')) === canonical(own)) return [];
+  try {
+    return (await listPluginDirs(path.join(cwd, 'node_modules'))).map((d) => d.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Scan node_modules for rigscore-check-* packages.
  * Each plugin must export { id, name, category, run(context) }.
+ *
+ * The scanned project's `<cwd>/node_modules` is searched only when
+ * `opts.trustProject` is true: importing a plugin runs its top-level code, so a
+ * default scan must not execute JavaScript the scanned repo supplies. Plugins
+ * installed beside rigscore itself are always searched.
  */
-export async function discoverPlugins(cwd) {
+export async function discoverPlugins(cwd, { trustProject = false } = {}) {
   const plugins = [];
   // Track resolved plugin directories already imported. Without this, a
   // plugin installed in both `cwd/node_modules` and rigscore's own install
@@ -234,7 +332,7 @@ export async function discoverPlugins(cwd) {
   const seenPaths = new Set();
   const seenIds = new Set();
   const rawSearchDirs = [
-    cwd ? path.join(cwd, 'node_modules') : null,
+    cwd && trustProject ? path.join(cwd, 'node_modules') : null,
     // Also check where rigscore itself is installed
     path.resolve(__dirname, '..', '..', 'node_modules'),
   ].filter(Boolean);
@@ -257,32 +355,7 @@ export async function discoverPlugins(cwd) {
       continue;
     }
 
-    const pluginDirs = entries.filter(
-      (e) => e.isDirectory() && e.name.startsWith('rigscore-check-'),
-    );
-
-    // Also check scoped packages (@org/rigscore-check-*)
-    const scopedDirs = entries.filter(
-      (e) => e.isDirectory() && e.name.startsWith('@'),
-    );
-    for (const scope of scopedDirs) {
-      try {
-        const scopeEntries = await fs.promises.readdir(
-          path.join(nodeModules, scope.name),
-          { withFileTypes: true },
-        );
-        for (const entry of scopeEntries) {
-          if (entry.isDirectory() && entry.name.startsWith('rigscore-check-')) {
-            pluginDirs.push({
-              name: `${scope.name}/${entry.name}`,
-              isDirectory: () => true,
-            });
-          }
-        }
-      } catch {
-        continue;
-      }
-    }
+    const pluginDirs = await listPluginDirs(nodeModules, entries);
 
     for (const dir of pluginDirs) {
       try {

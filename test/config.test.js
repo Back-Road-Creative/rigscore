@@ -312,29 +312,112 @@ describe('loadConfig', () => {
     }
   });
 
-  it('semantic.command REPLACES (never concatenates) the default from .rigscorerc.json', async () => {
+  it('semantic.command REPLACES (never concatenates) the default from the home .rigscorerc.json', async () => {
     const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
     // An argv is an ordered whole — concatenating ["claude","-p"] with a user's
     // ["gemini"] would produce nonsense (["claude","-p","gemini"]). It replaces.
     const rc = { semantic: { command: ['gemini'] } };
-    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify(rc));
     try {
-      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      const config = await loadConfig(tmpDir, homeDir);
       expect(config.semantic.command).toEqual(['gemini']);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
+  it('honours semantic.command from a home rc that extends a home base', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    fs.writeFileSync(path.join(homeDir, 'base.json'), JSON.stringify({ semantic: { command: ['codex', 'exec'] } }));
+    fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify({ extends: './base.json' }));
+    try {
+      const config = await loadConfig(tmpDir, homeDir);
+      expect(config.semantic.command).toEqual(['codex', 'exec']);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+  });
+
+  it('a project rc may NOT choose the semantic judge command (SEC-1)', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    fs.writeFileSync(
+      path.join(tmpDir, '.rigscorerc.json'),
+      JSON.stringify({ semantic: { command: ['sh', '-c', 'touch pwned'] } }),
+    );
+    const writes = [];
+    const orig = process.stderr.write;
+    process.stderr.write = (chunk, ...rest) => { writes.push(String(chunk)); return true; };
+    try {
+      const config = await loadConfig(tmpDir, homeDir);
+      expect(config.semantic.command).toEqual(['claude', '-p']);
+    } finally {
+      process.stderr.write = orig;
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+    const lines = writes.join('').split('\n').filter((l) => l.includes('semantic.command'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/ignor/i);
+  });
+
+  it('a project rc does not override a home semantic.command', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify({ semantic: { command: ['gemini'] } }));
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify({ semantic: { command: ['sh', '-c', 'x'] } }));
+    const writes = [];
+    const orig = process.stderr.write;
+    process.stderr.write = (chunk, ...rest) => { writes.push(String(chunk)); return true; };
+    try {
+      const config = await loadConfig(tmpDir, homeDir);
+      expect(config.semantic.command).toEqual(['gemini']);
+    } finally {
+      process.stderr.write = orig;
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+    }
+    const lines = writes.join('').split('\n').filter((l) => l.includes('semantic.command'));
+    expect(lines).toHaveLength(1);
+  });
+
+  it('a project rc extending an absolute base cannot smuggle in semantic.command', async () => {
+    const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
+    const baseDir = makeTmpDir();
+    const base = path.join(baseDir, 'base.json');
+    fs.writeFileSync(base, JSON.stringify({ semantic: { command: ['sh', '-c', 'touch pwned'] }, suppress: ['x/**'] }));
+    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify({ extends: base }));
+    const orig = process.stderr.write;
+    process.stderr.write = () => true;
+    try {
+      const config = await loadConfig(tmpDir, homeDir);
+      expect(config.semantic.command).toEqual(['claude', '-p']);
+      // Other keys from the extended base still apply.
+      expect(config.suppress).toContain('x/**');
+    } finally {
+      process.stderr.write = orig;
+      fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
+      fs.rmSync(baseDir, { recursive: true });
     }
   });
 
   it('ignores an invalid semantic.command (empty / non-string), keeping the default', async () => {
     const tmpDir = makeTmpDir();
+    const homeDir = makeTmpDir();
     const rc = { semantic: { command: [] } };
-    fs.writeFileSync(path.join(tmpDir, '.rigscorerc.json'), JSON.stringify(rc));
+    fs.writeFileSync(path.join(homeDir, '.rigscorerc.json'), JSON.stringify(rc));
     try {
-      const config = await loadConfig(tmpDir, '/tmp/nonexistent');
+      const config = await loadConfig(tmpDir, homeDir);
       expect(config.semantic.command).toEqual(['claude', '-p']);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
+      fs.rmSync(homeDir, { recursive: true });
     }
   });
 
