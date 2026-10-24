@@ -75,7 +75,8 @@ No `fixes` export. `--fix --yes` is a no-op.
 
 ### Dead-reference noise controls (added 2026-04-20)
 
-- **Line-range suffix stripping** — refs of the form `foo.py:123`, `foo.py:123-456`, and `foo.md#L10-L20` have the suffix stripped before the filesystem existence check, so a valid file with a cited line range is not flagged.
+- **Line-range suffix stripping** — refs of the form `foo.py:123`, `foo.py:123-456`, and `foo.md#L10-L20` have the suffix stripped before the filesystem existence check, so a valid file with a cited line range is not flagged. A `::symbol` suffix (`foo.py::run`, `foo.py::Class.method`, `foo.rs::Type::method`, `foo.py::TestA::test_b[case]`) is stripped the same way.
+- **Commands and scheme-less URLs are skipped** — a backticked ref with inner whitespace (`./scripts/build.sh build production`) is treated as a command line, and a ref whose first segment is a hostname (`youtu.be/`, `github.com/org/repo`) is treated as a URL written without its scheme. Neither is checked for existence.
 - **Cross-repo exemption via config** — add globs to `.rigscorerc.json`:
 
   ```json
@@ -92,6 +93,8 @@ No `fixes` export. `--fix --yes` is a no-op.
 - **Tighter path heuristics** — bare extensions (`.md`, `.sh`), JS property-access strings (`data.filesDiscovered`, `r.findings`), and `python3`/`pip3`/`node22` shell fragments no longer register as file references.
 
 ### Known noise modes
+
+- **Unchecked paths** — a path that contains a space (`docs/Design Notes.md`) is read as a command and not checked. A path whose first segment is a dotted name ending in a common web TLD (`example.co/x`, `my.dev/notes.md`) is read as a URL and not checked. `.app`, `.run`, `.cloud` and `.info` are not treated as TLDs, so `MyTool.app/` and `com.acme.app/` paths are still checked.
 
 - **`instruction-effectiveness/dead-file-reference` across skill `SKILL.md` files** — skills often reference report output paths like `./skill-audit-report.md` that don't exist until the skill runs. These remain flagged. Add the relative form (or a glob) to `crossRepoRefs` if intentional.
 - **`Redundant instruction` cross-skill** — sibling skills (e.g. `workflow-maturity` + `instruction-audit`) that share a prelude (`detect project`, `parse the json output`) produce INFO noise proportional to how many skills share prose. Advisory only; consider consolidating into a shared include.

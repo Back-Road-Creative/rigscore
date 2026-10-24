@@ -402,6 +402,7 @@ describe('instruction-effectiveness check', () => {
         '# Rules',
         'Entry point: `pipeline/preflight.py::run_preflight`.',
         'Method: `pipeline/preflight.py::Runner.check`.',
+        'Case: `pipeline/preflight.py::TestA::test_b[case-1]`.',
       ].join('\n');
       fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
@@ -448,13 +449,25 @@ describe('instruction-effectiveness check', () => {
       const content = [
         '# Rules',
         'Short links look like `youtu.be/` plus an id.',
-        'Docs live at `github.com/acme/widget` and `example.io`.',
+        'Docs live at `github.com/acme/widget` and `docs.python.org/3/library`.',
         'Also `www.youtube.com/watch`.',
       ].join('\n');
       fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), content);
       const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
       const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
       expect(deadRefs).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('still flags missing paths under .app / reverse-DNS directories', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Rules\nSee `MyTool.app/Contents/Info.plist` and `com.acme.app/src/x.kt`.\n');
+      const result = await check.run({ cwd: tmpDir, homedir: '/tmp/nonexistent-home-ie', config: defaultConfig });
+      const deadRefs = result.findings.filter(f => f.title?.includes('Dead file reference'));
+      expect(deadRefs).toHaveLength(2);
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }

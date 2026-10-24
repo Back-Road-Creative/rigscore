@@ -56,16 +56,18 @@ const FILE_LINE_RANGE_RE = /^([^:#\s]+?)(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$/;
 
 // Symbol suffix: `path/to/file.py::run_preflight`, `src/lib.rs::Type::method`,
 // `file.py::Class.method`. The path portion is kept for the existence check.
-const SYMBOL_SUFFIX_RE = /^([^:#\s]+?)::[A-Za-z_]\w*(?:\(\))?(?:(?:::|\.)[A-Za-z_]\w*(?:\(\))?)*$/;
+// An optional trailing pytest parameter id (`::test_b[case-1]`) is allowed.
+const SYMBOL_SUFFIX_RE = /^([^:#\s]+?)::[A-Za-z_]\w*(?:\(\))?(?:(?:::|\.)[A-Za-z_]\w*(?:\(\))?)*(?:\[[^\]\s]*\])?$/;
 
 // Top-level domains that mark a leading `host.tld` segment as a URL fragment
 // (`youtu.be/`, `github.com/org/repo`) rather than a dotted directory name.
 // Extensions that are also real file types (md, sh, py, rs, ...) are left out
-// on purpose; KNOWN_FILE_EXTS owns those.
+// on purpose; KNOWN_FILE_EXTS owns those. 'app', 'run', 'cloud' and 'info' are
+// also left out: they end real directories (`MyTool.app/`, `com.acme.app/`).
 const DOMAIN_TLDS = new Set([
-  'com', 'net', 'org', 'io', 'be', 'tv', 'dev', 'app', 'co', 'ai', 'me',
-  'ly', 'gg', 'xyz', 'info', 'edu', 'gov', 'us', 'uk', 'de', 'fr', 'eu',
-  'cc', 'fm', 'to', 'so', 'run', 'cloud',
+  'com', 'net', 'org', 'io', 'be', 'tv', 'dev', 'co', 'ai', 'me',
+  'ly', 'gg', 'xyz', 'edu', 'gov', 'us', 'uk', 'de', 'fr', 'eu',
+  'cc', 'fm', 'to', 'so',
 ]);
 
 /**
@@ -85,7 +87,7 @@ function startsWithDomain(str) {
  * the filesystem existence check only sees the bare path. Preserves the
  * original ref when no suffix is present.
  */
-function stripLineRange(ref) {
+function stripRefSuffix(ref) {
   const sym = ref.match(SYMBOL_SUFFIX_RE);
   if (sym) return sym[1];
   const m = ref.match(FILE_LINE_RANGE_RE);
@@ -473,8 +475,8 @@ async function detectDeadReferences(file, cwd, config) {
     if (checked.has(ref)) continue;
     checked.add(ref);
 
-    // Strip `:123`, `:123-456`, and `#L123-L456` before existence check.
-    const bareRef = stripLineRange(ref);
+    // Strip `:123`, `:123-456`, `#L123-L456` and `::symbol` before existence check.
+    const bareRef = stripRefSuffix(ref);
 
     // Exempt configured cross-repo refs (both the suffixed and bare form).
     if (crossRepoMatch(ref) || crossRepoMatch(bareRef)) continue;
@@ -520,7 +522,7 @@ function looksLikeFilePath(str) {
   // Normalise line-range suffix up front so the heuristics below see the
   // bare path. "missing.py:42" → "missing.py" for pattern-matching purposes;
   // detectDeadReferences also strips it before filesystem lookup.
-  str = stripLineRange(str);
+  str = stripRefSuffix(str);
   if (NOT_A_PATH_RE.test(str)) return false;
   if (PLACEHOLDER_RE.test(str)) return false;
   if (GLOB_RE.test(str)) return false;
