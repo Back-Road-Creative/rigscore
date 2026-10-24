@@ -181,6 +181,7 @@ runs:
         RIGSCORE_JSON: ${{ runner.temp }}/rigscore.json
         SCAN_EXIT: ${{ steps.scan.outputs.exit-code }}
         FAIL_UNDER: ${{ inputs.fail-under }}
+        BASELINE: ${{ inputs.baseline }}
       run: |
         node - <<'RIGSCORE_SUMMARY' || true
         const fs = require('fs');
@@ -191,6 +192,9 @@ runs:
         const esc = (v) => String(v == null ? '' : v)
           .replace(/\s+/g, ' ').trim()
           .replace(/[\\`*_|<>]/g, (c) => ({ '<': '&lt;', '>': '&gt;' }[c] || '\\' + c));
+        // Values inside a backtick code span: Markdown processes no backslash
+        // escapes there, so only strip what would close the span.
+        const cs = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().replace(/`/g, "'");
         let d = null;
         try { d = JSON.parse(fs.readFileSync(process.env.RIGSCORE_JSON, 'utf8')); } catch {}
         const L = ['## rigscore', ''];
@@ -202,11 +206,27 @@ runs:
         const recursive = Array.isArray(d.projects);
         const failed = code !== '' && code !== '0';
         const score = typeof d.score === 'number' ? d.score : null;
+        // Exit 1 has three causes; name the right one. Recursive mode fails when
+        // ANY scored project is under the threshold, whatever the average; a
+        // baseline run fails on findings new since the baseline, whatever the score.
+        const limit = Number(failUnder);
+        const scoredProjects = recursive ? d.projects.filter((p) => !p.notApplicable && typeof p.score === 'number') : [];
+        const under = scoredProjects.filter((p) => p.score < limit);
+        let reason;
+        if (recursive && under.length) {
+          reason = `FAIL, ${under.length} project${under.length === 1 ? '' : 's'} below the threshold of ${esc(failUnder)}: ` +
+            under.slice(0, 10).map((p) => '`' + cs(p.path) + '`').join(', ') +
+            (under.length > 10 ? `, and ${under.length - 10} more` : '');
+        } else if (process.env.BASELINE) {
+          reason = 'FAIL, new findings since the baseline';
+        } else {
+          reason = 'FAIL, below the threshold of ' + esc(failUnder);
+        }
         L.push(
           `**Score:** ${score === null ? 'n/a' : score + '/100'}` +
           `  **Grade:** ${esc(d.grade || 'n/a')}` +
           `  **Threshold:** ${esc(failUnder)}` +
-          `  **Result:** ${failed ? 'FAIL, below the threshold of ' + esc(failUnder) : 'pass'}`,
+          `  **Result:** ${failed ? reason : 'pass'}`,
           '');
         const rank = { critical: 0, warning: 1 };
         const rows = [];
@@ -214,11 +234,13 @@ runs:
         if (recursive) {
           L.push('### Projects', '', '| Project | Score | Grade |', '| --- | --- | --- |');
           for (const p of d.projects) {
-            L.push(`| ${esc(p.path)} | ${typeof p.score === 'number' ? p.score : 'n/a'} | ${esc(p.grade || 'n/a')} |`);
+            L.push(`| ${esc(p.path)} | ${typeof p.score === 'number' && !p.notApplicable ? p.score : 'n/a'} | ${esc(p.grade || 'n/a')} |`);
           }
           L.push('');
-          if (d.worstProject) {
-            L.push(`Worst project: \`${esc(d.worstProject.path)}\` (${esc(d.worstProject.score)}/100)`, '');
+          // Computed here, not taken from d.worstProject, which can be an N/A project.
+          const worst = scoredProjects.reduce((a, p) => (a === null || p.score < a.score ? p : a), null);
+          if (worst) {
+            L.push(`Worst project: \`${cs(worst.path)}\` (${worst.score}/100)`, '');
           }
         }
         let clean = 0;
@@ -251,7 +273,7 @@ runs:
           for (const r of rows.slice(0, 25)) {
             const where = recursive ? `${esc(r.proj)}: ` : '';
             const rem = r.f.remediation ? ` Fix: ${esc(r.f.remediation)}` : '';
-            L.push(`- **${r.sev}** ${where}\`${esc(r.f.findingId || r.check)}\` ${esc(r.f.title)}.${rem}`);
+            L.push(`- **${r.sev}** ${where}\`${cs(r.f.findingId || r.check)}\` ${esc(r.f.title)}.${rem}`);
           }
           if (rows.length > 25) L.push('', `...and ${rows.length - 25} more critical and warning findings. Run rigscore locally for the full list.`);
           L.push('');

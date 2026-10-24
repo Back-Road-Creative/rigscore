@@ -204,7 +204,7 @@ describe('action.yml — job summary (UI-5)', () => {
 
   // Pull the embedded node program out of the step so it can be run against
   // fixture JSON exactly as the runner would run it.
-  function runSummary(json, { exit = '0', failUnder = '70' } = {}) {
+  function runSummary(json, { exit = '0', failUnder = '70', baseline = '' } = {}) {
     const m = summaryStep.run.match(/<<'(\w+)'[^\n]*\n([\s\S]*?)\n\s*\1\n/);
     expect(m, 'summary step must embed its node program as a quoted heredoc').not.toBeNull();
     const dir = mkdtempSync(path.join(os.tmpdir(), 'rigscore-summary-'));
@@ -219,6 +219,7 @@ describe('action.yml — job summary (UI-5)', () => {
         RIGSCORE_JSON: jsonPath,
         SCAN_EXIT: exit,
         FAIL_UNDER: failUnder,
+        BASELINE: baseline,
         GITHUB_STEP_SUMMARY: outPath,
       },
     });
@@ -273,6 +274,57 @@ describe('action.yml — job summary (UI-5)', () => {
     expect(md).toContain('pkgs/c');
     expect(md).toMatch(/worst/i);
     expect(md).toContain('mcp-config/unpinned');
+  });
+
+  it('recursive: average above the threshold but one project below names that project', () => {
+    const rec = {
+      score: 80,
+      grade: 'B',
+      worstProject: { path: 'pkgs/b', score: 50 },
+      projects: [
+        { path: 'pkgs/a', score: 95, grade: 'A', results: [] },
+        { path: 'pkgs/b', score: 50, grade: 'F', results: [] },
+        { path: 'pkgs/d', score: 95, grade: 'A', results: [] },
+      ],
+    };
+    const md = runSummary(rec, { exit: '1' });
+    const result = md.match(/\*\*Result:\*\*[^\n]*/)[0];
+    expect(result).toMatch(/FAIL/);
+    expect(result).toContain('1 project');
+    expect(result).toContain('pkgs/b');
+    expect(result).not.toContain('pkgs/a');
+    expect(result).not.toMatch(/score is below/i);
+  });
+
+  it('baseline mode: a failing exit is reported as new findings, not a low score', () => {
+    const md = runSummary({ ...single, score: 92, grade: 'A' }, { exit: '1', baseline: 'base.json' });
+    const result = md.match(/\*\*Result:\*\*[^\n]*/)[0];
+    expect(result).toMatch(/new findings since the baseline/i);
+    expect(result).not.toMatch(/below the threshold/i);
+  });
+
+  it('code spans keep underscores literal (no backslash escapes inside backticks)', () => {
+    const rec = { score: 10, grade: 'F', worstProject: { path: 'my_pkg', score: 10 },
+      projects: [{ path: 'my_pkg', score: 10, grade: 'F', results: [
+        { id: 'c', name: 'C', score: 0, findings: [{ findingId: 'a_b*c', severity: 'warning', title: 't' }] },
+      ] }] };
+    const md = runSummary(rec, { exit: '1' });
+    expect(md).toContain('`my_pkg`');
+    expect(md).toContain('`a_b*c`');
+  });
+
+  it('recursive: N/A projects show n/a and never become the worst project', () => {
+    const rec = {
+      score: 60, grade: 'C',
+      worstProject: { path: 'na', score: 0 },
+      projects: [
+        { path: 'pkgs/a', score: 60, grade: 'C', results: [] },
+        { path: 'na', score: 0, notApplicable: true, grade: 'n/a', results: [] },
+      ],
+    };
+    const md = runSummary(rec, { exit: '0' });
+    expect(md).toMatch(/\| na \| n\/a \| n\/a \|/);
+    expect(md).not.toMatch(/Worst project: `na`/);
   });
 
   it('crash or unparseable JSON: says the scan did not complete, still exits 0', () => {
