@@ -148,6 +148,9 @@ export const EU_AI_ACT_MAP = {
     'skill-coherence', 'workflow-maturity', 'agent-output-schemas']),
 };
 
+// `verified` (YYYY-MM-DD) is when a maintainer last re-checked this framework's control IDs
+// and titles against `url`; the compliance report prints it so stale mappings are visible.
+// Bump it only after a real re-check of the primary source, never as a drive-by.
 // `status` is the UPSTREAM publication state — a beta list must never render to
 // an auditor as settled. `coverage: full` = every scored check is mapped.
 export const FRAMEWORKS = {
@@ -155,6 +158,7 @@ export const FRAMEWORKS = {
     name: 'OWASP Top 10 for Agentic Applications 2026',
     status: 'final (published 2025-12-09)',
     url: 'https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/',
+    verified: '2026-07-12',
     coverage: 'full',
     map: OWASP_AGENTIC_MAP,
     controls: {
@@ -170,6 +174,7 @@ export const FRAMEWORKS = {
     name: 'OWASP MCP Top 10',
     status: 'BETA — upstream Phase 3 (Beta Release and Pilot Testing); IDs and rankings may still change. Do not cite as settled.',
     url: 'https://owasp.org/www-project-mcp-top-10/',
+    verified: '2026-07-12',
     coverage: 'partial',
     map: OWASP_MCP_MAP,
     note: 'rigscore inspects MCP configuration at rest; it never executes or introspects a running MCP server. So MCP05, MCP06, MCP07, MCP08 and MCP10 are NOT EVIDENCED by design — input sanitization, runtime intent, auth flows, audit telemetry and live context are all properties of a server in execution. Sandbox/container posture (docker-security, infrastructure-security) bounds the blast radius of an injected command but is never proof a tool sanitizes its input, so it is not cited as MCP05 evidence; it is scored on its own axes instead.',
@@ -190,6 +195,7 @@ export const FRAMEWORKS = {
     name: 'NIST AI RMF 1.0 (NIST AI 100-1)',
     status: 'final (January 2023)',
     url: 'https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf',
+    verified: '2026-07-12',
     coverage: 'full',
     map: NIST_AI_RMF_MAP,
     controls: {
@@ -203,6 +209,7 @@ export const FRAMEWORKS = {
     name: 'EU AI Act — Regulation (EU) 2024/1689',
     status: 'in force, phased application',
     url: 'https://ai-act-service-desk.ec.europa.eu/en/ai-act/timeline/timeline-implementation-eu-ai-act',
+    verified: '2026-07-12',
     coverage: 'full',
     map: EU_AI_ACT_MAP,
     note: 'Dates are the in-force schedule. The proposed "Digital Omnibus" delay to the high-risk dates (Annex III -> 2027-12-02, Annex I -> 2028-08-02) is NOT in force: EP plenary approved it 2026-06-16, Council adoption + OJ publication still pending. Do not plan against the delay.',
