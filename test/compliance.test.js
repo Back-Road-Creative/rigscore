@@ -56,7 +56,8 @@ describe('formatCompliance', () => {
   it('prints when each framework\'s mappings were last verified against its primary source', () => {
     for (const fw of Object.values(FRAMEWORKS)) {
       expect(fw.verified, `${fw.name} records a verification date`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(Number.isNaN(Date.parse(fw.verified)), `${fw.name} date parses`).toBe(false);
+      expect(new Date(fw.verified).toISOString().slice(0, 10), `${fw.name} is a real calendar date`).toBe(fw.verified);
+      expect(Date.parse(fw.verified), `${fw.name} date is not in the future`).toBeLessThanOrEqual(Date.now());
       expect(text).toContain(`Mappings last verified: ${fw.verified}`);
     }
     // Same section as the status, so an auditor reads them together.

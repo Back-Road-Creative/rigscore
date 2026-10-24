@@ -33,10 +33,10 @@ it out — the invariants in `test/constants.test.js` then hold the table honest
 
 | Framework | Status | Coverage | Mappings last verified | Primary source |
 |---|---|---|---|---|
-| OWASP Top 10 for Agentic Applications 2026 (`ASIxx:2026`) | Final (2025-12-09) | full | 2026-07-21 | <https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/> |
-| OWASP MCP Top 10 (`MCPxx:2025`) | **Beta** (Phase 3, pilot testing) | partial | 2026-07-21 | <https://owasp.org/www-project-mcp-top-10/> |
-| NIST AI RMF 1.0 (NIST AI 100-1) | Final (Jan 2023) | full | 2026-07-21 | <https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf> |
-| EU AI Act — Regulation (EU) 2024/1689 | In force, phased | full | 2026-07-21 | <https://ai-act-service-desk.ec.europa.eu/en/ai-act/timeline/timeline-implementation-eu-ai-act> |
+| OWASP Top 10 for Agentic Applications 2026 (`ASIxx:2026`) | Final (2025-12-09) | full | 2026-07-12 | <https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/> |
+| OWASP MCP Top 10 (`MCPxx:2025`) | **Beta** (Phase 3, pilot testing) | partial | 2026-07-12 | <https://owasp.org/www-project-mcp-top-10/> |
+| NIST AI RMF 1.0 (NIST AI 100-1) | Final (Jan 2023) | full | 2026-07-12 | <https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf> |
+| EU AI Act — Regulation (EU) 2024/1689 | In force, phased | full | 2026-07-12 | <https://ai-act-service-desk.ec.europa.eu/en/ai-act/timeline/timeline-implementation-eu-ai-act> |
 
 Every framework prints a `Mappings last verified: YYYY-MM-DD` line beside its status: the date a
 maintainer last re-checked its control IDs and titles against the primary source. Standards move
