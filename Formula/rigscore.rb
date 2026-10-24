@@ -14,8 +14,8 @@
 class Rigscore < Formula
   desc "Configuration hygiene checker for AI dev environments"
   homepage "https://github.com/Back-Road-Creative/rigscore"
-  url "https://github.com/Back-Road-Creative/rigscore/archive/refs/tags/v2.1.0.tar.gz"
-  sha256 "750015357fe6b59137cceddb52b80bb08a971983318d4bc61e84b16bc0cad450"
+  url "https://github.com/Back-Road-Creative/rigscore/archive/refs/tags/v2.2.0.tar.gz"
+  sha256 "a9efa0d6a5bae14ef063b0f90353ed4cf173bb8459f704093ea8b6b5b8c24661"
   license "MIT"
   head "https://github.com/Back-Road-Creative/rigscore.git", branch: "main"
 
