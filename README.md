@@ -700,6 +700,7 @@ npx github:Back-Road-Creative/rigscore --cyclonedx               # CycloneDX 1.6
 npx github:Back-Road-Creative/rigscore --report compliance       # Group findings by compliance-framework control (see docs/compliance.md; not supported with --recursive)
 npx github:Back-Road-Creative/rigscore --ci                      # CI mode (--sarif --no-color --no-cta)
 npx github:Back-Road-Creative/rigscore --fail-under 80           # Fail if score < 80 (default: 70)
+npx github:Back-Road-Creative/rigscore --fail-on <critical|warning> # Also fail (exit 1) on any finding at that severity or worse, whatever the score; `warning` includes critical. Respects suppressions; works with --recursive
 npx github:Back-Road-Creative/rigscore --profile minimal         # AI-only scoring profile
 npx github:Back-Road-Creative/rigscore --badge                   # Generate a score badge (format set by --badge-format)
 npx github:Back-Road-Creative/rigscore --badge --badge-format svg # Badge format: markdown (default, shields.io image snippet), endpoint (shields.io Endpoint Badge JSON for a self-updating README), or svg (self-contained, no network). Also works with --recursive, badging the monorepo average
