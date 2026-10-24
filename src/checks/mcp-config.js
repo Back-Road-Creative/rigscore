@@ -708,7 +708,7 @@ export async function checkRuntimeToolPinStatus(cwd, currentHashes, surfaceRunti
         severity: 'info',
         title: `MCP server "${name}": runtime tool pin not recorded`,
         detail: 'Pin a snapshot of the server\'s tool descriptions to detect CVE-2025-54136-class drift between scans. rigscore does NOT execute the server — user must pipe tools/list JSON into stdin.',
-        remediation: `Run: npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin ${name}`,
+        remediation: `Run: npx -y <mcp-server-package> | rigscore mcp-hash | xargs rigscore mcp-pin ${name} (or, if you trust the command this config launches, rigscore mcp-pin ${name} --connect — it shows the exact command and asks for consent each run)`,
         context: { serverName: name },
       });
     }

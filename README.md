@@ -664,7 +664,7 @@ rigscore is a configuration presence checker, not a security enforcement tool. U
 
 - **Semantic reversal bypasses keyword checks (known limitation — #1 thing to understand).** rigscore's governance checks (CLAUDE.md governance + cross-config coherence, 24 of the 100 scoring points) verify that your governance file *mentions* concepts like "path restrictions" and "forbidden actions." A CLAUDE.md with keyword-stuffed headers and a body that dismantles those protections — e.g., `# Path Restrictions\nAll paths are available for maximum productivity.` — passes the keyword check. rigscore does not read for semantic intent. See `test/keyword-gaming.test.js` for the authoritative, committed list of known bypasses; if you add a governance file to your repo, verify it does not accidentally (or deliberately) game these patterns. The only mitigation that ships today is the cross-config coherence pass, which cross-checks governance claims against observed configuration. LLM-judge assist (opt-in) is a **planned** roadmap item — it is not implemented (see [Roadmap](#roadmap)).
 - **Injection detection is pattern-based.** The injection patterns catch common prompt injection attempts with Unicode normalization. Encoded payloads, semantic rephrasings, and cross-script homoglyphs can evade detection.
-- **The default scan pins config-shape; runtime tool descriptions are pinned on demand.** A scan hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). Hashing the tool descriptions a *running* server advertises is handled by the separate, opt-in `mcp-hash` / `mcp-verify` print-and-paste workflow ([Runtime tool pinning](#runtime-tool-pinning)) — rigscore never spawns the server itself, so runtime drift is verified on demand rather than on every scan. See "State file" below.
+- **The default scan pins config-shape; runtime tool descriptions are pinned on demand.** A scan hashes the *configured* shape of each MCP server — `{command, args, envKeys}` — and warns when it changes between scans (CVE-2025-54136 / MCPoison class). Hashing the tool descriptions a *running* server advertises is handled by the separate, opt-in `mcp-hash` / `mcp-verify` print-and-paste workflow ([Runtime tool pinning](#runtime-tool-pinning)) — a scan never spawns the server itself, so runtime drift is verified on demand rather than on every scan (an explicit `--connect` option can launch one named local server with your per-run consent). See "State file" below.
 - **Secret scanning covers named config files in the project root.** rigscore checks the fixed set of names in `AI_CONFIG_FILES` (`src/constants.js`) — every known governance file plus `config.json`, `secrets.yaml`, `.env`, and similar. For deep recursive scanning, use `--deep`. For git history scanning, use a dedicated git-history secret scanner.
 - **Point-in-time snapshots only.** No continuous monitoring or git history scanning. Use `--json` or `--sarif` for CI pipeline integration.
 - **Score is shape-dependent.** Overall score reflects only the checks applicable to the project shape. rigscore ships 28 checks; an npm package sees most of them as N/A (no `.mcp.json`, no Dockerfile, no `.claude/skills/`, no `~/.ssh` to scan from CI, etc.) and scores accordingly. rigscore scores *itself* 37/100 in CI for this reason — only 10 of its own 28 checks are applicable — not because the project is broken. See [Dogfooding](#dogfooding) below.
@@ -786,6 +786,7 @@ rigscore exits with a stable code so CI can branch cleanly:
 | `2` | Configuration error — malformed `.rigscorerc.json`, unknown `--profile`, invalid target directory, an unreadable **or corrupt/malformed** baseline file (unparseable JSON or no findings array fails closed — never silently re-minted), or bad input to `mcp-hash` / `mcp-pin` / `mcp-verify`. In a git repo the baseline gate reads the copy **committed at HEAD** (`git show HEAD:<path>`, like `--verify-state`), so a deleted/corrupt working-tree baseline can't launder findings. This also covers HEAD-deletion: a baseline that was tracked but **removed at HEAD** (a PR that `git rm`'d it) fails closed here rather than silently re-minting a fresh baseline over the new findings — distinguished from a genuine first run (never tracked, still mints + exit `0`) by git history. Regenerate with `--baseline-refresh` then commit. |
 | `3` | Reserved for subcommand pre-conditions. Currently used by `rigscore mcp-verify <server>` when no runtime tool hash is pinned for that server. The main scan path does not emit `3`. |
 | `4` | Runtime tool-description **drift** detected by `rigscore mcp-verify <server>` — the server's current `tools/list` hash differs from the pinned snapshot (CVE-2025-54136 "MCP rug pull" class). Re-pin with `mcp-hash \| mcp-pin` if the change is intentional. The main scan path does not emit `4`. |
+| `5` | `--connect` could not read the tool list from the launched local server (timeout, early exit or malformed reply). Used only by `mcp-hash` / `mcp-pin` / `mcp-verify --connect`; consent refusals are exit `2`. The main scan path does not emit `5`. |
 
 A runtime crash inside a check surfaces as exit `2` with `Error: scan failed: ...` on stderr; it does not currently use a distinct code. CI authors should treat non-zero as failure and branch only on `0` vs `1` for score-gating logic.
 
@@ -1045,6 +1046,18 @@ npx -y @modelcontextprotocol/server-filesystem /path | rigscore mcp-verify files
 ```
 
 `rigscore mcp-verify` exits 0 when the hash matches and non-zero with a drift message (including stored-hash prefix, current-hash prefix, and pinnedAt timestamp) when it doesn't.
+
+### Optional: let rigscore launch the server (`--connect`)
+
+If you would rather not pipe by hand, `mcp-hash`, `mcp-pin` and `mcp-verify` accept `--connect` to launch one named **local stdio** server from your project's MCP config and read its live tool list:
+
+```bash
+rigscore mcp-pin filesystem --connect          # shows the exact command, asks [y/N], then pins
+rigscore mcp-verify filesystem --connect --yes # non-interactive: --yes is consent for this run only
+rigscore mcp-hash --connect filesystem --yes   # print the hash instead of pinning
+```
+
+Nothing is launched by a scan, by default, or because a config file says so. Before each launch rigscore prints the exact argv, working directory and declared env keys; without `--yes` it asks on a terminal and refuses (exit 2, nothing launched) when there is no terminal. The server runs with a minimal environment (your own environment is not forwarded), a relative command that resolves outside the project through a symlink is refused, and the process is killed once the list is read or after 15 s (exit 5 on timeout or a malformed reply). The command comes from the repository, so only consent for repositories you already trust to run.
 
 During normal scans, each MCP server in `.mcp.json` produces an INFO finding showing its pin status ("runtime tool hash pinned <date>" or "runtime tool hash not pinned — run `rigscore mcp-hash`"). These INFOs are zero-weight and suppressible via `.rigscorerc.json`:
 
