@@ -1310,8 +1310,8 @@ Back Road Creative ([@joepetjr](https://github.com/Back-Road-Creative))
 
 ## Status
 
-Active — v2.2.0. 28 checks ship (13 scored, 15 advisory), distributed via GitHub
-only (`npx github:Back-Road-Creative/rigscore`; npm was intentionally dropped).
+Active — v2.3.0. 29 checks ship (13 scored, 16 advisory), distributed on npm
+(`npx rigscore`) and GitHub (`npx github:Back-Road-Creative/rigscore`).
 Default mode makes no network or LLM calls — `--online` opts into supply-chain
 lookups and `--semantic` shells out to `claude -p`. Known capability gaps are
 tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md) and are candidates, not
