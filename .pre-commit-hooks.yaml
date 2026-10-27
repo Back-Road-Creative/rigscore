@@ -10,7 +10,7 @@
 #
 # language: node — pre-commit runs `npm install .` on the cloned repo and puts
 # the `rigscore` bin (package.json `bin`) on PATH, so no npm-registry publish is
-# needed (GitHub-only distribution stays intact). This is the framework-managed
+# needed. This is the framework-managed
 # alternative to `rigscore --init-hook`, which writes a native
 # .git/hooks/pre-commit line instead.
 - id: rigscore

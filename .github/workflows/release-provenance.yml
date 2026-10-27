@@ -3,8 +3,9 @@ name: Release (signed + provenance)
 # Triggered by pushing a v* tag (e.g. v0.9.0-rc1). Distinct from release.yml,
 # which handles version-bump-on-main releases without provenance. This workflow
 # exists so a maintainer can opt into a signed, attested, SBOM-bundled release
-# by cutting a tag manually. npm publish stays disabled — `npx github:` is the
-# sole distribution channel and provenance works on the GitHub tarball.
+# by cutting a tag manually. npm publishing is not done here: release.yml
+# publishes to npm (trusted publishing). Provenance here covers the GitHub
+# tarball.
 
 on:
   push:

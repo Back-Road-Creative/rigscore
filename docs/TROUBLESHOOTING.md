@@ -102,8 +102,9 @@ Workarounds, in order of preference:
 3. Pull the Docker image if one is published for that version:
    `ghcr.io/back-road-creative/rigscore:<tag>`.
 
-rigscore is not published to npm by design — see the
-[Distribution](../README.md#distribution) section for the rationale.
+rigscore is published to npm as `rigscore` starting with the first release
+after npm publishing was enabled; earlier versions came from GitHub only. See
+the [Distribution](../README.md#distribution) section.
 
 ## "ANSI escape warnings in my skill files"
 
