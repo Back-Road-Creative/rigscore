@@ -332,6 +332,9 @@ export function toRegex(spec) {
  * Defenses:
  *   - Visited-inode set keyed on `${stat.dev}:${stat.ino}` keeps us from
  *     recursing into cycles created by `ln -s . self` or criss-cross links.
+ *     Stats are read as BigInt: NTFS file IDs exceed 2^53, and a Number ino
+ *     rounds two sibling directories onto one key (the second then reads as
+ *     a loop and its files vanish from the scan).
  *   - Depth cap (default 50; override via `opts.maxDepth`) protects against
  *     extreme-but-not-cyclic nestings.
  *   - lstat on every entry; realpath only when we need the canonical path
@@ -397,7 +400,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
 
   async function keyForPath(p) {
     try {
-      const st = await fs.promises.stat(p); // follow symlink to get real target
+      const st = await fs.promises.stat(p, { bigint: true }); // follow symlink to get real target
       return `${st.dev}:${st.ino}`;
     } catch {
       return null;
@@ -474,7 +477,7 @@ export async function walkDirSafe(rootDir, opts = {}) {
         }
         let stReal;
         try {
-          stReal = await fs.promises.stat(realPath);
+          stReal = await fs.promises.stat(realPath, { bigint: true });
         } catch {
           continue;
         }
