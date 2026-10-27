@@ -372,7 +372,8 @@ async function scanK8sManifests(cwd, findings) {
   const allDirs = [cwd];
   const visited = new Set();
   try {
-    const rootStat = await fs.promises.stat(cwd);
+    // BigInt: a Number ino loses precision on NTFS (see walkDirSafe).
+    const rootStat = await fs.promises.stat(cwd, { bigint: true });
     visited.add(`${rootStat.dev}:${rootStat.ino}`);
   } catch { /* cwd unreadable */ }
   for (const d of k8sDirs) {
@@ -385,7 +386,7 @@ async function scanK8sManifests(cwd, findings) {
       try { realPath = await fs.promises.realpath(dirPath); } catch { continue; }
     }
     let st;
-    try { st = await fs.promises.stat(realPath); } catch { continue; }
+    try { st = await fs.promises.stat(realPath, { bigint: true }); } catch { continue; }
     if (!st.isDirectory()) continue;
     const key = `${st.dev}:${st.ino}`;
     if (visited.has(key)) continue; // symlink pointing back into cwd
