@@ -93,6 +93,14 @@ node bin/rigscore.js --json "$(mktemp -d)" \
 
 No setup. No accounts. No data leaves your machine.
 
+Install from npm (starting with the first release after npm publishing was enabled) or run straight from GitHub:
+
+```bash
+# From npm: run once, or install globally
+npx rigscore
+npm i -g rigscore
+```
+
 ```bash
 # Run on the current directory
 npx github:Back-Road-Creative/rigscore
@@ -174,7 +182,7 @@ This is **framework-managed** — pre-commit clones and installs rigscore itself
 
 ## Distribution
 
-- **GitHub-only.** rigscore is distributed via `npx github:Back-Road-Creative/rigscore`. It is **not** published to npm. See `CLAUDE.md` for the full rationale — in short: npm publish was intentionally dropped in v0.8.0 (commit #62) to keep the supply-chain surface tight. The tool is the sort of thing you want to audit before running; pulling straight from GitHub makes the audit trail obvious and avoids a second supply-chain hop.
+- **npm and GitHub.** rigscore is published to npm as `rigscore` (`npx rigscore`, `npm i -g rigscore`) and is also available straight from GitHub via `npx github:Back-Road-Creative/rigscore`. The release workflow publishes to npm with trusted publishing (OIDC from GitHub Actions), so no long-lived npm token exists. The npm package starts at the first release after this change; the older `rigscore@0.4.1` on npm predates it.
 - **Docker image (GHCR).** The Docker Publish workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/back-road-creative/rigscore:<tag>` automatically on `v*.*.*` tag pushes. It is also callable via `workflow_dispatch` for manual and dry-run builds. Pull a published tag as `ghcr.io/back-road-creative/rigscore:<tag>`.
 - **GitHub Action.** `action.yml` at the repo root exposes rigscore as a composite GitHub Action. Reference it from a workflow as `uses: Back-Road-Creative/rigscore@v2.1.0`. The action **requires an exact `vX.Y.Z` tag** — floating refs (`@v1`, `@v2`, `@main`) are rejected at run time to prevent supply-chain drift, and no moving major tag is published. Copy-paste job:
 

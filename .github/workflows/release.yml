@@ -5,7 +5,8 @@ name: Release
 #
 # Steps: test → GitHub release (facts snapshot attached as a release asset)
 # → pull request pinning the Homebrew formula to the new release tag
-# Distribution: GitHub only (npx github:Back-Road-Creative/rigscore)
+# → npm publish (trusted publishing over OIDC, no stored token)
+# Distribution: npm (`npx rigscore`) and GitHub (`npx github:Back-Road-Creative/rigscore`)
 # The consuming site's facts data file is refreshed downstream, in that repo,
 # by a workflow there that pulls from this repo's public releases.
 
@@ -45,6 +46,9 @@ jobs:
       actions: write
       # Lets the formula-bump step open its pull request.
       pull-requests: write
+      # npm trusted publishing: the publish step trades this job's OIDC token
+      # for a short-lived npm credential. No npm token secret is stored.
+      id-token: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,6 +58,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
 
       - name: Read version from package.json
         id: pkg
@@ -239,6 +244,24 @@ jobs:
             echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+
+      # Publish to npm with trusted publishing (OIDC). The npmjs.com package
+      # settings name this repo and this workflow file as the trusted
+      # publisher, so no token is stored. Trusted publishing needs npm CLI
+      # 11.5.1 or newer; the exact version is pinned. Runs after the tests and
+      # the GitHub release. Idempotent: a re-run skips a version the registry
+      # already has. Provenance is attached automatically for a public repo.
+      - name: Publish to npm
+        if: steps.check.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          npm install -g npm@11.6.2
+          if [ "$(npm view "rigscore@${VERSION}" version 2>/dev/null)" = "${VERSION}" ]; then
+            echo "rigscore@${VERSION} is already on npm — skipping publish."
+            exit 0
+          fi
+          npm publish --access public
 
       # The release-facts sync that used to run here (a second job that
       # cloned the consuming site repo with a cross-repo token and opened a

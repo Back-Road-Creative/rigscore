@@ -61,4 +61,4 @@ Weights are the single source of truth in `src/constants.js` — never hardcode 
 - New checks must export `{ id, name, category, weight, run }` and self-register in `src/checks/`
 - Scoring weighted ~48% moat (mcp-config 14 + coherence 14 + skill-files 10 + governance-docs 10) / ~52% hygiene (secrets 22, docker/infra 12, permissions/hooks/unicode/settings 18)
 - `--fix` never modifies governance content
-- Distributed from GitHub only, never npm (npm publish intentionally dropped, #62): `npx github:Back-Road-Creative/rigscore`, the Homebrew formula (`Formula/rigscore.rb`), prebuilt archives on each GitHub release, the composite action (`action.yml`) and the pre-commit hook (`.pre-commit-hooks.yaml`)
+- Distributed via npm (`npx rigscore`, published from `release.yml` by trusted publishing, no stored token) and GitHub: `npx github:Back-Road-Creative/rigscore`, the Homebrew formula (`Formula/rigscore.rb`), prebuilt archives on each GitHub release, the composite action (`action.yml`) and the pre-commit hook (`.pre-commit-hooks.yaml`)
